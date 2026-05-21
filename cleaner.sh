@@ -43,6 +43,8 @@ Options:
   --yes-danger               Bypass manual confirmation prompt for danger risk targets.
   -t, --trash                Move files to quarantine instead of permanent deletion.
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
+  -e, --exclude PATTERNS     Comma-separated list of glob patterns to exclude from cleanup.
+  --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   -h, --help                 Display this help message and exit.
 EOF
@@ -56,6 +58,8 @@ YES_DANGER=false
 TRASH_MODE=false
 MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
+EXCLUDE_PATTERNS=""
+RESTORE_TARGET=""
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -102,6 +106,22 @@ while [[ $# -gt 0 ]]; do
       MAX_RISK="$2"
       shift 2
       ;;
+    -e|--exclude)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --exclude requires a pattern argument.${NC}" >&2
+        exit 1
+      fi
+      EXCLUDE_PATTERNS="$2"
+      shift 2
+      ;;
+    --restore)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --restore requires a session argument (latest or timestamp).${NC}" >&2
+        exit 1
+      fi
+      RESTORE_TARGET="$2"
+      shift 2
+      ;;
     --allow-outside-home)
       ALLOW_OUTSIDE_HOME=true
       shift
@@ -118,10 +138,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check if config file exists
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
-  exit 1
+# Check if config file exists (only if not restoring)
+if [[ -z "${RESTORE_TARGET:-}" ]]; then
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
+    exit 1
+  fi
 fi
 
 # Trim whitespace from variables
@@ -163,6 +185,200 @@ strip_trailing_slashes() {
   fi
 }
 
+# Canonicalize paths physically (resolves nonexistent paths physically by resolving the closest existing parent directory)
+canonicalize_physical() {
+  local target="$1"
+  if [[ "$target" != /* ]]; then
+    target="$PWD/$target"
+  fi
+  
+  # Split the path by '/' using IFS
+  local IFS='/'
+  local parts
+  read -r -a parts <<< "$target"
+  
+  local resolved="/"
+  local comp
+  for comp in "${parts[@]}"; do
+    if [[ -z "$comp" || "$comp" == "." ]]; then
+      continue
+    fi
+    if [[ "$comp" == ".." ]]; then
+      if [[ -e "$resolved" || -L "$resolved" ]]; then
+        resolved=$(realpath "$resolved" 2>/dev/null || echo "$resolved")
+      fi
+      resolved=$(dirname "$resolved")
+    else
+      local next
+      if [[ "$resolved" == "/" ]]; then
+        next="/$comp"
+      else
+        next="$resolved/$comp"
+      fi
+      if [[ -e "$next" || -L "$next" ]]; then
+        resolved=$(realpath "$next" 2>/dev/null || echo "$next")
+      else
+        resolved="$next"
+      fi
+    fi
+  done
+  echo "$resolved"
+}
+
+# Build the global array EXCLUDE_FIND_ARGS for use in find commands based on EXCLUDE_PATTERNS
+EXCLUDE_FIND_ARGS=()
+build_exclude_find_args() {
+  if [[ -z "${EXCLUDE_PATTERNS:-}" ]]; then
+    return
+  fi
+  
+  local IFS=','
+  local -a pats
+  read -r -a pats <<< "$EXCLUDE_PATTERNS"
+  
+  if [[ ${#pats[@]} -eq 0 ]]; then
+    return
+  fi
+  
+  EXCLUDE_FIND_ARGS+=("!")
+  EXCLUDE_FIND_ARGS+=("(")
+  local first=true
+  local pat
+  for pat in "${pats[@]}"; do
+    pat=$(trim "$pat")
+    if [[ -z "$pat" ]]; then
+      continue
+    fi
+    if [[ "$first" = true ]]; then
+      first=false
+    else
+      EXCLUDE_FIND_ARGS+=("-o")
+    fi
+    
+    # Check if the pattern contains a slash
+    if [[ "$pat" == *"/"* ]]; then
+      EXCLUDE_FIND_ARGS+=("-path" "$pat" "-o" "-path" "*/$pat" "-o" "-path" "$pat/*" "-o" "-path" "*/$pat/*")
+    else
+      EXCLUDE_FIND_ARGS+=("-name" "$pat" "-o" "-path" "*/$pat/*")
+    fi
+  done
+  EXCLUDE_FIND_ARGS+=(")")
+}
+
+# Restore files and folders from a quarantine session
+restore_quarantine() {
+  local target="$1"
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+  
+  if [[ ! -d "$quarantine_base" ]]; then
+    echo -e "${RED}Error: No quarantine directory exists at '$quarantine_base'.${NC}" >&2
+    exit 1
+  fi
+  
+  local restore_dir=""
+  if [[ "$target" == "latest" ]]; then
+    # Find the latest subdirectory by sorting
+    local latest
+    latest=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)
+    if [[ -z "$latest" ]]; then
+      echo -e "${RED}Error: No quarantined sessions found in '$quarantine_base'.${NC}" >&2
+      exit 1
+    fi
+    restore_dir="$latest"
+  else
+    restore_dir="$quarantine_base/$target"
+    if [[ ! -d "$restore_dir" ]]; then
+      echo -e "${RED}Error: Quarantine session directory '$restore_dir' does not exist.${NC}" >&2
+      exit 1
+    fi
+  fi
+  
+  local meta_file="$restore_dir/quarantine.meta"
+  if [[ ! -f "$meta_file" ]]; then
+    echo -e "${RED}Error: Metadata file 'quarantine.meta' not found in '$restore_dir'.${NC}" >&2
+    exit 1
+  fi
+  
+  echo -e "${BOLD}${BLUE}=== Restoring from Quarantine Session: $(basename "$restore_dir") ===${NC}"
+  
+  # Read metadata line by line
+  # Format: TYPE|RELATIVE_PATH|ORIGINAL_PATH|USE_SUDO
+  local type rel_path original_path use_sudo
+  while IFS='|' read -r type rel_path original_path use_sudo || [[ -n "$type" ]]; do
+    type=$(trim "$type")
+    [[ -z "$type" || "$type" =~ ^# ]] && continue
+    
+    rel_path=$(trim "$rel_path")
+    original_path=$(trim "$original_path")
+    use_sudo=$(trim "$use_sudo")
+    
+    local src_path="$restore_dir/$rel_path"
+    if [[ ! -e "$src_path" ]]; then
+      echo -e "${YELLOW}Warning: Quarantined source path '$src_path' not found. Skipping.${NC}"
+      continue
+    fi
+    
+    echo -e "Restoring ${YELLOW}$original_path${NC}..."
+    
+    local success=true
+    if [[ "$type" == "full" ]]; then
+      if [[ "$use_sudo" = true ]]; then
+        ensure_sudo
+        sudo mkdir -p "$(dirname "$original_path")"
+        if sudo mv "$src_path" "$original_path"; then
+          sudo chown -R root:root "$original_path"
+        else
+          success=false
+        fi
+      else
+        mkdir -p "$(dirname "$original_path")"
+        if ! mv "$src_path" "$original_path"; then
+          success=false
+        fi
+      fi
+    elif [[ "$type" == "aged" ]]; then
+      if [[ "$use_sudo" = true ]]; then
+        ensure_sudo
+        sudo mkdir -p "$original_path"
+        while IFS= read -r -d '' file; do
+          local file_rel="${file#"$src_path"/}"
+          local dest_file="$original_path/$file_rel"
+          sudo mkdir -p "$(dirname "$dest_file")"
+          if sudo mv "$file" "$dest_file"; then
+            sudo chown root:root "$dest_file"
+          else
+            success=false
+          fi
+        done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+      else
+        mkdir -p "$original_path"
+        while IFS= read -r -d '' file; do
+          local file_rel="${file#"$src_path"/}"
+          local dest_file="$original_path/$file_rel"
+          mkdir -p "$(dirname "$dest_file")"
+          if ! mv "$file" "$dest_file"; then
+            success=false
+          fi
+        done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+      fi
+    else
+      echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
+      continue
+    fi
+    
+    if [[ "$success" = false ]]; then
+      echo -e "${RED}Error: Failed to restore '$original_path'.${NC}" >&2
+    fi
+  done < "$meta_file"
+  
+  echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
+  
+  rm -rf "$restore_dir"
+  rmdir "$quarantine_base" 2>/dev/null || true
+}
+
+
+
 # Ensure sudo is authenticated
 ensure_sudo() {
   if ! sudo -n true 2>/dev/null; then
@@ -190,7 +406,7 @@ check_path_safety() {
   fi
   
   local normalized
-  normalized=$(realpath -m "$target_path")
+  normalized=$(canonicalize_physical "$target_path")
   
   # Block critical root and system directories
   if [[ "$normalized" =~ ^/+$ ]] || \
@@ -228,6 +444,13 @@ has_matching_files() {
     cmd_prefix="sudo "
   fi
 
+  # Check if the target itself is excluded
+  if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print 2>/dev/null) ]]; then
+      return 1
+    fi
+  fi
+
   if [[ "$age_days" -le 0 ]]; then
     if [[ "$use_sudo" = true ]]; then
       if sudo test -e "$target_path" || sudo test -L "$target_path"; then
@@ -244,7 +467,7 @@ has_matching_files() {
   if [[ -d "$target_path" && ! -L "$target_path" ]]; then
     # Check if there is any file or symlink inside older than age_days
     # find -print -quit exits 0 if a match is found
-    [[ -n $($cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
+    [[ -n $($cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
   else
     # Single file or symlink
     [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
@@ -252,7 +475,7 @@ has_matching_files() {
   return 1
 }
 
-# Calculate size in bytes using du (takes into account min_age if set)
+# Calculate size in bytes using du (takes into account min_age and exclusions if set)
 get_size_bytes() {
   local target_path="$1"
   local age_days="${2:-0}"
@@ -280,6 +503,14 @@ get_size_bytes() {
     return
   fi
   
+  # Check if the target itself is excluded
+  if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print 2>/dev/null) ]]; then
+      echo 0
+      return
+    fi
+  fi
+  
   # Check if directory and if symlink
   local is_dir=false
   local is_link=false
@@ -291,21 +522,33 @@ get_size_bytes() {
     if [[ -L "$target_path" ]]; then is_link=true; fi
   fi
 
-  if [[ "$age_days" -gt 0 ]]; then
-    if [[ "$is_dir" = true && "$is_link" = false ]]; then
-      # Sum size of files/symlinks older than age_days within the directory
-      $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
+  if [[ "$is_dir" = true && "$is_link" = false ]]; then
+    # Sum size of files/symlinks older than age_days within the directory
+    # If EXCLUDE_PATTERNS is set, we must use find even if age_days is 0!
+    if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+      local find_mtime_args=()
+      if [[ "$age_days" -gt 0 ]]; then
+        find_mtime_args+=("-mtime" "+$age_days")
+      fi
+      $cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
     else
-      # If target is a file or symlink, check if it's older than age_days
+      if [[ "$age_days" -gt 0 ]]; then
+        $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
+      else
+        $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
+      fi
+    fi
+  else
+    # If target is a file or symlink, check if it's older than age_days
+    if [[ "$age_days" -gt 0 ]]; then
       if [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]]; then
         $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
       else
         echo 0
       fi
+    else
+      $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
     fi
-  else
-    # Apparent size of entire target
-    $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
   fi
 }
 
@@ -371,6 +614,15 @@ risk_to_int() {
 
 # Parse custom max risk
 MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
+
+# Build exclude arguments for find
+build_exclude_find_args
+
+# Check if restore mode is active
+if [[ -n "${RESTORE_TARGET:-}" ]]; then
+  restore_quarantine "$RESTORE_TARGET"
+  exit 0
+fi
 
 # Header output
 echo -e "${BOLD}${BLUE}=== Linux Cache & Temp File Cleaner ===${NC}"
@@ -442,7 +694,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_c
   stripped_path=$(strip_trailing_slashes "$expanded_path")
   
   # Resolve to canonical
-  path=$(realpath -m "$stripped_path")
+  path=$(canonicalize_physical "$stripped_path")
   
   # Run safety check
   safety_status=0
@@ -715,35 +967,71 @@ for i in "${!parsed_names[@]}"; do
       mkdir -p "$(dirname "$q_target")"
     fi
     
+    # Determine if target is a directory and if symlink
+    is_dir=false
+    is_link=false
+    if [[ "$use_sudo" = true ]]; then
+      if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
+      if sudo test -L "$path"; then is_link=true; fi
+    else
+      if [[ -d "$path" && ! -L "$path" ]]; then is_dir=true; fi
+      if [[ -L "$path" ]]; then is_link=true; fi
+    fi
+
     success=true
-    if [[ "$age" -gt 0 ]]; then
-      # Age filtered quarantine: Move only matching files/symlinks, recreate relative structure
-      if [[ "$use_sudo" = true ]]; then
-        sudo mkdir -p "$q_target"
-        while IFS= read -r -d '' file; do
-          rel_path="${file#"$path"/}"
-          dest_file="$q_target/$rel_path"
-          sudo mkdir -p "$(dirname "$dest_file")"
-          if ! sudo mv "$file" "$dest_file"; then
-            success=false
-          fi
-        done < <(sudo find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -print0)
-        sudo chown -R "$(id -u):$(id -g)" "$q_target"
-        sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    if [[ "$age" -gt 0 || -n "${EXCLUDE_PATTERNS:-}" ]]; then
+      # File-by-file quarantine
+      if [[ "$is_dir" = true && "$is_link" = false ]]; then
+        # Record aged quarantine metadata
+        echo "aged|${i}_${safe_name}|$path|$use_sudo" >> "$QUARANTINE_DIR/quarantine.meta"
+        
+        find_mtime_args=()
+        if [[ "$age" -gt 0 ]]; then
+          find_mtime_args+=("-mtime" "+$age")
+        fi
+        
+        if [[ "$use_sudo" = true ]]; then
+          sudo mkdir -p "$q_target"
+          while IFS= read -r -d '' file; do
+            rel_path="${file#"$path"/}"
+            dest_file="$q_target/$rel_path"
+            sudo mkdir -p "$(dirname "$dest_file")"
+            if ! sudo mv "$file" "$dest_file"; then
+              success=false
+            fi
+          done < <(sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
+          sudo chown -R "$(id -u):$(id -g)" "$q_target"
+          sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+        else
+          mkdir -p "$q_target"
+          while IFS= read -r -d '' file; do
+            rel_path="${file#"$path"/}"
+            dest_file="$q_target/$rel_path"
+            mkdir -p "$(dirname "$dest_file")"
+            if ! mv "$file" "$dest_file"; then
+              success=false
+            fi
+          done < <(find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
+          find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+        fi
       else
-        mkdir -p "$q_target"
-        while IFS= read -r -d '' file; do
-          rel_path="${file#"$path"/}"
-          dest_file="$q_target/$rel_path"
-          mkdir -p "$(dirname "$dest_file")"
-          if ! mv "$file" "$dest_file"; then
+        # Single file or symlink
+        echo "full|${i}_${safe_name}|$path|$use_sudo" >> "$QUARANTINE_DIR/quarantine.meta"
+        if [[ "$use_sudo" = true ]]; then
+          if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
+            success=true
+          else
             success=false
           fi
-        done < <(find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -print0)
-        find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+        else
+          if ! mv "$path" "$q_target"; then
+            success=false
+          fi
+        fi
       fi
     else
-      # Full folder quarantine
+      # Full folder/file quarantine (no age limit, no exclusions)
+      echo "full|${i}_${safe_name}|$path|$use_sudo" >> "$QUARANTINE_DIR/quarantine.meta"
       if [[ "$use_sudo" = true ]]; then
         if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
           success=true
@@ -765,25 +1053,61 @@ for i in "${!parsed_names[@]}"; do
     
   else
     # Permanent Deletion Mode
-    if [[ "$age" -gt 0 ]]; then
-      if [[ "$use_sudo" = true ]]; then
-        echo -e "  Cleaning files older than $age days in ${YELLOW}$name${NC} with sudo..."
-        if sudo find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -delete && \
-           sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
-          total_deleted_bytes=$((total_deleted_bytes + size))
+    # Determine if target is a directory and if symlink
+    is_dir=false
+    is_link=false
+    if [[ "$use_sudo" = true ]]; then
+      if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
+      if sudo test -L "$path"; then is_link=true; fi
+    else
+      if [[ -d "$path" && ! -L "$path" ]]; then is_dir=true; fi
+      if [[ -L "$path" ]]; then is_link=true; fi
+    fi
+
+    if [[ "$age" -gt 0 || -n "${EXCLUDE_PATTERNS:-}" ]]; then
+      if [[ "$is_dir" = true && "$is_link" = false ]]; then
+        find_mtime_args=()
+        if [[ "$age" -gt 0 ]]; then
+          find_mtime_args+=("-mtime" "+$age")
+        fi
+        
+        if [[ "$use_sudo" = true ]]; then
+          echo -e "  Cleaning filtered files in ${YELLOW}$name${NC} with sudo..."
+          if sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
+             sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
+            total_deleted_bytes=$((total_deleted_bytes + size))
+          else
+            echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path' with sudo${NC}" >&2
+          fi
         else
-          echo -e "  ${RED}Error: Failed to completely clean aged files in '$path' with sudo${NC}" >&2
+          echo -e "  Cleaning filtered files in ${YELLOW}$name${NC}..."
+          if find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
+             find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
+            total_deleted_bytes=$((total_deleted_bytes + size))
+          else
+            echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${NC}" >&2
+          fi
         fi
       else
-        echo -e "  Cleaning files older than $age days in ${YELLOW}$name${NC}..."
-        if find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -delete && \
-           find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
-          total_deleted_bytes=$((total_deleted_bytes + size))
+        # Single file or symlink deletion
+        if [[ "$use_sudo" = true ]]; then
+          echo -e "  Cleaning ${YELLOW}$name${NC} at '$path' with sudo..."
+          if sudo rm -rf "$path"; then
+            total_deleted_bytes=$((total_deleted_bytes + size))
+          else
+            echo -e "  ${RED}Error: Failed to delete '$path' with sudo${NC}" >&2
+          fi
         else
-          echo -e "  ${RED}Error: Failed to completely clean aged files in '$path'${NC}" >&2
+          echo -e "  Cleaning ${YELLOW}$name${NC} at '$path'..."
+          if rm -rf "$path"; then
+            total_deleted_bytes=$((total_deleted_bytes + size))
+          else
+            echo -e "  ${RED}Error: Failed to delete '$path'${NC}" >&2
+          fi
         fi
       fi
     else
+      # Full folder/file deletion
       if [[ "$use_sudo" = true ]]; then
         echo -e "  Cleaning ${YELLOW}$name${NC} at '$path' with sudo..."
         if sudo rm -rf "$path"; then

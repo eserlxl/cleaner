@@ -414,5 +414,82 @@ else
   exit 1
 fi
 
+# 10. Test Case: Exclusion Patterns Support
+setup_mock_env
+mkdir -p "$MOCK_HOME/.npm/_cacache/.git"
+echo "git file content" > "$MOCK_HOME/.npm/_cacache/.git/git_file.txt"
+echo "exclude this log" > "$MOCK_HOME/.npm/_cacache/excl1.log"
+echo "keep this txt" > "$MOCK_HOME/.npm/_cacache/keep.txt"
+
+# Run dry run with exclusions: --exclude ".git,*.log"
+if run_test_case "Exclusions Dry Run" 0 "exclusions_dry_run.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude ".git,*.log" --dry-run; then
+  echo -e "${GREEN}PASS: Exclusions dry run executed successfully.${NC}"
+else
+  exit 1
+fi
+
+# Run clean with exclusions: --exclude ".git,*.log"
+if run_test_case "Exclusions Clean" 0 "exclusions_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude ".git,*.log" --force; then
+  if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] && \
+     [[ ! -f "$MOCK_HOME/.npm/_cacache/keep.txt" ]] && \
+     [[ -f "$MOCK_HOME/.npm/_cacache/excl1.log" ]] && \
+     [[ -f "$MOCK_HOME/.npm/_cacache/.git/git_file.txt" ]]; then
+    echo -e "${GREEN}PASS: Exclusions cleaned successfully. Excluded files/folders were preserved.${NC}"
+  else
+    echo -e "${RED}FAIL: Exclusions cleanup failed. Excluded files were deleted or kept files were not cleaned.${NC}"
+    echo "Exists cache1.txt: $([[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] && echo "yes" || echo "no")"
+    echo "Exists keep.txt: $([[ -f "$MOCK_HOME/.npm/_cacache/keep.txt" ]] && echo "yes" || echo "no")"
+    echo "Exists excl1.log: $([[ -f "$MOCK_HOME/.npm/_cacache/excl1.log" ]] && echo "yes" || echo "no")"
+    echo "Exists .git/git_file.txt: $([[ -f "$MOCK_HOME/.npm/_cacache/.git/git_file.txt" ]] && echo "yes" || echo "no")"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# 11. Test Case: Quarantine and Restoration Support
+setup_mock_env
+if run_test_case "Quarantine for Restore" 0 "quarantine_restore_setup.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  if [[ -d "$quarantine_base" ]]; then
+    latest_session=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+    if [[ -n "$latest_session" && -f "$latest_session/quarantine.meta" ]]; then
+      echo -e "${GREEN}PASS: Quarantine session created with metadata file.${NC}"
+    else
+      echo -e "${RED}FAIL: Quarantine metadata file not found.${NC}"
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: Quarantine directory not created.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if [[ -f "$MOCK_HOME/.cache/aurman/pkg1.tar.zst" ]]; then
+  echo -e "${RED}FAIL: Aurman Cache file was not removed from original location.${NC}"
+  exit 1
+fi
+
+if run_test_case "Restore Latest Session" 0 "restore_latest.log" --restore latest; then
+  if [[ -f "$MOCK_HOME/.cache/aurman/pkg1.tar.zst" ]]; then
+    echo -e "${GREEN}PASS: File successfully restored from quarantine.${NC}"
+  else
+    echo -e "${RED}FAIL: Restored file not found at original location.${NC}"
+    exit 1
+  fi
+  
+  if [[ -d "$latest_session" ]]; then
+    echo -e "${RED}FAIL: Quarantine session directory was not removed after restore.${NC}"
+    exit 1
+  else
+    echo -e "${GREEN}PASS: Quarantine session directory cleaned up after restore.${NC}"
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
+
