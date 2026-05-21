@@ -39,6 +39,8 @@ setup_mock_env() {
   mkdir -p "$MOCK_HOME/.gemini/tmp"
   mkdir -p "$MOCK_HOME/.cache/aurman"
   mkdir -p "$MOCK_HOME/.cache/yarn"
+  mkdir -p "$MOCK_HOME/.cache/medium_test"
+  mkdir -p "$MOCK_HOME/.cache/danger_test"
   mkdir -p "$MOCK_HOME/tilde~test"
   mkdir -p "$OUTSIDE_DIR"
   
@@ -60,6 +62,8 @@ EOF
   truncate -s 2M "$MOCK_HOME/.npm/_cacache/cache1.txt"
   echo "dummy aurman pkg" > "$MOCK_HOME/.cache/aurman/pkg1.tar.zst"
   echo "dummy yarn cache" > "$MOCK_HOME/.cache/yarn/yarn-cache.json"
+  echo "dummy medium" > "$MOCK_HOME/.cache/medium_test/medium.txt"
+  echo "dummy danger" > "$MOCK_HOME/.cache/danger_test/danger.txt"
   echo "dummy file outside home" > "$OUTSIDE_DIR/outside.txt"
   echo "should not be affected by tilde expansion" > "$MOCK_HOME/tilde~test/backup.txt"
   
@@ -67,6 +71,13 @@ EOF
   # Note: touch -d requires date/GNU format. On Linux:
   touch -d "10 days ago" "$MOCK_HOME/.gemini/tmp/old_file.tmp"
   touch -d "2 days ago" "$MOCK_HOME/.gemini/tmp/new_file.tmp"
+  
+  # Create nested symlinks with specific times to test age filter on symlinks
+  ln -s "$MOCK_HOME/.npm/_cacache/cache1.txt" "$MOCK_HOME/.gemini/tmp/old_link.tmp"
+  touch -h -d "10 days ago" "$MOCK_HOME/.gemini/tmp/old_link.tmp"
+  
+  ln -s "$MOCK_HOME/.npm/_cacache/cache1.txt" "$MOCK_HOME/.gemini/tmp/new_link.tmp"
+  touch -h -d "2 days ago" "$MOCK_HOME/.gemini/tmp/new_link.tmp"
 
   # Setup a bad symlink (Symlink Guard test)
   # bad_symlink itself points to OUTSIDE_DIR
@@ -82,8 +93,8 @@ safe|Yarn Cache|\$HOME/.cache/yarn|Mock Yarn package cache|0|mock_running_proc
 safe|Tilde Tilde Test|\$HOME/tilde~test|Tilde character in name test|0|
 safe|Symlink Danger|\$HOME/bad_symlink|Symlink pointing to outside dir|0|
 safe|Outside HOME Target|$OUTSIDE_DIR|Target outside HOME boundary|0|
-medium|Medium Risk Target|\$HOME/.cache/yarn|Mock medium risk|0|
-danger|Danger Risk Target|\$HOME/.cache/yarn|Mock danger risk|0|
+medium|Medium Risk Target|\$HOME/.cache/medium_test|Mock medium risk|0|
+danger|Danger Risk Target|\$HOME/.cache/danger_test|Mock danger risk|0|
 EOF
 }
 
@@ -98,7 +109,7 @@ run_test_case() {
   
   # Export mock HOME and prepend mock bin to PATH so cleaner uses the mocked pgrep
   local exit_code=0
-  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" "$@" > "$TEST_ENV_DIR/$log_filename" 2>&1 || exit_code=$?
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" "$@" < /dev/null > "$TEST_ENV_DIR/$log_filename" 2>&1 || exit_code=$?
   
   if [[ $exit_code -ne $expected_exit ]]; then
     echo -e "${RED}FAIL: Expected exit code $expected_exit, got $exit_code${NC}"
@@ -114,15 +125,15 @@ run_test_case() {
 
 setup_mock_env
 
-# 1. Test Case: Dry Run Mode
-if run_test_case "Dry Run Mode (Default)" 0 "dry_run.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run; then
+# 1. Test Case: Dry Run Mode (Default without flags)
+  if run_test_case "Dry Run Mode (Default)" 0 "dry_run.log" --config "$TEST_ENV_DIR/test_cleaner.conf"; then
   # Verify that no files were deleted
   if [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] && \
      [[ -f "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] && \
      [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
-    echo -e "${GREEN}PASS: Dry run completed and no files were deleted.${NC}"
+    echo -e "${GREEN}PASS: Dry run (default mode) completed and no files were deleted.${NC}"
   else
-    echo -e "${RED}FAIL: Dry run deleted files!${NC}"
+    echo -e "${RED}FAIL: Dry run default mode deleted files!${NC}"
     exit 1
   fi
   
@@ -219,13 +230,18 @@ fi
 # 5. Test Case: Age Filter execution (Force Clean)
 setup_mock_env
 if run_test_case "Age Filter Execution" 0 "age_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then
-  # Check that old_file.tmp is deleted, but new_file.tmp is kept
-  if [[ ! -f "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] && [[ -f "$MOCK_HOME/.gemini/tmp/new_file.tmp" ]]; then
-    echo -e "${GREEN}PASS: Age filter deleted old file (> 7 days) and preserved new file (< 7 days).${NC}"
+  # Check that old files/symlinks are deleted, but new files/symlinks are kept
+  if [[ ! -f "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] && \
+     [[ ! -L "$MOCK_HOME/.gemini/tmp/old_link.tmp" ]] && \
+     [[ -f "$MOCK_HOME/.gemini/tmp/new_file.tmp" ]] && \
+     [[ -L "$MOCK_HOME/.gemini/tmp/new_link.tmp" ]]; then
+    echo -e "${GREEN}PASS: Age filter deleted old files/symlinks and preserved new files/symlinks.${NC}"
   else
-    echo -e "${RED}FAIL: Age filter did not execute correctly.${NC}"
+    echo -e "${RED}FAIL: Age filter did not execute correctly for files or symlinks.${NC}"
     echo "Exists old file: $([[ -f "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] && echo "yes" || echo "no")"
+    echo "Exists old symlink: $([[ -L "$MOCK_HOME/.gemini/tmp/old_link.tmp" ]] && echo "yes" || echo "no")"
     echo "Exists new file: $([[ -f "$MOCK_HOME/.gemini/tmp/new_file.tmp" ]] && echo "yes" || echo "no")"
+    echo "Exists new symlink: $([[ -L "$MOCK_HOME/.gemini/tmp/new_link.tmp" ]] && echo "yes" || echo "no")"
     exit 1
   fi
 else
@@ -236,13 +252,13 @@ fi
 setup_mock_env
 if run_test_case "Trash Quarantine Mode" 0 "trash_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
   # Verify files are moved to quarantine folder inside mock HOME
-  # Target NPM Cache should be quarantined
+  # Target NPM Cache should be quarantined under 0_NPM_Cache
   quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
   if [[ -d "$quarantine_base" ]]; then
     # Find quarantined file
-    quarantined_npm_file=$(find "$quarantine_base" -path "*/NPM Cache/cache1.txt")
+    quarantined_npm_file=$(find "$quarantine_base" -path "*/0_NPM_Cache/cache1.txt")
     if [[ -f "$quarantined_npm_file" ]]; then
-      echo -e "${GREEN}PASS: NPM Cache file successfully quarantined to '$quarantined_npm_file'.${NC}"
+      echo -e "${GREEN}PASS: NPM Cache file successfully quarantined to '$quarantined_npm_file' with sanitized index prefix.${NC}"
     else
       echo -e "${RED}FAIL: NPM Cache file not found in quarantine.${NC}"
       find "$quarantine_base"
@@ -258,6 +274,85 @@ if run_test_case "Trash Quarantine Mode" 0 "trash_clean.log" --config "$TEST_ENV
     echo -e "${GREEN}PASS: Original cache folder removed from mock HOME.${NC}"
   else
     echo -e "${RED}FAIL: Original cache folder still exists in mock HOME.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# 7. Test Case: Unknown Risk Levels error handling
+setup_mock_env
+# A. CLI option risk level typo
+if run_test_case "CLI Unknown Risk Level" 1 "cli_bad_risk.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --risk typo_risk; then
+  if grep -q "Error: Unknown risk level 'typo_risk'" "$TEST_ENV_DIR/cli_bad_risk.log"; then
+    echo -e "${GREEN}PASS: Script correctly errored and exited on unknown CLI risk level.${NC}"
+  else
+    echo -e "${RED}FAIL: Script errored but error message was unexpected.${NC}"
+    cat "$TEST_ENV_DIR/cli_bad_risk.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Script did not exit with expected code 1 on unknown CLI risk level.${NC}"
+  exit 1
+fi
+
+# B. Configuration risk level typo
+cat << EOF > "$TEST_ENV_DIR/bad_config.conf"
+typo_risk|Bad target|\$HOME/.cache/yarn|Mock bad config target|0|
+EOF
+if run_test_case "Config Unknown Risk Level" 1 "config_bad_risk.log" --config "$TEST_ENV_DIR/bad_config.conf"; then
+  if grep -q "Error: Unknown risk level 'typo_risk'" "$TEST_ENV_DIR/config_bad_risk.log"; then
+    echo -e "${GREEN}PASS: Script correctly errored and exited on unknown risk level in config.${NC}"
+  else
+    echo -e "${RED}FAIL: Script errored but error message was unexpected.${NC}"
+    cat "$TEST_ENV_DIR/config_bad_risk.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Script did not exit with expected code 1 on unknown risk level in config.${NC}"
+  exit 1
+fi
+
+# 8. Test Case: Danger Target confirmation guard
+setup_mock_env
+# A. Under --force without --yes-danger, the danger target should be skipped
+if run_test_case "Danger Target Force Skip" 0 "danger_force_skip.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --risk danger --force; then
+  if grep -q "Danger target 'Danger Risk Target'" "$TEST_ENV_DIR/danger_force_skip.log" && \
+     grep -q "Skipping Danger Risk Target" "$TEST_ENV_DIR/danger_force_skip.log"; then
+    echo -e "${GREEN}PASS: Danger target was skipped under --force without --yes-danger.${NC}"
+  else
+    echo -e "${RED}FAIL: Danger target confirmation guard was bypassed or did not log correctly.${NC}"
+    cat "$TEST_ENV_DIR/danger_force_skip.log"
+    exit 1
+  fi
+  
+  # Ensure the target directory itself was NOT deleted
+  if [[ -d "$MOCK_HOME/.cache/danger_test" ]]; then
+    echo -e "${GREEN}PASS: Danger target directory was preserved.${NC}"
+  else
+    echo -e "${RED}FAIL: Danger target directory was deleted despite lack of --yes-danger flag.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# B. Under --force with --yes-danger, the danger target should be deleted
+setup_mock_env
+if run_test_case "Danger Target Cleaned with Bypass" 0 "danger_bypass.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --risk danger --force --yes-danger; then
+  if grep -q "Cleaning Danger Risk Target" "$TEST_ENV_DIR/danger_bypass.log"; then
+    echo -e "${GREEN}PASS: Danger target was processed successfully.${NC}"
+  else
+    echo -e "${RED}FAIL: Danger target clean statement not found in log.${NC}"
+    cat "$TEST_ENV_DIR/danger_bypass.log"
+    exit 1
+  fi
+  
+  # Ensure the target directory itself WAS deleted
+  if [[ ! -d "$MOCK_HOME/.cache/danger_test" ]]; then
+    echo -e "${GREEN}PASS: Danger target directory was successfully deleted.${NC}"
+  else
+    echo -e "${RED}FAIL: Danger target directory was not deleted despite --yes-danger flag.${NC}"
     exit 1
   fi
 else

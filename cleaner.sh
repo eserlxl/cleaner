@@ -36,9 +36,11 @@ Safely clean cache and temporary files defined in a configuration file.
 
 Options:
   -c, --config FILE          Path to custom configuration file (default: ./cleaner.conf)
-  -d, --dry-run              Calculate and display potential space savings without deleting anything.
+  -d, --dry-run              Calculate and display potential space savings without deleting anything (default).
+  --clean                    Perform cleanup with a summary confirmation prompt.
   -i, --interactive          Prompt for confirmation before cleaning each target.
-  -f, --force                Perform cleaning immediately without any confirmation prompts.
+  -f, --force                Perform cleaning immediately without any confirmation prompts (except danger level).
+  --yes-danger               Bypass manual confirmation prompt for danger risk targets.
   -t, --trash                Move files to quarantine instead of permanent deletion.
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
@@ -47,9 +49,10 @@ EOF
 }
 
 # Default flags
-DRY_RUN=false
+DRY_RUN=true
 INTERACTIVE=false
 FORCE=false
+YES_DANGER=false
 TRASH_MODE=false
 MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
@@ -69,12 +72,22 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=true
       shift
       ;;
+    --clean)
+      DRY_RUN=false
+      shift
+      ;;
     -i|--interactive)
       INTERACTIVE=true
+      DRY_RUN=false
       shift
       ;;
     -f|--force)
       FORCE=true
+      DRY_RUN=false
+      shift
+      ;;
+    --yes-danger)
+      YES_DANGER=true
       shift
       ;;
     -t|--trash)
@@ -201,16 +214,16 @@ has_matching_files() {
   local age_days="$2"
   
   if [[ "$age_days" -le 0 ]]; then
-    [[ -e "$target_path" ]] && return 0
+    [[ -e "$target_path" || -L "$target_path" ]] && return 0
     return 1
   fi
   
-  if [[ -d "$target_path" ]]; then
-    # Check if there is any file inside older than age_days
+  if [[ -d "$target_path" && ! -L "$target_path" ]]; then
+    # Check if there is any file or symlink inside older than age_days
     # find -print -quit exits 0 if a match is found
-    [[ -n $(find "$target_path" -mindepth 1 -type f -mtime +"$age_days" -print -quit) ]] && return 0
+    [[ -n $(find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -print -quit) ]] && return 0
   else
-    # Single file
+    # Single file or symlink
     [[ -n $(find "$target_path" -mtime +"$age_days" -print -quit) ]] && return 0
   fi
   return 1
@@ -221,18 +234,18 @@ get_size_bytes() {
   local target_path="$1"
   local age_days="${2:-0}"
   
-  if [[ ! -e "$target_path" ]]; then
+  if [[ ! -e "$target_path" && ! -L "$target_path" ]]; then
     echo 0
     return
   fi
   
   if [[ "$age_days" -gt 0 ]]; then
-    if [[ -d "$target_path" ]]; then
-      # Sum size of files older than age_days within the directory
-      find "$target_path" -mindepth 1 -type f -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
+    if [[ -d "$target_path" && ! -L "$target_path" ]]; then
+      # Sum size of files/symlinks older than age_days within the directory
+      find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
     else
-      # If target is a file, check if it's older than age_days
-      if [[ $(find "$target_path" -mtime +"$age_days") ]]; then
+      # If target is a file or symlink, check if it's older than age_days
+      if [[ -n $(find "$target_path" -mtime +"$age_days" -print -quit) ]]; then
         du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
       else
         echo 0
@@ -297,12 +310,15 @@ risk_to_int() {
     safe) echo 1 ;;
     medium) echo 2 ;;
     danger|dangerous) echo 3 ;;
-    *) echo 1 ;;
+    *)
+      echo -e "${RED}Error: Unknown risk level '$1'. Valid levels are: safe, medium, danger.${NC}" >&2
+      exit 1
+      ;;
   esac
 }
 
 # Parse custom max risk
-MAX_RISK_INT=$(risk_to_int "$MAX_RISK")
+MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
 # Header output
 echo -e "${BOLD}${BLUE}=== Linux Cache & Temp File Cleaner ===${NC}"
@@ -323,6 +339,7 @@ parsed_sizes=()
 parsed_exists=()
 parsed_safety=()
 parsed_ages=()
+parsed_risks=()
 
 total_reclaimable_bytes=0
 
@@ -342,7 +359,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$ris
   check_procs=$(trim "${check_procs:-}")
   
   # Map risk levels
-  target_risk_int=$(risk_to_int "$risk")
+  target_risk_int=$(risk_to_int "$risk") || exit 1
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
     # Skip target quietly or verbosely
     continue
@@ -437,6 +454,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$ris
   parsed_exists+=("$exists")
   parsed_safety+=("$safety_status")
   parsed_ages+=("$min_age")
+  parsed_risks+=("$risk")
   
 done < "$CONFIG_FILE"
 
@@ -463,7 +481,7 @@ if [[ "$FORCE" = true ]]; then
 elif [[ "$INTERACTIVE" = false ]]; then
   # Default mode: ask for confirmation once for everything
   echo -n -e "${BOLD}Do you want to clean all the found items? [y/N]: ${NC}"
-  read -r reply
+  read -r reply || true
   if [[ "$reply" =~ ^[yY](es)?$ ]]; then
     proceed_all=true
   else
@@ -492,16 +510,29 @@ for i in "${!parsed_names[@]}"; do
   exists="${parsed_exists[$i]}"
   safety="${parsed_safety[$i]}"
   age="${parsed_ages[$i]}"
+  risk_level="${parsed_risks[$i]}"
   
   # Skip targets that don't exist, are unsafe, or had 0 B reclaimable size
   if [[ "$exists" != true || "$safety" -eq 1 ]]; then
     continue
   fi
   
+  # Dangerous Confirmation Guard
+  danger_prompted=false
+  if [[ "${risk_level,,}" =~ ^danger(ous)?$ && "$YES_DANGER" != true ]]; then
+    echo -n -e "${RED}Danger target '$name' ($path) requires explicit confirmation. Clean anyway? [y/N]: ${NC}"
+    read -r reply || true
+    if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
+      echo -e "  Skipping $name..."
+      continue
+    fi
+    danger_prompted=true
+  fi
+  
   # If outside home and not forced, extra warning
-  if [[ "$safety" -eq 2 && "$FORCE" != true && "$proceed_all" = true ]]; then
+  if [[ "$safety" -eq 2 && "$FORCE" != true && "$proceed_all" = true && "$danger_prompted" != true ]]; then
     echo -n -e "${YELLOW}Warning: Target '$name' points outside HOME ('$path'). Clean anyway? [y/N]: ${NC}"
-    read -r reply
+    read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
       echo -e "  Skipping $name..."
       continue
@@ -509,14 +540,14 @@ for i in "${!parsed_names[@]}"; do
   fi
   
   # Interactive mode confirmation (ask for each target)
-  if [[ "$INTERACTIVE" = true && "$proceed_all" = false ]]; then
+  if [[ "$INTERACTIVE" = true && "$proceed_all" = false && "$danger_prompted" != true ]]; then
     readable_size=$(format_bytes "$size")
     if [[ "$age" -gt 0 ]]; then
       echo -n -e "Clean old files (> $age days) in '$name' ($readable_size) at '$path'? [y/N]: "
     else
       echo -n -e "Clean target '$name' ($readable_size) at '$path'? [y/N]: "
     fi
-    read -r reply
+    read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
       echo -e "  Skipping $name..."
       continue
@@ -527,12 +558,13 @@ for i in "${!parsed_names[@]}"; do
   if [[ "$TRASH_MODE" = true ]]; then
     echo -e "  Moving ${YELLOW}$name${NC} to quarantine..."
     
-    q_target="$QUARANTINE_DIR/$name"
+    safe_name=$(printf '%s' "$name" | tr '/[:space:]' '__')
+    q_target="$QUARANTINE_DIR/${i}_${safe_name}"
     mkdir -p "$(dirname "$q_target")"
     
     success=true
     if [[ "$age" -gt 0 ]]; then
-      # Age filtered quarantine: Move only matching files, recreate relative structure
+      # Age filtered quarantine: Move only matching files/symlinks, recreate relative structure
       mkdir -p "$q_target"
       # Find and process
       while IFS= read -r -d '' file; do
@@ -542,7 +574,7 @@ for i in "${!parsed_names[@]}"; do
         if ! mv "$file" "$dest_file"; then
           success=false
         fi
-      done < <(find "$path" -mindepth 1 -type f -mtime +"$age" -print0)
+      done < <(find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -print0)
       
       # Prune empty subdirs
       find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
@@ -563,7 +595,7 @@ for i in "${!parsed_names[@]}"; do
     # Permanent Deletion Mode
     if [[ "$age" -gt 0 ]]; then
       echo -e "  Cleaning files older than $age days in ${YELLOW}$name${NC}..."
-      if find "$path" -mindepth 1 -type f -mtime +"$age" -delete && \
+      if find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -delete && \
          find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
         total_deleted_bytes=$((total_deleted_bytes + size))
       else
