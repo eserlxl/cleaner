@@ -408,6 +408,18 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_c
   check_procs=$(trim "${check_procs:-}")
   custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
   
+  # Validate custom clean action if provided
+  if [[ -n "$custom_clean_cmd" ]]; then
+    case "$custom_clean_cmd" in
+      action:paccache_keep3|action:pacman_clean)
+        ;;
+      *)
+        echo -e "${RED}Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk") || exit 1
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
@@ -456,7 +468,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_c
         echo -e "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
         # Determine if sudo is needed
-        if [[ "$custom_clean_cmd" =~ sudo ]] || \
+        if [[ "$custom_clean_cmd" == action:* ]] || \
            [[ -e "$path" && ! -r "$path" ]] || \
            { [[ ! -e "$path" ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; }; then
           use_sudo=true
@@ -640,14 +652,27 @@ for i in "${!parsed_names[@]}"; do
 
   if [[ -n "$custom_clean_cmd" ]]; then
     if [[ "$TRASH_MODE" = true ]]; then
-      echo -e "  Target '$name' uses a custom cleanup command; bypassing quarantine and executing command directly..."
+      echo -e "  Target '$name' uses a predefined action; bypassing quarantine and executing action directly..."
     else
-      echo -e "  Executing custom command for ${YELLOW}$name${NC}..."
+      echo -e "  Executing action for ${YELLOW}$name${NC}..."
     fi
-    if eval "$custom_clean_cmd"; then
+    action_success=false
+    case "$custom_clean_cmd" in
+      action:paccache_keep3)
+        if sudo paccache -rk3; then
+          action_success=true
+        fi
+        ;;
+      action:pacman_clean)
+        if sudo pacman -Sc --noconfirm; then
+          action_success=true
+        fi
+        ;;
+    esac
+    if [[ "$action_success" = true ]]; then
       total_deleted_bytes=$((total_deleted_bytes + size))
     else
-      echo -e "  ${RED}Error: Custom command for '$name' failed.${NC}" >&2
+      echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
     fi
     continue
   fi

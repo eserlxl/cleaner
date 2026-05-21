@@ -76,6 +76,22 @@ done
 exec "$@"
 EOF
   chmod +x "$TEST_ENV_DIR/bin/sudo"
+ 
+  cat << 'EOF' > "$TEST_ENV_DIR/bin/paccache"
+#!/usr/bin/env bash
+# Mock paccache command
+echo "Mock paccache called with: $@"
+exit 0
+EOF
+  chmod +x "$TEST_ENV_DIR/bin/paccache"
+
+  cat << 'EOF' > "$TEST_ENV_DIR/bin/pacman"
+#!/usr/bin/env bash
+# Mock pacman command
+echo "Mock pacman called with: $@"
+exit 0
+EOF
+  chmod +x "$TEST_ENV_DIR/bin/pacman"
 
   # Create dummy files
   echo "dummy npm cache" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
@@ -105,16 +121,16 @@ EOF
 
   # Create test configuration file (pipe-delimited)
   cat << EOF > "$TEST_ENV_DIR/test_cleaner.conf"
-# RISK|NAME|PATH|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES
-safe|NPM Cache|\$HOME/.npm/_cacache|Mock NPM cache|0|node,npm
-safe|Gemini Temp|\$HOME/.gemini/tmp|Mock Gemini temporary files|7|gemini
-safe|Aurman Cache|\$HOME/.cache/aurman|Mock Aurman package cache|0|aurman
-safe|Yarn Cache|\$HOME/.cache/yarn|Mock Yarn package cache|0|mock_running_proc
-safe|Tilde Tilde Test|\$HOME/tilde~test|Tilde character in name test|0|
-safe|Symlink Danger|\$HOME/bad_symlink|Symlink pointing to outside dir|0|
-safe|Outside HOME Target|$OUTSIDE_DIR|Target outside HOME boundary|0|
-medium|Medium Risk Target|\$HOME/.cache/medium_test|Mock medium risk|0|
-danger|Danger Risk Target|\$HOME/.cache/danger_test|Mock danger risk|0|
+# RISK|NAME|PATH|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|ACTION
+safe|NPM Cache|\$HOME/.npm/_cacache|Mock NPM cache|0|node,npm|
+safe|Gemini Temp|\$HOME/.gemini/tmp|Mock Gemini temporary files|7|gemini|
+safe|Aurman Cache|\$HOME/.cache/aurman|Mock Aurman package cache|0|aurman|
+safe|Yarn Cache|\$HOME/.cache/yarn|Mock Yarn package cache|0|mock_running_proc|
+safe|Tilde Tilde Test|\$HOME/tilde~test|Tilde character in name test|0||
+safe|Symlink Danger|\$HOME/bad_symlink|Symlink pointing to outside dir|0||
+safe|Outside HOME Target|$OUTSIDE_DIR|Target outside HOME boundary|0||
+medium|Medium Risk Target|\$HOME/.cache/medium_test|Mock medium risk|0||
+danger|Danger Risk Target|\$HOME/.cache/danger_test|Mock danger risk|0||
 EOF
 }
 
@@ -379,18 +395,18 @@ else
   exit 1
 fi
 
-# 9. Test Case: Sudo and Custom Clean Command Support
+# 9. Test Case: Predefined Action Support
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/sudo_custom_config.conf"
-safe|Sudo Target Outside HOME|$OUTSIDE_DIR|Root owned outside HOME target|0||sudo rm -rf $OUTSIDE_DIR
+safe|Pacman Cache (Keep 3)|$OUTSIDE_DIR|Mock Pacman Cache|0||action:paccache_keep3
 EOF
 
-if run_test_case "Sudo and Custom Clean Command" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home; then
-  # Check if custom command executed and deleted the directory
-  if [[ ! -d "$OUTSIDE_DIR" ]]; then
-    echo -e "${GREEN}PASS: Custom clean command containing sudo executed successfully and deleted the target.${NC}"
+if run_test_case "Predefined Action" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home; then
+  # Check if mock paccache was executed with correct arguments
+  if grep -q "Mock paccache called with: -rk3" "$TEST_ENV_DIR/sudo_custom.log"; then
+    echo -e "${GREEN}PASS: Predefined action executed successfully.${NC}"
   else
-    echo -e "${RED}FAIL: Target directory was not deleted by custom clean command.${NC}"
+    echo -e "${RED}FAIL: Predefined action was not executed or logged.${NC}"
     cat "$TEST_ENV_DIR/sudo_custom.log"
     exit 1
   fi
