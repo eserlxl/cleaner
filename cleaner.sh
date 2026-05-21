@@ -180,10 +180,10 @@ format_bytes() {
   local unit_idx=0
   local size=$bytes
   
-  # Use awk to handle division with float precision
-  while [[ $(echo "$size >= 1024" | bc -l) -eq 1 && $unit_idx -lt 4 ]]; do
+  # Use awk to handle comparison and division with float precision
+  while [[ $(awk "BEGIN {print ($size >= 1024 ? 1 : 0)}") -eq 1 && $unit_idx -lt 4 ]]; do
     size=$(awk "BEGIN {printf \"%.2f\", $size / 1024}")
-    ((unit_idx++))
+    unit_idx=$((unit_idx + 1))
   done
   
   # Strip unnecessary trailing .00

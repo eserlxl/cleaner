@@ -44,6 +44,7 @@ setup_mock_env() {
   # Create dummy files with specific sizes
   # dd or truncate works. Let's use echo/dd to populate
   echo "dummy npm cache" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
+  truncate -s 2M "$MOCK_HOME/.npm/_cacache/cache1.txt"
   echo "dummy gemini temp file" > "$MOCK_HOME/.gemini/tmp/temp1.tmp"
   echo "dummy aurman pkg" > "$MOCK_HOME/.cache/aurman/pkg1.tar.zst"
   echo "dummy yarn cache" > "$MOCK_HOME/.cache/yarn/yarn-cache.json"
@@ -93,7 +94,14 @@ if run_test_case "Dry Run Mode" 0 "dry_run.log" --config "$TEST_ENV_DIR/test_cle
   if [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] && \
      [[ -f "$MOCK_HOME/.gemini/tmp/temp1.tmp" ]] && \
      [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
-    echo -e "${GREEN}PASS: Dry run completed and no files were deleted.${NC}"
+    # Verify size formatting (2 MB) works
+    if grep -q "NPM Cache (2 MB)" "$TEST_ENV_DIR/dry_run.log"; then
+      echo -e "${GREEN}PASS: Dry run completed, size formatting verified (2 MB).${NC}"
+    else
+      echo -e "${RED}FAIL: Dry run completed, but size formatting assertion failed (could not find 'NPM Cache (2 MB)').${NC}"
+      cat "$TEST_ENV_DIR/dry_run.log"
+      exit 1
+    fi
   else
     echo -e "${RED}FAIL: Dry run deleted files!${NC}"
     exit 1
