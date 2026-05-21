@@ -57,6 +57,26 @@ fi
 EOF
   chmod +x "$TEST_ENV_DIR/bin/pgrep"
 
+  cat << 'EOF' > "$TEST_ENV_DIR/bin/sudo"
+#!/usr/bin/env bash
+# Mock sudo command
+
+# Handle flags
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|-v)
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+exec "$@"
+EOF
+  chmod +x "$TEST_ENV_DIR/bin/sudo"
+
   # Create dummy files
   echo "dummy npm cache" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
   truncate -s 2M "$MOCK_HOME/.npm/_cacache/cache1.txt"
@@ -353,6 +373,25 @@ if run_test_case "Danger Target Cleaned with Bypass" 0 "danger_bypass.log" --con
     echo -e "${GREEN}PASS: Danger target directory was successfully deleted.${NC}"
   else
     echo -e "${RED}FAIL: Danger target directory was not deleted despite --yes-danger flag.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# 9. Test Case: Sudo and Custom Clean Command Support
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/sudo_custom_config.conf"
+safe|Sudo Target Outside HOME|$OUTSIDE_DIR|Root owned outside HOME target|0||sudo rm -rf $OUTSIDE_DIR
+EOF
+
+if run_test_case "Sudo and Custom Clean Command" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home; then
+  # Check if custom command executed and deleted the directory
+  if [[ ! -d "$OUTSIDE_DIR" ]]; then
+    echo -e "${GREEN}PASS: Custom clean command containing sudo executed successfully and deleted the target.${NC}"
+  else
+    echo -e "${RED}FAIL: Target directory was not deleted by custom clean command.${NC}"
+    cat "$TEST_ENV_DIR/sudo_custom.log"
     exit 1
   fi
 else

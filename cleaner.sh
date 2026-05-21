@@ -162,6 +162,14 @@ strip_trailing_slashes() {
   fi
 }
 
+# Ensure sudo is authenticated
+ensure_sudo() {
+  if ! sudo -n true 2>/dev/null; then
+    echo -e "${YELLOW}Target(s) require root privileges. Please authenticate for sudo:${NC}"
+    sudo -v || exit 1
+  fi
+}
+
 # Check if the path is safe to delete
 # Returns:
 #   0 if safe
@@ -212,19 +220,29 @@ check_path_safety() {
 has_matching_files() {
   local target_path="$1"
   local age_days="$2"
+  local use_sudo="${3:-false}"
   
+  local cmd_prefix=""
+  if [[ "$use_sudo" = true ]]; then
+    cmd_prefix="sudo "
+  fi
+
   if [[ "$age_days" -le 0 ]]; then
-    [[ -e "$target_path" || -L "$target_path" ]] && return 0
+    if [[ "$use_sudo" = true ]]; then
+      sudo test -e "$target_path" || sudo test -L "$target_path" && return 0
+    else
+      [[ -e "$target_path" || -L "$target_path" ]] && return 0
+    fi
     return 1
   fi
   
   if [[ -d "$target_path" && ! -L "$target_path" ]]; then
     # Check if there is any file or symlink inside older than age_days
     # find -print -quit exits 0 if a match is found
-    [[ -n $(find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -print -quit) ]] && return 0
+    [[ -n $($cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
   else
     # Single file or symlink
-    [[ -n $(find "$target_path" -mtime +"$age_days" -print -quit) ]] && return 0
+    [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
   fi
   return 1
 }
@@ -233,27 +251,56 @@ has_matching_files() {
 get_size_bytes() {
   local target_path="$1"
   local age_days="${2:-0}"
+  local use_sudo="${3:-false}"
   
-  if [[ ! -e "$target_path" && ! -L "$target_path" ]]; then
+  local cmd_prefix=""
+  if [[ "$use_sudo" = true ]]; then
+    cmd_prefix="sudo "
+  fi
+
+  # Check existence. If sudo is required, check via sudo test
+  local exists=false
+  if [[ "$use_sudo" = true ]]; then
+    if sudo test -e "$target_path" || sudo test -L "$target_path"; then
+      exists=true
+    fi
+  else
+    if [[ -e "$target_path" || -L "$target_path" ]]; then
+      exists=true
+    fi
+  fi
+
+  if [[ "$exists" = false ]]; then
     echo 0
     return
   fi
   
+  # Check if directory and if symlink
+  local is_dir=false
+  local is_link=false
+  if [[ "$use_sudo" = true ]]; then
+    if sudo test -d "$target_path" && ! sudo test -L "$target_path"; then is_dir=true; fi
+    if sudo test -L "$target_path"; then is_link=true; fi
+  else
+    if [[ -d "$target_path" && ! -L "$target_path" ]]; then is_dir=true; fi
+    if [[ -L "$target_path" ]]; then is_link=true; fi
+  fi
+
   if [[ "$age_days" -gt 0 ]]; then
-    if [[ -d "$target_path" && ! -L "$target_path" ]]; then
+    if [[ "$is_dir" = true && "$is_link" = false ]]; then
       # Sum size of files/symlinks older than age_days within the directory
-      find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
+      $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
     else
       # If target is a file or symlink, check if it's older than age_days
-      if [[ -n $(find "$target_path" -mtime +"$age_days" -print -quit) ]]; then
-        du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
+      if [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]]; then
+        $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
       else
         echo 0
       fi
     fi
   else
     # Apparent size of entire target
-    du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
+    $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
   fi
 }
 
@@ -340,6 +387,8 @@ parsed_exists=()
 parsed_safety=()
 parsed_ages=()
 parsed_risks=()
+parsed_cmds=()
+parsed_sudos=()
 
 total_reclaimable_bytes=0
 
@@ -347,7 +396,7 @@ total_reclaimable_bytes=0
 echo -e "${BOLD}Analyzing targets...${NC}"
 
 # Read configuration file line by line
-while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$risk" ]]; do
+while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd || [[ -n "$risk" ]]; do
   # Trim and check empty/comment
   risk=$(trim "$risk")
   [[ -z "$risk" || "$risk" =~ ^# ]] && continue
@@ -357,6 +406,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$ris
   desc=$(trim "$desc")
   min_age=$(trim "$min_age")
   check_procs=$(trim "${check_procs:-}")
+  custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
   
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk") || exit 1
@@ -387,6 +437,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$ris
   
   exists=false
   size_bytes=0
+  use_sudo=false
   
   if [[ $safety_status -eq 1 ]]; then
     echo -e "  [${RED}UNSAFE${NC}] $name: Path '$path' is a protected system directory! Skipping."
@@ -404,18 +455,45 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$ris
       if [[ -n "$running_proc" ]]; then
         echo -e "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
-        if [[ -e "$path" ]]; then
-          size_bytes=$(get_size_bytes "$path" "$min_age")
+        # Determine if sudo is needed
+        if [[ "$custom_clean_cmd" =~ sudo ]] || \
+           [[ -e "$path" && ! -r "$path" ]] || \
+           { [[ ! -e "$path" ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; }; then
+          use_sudo=true
+          ensure_sudo
+        fi
+
+        path_exists=false
+        if [[ "$use_sudo" = true ]]; then
+          if sudo test -e "$path" || sudo test -L "$path"; then
+            path_exists=true
+          fi
+        else
+          if [[ -e "$path" || -L "$path" ]]; then
+            path_exists=true
+          fi
+        fi
+
+        if [[ "$path_exists" = true ]]; then
+          size_bytes=$(get_size_bytes "$path" "$min_age" "$use_sudo")
           readable_size=$(format_bytes "$size_bytes")
           
           should_clean=false
           if [[ "$min_age" -gt 0 ]]; then
-            if has_matching_files "$path" "$min_age"; then
+            if has_matching_files "$path" "$min_age" "$use_sudo"; then
               should_clean=true
             fi
           else
-            if [[ ! -d "$path" ]] || [[ "$size_bytes" -gt 0 ]]; then
-              should_clean=true
+            if [[ "$use_sudo" = true ]]; then
+              is_dir=false
+              if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
+              if [[ "$is_dir" = false ]] || [[ "$size_bytes" -gt 0 ]]; then
+                should_clean=true
+              fi
+            else
+              if [[ ! -d "$path" ]] || [[ "$size_bytes" -gt 0 ]]; then
+                should_clean=true
+              fi
             fi
           fi
           
@@ -455,6 +533,8 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs || [[ -n "$ris
   parsed_safety+=("$safety_status")
   parsed_ages+=("$min_age")
   parsed_risks+=("$risk")
+  parsed_cmds+=("$custom_clean_cmd")
+  parsed_sudos+=("$use_sudo")
   
 done < "$CONFIG_FILE"
 
@@ -555,33 +635,74 @@ for i in "${!parsed_names[@]}"; do
   fi
   
   # Handle Cleanup
+  custom_clean_cmd="${parsed_cmds[$i]:-}"
+  use_sudo="${parsed_sudos[$i]:-false}"
+
+  if [[ -n "$custom_clean_cmd" ]]; then
+    if [[ "$TRASH_MODE" = true ]]; then
+      echo -e "  Target '$name' uses a custom cleanup command; bypassing quarantine and executing command directly..."
+    else
+      echo -e "  Executing custom command for ${YELLOW}$name${NC}..."
+    fi
+    if eval "$custom_clean_cmd"; then
+      total_deleted_bytes=$((total_deleted_bytes + size))
+    else
+      echo -e "  ${RED}Error: Custom command for '$name' failed.${NC}" >&2
+    fi
+    continue
+  fi
+
   if [[ "$TRASH_MODE" = true ]]; then
     echo -e "  Moving ${YELLOW}$name${NC} to quarantine..."
     
     safe_name=$(printf '%s' "$name" | tr '/[:space:]' '__')
     q_target="$QUARANTINE_DIR/${i}_${safe_name}"
-    mkdir -p "$(dirname "$q_target")"
+    
+    if [[ "$use_sudo" = true ]]; then
+      sudo mkdir -p "$(dirname "$q_target")"
+    else
+      mkdir -p "$(dirname "$q_target")"
+    fi
     
     success=true
     if [[ "$age" -gt 0 ]]; then
       # Age filtered quarantine: Move only matching files/symlinks, recreate relative structure
-      mkdir -p "$q_target"
-      # Find and process
-      while IFS= read -r -d '' file; do
-        rel_path="${file#$path/}"
-        dest_file="$q_target/$rel_path"
-        mkdir -p "$(dirname "$dest_file")"
-        if ! mv "$file" "$dest_file"; then
-          success=false
-        fi
-      done < <(find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -print0)
-      
-      # Prune empty subdirs
-      find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+      if [[ "$use_sudo" = true ]]; then
+        sudo mkdir -p "$q_target"
+        while IFS= read -r -d '' file; do
+          rel_path="${file#$path/}"
+          dest_file="$q_target/$rel_path"
+          sudo mkdir -p "$(dirname "$dest_file")"
+          if ! sudo mv "$file" "$dest_file"; then
+            success=false
+          fi
+        done < <(sudo find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -print0)
+        sudo chown -R "$(id -u):$(id -g)" "$q_target"
+        sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+      else
+        mkdir -p "$q_target"
+        while IFS= read -r -d '' file; do
+          rel_path="${file#$path/}"
+          dest_file="$q_target/$rel_path"
+          mkdir -p "$(dirname "$dest_file")"
+          if ! mv "$file" "$dest_file"; then
+            success=false
+          fi
+        done < <(find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -print0)
+        find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+      fi
     else
       # Full folder quarantine
-      if ! mv "$path" "$q_target"; then
-        success=false
+      if [[ "$use_sudo" = true ]]; then
+        if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
+          success=true
+        else
+          success=false
+        fi
+      else
+        if ! mv "$path" "$q_target"; then
+          success=false
+        fi
       fi
     fi
     
@@ -594,19 +715,38 @@ for i in "${!parsed_names[@]}"; do
   else
     # Permanent Deletion Mode
     if [[ "$age" -gt 0 ]]; then
-      echo -e "  Cleaning files older than $age days in ${YELLOW}$name${NC}..."
-      if find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -delete && \
-         find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
-        total_deleted_bytes=$((total_deleted_bytes + size))
+      if [[ "$use_sudo" = true ]]; then
+        echo -e "  Cleaning files older than $age days in ${YELLOW}$name${NC} with sudo..."
+        if sudo find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -delete && \
+           sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
+          total_deleted_bytes=$((total_deleted_bytes + size))
+        else
+          echo -e "  ${RED}Error: Failed to completely clean aged files in '$path' with sudo${NC}" >&2
+        fi
       else
-        echo -e "  ${RED}Error: Failed to completely clean aged files in '$path'${NC}" >&2
+        echo -e "  Cleaning files older than $age days in ${YELLOW}$name${NC}..."
+        if find "$path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age" -delete && \
+           find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
+          total_deleted_bytes=$((total_deleted_bytes + size))
+        else
+          echo -e "  ${RED}Error: Failed to completely clean aged files in '$path'${NC}" >&2
+        fi
       fi
     else
-      echo -e "  Cleaning ${YELLOW}$name${NC} at '$path'..."
-      if rm -rf "$path"; then
-        total_deleted_bytes=$((total_deleted_bytes + size))
+      if [[ "$use_sudo" = true ]]; then
+        echo -e "  Cleaning ${YELLOW}$name${NC} at '$path' with sudo..."
+        if sudo rm -rf "$path"; then
+          total_deleted_bytes=$((total_deleted_bytes + size))
+        else
+          echo -e "  ${RED}Error: Failed to delete '$path' with sudo${NC}" >&2
+        fi
       else
-        echo -e "  ${RED}Error: Failed to delete '$path'${NC}" >&2
+        echo -e "  Cleaning ${YELLOW}$name${NC} at '$path'..."
+        if rm -rf "$path"; then
+          total_deleted_bytes=$((total_deleted_bytes + size))
+        else
+          echo -e "  ${RED}Error: Failed to delete '$path'${NC}" >&2
+        fi
       fi
     fi
   fi
