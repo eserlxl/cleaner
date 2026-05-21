@@ -43,7 +43,7 @@ Options:
   --yes-danger               Bypass manual confirmation prompt for danger risk targets.
   -t, --trash                Move files to quarantine instead of permanent deletion.
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
-  -e, --exclude PATTERNS     Comma-separated list of glob patterns to exclude from cleanup.
+  -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   -h, --help                 Display this help message and exit.
@@ -302,19 +302,33 @@ restore_quarantine() {
   echo -e "${BOLD}${BLUE}=== Restoring from Quarantine Session: $(basename "$restore_dir") ===${NC}"
   
   # Read metadata line by line
-  # Format: TYPE|RELATIVE_PATH|ORIGINAL_PATH|USE_SUDO
-  local type rel_path original_path use_sudo
-  while IFS='|' read -r type rel_path original_path use_sudo || [[ -n "$type" ]]; do
+  # Format: TYPE|RELATIVE_PATH|ORIGINAL_PATH|USE_SUDO|UID|GID
+  local type rel_path original_path use_sudo uid gid
+  local overall_success=true
+  while IFS='|' read -r type rel_path original_path use_sudo uid gid _ || [[ -n "$type" ]]; do
     type=$(trim "$type")
     [[ -z "$type" || "$type" =~ ^# ]] && continue
     
     rel_path=$(trim "$rel_path")
     original_path=$(trim "$original_path")
     use_sudo=$(trim "$use_sudo")
+    uid=$(trim "${uid:-}")
+    gid=$(trim "${gid:-}")
+    
+    if [[ -z "$uid" || -z "$gid" ]]; then
+      if [[ "$use_sudo" = true ]]; then
+        uid=0
+        gid=0
+      else
+        uid=$(id -u)
+        gid=$(id -g)
+      fi
+    fi
     
     local src_path="$restore_dir/$rel_path"
     if [[ ! -e "$src_path" ]]; then
       echo -e "${YELLOW}Warning: Quarantined source path '$src_path' not found. Skipping.${NC}"
+      overall_success=false
       continue
     fi
     
@@ -326,13 +340,15 @@ restore_quarantine() {
         ensure_sudo
         sudo mkdir -p "$(dirname "$original_path")"
         if sudo mv "$src_path" "$original_path"; then
-          sudo chown -R root:root "$original_path"
+          sudo chown -R "$uid:$gid" "$original_path"
         else
           success=false
         fi
       else
         mkdir -p "$(dirname "$original_path")"
-        if ! mv "$src_path" "$original_path"; then
+        if mv "$src_path" "$original_path"; then
+          chown -R "$uid:$gid" "$original_path" 2>/dev/null || true
+        else
           success=false
         fi
       fi
@@ -345,7 +361,7 @@ restore_quarantine() {
           local dest_file="$original_path/$file_rel"
           sudo mkdir -p "$(dirname "$dest_file")"
           if sudo mv "$file" "$dest_file"; then
-            sudo chown root:root "$dest_file"
+            sudo chown "$uid:$gid" "$dest_file"
           else
             success=false
           fi
@@ -356,25 +372,33 @@ restore_quarantine() {
           local file_rel="${file#"$src_path"/}"
           local dest_file="$original_path/$file_rel"
           mkdir -p "$(dirname "$dest_file")"
-          if ! mv "$file" "$dest_file"; then
+          if mv "$file" "$dest_file"; then
+            chown "$uid:$gid" "$dest_file" 2>/dev/null || true
+          else
             success=false
           fi
         done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
       fi
     else
       echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
+      overall_success=false
       continue
     fi
     
     if [[ "$success" = false ]]; then
       echo -e "${RED}Error: Failed to restore '$original_path'.${NC}" >&2
+      overall_success=false
     fi
   done < "$meta_file"
   
-  echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
-  
-  rm -rf "$restore_dir"
-  rmdir "$quarantine_base" 2>/dev/null || true
+  if [[ "$overall_success" = true ]]; then
+    echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
+    rm -rf "$restore_dir"
+    rmdir "$quarantine_base" 2>/dev/null || true
+  else
+    echo -e "${RED}Error: Restoration completed with some errors. The quarantine session has been kept at '$restore_dir' for recovery.${NC}" >&2
+    exit 1
+  fi
 }
 
 
@@ -979,11 +1003,18 @@ for i in "${!parsed_names[@]}"; do
     fi
 
     success=true
+    owner_info=""
+    if [[ "$use_sudo" = true ]]; then
+      owner_info=$(sudo stat -c '%u|%g' "$path" 2>/dev/null || echo "0|0")
+    else
+      owner_info=$(stat -c '%u|%g' "$path" 2>/dev/null || echo "$(id -u)|$(id -g)")
+    fi
+
     if [[ "$age" -gt 0 || -n "${EXCLUDE_PATTERNS:-}" ]]; then
       # File-by-file quarantine
       if [[ "$is_dir" = true && "$is_link" = false ]]; then
         # Record aged quarantine metadata
-        echo "aged|${i}_${safe_name}|$path|$use_sudo" >> "$QUARANTINE_DIR/quarantine.meta"
+        echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
         
         find_mtime_args=()
         if [[ "$age" -gt 0 ]]; then
@@ -1016,7 +1047,7 @@ for i in "${!parsed_names[@]}"; do
         fi
       else
         # Single file or symlink
-        echo "full|${i}_${safe_name}|$path|$use_sudo" >> "$QUARANTINE_DIR/quarantine.meta"
+        echo "full|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
         if [[ "$use_sudo" = true ]]; then
           if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
             success=true
@@ -1031,7 +1062,7 @@ for i in "${!parsed_names[@]}"; do
       fi
     else
       # Full folder/file quarantine (no age limit, no exclusions)
-      echo "full|${i}_${safe_name}|$path|$use_sudo" >> "$QUARANTINE_DIR/quarantine.meta"
+      echo "full|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
       if [[ "$use_sudo" = true ]]; then
         if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
           success=true

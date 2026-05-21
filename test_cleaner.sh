@@ -11,13 +11,12 @@ CLEANER_SH="$SCRIPT_DIR/cleaner.sh"
 # Colors for test output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
 # Setup test environment directories
-TEST_ENV_DIR="$SCRIPT_DIR/test_env"
+export TEST_ENV_DIR="$SCRIPT_DIR/test_env"
 MOCK_HOME="$TEST_ENV_DIR/mock_home"
 OUTSIDE_DIR="$TEST_ENV_DIR/outside_dir"
 
@@ -485,6 +484,103 @@ if run_test_case "Restore Latest Session" 0 "restore_latest.log" --restore lates
     exit 1
   else
     echo -e "${GREEN}PASS: Quarantine session directory cleaned up after restore.${NC}"
+  fi
+else
+  exit 1
+fi
+
+# 12. Test Case: Ownership Metadata and Preservation
+setup_mock_env
+current_uid=$(id -u)
+current_gid=$(id -g)
+
+if run_test_case "Quarantine for Ownership Test" 0 "quarantine_ownership.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  latest_session=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+  meta_file="$latest_session/quarantine.meta"
+  
+  if [[ -f "$meta_file" ]]; then
+    meta_line=$(head -n 1 "$meta_file")
+    echo "Inspecting metadata line: $meta_line"
+    
+    if [[ "$meta_line" == *"$current_uid|$current_gid" ]]; then
+      echo -e "${GREEN}PASS: Original ownership UID ($current_uid) and GID ($current_gid) correctly recorded in quarantine.meta.${NC}"
+    else
+      echo -e "${RED}FAIL: Incorrect ownership metadata in quarantine.meta: '$meta_line'. Expected suffix: '|$current_uid|$current_gid'${NC}"
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: quarantine.meta not found for ownership test.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Stub chown command to log arguments
+cat << 'EOF' > "$TEST_ENV_DIR/bin/chown"
+#!/usr/bin/env bash
+echo "chown called with: $@" >> "$TEST_ENV_DIR/chown_calls.log"
+exit 0
+EOF
+chmod +x "$TEST_ENV_DIR/bin/chown"
+rm -f "$TEST_ENV_DIR/chown_calls.log"
+
+# Modify quarantine.meta to use a dummy owner UID/GID to verify chown gets called with these values
+sed -i "s/|$current_uid|$current_gid$/|9999|8888/" "$meta_file"
+
+if run_test_case "Restore with Ownership Preservation" 0 "restore_ownership.log" --restore latest; then
+  if [[ -f "$TEST_ENV_DIR/chown_calls.log" ]]; then
+    chown_log=$(cat "$TEST_ENV_DIR/chown_calls.log")
+    echo "Chown calls log:"
+    cat "$TEST_ENV_DIR/chown_calls.log"
+    if grep -q "9999:8888" "$TEST_ENV_DIR/chown_calls.log"; then
+      echo -e "${GREEN}PASS: chown command was executed with the preserved UID:GID (9999:8888).${NC}"
+    else
+      echo -e "${RED}FAIL: chown was not called with preserved UID:GID. Log content: $chown_log${NC}"
+      echo "--- restore_ownership.log Content ---"
+      cat "$TEST_ENV_DIR/restore_ownership.log"
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: Mock chown was not called during restore.${NC}"
+    echo "--- restore_ownership.log Content ---"
+    cat "$TEST_ENV_DIR/restore_ownership.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# 13. Test Case: Partial Restoration Failure Safety
+setup_mock_env
+if run_test_case "Quarantine for Failure Safety Test" 0 "quarantine_failure.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  latest_session=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+  meta_file="$latest_session/quarantine.meta"
+  
+  # Inject a nonexistent target into metadata to cause restore failure
+  echo "full|nonexistent_target|/nonexistent/original/path|false|0|0" >> "$meta_file"
+  
+  # Remove mock chown stub for clean restore run
+  rm -f "$TEST_ENV_DIR/bin/chown"
+  
+  if run_test_case "Restore with Partial Failure" 1 "restore_failure.log" --restore latest; then
+    if [[ -d "$latest_session" ]]; then
+      echo -e "${GREEN}PASS: Quarantine session directory was preserved after a partial restore failure.${NC}"
+    else
+      echo -e "${RED}FAIL: Quarantine session directory was deleted despite restore failure!${NC}"
+      exit 1
+    fi
+    
+    if [[ -f "$MOCK_HOME/.cache/aurman/pkg1.tar.zst" ]]; then
+      echo -e "${GREEN}PASS: Successfully processed items were restored despite overall failure.${NC}"
+    else
+      echo -e "${RED}FAIL: Successfully restored files are missing.${NC}"
+      exit 1
+    fi
+  else
+    exit 1
   fi
 else
   exit 1
