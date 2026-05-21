@@ -140,6 +140,7 @@ expand_path_safe() {
   local expanded="$raw_path"
   
   # Safe leading ~ expansion
+  # shellcheck disable=SC2088
   case "$expanded" in
     "~") expanded="$HOME" ;;
     "~/"*) expanded="$HOME/${expanded#~/}" ;;
@@ -677,7 +678,7 @@ for i in "${!parsed_names[@]}"; do
 
   if [[ -n "$custom_clean_cmd" ]]; then
     if [[ "$TRASH_MODE" = true ]]; then
-      echo -e "  Target '$name' uses a predefined action; bypassing quarantine and executing action directly..."
+      echo -e "  ${YELLOW}WARNING:${NC} Target '$name' uses a predefined action. This action will bypass quarantine and run directly (irreversible deletion)!"
     else
       echo -e "  Executing action for ${YELLOW}$name${NC}..."
     fi
@@ -720,7 +721,7 @@ for i in "${!parsed_names[@]}"; do
       if [[ "$use_sudo" = true ]]; then
         sudo mkdir -p "$q_target"
         while IFS= read -r -d '' file; do
-          rel_path="${file#$path/}"
+          rel_path="${file#"$path"/}"
           dest_file="$q_target/$rel_path"
           sudo mkdir -p "$(dirname "$dest_file")"
           if ! sudo mv "$file" "$dest_file"; then
@@ -732,7 +733,7 @@ for i in "${!parsed_names[@]}"; do
       else
         mkdir -p "$q_target"
         while IFS= read -r -d '' file; do
-          rel_path="${file#$path/}"
+          rel_path="${file#"$path"/}"
           dest_file="$q_target/$rel_path"
           mkdir -p "$(dirname "$dest_file")"
           if ! mv "$file" "$dest_file"; then
