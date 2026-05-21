@@ -398,10 +398,10 @@ fi
 # 9. Test Case: Predefined Action Support
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/sudo_custom_config.conf"
-safe|Pacman Cache (Keep 3)|$OUTSIDE_DIR|Mock Pacman Cache|0||action:paccache_keep3
+medium|Pacman Cache (Keep 3)|$OUTSIDE_DIR|Mock Pacman Cache|0||action:paccache_keep3
 EOF
 
-if run_test_case "Predefined Action" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home; then
+if run_test_case "Predefined Action" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home --risk medium; then
   # Check if mock paccache was executed with correct arguments
   if grep -q "Mock paccache called with: -rk3" "$TEST_ENV_DIR/sudo_custom.log"; then
     echo -e "${GREEN}PASS: Predefined action executed successfully.${NC}"

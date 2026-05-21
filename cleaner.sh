@@ -229,9 +229,13 @@ has_matching_files() {
 
   if [[ "$age_days" -le 0 ]]; then
     if [[ "$use_sudo" = true ]]; then
-      sudo test -e "$target_path" || sudo test -L "$target_path" && return 0
+      if sudo test -e "$target_path" || sudo test -L "$target_path"; then
+        return 0
+      fi
     else
-      [[ -e "$target_path" || -L "$target_path" ]] && return 0
+      if [[ -e "$target_path" || -L "$target_path" ]]; then
+        return 0
+      fi
     fi
     return 1
   fi
@@ -468,69 +472,90 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_c
         echo -e "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
         # Determine if sudo is needed
+        requires_sudo=false
         if [[ "$custom_clean_cmd" == action:* ]] || \
            [[ -e "$path" && ! -r "$path" ]] || \
            { [[ ! -e "$path" ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; }; then
+          requires_sudo=true
           use_sudo=true
-          ensure_sudo
-        fi
-
-        path_exists=false
-        if [[ "$use_sudo" = true ]]; then
-          if sudo test -e "$path" || sudo test -L "$path"; then
-            path_exists=true
-          fi
-        else
-          if [[ -e "$path" || -L "$path" ]]; then
-            path_exists=true
+          if [[ "$DRY_RUN" = false ]]; then
+            ensure_sudo
+          else
+            if ! sudo -n true 2>/dev/null; then
+              use_sudo=false
+            fi
           fi
         fi
 
-        if [[ "$path_exists" = true ]]; then
-          size_bytes=$(get_size_bytes "$path" "$min_age" "$use_sudo")
+        if [[ "$DRY_RUN" = true ]] && [[ "$requires_sudo" = true ]] && [[ "$use_sudo" = false ]]; then
+          # Try to get size without sudo. If it's readable, we show it, but warn that sudo is required for cleanup
+          size_bytes=$(get_size_bytes "$path" "$min_age" false)
           readable_size=$(format_bytes "$size_bytes")
-          
-          should_clean=false
-          if [[ "$min_age" -gt 0 ]]; then
-            if has_matching_files "$path" "$min_age" "$use_sudo"; then
-              should_clean=true
+          if [[ "$size_bytes" -gt 0 ]]; then
+            echo -e "  [${YELLOW}ROOT${NC}] $name ($readable_size): Requires sudo; size may be inaccurate and sudo is required for cleanup."
+            total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
+          else
+            echo -e "  [${YELLOW}ROOT${NC}] $name: Requires sudo; size is unavailable in dry-run."
+          fi
+          exists=true
+        else
+          path_exists=false
+          if [[ "$use_sudo" = true ]]; then
+            if sudo test -e "$path" || sudo test -L "$path"; then
+              path_exists=true
             fi
           else
-            if [[ "$use_sudo" = true ]]; then
-              is_dir=false
-              if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
-              if [[ "$is_dir" = false ]] || [[ "$size_bytes" -gt 0 ]]; then
+            if [[ -e "$path" || -L "$path" ]]; then
+              path_exists=true
+            fi
+          fi
+
+          if [[ "$path_exists" = true ]]; then
+            size_bytes=$(get_size_bytes "$path" "$min_age" "$use_sudo")
+            readable_size=$(format_bytes "$size_bytes")
+            
+            should_clean=false
+            if [[ "$min_age" -gt 0 ]]; then
+              if has_matching_files "$path" "$min_age" "$use_sudo"; then
                 should_clean=true
               fi
             else
-              if [[ ! -d "$path" ]] || [[ "$size_bytes" -gt 0 ]]; then
-                should_clean=true
+              if [[ "$use_sudo" = true ]]; then
+                is_dir=false
+                if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
+                if [[ "$is_dir" = false ]] || [[ "$size_bytes" -gt 0 ]]; then
+                  should_clean=true
+                fi
+              else
+                if [[ ! -d "$path" ]] || [[ "$size_bytes" -gt 0 ]]; then
+                  should_clean=true
+                fi
               fi
             fi
-          fi
-          
-          if [[ "$should_clean" = true ]]; then
-            exists=true
-            total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
             
-            if [[ $safety_status -eq 2 ]]; then
-              echo -e "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
+            if [[ "$should_clean" = true ]]; then
+              exists=true
+              total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
+              
+              if [[ $safety_status -eq 2 ]]; then
+                echo -e "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
+              else
+                if [[ "$min_age" -gt 0 ]]; then
+                  echo -e "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
+                else
+                  echo -e "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc"
+                fi
+              fi
             else
               if [[ "$min_age" -gt 0 ]]; then
-                echo -e "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
+                echo -e "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
               else
-                echo -e "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc"
+                echo -e "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
               fi
             fi
           else
-            if [[ "$min_age" -gt 0 ]]; then
-              echo -e "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
-            else
-              echo -e "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
-            fi
+            echo -e "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
           fi
-        else
-          echo -e "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
         fi
       fi
     fi
