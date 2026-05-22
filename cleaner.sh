@@ -240,29 +240,28 @@ build_exclude_find_args() {
     return
   fi
   
-  EXCLUDE_FIND_ARGS+=("!")
-  EXCLUDE_FIND_ARGS+=("(")
-  local first=true
+  local -a clauses=()
   local pat
   for pat in "${pats[@]}"; do
     pat=$(trim "$pat")
     if [[ -z "$pat" ]]; then
       continue
     fi
-    if [[ "$first" = true ]]; then
-      first=false
-    else
-      EXCLUDE_FIND_ARGS+=("-o")
+    if [[ ${#clauses[@]} -gt 0 ]]; then
+      clauses+=("-o")
     fi
     
     # Check if the pattern contains a slash
     if [[ "$pat" == *"/"* ]]; then
-      EXCLUDE_FIND_ARGS+=("-path" "$pat" "-o" "-path" "*/$pat" "-o" "-path" "$pat/*" "-o" "-path" "*/$pat/*")
+      clauses+=("-path" "$pat" "-o" "-path" "*/$pat" "-o" "-path" "$pat/*" "-o" "-path" "*/$pat/*")
     else
-      EXCLUDE_FIND_ARGS+=("-name" "$pat" "-o" "-path" "*/$pat/*")
+      clauses+=("-name" "$pat" "-o" "-path" "*/$pat/*")
     fi
   done
-  EXCLUDE_FIND_ARGS+=(")")
+  
+  if [[ ${#clauses[@]} -gt 0 ]]; then
+    EXCLUDE_FIND_ARGS+=("!" "(" "${clauses[@]}" ")")
+  fi
 }
 
 # Restore files and folders from a quarantine session
@@ -336,18 +335,35 @@ restore_quarantine() {
     
     local success=true
     if [[ "$type" == "full" ]]; then
+      local conflict=false
+      if [[ "$use_sudo" = true ]]; then
+        if sudo test -e "$original_path" || sudo test -L "$original_path"; then
+          conflict=true
+        fi
+      else
+        if [[ -e "$original_path" || -L "$original_path" ]]; then
+          conflict=true
+        fi
+      fi
+
+      if [[ "$conflict" = true ]]; then
+        echo -e "${RED}Error: Restore destination '$original_path' already exists. Conflict detected, skipping.${NC}" >&2
+        overall_success=false
+        continue
+      fi
+
       if [[ "$use_sudo" = true ]]; then
         ensure_sudo
         sudo mkdir -p "$(dirname "$original_path")"
         if sudo mv "$src_path" "$original_path"; then
-          sudo chown -R "$uid:$gid" "$original_path"
+          sudo chown -hR "$uid:$gid" "$original_path"
         else
           success=false
         fi
       else
         mkdir -p "$(dirname "$original_path")"
         if mv "$src_path" "$original_path"; then
-          chown -R "$uid:$gid" "$original_path" 2>/dev/null || true
+          chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
         else
           success=false
         fi
@@ -359,9 +375,18 @@ restore_quarantine() {
         while IFS= read -r -d '' file; do
           local file_rel="${file#"$src_path"/}"
           local dest_file="$original_path/$file_rel"
+          local file_conflict=false
+          if sudo test -e "$dest_file" || sudo test -L "$dest_file"; then
+            file_conflict=true
+          fi
+          if [[ "$file_conflict" = true ]]; then
+            echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
+            success=false
+            continue
+          fi
           sudo mkdir -p "$(dirname "$dest_file")"
           if sudo mv "$file" "$dest_file"; then
-            sudo chown "$uid:$gid" "$dest_file"
+            sudo chown -h "$uid:$gid" "$dest_file"
           else
             success=false
           fi
@@ -371,9 +396,18 @@ restore_quarantine() {
         while IFS= read -r -d '' file; do
           local file_rel="${file#"$src_path"/}"
           local dest_file="$original_path/$file_rel"
+          local file_conflict=false
+          if [[ -e "$dest_file" || -L "$dest_file" ]]; then
+            file_conflict=true
+          fi
+          if [[ "$file_conflict" = true ]]; then
+            echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
+            success=false
+            continue
+          fi
           mkdir -p "$(dirname "$dest_file")"
           if mv "$file" "$dest_file"; then
-            chown "$uid:$gid" "$dest_file" 2>/dev/null || true
+            chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
           else
             success=false
           fi

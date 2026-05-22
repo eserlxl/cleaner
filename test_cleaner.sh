@@ -586,6 +586,52 @@ else
   exit 1
 fi
 
+# 14. Test Case: Restore Conflict Check
+setup_mock_env
+if run_test_case "Quarantine for Conflict Test" 0 "quarantine_conflict.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  latest_session=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+  
+  # Re-create original directory/file to trigger a conflict
+  mkdir -p "$MOCK_HOME/.npm/_cacache"
+  echo "conflicting file" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
+  
+  if run_test_case "Restore with Conflict" 1 "restore_conflict.log" --restore latest; then
+    if grep -q "Conflict detected" "$TEST_ENV_DIR/restore_conflict.log"; then
+      echo -e "${GREEN}PASS: Restore conflict was detected and logged.${NC}"
+    else
+      echo -e "${RED}FAIL: Conflict error message not found in log.${NC}"
+      cat "$TEST_ENV_DIR/restore_conflict.log"
+      exit 1
+    fi
+    
+    if [[ -d "$latest_session" ]]; then
+      echo -e "${GREEN}PASS: Quarantine session directory was preserved after conflict check failure.${NC}"
+    else
+      echo -e "${RED}FAIL: Quarantine session directory was deleted despite conflict!${NC}"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# 15. Test Case: Invalid/Empty Exclusion Patterns
+setup_mock_env
+if run_test_case "Invalid Exclusions Dry Run" 0 "exclusions_invalid.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude ",," --dry-run; then
+  if grep -q "NPM Cache" "$TEST_ENV_DIR/exclusions_invalid.log"; then
+    echo -e "${GREEN}PASS: Invalid/empty exclusion patterns did not cause find to crash and dry-run completed successfully.${NC}"
+  else
+    echo -e "${RED}FAIL: Target not found in log, find may have failed.${NC}"
+    cat "$TEST_ENV_DIR/exclusions_invalid.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
