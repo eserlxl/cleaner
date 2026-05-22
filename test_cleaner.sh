@@ -398,14 +398,16 @@ fi
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/sudo_custom_config.conf"
 medium|Pacman Cache (Keep 3)|$OUTSIDE_DIR|Mock Pacman Cache|0||action:paccache_keep3
+medium|Pacman Cache (Keep 1)|$OUTSIDE_DIR|Mock Pacman Cache 1|0||action:paccache_keep1
 EOF
 
 if run_test_case "Predefined Action" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home --risk medium; then
   # Check if mock paccache was executed with correct arguments
-  if grep -q "Mock paccache called with: -rk3" "$TEST_ENV_DIR/sudo_custom.log"; then
-    echo -e "${GREEN}PASS: Predefined action executed successfully.${NC}"
+  if grep -q "Mock paccache called with: -rk3" "$TEST_ENV_DIR/sudo_custom.log" && \
+     grep -q "Mock paccache called with: -rk1" "$TEST_ENV_DIR/sudo_custom.log"; then
+    echo -e "${GREEN}PASS: Predefined actions (keep3 and keep1) executed successfully.${NC}"
   else
-    echo -e "${RED}FAIL: Predefined action was not executed or logged.${NC}"
+    echo -e "${RED}FAIL: Predefined actions were not executed or logged correctly.${NC}"
     cat "$TEST_ENV_DIR/sudo_custom.log"
     exit 1
   fi

@@ -726,7 +726,7 @@ while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_c
   # Validate custom clean action if provided
   if [[ -n "$custom_clean_cmd" ]]; then
     case "$custom_clean_cmd" in
-      action:paccache_keep3|action:pacman_clean)
+      action:paccache_keep1|action:paccache_keep3|action:pacman_clean)
         ;;
       *)
         echo -e "${RED}Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -994,6 +994,11 @@ for i in "${!parsed_names[@]}"; do
     fi
     action_success=false
     case "$custom_clean_cmd" in
+      action:paccache_keep1)
+        if sudo paccache -rk1; then
+          action_success=true
+        fi
+        ;;
       action:paccache_keep3)
         if sudo paccache -rk3; then
           action_success=true

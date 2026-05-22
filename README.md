@@ -31,6 +31,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 - **`MIN_AGE_DAYS`**: (Optional) Only delete files/symlinks older than N days. Set to `0` or leave empty to clean immediately.
 - **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped.
 - **`CUSTOM_ACTION`**: (Optional) Predefined clean command to run instead of direct path deletion:
+  - `action:paccache_keep1`: Runs `sudo paccache -rk1` (retains latest 1 version of package cache).
   - `action:paccache_keep3`: Runs `sudo paccache -rk3` (retains latest 3 versions of package cache).
   - `action:pacman_clean`: Runs `sudo pacman -Sc --noconfirm` (purges all cached packages not currently installed).
   > [!WARNING]
