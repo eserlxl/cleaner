@@ -11,6 +11,8 @@ A safe, configuration-driven Bash utility designed to estimate and reclaim disk 
 - **Age Filter**: Targets can specify a minimum age in days (using `find -mtime`). Only files/symlinks older than the limit are cleaned.
 - **Running-Process Checks**: Skip targets if their associated applications/processes are running (e.g., skip chromium cache if Chrome is open).
 - **Trash Quarantine**: Move deleted files to a quarantine folder (`~/.cache/linux-cleaner/quarantine/`) with collision prevention and path sanitization instead of deleting permanently.
+- **Quarantine Restoration**: Restore files from any previous quarantine session back to their original paths, preserving original ownership (`UID` and `GID`).
+- **Predefined Custom Actions**: Execute specific system commands (like package cache cleaners) instead of path deletion.
 
 ---
 
@@ -19,7 +21,7 @@ A safe, configuration-driven Bash utility designed to estimate and reclaim disk 
 By default, the script reads target definitions from `./cleaner.conf`. The format is a plain text file where each line defines a target with fields separated by pipe `|` characters:
 
 ```text
-RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES
+RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_ACTION
 ```
 
 - **`RISK_LEVEL`**: The category of danger if cleaned: `safe`, `medium`, or `danger`.
@@ -28,13 +30,19 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES
 - **`DESCRIPTION`**: A brief explanation of the files being cleaned.
 - **`MIN_AGE_DAYS`**: (Optional) Only delete files/symlinks older than N days. Set to `0` or leave empty to clean immediately.
 - **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped.
+- **`CUSTOM_ACTION`**: (Optional) Predefined clean command to run instead of direct path deletion:
+  - `action:paccache_keep3`: Runs `sudo paccache -rk3` (retains latest 3 versions of package cache).
+  - `action:pacman_clean`: Runs `sudo pacman -Sc --noconfirm` (purges all cached packages not currently installed).
+  > [!WARNING]
+  > Custom clean actions bypass quarantine/trash mode and run directly, resulting in irreversible deletion.
 
 ### Example `cleaner.conf`
 ```text
-safe|NPM Cache|$HOME/.npm/_cacache|NPM dependency cache files|0|node,npm
-safe|Gemini Temp|$HOME/.gemini/tmp|Gemini temporary/scratch files|7|gemini
-medium|Chromium Cache|$HOME/.cache/chromium|Chromium browser cache files|3|chromium
-danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific database storage|30|chromium
+safe|NPM Cache|$HOME/.npm/_cacache|NPM dependency cache files|0|node,npm|
+safe|Gemini Temp|$HOME/.gemini/tmp|Gemini temporary/scratch files|7|gemini|
+medium|Chromium Cache|$HOME/.cache/chromium|Chromium browser cache files|3|chromium|
+medium|Pacman Cache (Keep 3)|/var/cache/pacman/pkg|Retains latest 3 versions of package cache using paccache|0||action:paccache_keep3
+danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific database storage|30|chromium|
 ```
 
 ---
@@ -60,7 +68,7 @@ Run the script directly from the project directory:
 - **`-e, --exclude PATTERNS`**: Comma-separated list of glob patterns to exclude from cleanup (e.g. `.git,*.log`).
   > [!WARNING]
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
-- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp).
+- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-h, --help`**: Display usage details.
 
@@ -72,3 +80,5 @@ Run the script directly from the project directory:
 2. **HOME Boundary**: Targets outside the user's `$HOME` directory are blocked unless `--allow-outside-home` is active.
 3. **Symlink Guard**: If a target path is a symlink, the script refuses to delete it to prevent deletion bugs.
 4. **No Wildcard Eval**: Path expansion only resolves explicit placeholders (`$HOME`, `~`, and `$USER`) to avoid unintended wildcard expansion accidents.
+5. **Physical Canonicalization**: Resolves target paths physically by resolving the closest existing parent directory. This prevents directory traversal or symlink-based boundary escapes.
+6. **Conflict Guard during Restore**: During quarantine restoration, if the original destination path already exists, the restoration is skipped for that file to prevent overwriting active data.
