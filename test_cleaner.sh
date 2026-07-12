@@ -929,6 +929,40 @@ else
   exit 1
 fi
 
+# 30. Test Case: --list-sessions lists a session (read-only) and reports empty state
+setup_mock_env
+if run_test_case "Quarantine for Listing" 0 "list_setup.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  latest_session=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+  session_ts=$(basename "$latest_session")
+  if run_test_case "List Sessions" 0 "list_sessions.log" --list-sessions; then
+    if grep -q "$session_ts" "$TEST_ENV_DIR/list_sessions.log" && [[ -d "$latest_session" ]]; then
+      echo -e "${GREEN}PASS: --list-sessions listed the session and left it intact.${NC}"
+    else
+      echo -e "${RED}FAIL: --list-sessions did not list the session or it was modified.${NC}"
+      cat "$TEST_ENV_DIR/list_sessions.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+# Empty-quarantine state: fresh mock HOME with no quarantine
+setup_mock_env
+if run_test_case "List Sessions Empty" 0 "list_empty.log" --list-sessions; then
+  if grep -qi "No quarantine sessions found" "$TEST_ENV_DIR/list_empty.log"; then
+    echo -e "${GREEN}PASS: --list-sessions reports the empty state cleanly.${NC}"
+  else
+    echo -e "${RED}FAIL: --list-sessions empty-state message not found.${NC}"
+    cat "$TEST_ENV_DIR/list_empty.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
