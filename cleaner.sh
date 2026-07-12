@@ -10,6 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_CONFIG="$SCRIPT_DIR/cleaner.conf"
 CONFIG_FILE="$DEFAULT_CONFIG"
 
+# Single source of truth for the tool version (semantic version).
+# shellcheck disable=SC2034  # consumed by the --version handler (next change)
+readonly VERSION="1.0.0"
+
 # Colors for terminal output
 if [[ -t 1 ]]; then
   GREEN='\033[0;32m'
