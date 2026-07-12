@@ -1203,6 +1203,23 @@ else
   exit 1
 fi
 
+# 40. Test Case: trash-mode predefined action shows the irreversibility warning
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/trash_action_config.conf"
+medium|Paccache Trash|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
+EOF
+if run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV_DIR/trash_action_config.conf" --trash --force --allow-outside-home --risk medium; then
+  if grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/trash_action.log"; then
+    echo -e "${GREEN}PASS: trash-mode predefined action logged the irreversibility warning.${NC}"
+  else
+    echo -e "${RED}FAIL: irreversibility warning not found for a trash-mode action.${NC}"
+    cat "$TEST_ENV_DIR/trash_action.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
