@@ -69,7 +69,7 @@ Run the script directly from the project directory:
 ./cleaner.sh [OPTIONS]
 ```
 
-Once installed system-wide, run the command directly (e.g. `cleaner.sh [OPTIONS]`); it resolves its configuration from your XDG user config or `/etc/linux-cleaner/cleaner.conf` (see [Installation](#installation)). Override the config with `-c/--config` in either case.
+Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`); it resolves its configuration from your XDG user config or `/etc/linux-cleaner/cleaner.conf` (see [Installation](#installation)). Override the config with `-c/--config` in either case.
 
 ### Options
 
@@ -99,7 +99,7 @@ The tool is a single script; run it from a checkout (`./cleaner.sh`) or install 
 | Variable | Default | Installs |
 |----------|---------|----------|
 | `PREFIX` | `/usr/local` | base install prefix |
-| `BINDIR` | `$PREFIX/bin` | `cleaner.sh` (as an executable) |
+| `BINDIR` | `$PREFIX/bin` | the `cleaner.sh` script, installed as the `cleaner` command |
 | `SYSCONFDIR` | `/etc` | the config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
 | `MANDIR` | `$PREFIX/share/man` | the `man1` page |
 | `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
@@ -118,7 +118,7 @@ sudo make uninstall                 # remove installed files (the system config 
 
 A reinstall never overwrites an edited system config: if `cleaner.conf` already exists it is left untouched and `cleaner.conf.example` is written alongside it instead.
 
-After installation, `man cleaner.sh` shows the manual page.
+After installation, `man cleaner` shows the manual page.
 
 ---
 

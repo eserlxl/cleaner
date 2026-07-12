@@ -9,7 +9,7 @@ MANDIR     ?= $(PREFIX)/share/man
 DATADIR    ?= $(PREFIX)/share
 
 # Installed command name (the source script is cleaner.sh) and package namespace.
-BINNAME    ?= cleaner.sh
+BINNAME    ?= cleaner
 PKGNAME    ?= linux-cleaner
 
 .PHONY: all help install uninstall install-man check clean

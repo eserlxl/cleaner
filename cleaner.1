@@ -1,11 +1,11 @@
-.TH CLEANER.SH 1 "2026-07-12" "linux-cleaner 1.0.0" "User Commands"
+.TH CLEANER 1 "2026-07-12" "linux-cleaner 1.0.0" "User Commands"
 .SH NAME
-cleaner.sh \- safely clean cache and temporary files
+cleaner \- safely clean cache and temporary files
 .SH SYNOPSIS
-.B cleaner.sh
+.B cleaner
 .RI [ OPTIONS ]
 .SH DESCRIPTION
-.B cleaner.sh
+.B cleaner
 is a configuration-driven Bash utility that estimates and reclaims disk space by
 cleaning caches, temporary files, and logs. It runs in dry-run mode by default,
 routes every deletion through a path-safety check, blocks system directories and
@@ -106,15 +106,15 @@ Returns 0 on success and non-zero on a configuration error or a failed operation
 .SH EXAMPLES
 .TP
 Preview what would be cleaned:
-.B cleaner.sh
+.B cleaner
 .TP
 Clean safe targets, moving files to quarantine:
-.B cleaner.sh \-\-trash \-\-clean
+.B cleaner \-\-trash \-\-clean
 .TP
 List and restore quarantined files:
-.B cleaner.sh \-\-list\-sessions
+.B cleaner \-\-list\-sessions
 .br
-.B cleaner.sh \-\-restore latest
+.B cleaner \-\-restore latest
 .SH SEE ALSO
 .BR paccache (8),
 .BR find (1)

@@ -9,7 +9,7 @@ BINDIR="${BINDIR:-$PREFIX/bin}"
 SYSCONFDIR="${SYSCONFDIR:-/etc}"
 MANDIR="${MANDIR:-$PREFIX/share/man}"
 DATADIR="${DATADIR:-$PREFIX/share}"
-BINNAME="${BINNAME:-cleaner.sh}"
+BINNAME="${BINNAME:-cleaner}"
 PKGNAME="${PKGNAME:-linux-cleaner}"
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
