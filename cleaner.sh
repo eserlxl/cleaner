@@ -815,6 +815,22 @@ manager_present() {
   esac
 }
 
+# Preflight: probe the GNU-coreutils behaviors this tool depends on (du -sb,
+# stat -c, find -print0/-quit, GNU realpath) against a throwaway temp path.
+# Returns 0 if all pass. No side effects beyond a self-cleaned temp dir.
+check_gnu_userland() {
+  local probe_dir probe_file ok=0
+  probe_dir=$(mktemp -d 2>/dev/null) || return 1
+  probe_file="$probe_dir/probe"
+  : > "$probe_file"
+  du -sb "$probe_file" >/dev/null 2>&1 || ok=1
+  stat -c '%u' "$probe_file" >/dev/null 2>&1 || ok=1
+  find "$probe_dir" -print0 -quit >/dev/null 2>&1 || ok=1
+  realpath "$probe_file" >/dev/null 2>&1 || ok=1
+  rm -rf "$probe_dir"
+  return "$ok"
+}
+
 MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
 # Build exclude arguments for find
@@ -1106,6 +1122,11 @@ elif [[ "$INTERACTIVE" = false ]]; then
     exit 0
   fi
 fi
+
+# GNU-userland preflight: this tool relies on GNU coreutils/findutils flags on
+# the deletion path; check them before any destructive operation.
+# shellcheck disable=SC2034  # GNU_USERLAND_OK is consumed by the non-GNU refusal (next change)
+if check_gnu_userland; then GNU_USERLAND_OK=true; else GNU_USERLAND_OK=false; fi
 
 # Second pass: Perform deletion or move to quarantine
 echo -e "${BOLD}Starting cleanup...${NC}"
