@@ -689,6 +689,23 @@ else
   exit 1
 fi
 
+# 19. Test Case: ..-traversal that canonicalizes onto a system directory -> UNSAFE
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/dotdot_system.conf"
+safe|Dotdot System Escape|\$HOME/.cache/../../../../../../../../../../../../../../../../../../../../../../../../etc|.. path that resolves onto /etc|0||
+EOF
+if run_test_case "Dotdot Onto System Dir" 0 "dotdot_system.log" --config "$TEST_ENV_DIR/dotdot_system.conf" --dry-run; then
+  if grep -q "UNSAFE.*Dotdot System Escape.*protected system directory" "$TEST_ENV_DIR/dotdot_system.log" && [[ -d /etc ]]; then
+    echo -e "${GREEN}PASS: '..'-traversal resolving onto /etc was classified UNSAFE; canonicalizer and block-list cooperate.${NC}"
+  else
+    echo -e "${RED}FAIL: '..'-onto-system-dir was not classified UNSAFE.${NC}"
+    cat "$TEST_ENV_DIR/dotdot_system.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
