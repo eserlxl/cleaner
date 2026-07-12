@@ -1303,6 +1303,7 @@ EOF
 if run_test_case "Whole-Token HOME/USER Expansion" 0 "token_expand.log" --config "$TEST_ENV_DIR/token_expand.conf" --dry-run; then
   # The prefixed token must be left literal ('$HOMEDATA' present verbatim) and
   # must NOT be over-expanded to <mock_home>DATA.
+  # shellcheck disable=SC2016  # literal $HOMEDATA is intentional; it must NOT expand
   if grep -qF '$HOMEDATA' "$TEST_ENV_DIR/token_expand.log" \
      && ! grep -qF "${MOCK_HOME}DATA" "$TEST_ENV_DIR/token_expand.log"; then
     echo -e "${GREEN}PASS: \$HOMEDATA left literal; only whole \$HOME/\$USER tokens expand.${NC}"
