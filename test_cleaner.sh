@@ -1101,6 +1101,33 @@ else
   fi
 fi
 
+# 36. Test Case: detect_package_manager returns the right token per stub
+setup_mock_env
+detect_fn=$(awk '/^detect_package_manager\(\) \{/,/^\}/' "$CLEANER_SH")
+detect_script="$TEST_ENV_DIR/detect_probe.sh"
+# shellcheck disable=SC2016  # literal $1 is intentional: it is the probe script's own positional
+{ echo 'PATH="$1"'; echo "$detect_fn"; echo 'detect_package_manager'; } > "$detect_script"
+detect_with() { bash "$detect_script" "$1"; }   # $1 = isolated bin dir
+mk_stub_dir() {
+  local d; d=$(mktemp -d "$TEST_ENV_DIR/detbin.XXXXXX")
+  local t; for t in "$@"; do printf '#!/bin/sh\n' > "$d/$t"; chmod +x "$d/$t"; done
+  printf '%s' "$d"
+}
+echo -e "\n${BOLD}Test Case: Package Manager Detection${NC}"
+det_ok=true
+[[ "$(detect_with "$(mk_stub_dir pacman)")" == "pacman" ]] || det_ok=false
+[[ "$(detect_with "$(mk_stub_dir apt-get)")" == "apt" ]] || det_ok=false
+[[ "$(detect_with "$(mk_stub_dir dnf)")" == "dnf" ]] || det_ok=false
+[[ "$(detect_with "$(mk_stub_dir)")" == "none" ]] || det_ok=false
+# mutation sanity: a renamed stub must fall through to none
+[[ "$(detect_with "$(mk_stub_dir pacman-renamed)")" == "none" ]] || det_ok=false
+if [[ "$det_ok" == true ]]; then
+  echo -e "${GREEN}PASS: detect_package_manager returns pacman/apt/dnf/none for the matching stub (mutation-safe).${NC}"
+else
+  echo -e "${RED}FAIL: detection returned an unexpected token.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
