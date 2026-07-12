@@ -51,7 +51,13 @@ Append an operation log (opt-in, off by default; kept under
 .BR $HOME ).
 .TP
 .B \-\-list\-sessions
-List quarantine sessions (read-only) and exit.
+List quarantine sessions (read-only) and exit. Each session is shown with its
+timestamp, size, and date, followed by the targets it holds: the type
+.RB ( full
+or
+.BR aged )
+and original path of every quarantined item, so a session's contents can be
+inspected before it is restored or permanently purged.
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).

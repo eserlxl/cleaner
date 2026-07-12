@@ -1626,6 +1626,26 @@ else
   exit 1
 fi
 
+# 51. Test Case: --list-sessions shows what each session actually holds, so an
+# irreversible purge (or a restore) can be decided on sight.
+setup_mock_env
+if run_test_case "Quarantine for Content Listing" 0 "list_content_setup.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force --yes-danger; then
+  if run_test_case "List Sessions Shows Contents" 0 "list_content.log" --list-sessions; then
+    if grep -qE '^\s+(full|aged)\s+.*/\.npm/_cacache' "$TEST_ENV_DIR/list_content.log"; then
+      echo -e "${GREEN}PASS: --list-sessions listed a quarantined target's type and original path.${NC}"
+    else
+      echo -e "${RED}FAIL: --list-sessions did not show the session's contents.${NC}"
+      cat "$TEST_ENV_DIR/list_content.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

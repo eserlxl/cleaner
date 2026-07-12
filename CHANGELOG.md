@@ -21,6 +21,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   trash mode holds. Irreversible; prompts for confirmation unless `-f/--force`
   is given, and only ever removes directories under the tool-owned quarantine
   base.
+- `--list-sessions` now shows the targets each quarantine session holds — the
+  type (`full` or `aged`) and original path of every quarantined item — so a
+  session's contents can be inspected before it is restored or permanently
+  purged. The metadata was already recorded; it was simply never surfaced.
 
 ### Fixed
 - Cleanup now exits non-zero when an operation fails, matching the documented

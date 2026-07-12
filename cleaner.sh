@@ -412,12 +412,26 @@ list_quarantine_sessions() {
     return 0
   fi
   echo -e "${BOLD}${BLUE}=== Quarantine Sessions ===${NC}"
-  local session ts size mdate
+  local session ts size mdate meta mtype morig
   for session in "${sessions[@]}"; do
     ts=$(basename "$session")
     size=$(du -sh "$session" 2>/dev/null | awk '{print $1}')
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
+
+    # Show what the session actually holds, so an irreversible --purge-sessions
+    # (or a --restore) can be decided on sight instead of guessing from a size.
+    meta="$session/quarantine.meta"
+    if [[ -f "$meta" ]]; then
+      while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
+        mtype=$(trim "$mtype")
+        [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
+        morig=$(trim "${morig:-}")
+        echo -e "      ${mtype}  ${morig}"
+      done < "$meta"
+    else
+      echo -e "      ${YELLOW}(no metadata)${NC}"
+    fi
   done
 }
 
