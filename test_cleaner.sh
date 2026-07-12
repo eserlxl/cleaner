@@ -753,6 +753,25 @@ else
   exit 1
 fi
 
+# 23. Test Case: format_bytes TB scaling and the unit_idx < 4 cap
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/tb_probe"
+truncate -s 2T "$MOCK_HOME/.cache/tb_probe/big.sparse"
+cat << EOF > "$TEST_ENV_DIR/tb_size.conf"
+safe|TB Size Probe|\$HOME/.cache/tb_probe|Sparse 2T file to exercise TB scaling and the cap|0||
+EOF
+if run_test_case "format_bytes TB Scaling" 0 "tb_size.log" --config "$TEST_ENV_DIR/tb_size.conf" --dry-run; then
+  if grep -q "TB Size Probe (2 TB)" "$TEST_ENV_DIR/tb_size.log"; then
+    echo -e "${GREEN}PASS: format_bytes scaled to '2 TB' and capped at the TB unit.${NC}"
+  else
+    echo -e "${RED}FAIL: TB-magnitude size was not rendered as '2 TB'.${NC}"
+    cat "$TEST_ENV_DIR/tb_size.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
