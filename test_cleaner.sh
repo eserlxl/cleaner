@@ -653,6 +653,25 @@ else
   exit 1
 fi
 
+# 17. Test Case: Symlinked-parent escape (parent symlink resolves outside HOME -> REJECTED)
+setup_mock_env
+ln -s "$OUTSIDE_DIR" "$MOCK_HOME/escape_link"
+cat << EOF > "$TEST_ENV_DIR/symlink_parent.conf"
+safe|Symlinked Parent Escape|\$HOME/escape_link/sub|Target under a symlinked parent that escapes HOME|0||
+EOF
+if run_test_case "Symlinked Parent Escape" 0 "symlink_parent.log" --config "$TEST_ENV_DIR/symlink_parent.conf" --dry-run; then
+  if grep -q "REJECTED.*Symlinked Parent Escape" "$TEST_ENV_DIR/symlink_parent.log" && \
+     [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
+    echo -e "${GREEN}PASS: Symlinked parent resolved outside HOME and was REJECTED; real outside dir untouched.${NC}"
+  else
+    echo -e "${RED}FAIL: Symlinked-parent escape was not rejected or the outside dir was affected.${NC}"
+    cat "$TEST_ENV_DIR/symlink_parent.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
