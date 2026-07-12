@@ -706,6 +706,20 @@ else
   exit 1
 fi
 
+# 20. Test Case: Actual outside-HOME deletion with --allow-outside-home --force
+setup_mock_env
+if run_test_case "Actual Outside HOME Clean" 0 "outside_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --force; then
+  if [[ ! -f "$OUTSIDE_DIR/outside.txt" ]]; then
+    echo -e "${GREEN}PASS: Outside-HOME target was actually deleted under --allow-outside-home --force.${NC}"
+  else
+    echo -e "${RED}FAIL: Outside-HOME target survived a destructive --allow-outside-home run.${NC}"
+    cat "$TEST_ENV_DIR/outside_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
