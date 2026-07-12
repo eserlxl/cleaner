@@ -772,6 +772,19 @@ else
   exit 1
 fi
 
+# 24. Test Case: format_bytes direct-invocation fallback (deterministic, FS-independent GB/TB)
+# Extract only the format_bytes function from cleaner.sh and run it on exact byte
+# inputs, so GB/TB coverage holds even where sparse-file fixtures are not viable.
+fb_gb=$( { awk '/^format_bytes\(\) \{/,/^\}/' "$CLEANER_SH"; echo 'format_bytes 2147483648'; } | bash )
+fb_tb=$( { awk '/^format_bytes\(\) \{/,/^\}/' "$CLEANER_SH"; echo 'format_bytes 2199023255552'; } | bash )
+echo -e "\n${BOLD}Test Case: format_bytes Direct GB/TB${NC}"
+if [[ "$fb_gb" == "2 GB" && "$fb_tb" == "2 TB" ]]; then
+  echo -e "${GREEN}PASS: format_bytes(2147483648)='2 GB' and format_bytes(2199023255552)='2 TB' via direct invocation.${NC}"
+else
+  echo -e "${RED}FAIL: direct format_bytes gave GB='$fb_gb' TB='$fb_tb' (expected '2 GB' / '2 TB').${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
