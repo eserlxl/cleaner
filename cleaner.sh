@@ -1185,6 +1185,16 @@ for i in "${!parsed_names[@]}"; do
           action_success=true
         fi
         ;;
+      action:apt_clean)
+        if sudo apt-get clean; then
+          action_success=true
+        fi
+        ;;
+      action:dnf_clean)
+        if sudo dnf clean all; then
+          action_success=true
+        fi
+        ;;
     esac
     if [[ "$action_success" = true ]]; then
       total_deleted_bytes=$((total_deleted_bytes + size))
