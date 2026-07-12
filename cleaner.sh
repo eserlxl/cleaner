@@ -751,6 +751,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     exit 1
   fi
 
+  # Minimal CHECK_PROCESSES shape check: reject empty/whitespace-only tokens or
+  # stray commas (a field-shift signal); normal comma-separated names are fine.
+  if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
+    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
+    exit 1
+  fi
+
   # Validate custom clean action if provided
   if [[ -n "$custom_clean_cmd" ]]; then
     case "$custom_clean_cmd" in

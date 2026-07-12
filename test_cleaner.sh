@@ -823,6 +823,32 @@ else
   exit 1
 fi
 
+# 26b. Test Case: Malformed CHECK_PROCESSES token shape (and a valid control)
+setup_mock_env
+printf '# header\nsafe|N|/p|desc|0|node,,npm\n' > "$TEST_ENV_DIR/cp_bad.conf"
+if run_test_case "CheckProcs Malformed" 1 "cp_bad.log" --config "$TEST_ENV_DIR/cp_bad.conf" --dry-run; then
+  if grep -q ":2: malformed CHECK_PROCESSES 'node,,npm'" "$TEST_ENV_DIR/cp_bad.log"; then
+    echo -e "${GREEN}PASS: Malformed CHECK_PROCESSES 'node,,npm' rejected with a line-numbered error.${NC}"
+  else
+    echo -e "${RED}FAIL: Malformed CHECK_PROCESSES error not found.${NC}"
+    cat "$TEST_ENV_DIR/cp_bad.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Malformed CHECK_PROCESSES did not exit non-zero.${NC}"
+  exit 1
+fi
+# Control: a normal comma-separated process list must still load
+# shellcheck disable=SC2016  # literal $HOME is intentional; the tool expands it at runtime
+printf 'safe|N|$HOME/.cache/aurman|desc|0|node,npm\n' > "$TEST_ENV_DIR/cp_ok.conf"
+if run_test_case "CheckProcs Valid Control" 0 "cp_ok.log" --config "$TEST_ENV_DIR/cp_ok.conf" --dry-run; then
+  echo -e "${GREEN}PASS: Normal comma-separated CHECK_PROCESSES 'node,npm' still loads.${NC}"
+else
+  echo -e "${RED}FAIL: Valid CHECK_PROCESSES 'node,npm' was rejected.${NC}"
+  cat "$TEST_ENV_DIR/cp_ok.log"
+  exit 1
+fi
+
 # 26. Test Case: Value violations (line-numbered errors, malformed line on row 2)
 setup_mock_env
 assert_value_error() {
