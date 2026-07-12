@@ -1104,6 +1104,7 @@ for i in "${!parsed_names[@]}"; do
   # Handle Cleanup
   custom_clean_cmd="${parsed_cmds[$i]:-}"
   use_sudo="${parsed_sudos[$i]:-false}"
+  cleanup_bytes_before=$total_deleted_bytes
 
   if [[ -n "$custom_clean_cmd" ]]; then
     if [[ "$TRASH_MODE" = true ]]; then
@@ -1136,8 +1137,10 @@ for i in "${!parsed_names[@]}"; do
     esac
     if [[ "$action_success" = true ]]; then
       total_deleted_bytes=$((total_deleted_bytes + size))
+      log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=success"
     else
       echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
+      log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=failed"
     fi
     continue
   fi
@@ -1317,6 +1320,22 @@ for i in "${!parsed_names[@]}"; do
           echo -e "  ${RED}Error: Failed to delete '$path'${NC}" >&2
         fi
       fi
+    fi
+  fi
+
+  # Log the quarantine/delete outcome for this target (opt-in; the predefined
+  # action path logs and continues before reaching here). Records only
+  # path/metadata the tool already prints -- never file contents.
+  if [[ "$LOG_ENABLED" == true ]]; then
+    if [[ "$total_deleted_bytes" -gt "$cleanup_bytes_before" ]]; then
+      op_outcome=success
+    else
+      op_outcome=attempted
+    fi
+    if [[ "$TRASH_MODE" = true ]]; then
+      log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=quarantine risk=${risk_level} target='${name}' path='${path}' outcome=${op_outcome}"
+    else
+      log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=delete risk=${risk_level} target='${name}' path='${path}' outcome=${op_outcome}"
     fi
   fi
 done
