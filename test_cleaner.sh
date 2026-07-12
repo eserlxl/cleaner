@@ -537,6 +537,36 @@ else
   exit 1
 fi
 
+# 11c. Test Case: Purge selectivity (latest) and confirmation abort
+setup_mock_env
+purge_qb="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+mkdir -p "$purge_qb/20200101-000000" "$purge_qb/20991231-235959"
+
+# Decline at the confirmation prompt (stdin is /dev/null -> empty reply -> abort)
+# must keep every session.
+if run_test_case "Purge Declined Keeps Sessions" 0 "purge_decline.log" --purge-sessions all; then
+  if [[ -d "$purge_qb/20200101-000000" && -d "$purge_qb/20991231-235959" ]]; then
+    echo -e "${GREEN}PASS: declined purge kept all sessions.${NC}"
+  else
+    echo -e "${RED}FAIL: declined purge deleted sessions.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# --purge-sessions latest removes only the newest session, keeping older ones.
+if run_test_case "Purge Latest Selectivity" 0 "purge_latest.log" --purge-sessions latest --force; then
+  if [[ -d "$purge_qb/20200101-000000" && ! -d "$purge_qb/20991231-235959" ]]; then
+    echo -e "${GREEN}PASS: purge latest removed only the newest session.${NC}"
+  else
+    echo -e "${RED}FAIL: purge latest did not select the newest session correctly.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 12. Test Case: Ownership Metadata and Preservation
 setup_mock_env
 current_uid=$(id -u)
