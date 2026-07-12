@@ -823,6 +823,36 @@ else
   exit 1
 fi
 
+# 26. Test Case: Value violations (line-numbered errors, malformed line on row 2)
+setup_mock_env
+assert_value_error() {
+  local case_name="$1" conf="$2" pattern="$3"
+  if run_test_case "$case_name" 1 "${case_name// /_}.log" --config "$conf" --dry-run; then
+    if grep -q "$pattern" "$TEST_ENV_DIR/${case_name// /_}.log"; then
+      echo -e "${GREEN}PASS: $case_name rejected with line-numbered error.${NC}"
+    else
+      echo -e "${RED}FAIL: $case_name did not produce the expected '$pattern'.${NC}"
+      cat "$TEST_ENV_DIR/${case_name// /_}.log"
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: $case_name did not exit non-zero.${NC}"
+    exit 1
+  fi
+}
+
+printf '# header\nsafe|N|/p|desc|notanumber\n' > "$TEST_ENV_DIR/vv_age.conf"
+assert_value_error "Value Nonnumeric Age" "$TEST_ENV_DIR/vv_age.conf" ":2: invalid MIN_AGE_DAYS 'notanumber'"
+
+printf '# header\nsafe||/p|desc|0\n' > "$TEST_ENV_DIR/vv_name.conf"
+assert_value_error "Value Empty Name" "$TEST_ENV_DIR/vv_name.conf" ":2: NAME (field 2) is empty"
+
+printf '# header\nsafe|N||desc|0\n' > "$TEST_ENV_DIR/vv_path.conf"
+assert_value_error "Value Empty Path" "$TEST_ENV_DIR/vv_path.conf" ":2: PATH (field 3) is empty"
+
+printf '# header\nbadrisk|N|/p|desc|0\n' > "$TEST_ENV_DIR/vv_risk.conf"
+assert_value_error "Value Risk LineNumber" "$TEST_ENV_DIR/vv_risk.conf" ":2: Error: Unknown risk level 'badrisk'"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
