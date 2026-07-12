@@ -11,7 +11,6 @@ DEFAULT_CONFIG="$SCRIPT_DIR/cleaner.conf"
 CONFIG_FILE="$DEFAULT_CONFIG"
 
 # Single source of truth for the tool version (semantic version).
-# shellcheck disable=SC2034  # consumed by the --version handler (next change)
 readonly VERSION="1.0.0"
 
 # Colors for terminal output
@@ -129,6 +128,10 @@ while [[ $# -gt 0 ]]; do
     --allow-outside-home)
       ALLOW_OUTSIDE_HOME=true
       shift
+      ;;
+    -V|--version)
+      echo "$(basename "$0") $VERSION"
+      exit 0
       ;;
     -h|--help)
       show_usage
