@@ -1186,6 +1186,23 @@ EOF
   fi
 fi
 
+# 39. Test Case: action:pacman_clean invokes 'pacman -Sc --noconfirm'
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/pacman_clean_config.conf"
+medium|Pacman Purge|$OUTSIDE_DIR|Mock pacman purge|0||action:pacman_clean
+EOF
+if run_test_case "Pacman Clean Action" 0 "pacman_clean.log" --config "$TEST_ENV_DIR/pacman_clean_config.conf" --clean --force --allow-outside-home --risk medium; then
+  if grep -q "Mock pacman called with: -Sc --noconfirm" "$TEST_ENV_DIR/pacman_clean.log"; then
+    echo -e "${GREEN}PASS: action:pacman_clean invoked 'pacman -Sc --noconfirm'.${NC}"
+  else
+    echo -e "${RED}FAIL: pacman_clean did not invoke the expected command.${NC}"
+    cat "$TEST_ENV_DIR/pacman_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
