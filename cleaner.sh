@@ -71,6 +71,14 @@ RESTORE_TARGET=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
 
+# Set by any operation that was attempted and failed (a delete, a quarantine move,
+# a predefined action, a purge). The tool exits non-zero when it is set, per the
+# contract in cleaner.1 ("non-zero on ... a failed operation") -- an unattended run
+# must be able to detect a failure it only printed to stderr. Deliberate skips (a
+# declined danger target, a blocked process, an unsafe path, an action whose binary
+# is absent) are not failures and leave this false.
+OPERATION_FAILED=false
+
 # Operation log (opt-in, OFF by default). Enable via --log or by setting the
 # LINUX_CLEANER_LOG environment variable. The log lives under $HOME (see the
 # writer). When disabled, no log file is created or written.
@@ -487,6 +495,7 @@ purge_quarantine_sessions() {
       purged=$((purged + 1))
     else
       echo -e "${RED}Error: Failed to purge '$d'.${NC}" >&2
+      OPERATION_FAILED=true
     fi
   done
 
@@ -524,6 +533,30 @@ quarantine_move_full() {
     echo "full|$rel|$src|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
   fi
   [[ "$ok" = true ]]
+}
+
+# Permanently delete a whole target and account for it. Sets OPERATION_FAILED on a
+# failed delete so an unattended run exits non-zero, per cleaner.1's EXIT STATUS
+# contract. Adds the target's size to the running total only when the delete worked.
+delete_path_full() {
+  local target="$1" label="$2" use_sudo="$3" bytes="$4"
+
+  if [[ "$use_sudo" = true ]]; then
+    echo -e "  Cleaning ${YELLOW}$label${NC} at '$target' with sudo..."
+    if sudo rm -rf "$target"; then
+      total_deleted_bytes=$((total_deleted_bytes + bytes))
+      return 0
+    fi
+    echo -e "  ${RED}Error: Failed to delete '$target' with sudo${NC}" >&2
+  else
+    echo -e "  Cleaning ${YELLOW}$label${NC} at '$target'..."
+    if rm -rf "$target"; then
+      total_deleted_bytes=$((total_deleted_bytes + bytes))
+      return 0
+    fi
+    echo -e "  ${RED}Error: Failed to delete '$target'${NC}" >&2
+  fi
+  OPERATION_FAILED=true
 }
 
 # Restore files and folders from a quarantine session
@@ -983,6 +1016,9 @@ fi
 # Check if purge mode is active
 if [[ -n "${PURGE_TARGET:-}" ]]; then
   purge_quarantine_sessions "$PURGE_TARGET"
+  if [[ "$OPERATION_FAILED" = true ]]; then
+    exit 1
+  fi
   exit 0
 fi
 
@@ -1390,6 +1426,7 @@ for i in "${!parsed_names[@]}"; do
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=success"
     else
       echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
+      OPERATION_FAILED=true
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=failed"
     fi
     continue
@@ -1478,6 +1515,7 @@ for i in "${!parsed_names[@]}"; do
       total_deleted_bytes=$((total_deleted_bytes + size))
     else
       echo -e "  ${RED}Error: Failed to move some files for '$name' to quarantine.${NC}" >&2
+      OPERATION_FAILED=true
     fi
     
   else
@@ -1507,6 +1545,7 @@ for i in "${!parsed_names[@]}"; do
             total_deleted_bytes=$((total_deleted_bytes + size))
           else
             echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path' with sudo${NC}" >&2
+            OPERATION_FAILED=true
           fi
         else
           echo -e "  Cleaning filtered files in ${YELLOW}$name${NC}..."
@@ -1515,43 +1554,16 @@ for i in "${!parsed_names[@]}"; do
             total_deleted_bytes=$((total_deleted_bytes + size))
           else
             echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${NC}" >&2
+            OPERATION_FAILED=true
           fi
         fi
       else
         # Single file or symlink deletion
-        if [[ "$use_sudo" = true ]]; then
-          echo -e "  Cleaning ${YELLOW}$name${NC} at '$path' with sudo..."
-          if sudo rm -rf "$path"; then
-            total_deleted_bytes=$((total_deleted_bytes + size))
-          else
-            echo -e "  ${RED}Error: Failed to delete '$path' with sudo${NC}" >&2
-          fi
-        else
-          echo -e "  Cleaning ${YELLOW}$name${NC} at '$path'..."
-          if rm -rf "$path"; then
-            total_deleted_bytes=$((total_deleted_bytes + size))
-          else
-            echo -e "  ${RED}Error: Failed to delete '$path'${NC}" >&2
-          fi
-        fi
+        delete_path_full "$path" "$name" "$use_sudo" "$size"
       fi
     else
       # Full folder/file deletion
-      if [[ "$use_sudo" = true ]]; then
-        echo -e "  Cleaning ${YELLOW}$name${NC} at '$path' with sudo..."
-        if sudo rm -rf "$path"; then
-          total_deleted_bytes=$((total_deleted_bytes + size))
-        else
-          echo -e "  ${RED}Error: Failed to delete '$path' with sudo${NC}" >&2
-        fi
-      else
-        echo -e "  Cleaning ${YELLOW}$name${NC} at '$path'..."
-        if rm -rf "$path"; then
-          total_deleted_bytes=$((total_deleted_bytes + size))
-        else
-          echo -e "  ${RED}Error: Failed to delete '$path'${NC}" >&2
-        fi
-      fi
+      delete_path_full "$path" "$name" "$use_sudo" "$size"
     fi
   fi
 
@@ -1577,4 +1589,11 @@ if [[ "$TRASH_MODE" = true ]]; then
   echo -e "${BOLD}${GREEN}Cleanup finished! Total space quarantined: $(format_bytes "$total_deleted_bytes")${NC}"
 else
   echo -e "${BOLD}${GREEN}Cleanup finished! Total space permanently reclaimed: $(format_bytes "$total_deleted_bytes")${NC}"
+fi
+
+# Report a non-zero status when any target failed, so an unattended run (cron,
+# systemd) can detect a failure that was otherwise only printed to stderr.
+if [[ "$OPERATION_FAILED" = true ]]; then
+  echo -e "${RED}One or more targets failed to clean; see the errors above.${NC}" >&2
+  exit 1
 fi

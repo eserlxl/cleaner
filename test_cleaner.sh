@@ -1463,7 +1463,8 @@ real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
 exec "$real_mv" "$@"
 EOF
 chmod +x "$TEST_ENV_DIR/bin/mv"
-if run_test_case "Failed Quarantine Move Not Recorded" 0 "qfail.log" \
+# Exit 1: a failed move is a failed operation (cleaner.1 EXIT STATUS contract).
+if run_test_case "Failed Quarantine Move Not Recorded" 1 "qfail.log" \
      --config "$TEST_ENV_DIR/qfail.conf" --trash --force; then
   rm -f "$TEST_ENV_DIR/bin/mv"
   qmeta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
@@ -1565,6 +1566,64 @@ if command -v make > /dev/null 2>&1; then
   fi
 else
   echo -e "${GREEN}PASS (skipped): make is not installed; cannot cross-check the Makefile tree.${NC}"
+fi
+
+# 50. Test Case: a failed permanent delete must exit non-zero (cleaner.1 EXIT
+# STATUS: "non-zero on ... a failed operation"), while a clean run still exits 0,
+# so an unattended cron run can detect a cleanup that did not happen.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/rmfail_test"
+echo "undeletable" > "$MOCK_HOME/.cache/rmfail_test/data.txt"
+cat << 'EOF' > "$TEST_ENV_DIR/rmfail.conf"
+safe|Rmfail Target|$HOME/.cache/rmfail_test|Target whose delete fails|0||
+EOF
+cat << 'EOF' > "$TEST_ENV_DIR/bin/rm"
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *rmfail_test*) exit 1 ;;
+  esac
+done
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+exec "$real_rm" "$@"
+EOF
+chmod +x "$TEST_ENV_DIR/bin/rm"
+if run_test_case "Failed Delete Exits Non-Zero" 1 "rmfail.log" \
+     --config "$TEST_ENV_DIR/rmfail.conf" --clean --force; then
+  rm -f "$TEST_ENV_DIR/bin/rm"
+  if grep -q "Failed to delete" "$TEST_ENV_DIR/rmfail.log" \
+     && grep -q "One or more targets failed to clean" "$TEST_ENV_DIR/rmfail.log" \
+     && [[ -f "$MOCK_HOME/.cache/rmfail_test/data.txt" ]]; then
+    echo -e "${GREEN}PASS: a failed delete exited 1 and said so; the file is still there.${NC}"
+  else
+    echo -e "${RED}FAIL: a failed delete did not report the failure properly.${NC}"
+    cat "$TEST_ENV_DIR/rmfail.log"
+    exit 1
+  fi
+else
+  rm -f "$TEST_ENV_DIR/bin/rm"
+  echo -e "${RED}FAIL: a failed delete did not exit 1 (silent failure).${NC}"
+  exit 1
+fi
+
+# Control: the same config with a working rm must still exit 0.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/rmfail_test"
+echo "deletable" > "$MOCK_HOME/.cache/rmfail_test/data.txt"
+cat << 'EOF' > "$TEST_ENV_DIR/rmfail.conf"
+safe|Rmfail Target|$HOME/.cache/rmfail_test|Target whose delete now succeeds|0||
+EOF
+if run_test_case "Successful Delete Still Exits Zero" 0 "rmok.log" \
+     --config "$TEST_ENV_DIR/rmfail.conf" --clean --force; then
+  if [[ ! -e "$MOCK_HOME/.cache/rmfail_test" ]]; then
+    echo -e "${GREEN}PASS: a successful cleanup still exits 0 and removed the target.${NC}"
+  else
+    echo -e "${RED}FAIL: the control run did not delete the target.${NC}"
+    cat "$TEST_ENV_DIR/rmok.log"
+    exit 1
+  fi
+else
+  exit 1
 fi
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"

@@ -23,6 +23,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   base.
 
 ### Fixed
+- Cleanup now exits non-zero when an operation fails, matching the documented
+  exit-status contract. A failed delete, quarantine move, predefined action, or
+  session purge previously printed an error to stderr and still exited 0, so an
+  unattended run (cron, systemd) could not detect that the cleanup had not
+  happened. Deliberate skips — a declined danger target, a process-blocked
+  target, an unsafe path, or an action whose binary is absent — are not failures
+  and still exit 0.
 - A quarantine move that fails is no longer recorded in `quarantine.meta`. The
   record was written before the move was attempted, so a failed move left an
   entry pointing at a file that never reached quarantine — which made every
