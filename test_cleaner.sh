@@ -1052,6 +1052,25 @@ else
 fi
 # Note: the /etc/linux-cleaner rung is not hermetically testable without touching a real system path.
 
+# 33. Test Case: the man page documents every --help option (drift guard)
+setup_mock_env
+help_out="$TEST_ENV_DIR/help_flags.txt"
+HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" "$CLEANER_SH" --help > "$help_out" 2>&1
+man_stripped="$TEST_ENV_DIR/man_stripped.txt"
+sed 's/\\//g' "$SCRIPT_DIR/cleaner.1" > "$man_stripped"   # drop roff backslash escapes
+missing_flags=""
+while IFS= read -r flag; do
+  [[ -z "$flag" ]] && continue
+  grep -q -- "$flag" "$man_stripped" || missing_flags="$missing_flags $flag"
+done < <(grep -oE -- '--[a-z][a-z-]*' "$help_out" | sort -u)
+echo -e "\n${BOLD}Test Case: Man Page Option Consistency${NC}"
+if [[ -z "$missing_flags" ]]; then
+  echo -e "${GREEN}PASS: The man page documents every --help long option.${NC}"
+else
+  echo -e "${RED}FAIL: Options in --help but missing from the man page:$missing_flags${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
