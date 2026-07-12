@@ -720,7 +720,6 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # count is the number of '|' delimiters plus one. Counting delimiters stays
   # correct even when trailing optional fields are empty (unlike an array length).
   config_pipes="${config_line//[^|]/}"
-  # shellcheck disable=SC2034  # consumed by the field-count guard (Phase 3.1 follow-up)
   field_count=$(( ${#config_pipes} + 1 ))
   # Split into the named fields (fields beyond the 7th collapse into the last).
   IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -728,6 +727,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   risk=$(trim "$risk")
   [[ -z "$risk" || "$risk" =~ ^# ]] && continue
   
+  # Enforce the field-count contract (5-7 fields): RISK, NAME, PATH, DESCRIPTION,
+  # and MIN_AGE_DAYS are required; CHECK_PROCESSES and CUSTOM_ACTION are optional.
+  if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
+    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
+    exit 1
+  fi
+
   name=$(trim "$name")
   raw_path=$(trim "$raw_path")
   desc=$(trim "$desc")
