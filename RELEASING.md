@@ -44,7 +44,14 @@ A release must never be cut on a failing safety suite. Before tagging, confirm a
 - `shellcheck cleaner.sh test_cleaner.sh install.sh` is clean;
 - `bash test_cleaner.sh` (or `make check`) passes;
 - the version-consistency check passes (the CHANGELOG top version equals
-  `cleaner.sh --version`).
+  `cleaner.sh --version`, and `PKGBUILD`/`.SRCINFO` carry the same `pkgver`);
+- the **stranded-entries guard** passes: once HEAD is tagged, `bash test_cleaner.sh`
+  fails if `## [Unreleased]` still holds entries. The release workflow builds its notes
+  by extracting only the tagged version's changelog section, so anything left under
+  `[Unreleased]` would be **silently dropped from the published notes** — and a pushed
+  tag is never deleted (see below). Roll the entries into the version's section first
+  (step 3). The guard's assertion is exercised against fixtures on every test run, so it
+  cannot rot while the repository sits untagged.
 
 ## Yanking or patching a bad release
 

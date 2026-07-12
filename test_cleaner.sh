@@ -1167,12 +1167,19 @@ else
   exit 1
 fi
 
-# 35. Test Case: version/tag/changelog three-way consistency (skipped without a release tag)
+# Count the '- ' entries stranded under CHANGELOG's [Unreleased] heading. A release cut
+# while this is non-zero silently drops them: release.yml builds its notes by extracting
+# only the tagged version's section, so anything still under [Unreleased] never ships.
+unreleased_entry_count() {
+  awk '/^## \[Unreleased\]/{f=1;next} f&&/^## \[/{exit} f&&/^- /{c++} END{print c+0}' "$1"
+}
+
+# 35. Test Case: version/tag/changelog three-way consistency + the release-notes guard
 setup_mock_env
 echo -e "\n${BOLD}Test Case: Version/Tag/Changelog Consistency${NC}"
 git_tag=$(git -C "$SCRIPT_DIR" describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null || true)
 if [[ -z "$git_tag" ]]; then
-  echo -e "${GREEN}PASS (skipped): HEAD is not a v* release tag; the three-way check applies only on a tagged release.${NC}"
+  echo -e "${GREEN}PASS (not applicable): HEAD is not a v* release tag; the three-way check applies only on a tagged release.${NC}"
 else
   tag_version="${git_tag#v}"
   changelog_version=$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$SCRIPT_DIR/CHANGELOG.md" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
@@ -1183,6 +1190,54 @@ else
     echo -e "${RED}FAIL: version mismatch — tag='$tag_version' changelog='$changelog_version' --version='$tool_version'.${NC}"
     exit 1
   fi
+  # A tagged release must not leave entries stranded under [Unreleased] — they would
+  # be silently dropped from the published notes, irreversibly.
+  stranded=$(unreleased_entry_count "$SCRIPT_DIR/CHANGELOG.md")
+  if [[ "$stranded" -eq 0 ]]; then
+    echo -e "${GREEN}PASS: no entries stranded under [Unreleased] at tag $git_tag.${NC}"
+  else
+    echo -e "${RED}FAIL: tagging $git_tag would silently drop $stranded [Unreleased] entry(ies) from the release notes. Roll them into the ${tag_version} section first.${NC}"
+    exit 1
+  fi
+fi
+
+# The guard above only runs on a tagged HEAD — which is never, on an ordinary commit.
+# So prove its assertion actually works on EVERY run, against fixtures. A check that
+# has never executed is not a gate. (Fixtures only: no git repo is created, no tag is
+# ever made, so this can never touch the real repository.)
+echo -e "\n${BOLD}Test Case: Stranded [Unreleased] Entries Are Detected${NC}"
+cat << 'EOF' > "$TEST_ENV_DIR/cl_stranded.md"
+## [Unreleased]
+
+### Added
+- an entry that would be dropped
+- and another
+
+## [1.0.0] - 2020-01-01
+
+### Added
+- already shipped
+EOF
+cat << 'EOF' > "$TEST_ENV_DIR/cl_rolled.md"
+## [Unreleased]
+
+## [1.0.0] - 2020-01-01
+
+### Added
+- already shipped
+EOF
+stranded_n=$(unreleased_entry_count "$TEST_ENV_DIR/cl_stranded.md")
+rolled_n=$(unreleased_entry_count "$TEST_ENV_DIR/cl_rolled.md")
+if [[ "$stranded_n" -eq 2 && "$rolled_n" -eq 0 ]]; then
+  echo -e "${GREEN}PASS: the release guard detects stranded [Unreleased] entries (2) and a rolled changelog (0).${NC}"
+else
+  echo -e "${RED}FAIL: the release guard miscounts (stranded=$stranded_n expected 2, rolled=$rolled_n expected 0).${NC}"
+  exit 1
+fi
+# Belt and braces: this suite must never create a tag in the real repository.
+if [[ -n "$(git -C "$SCRIPT_DIR" tag -l 'v9.9.*' 2>/dev/null)" ]]; then
+  echo -e "${RED}FAIL: a test fixture leaked a v9.9.* tag into the real repository.${NC}"
+  exit 1
 fi
 
 # 37. Test Case: apt/dnf actions invoke their exact commands (and no other manager)
