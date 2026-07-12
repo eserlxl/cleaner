@@ -39,7 +39,7 @@ Usage: $(basename "$0") [OPTIONS]
 Safely clean cache and temporary files defined in a configuration file.
 
 Options:
-  -c, --config FILE          Path to custom configuration file (default: ./cleaner.conf)
+  -c, --config FILE          Path to a configuration file (default search order: XDG user config, then /etc/linux-cleaner/cleaner.conf, then cleaner.conf beside the script).
   -d, --dry-run              Calculate and display potential space savings without deleting anything (default).
   --clean                    Perform cleanup with a summary confirmation prompt.
   -i, --interactive          Prompt for confirmation before cleaning each target.
