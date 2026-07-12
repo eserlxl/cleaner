@@ -108,3 +108,11 @@ The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` a
 ### Continuous Integration
 
 Both gate commands run automatically on every push and pull request (see the badge above). **Both must pass before a change is merged**: the ShellCheck lint and the full `bash test_cleaner.sh` suite. To enforce this, a maintainer should enable a branch-protection rule on `main` marking the `CI` workflow's `gate` job as a **required status check** (Settings → Branches → Branch protection rules).
+
+---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 or later** (SPDX identifier: `GPL-3.0-or-later`) — see the [LICENSE](LICENSE) file for the full text.
+
+Copyright (C) 2026 Eser KUBALI
