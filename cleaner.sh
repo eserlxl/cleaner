@@ -50,6 +50,7 @@ Options:
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --list-sessions            List quarantine sessions (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
+  --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
@@ -68,6 +69,7 @@ MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
 EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
+RESTORE_ONLY=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
 
@@ -150,6 +152,14 @@ while [[ $# -gt 0 ]]; do
       RESTORE_TARGET="$2"
       shift 2
       ;;
+    --only)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --only requires a pattern argument.${NC}" >&2
+        exit 1
+      fi
+      RESTORE_ONLY="$2"
+      shift 2
+      ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
@@ -204,6 +214,13 @@ if [[ -z "${HOME:-}" ]]; then
   exit 1
 fi
 USER="${USER:-$(id -un 2>/dev/null || true)}"
+
+# --only only means anything as a filter on --restore; silently ignoring it would
+# let a user believe a cleanup or purge was narrowed when it was not.
+if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
+  echo -e "${RED}Error: --only requires --restore (it filters which quarantined targets are restored).${NC}" >&2
+  exit 1
+fi
 
 # Check if config file exists (only if not restoring, purging, or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
@@ -640,12 +657,25 @@ restore_quarantine() {
   
   # Read metadata line by line
   # Format: TYPE|RELATIVE_PATH|ORIGINAL_PATH|USE_SUDO|UID|GID
-  local type rel_path original_path use_sudo uid gid
+  local type rel_path original_path use_sudo uid gid meta_line
   local overall_success=true
-  while IFS='|' read -r type rel_path original_path use_sudo uid gid _ || [[ -n "$type" ]]; do
+  local matched_any=false
+  # rel_paths actually moved back out of quarantine. Under --only, the metadata is
+  # rewritten from this so every remaining record still points at a file that is
+  # present in quarantine -- the same invariant the failed-move fix established.
+  local -a restored_rels=()
+  while IFS= read -r meta_line || [[ -n "$meta_line" ]]; do
+    IFS='|' read -r type rel_path original_path use_sudo uid gid _ <<< "$meta_line"
     type=$(trim "$type")
     [[ -z "$type" || "$type" =~ ^# ]] && continue
-    
+
+    original_path=$(trim "$original_path")
+    # --only: leave every non-matching target quarantined, untouched.
+    if [[ -n "${RESTORE_ONLY:-}" && "$original_path" != *"$RESTORE_ONLY"* ]]; then
+      continue
+    fi
+    matched_any=true
+
     rel_path=$(trim "$rel_path")
     original_path=$(trim "$original_path")
     use_sudo=$(trim "$use_sudo")
@@ -760,16 +790,54 @@ restore_quarantine() {
     if [[ "$success" = false ]]; then
       echo -e "${RED}Error: Failed to restore '$original_path'.${NC}" >&2
       overall_success=false
+    else
+      restored_rels+=("$rel_path")
     fi
   done < "$meta_file"
-  
-  if [[ "$overall_success" = true ]]; then
-    echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
+
+  # A --only pattern that matched nothing restored nothing: say so, don't succeed silently.
+  if [[ -n "${RESTORE_ONLY:-}" && "$matched_any" != true ]]; then
+    echo -e "${RED}Error: No quarantined target in this session matches '--only ${RESTORE_ONLY}'.${NC}" >&2
+    exit 1
+  fi
+
+  if [[ "$overall_success" != true ]]; then
+    echo -e "${RED}Error: Restoration completed with some errors. The quarantine session has been kept at '$restore_dir' for recovery.${NC}" >&2
+    exit 1
+  fi
+
+  echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
+
+  if [[ -z "${RESTORE_ONLY:-}" ]]; then
+    rm -rf "$restore_dir"
+    rmdir "$quarantine_base" 2>/dev/null || true
+    return 0
+  fi
+
+  # Filtered restore: keep every record we did NOT move back, so the session stays
+  # consistent and a later full --restore of it still succeeds.
+  local -a retained=()
+  local line rp r keep
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    IFS='|' read -r _ rp _ <<< "$line"
+    rp=$(trim "$rp")
+    keep=true
+    for r in "${restored_rels[@]}"; do
+      if [[ "$r" == "$rp" ]]; then
+        keep=false
+        break
+      fi
+    done
+    [[ "$keep" == true ]] && retained+=("$line")
+  done < "$meta_file"
+
+  if [[ ${#retained[@]} -eq 0 ]]; then
     rm -rf "$restore_dir"
     rmdir "$quarantine_base" 2>/dev/null || true
   else
-    echo -e "${RED}Error: Restoration completed with some errors. The quarantine session has been kept at '$restore_dir' for recovery.${NC}" >&2
-    exit 1
+    printf '%s\n' "${retained[@]}" > "$meta_file"
+    echo -e "Session ${YELLOW}$(basename "$restore_dir")${NC} kept: ${#retained[@]} target(s) still quarantined."
   fi
 }
 

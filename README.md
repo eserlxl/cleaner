@@ -89,6 +89,12 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date) and the targets each one holds — the type (`full` or `aged`) and original path of every quarantined item, so you can see what a session contains before restoring it or permanently purging it. Read-only and requires no config file.
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
+- **`--only PATTERN`**: With `--restore`, restore only the targets whose original path contains `PATTERN`; every other target stays quarantined and the session is kept (its metadata is rewritten, so a later full `--restore` of that session still succeeds). Exits 1 if nothing matches. Pairs with `--list-sessions`, which prints each target's path:
+
+  ```sh
+  cleaner --list-sessions                       # see exactly what a session holds
+  cleaner --restore latest --only /.cache/yarn  # take back just that one target
+  ```
 - **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. Requires no config file.
 
   A bounded unattended setup — clean into quarantine daily, expire it weekly:

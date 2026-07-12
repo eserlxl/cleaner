@@ -59,6 +59,19 @@ or
 and original path of every quarantined item, so a session's contents can be
 inspected before it is restored or permanently purged.
 .TP
+.B \-\-only \fIPATTERN\fR
+Used with
+.BR \-\-restore :
+restore only the quarantined targets whose original path contains
+.IR PATTERN ;
+every other target stays quarantined and the session is kept, with its metadata
+rewritten so a later full
+.B \-\-restore
+of that session still succeeds. Exits 1 if no target matches, or if
+.B \-\-only
+is given without
+.BR \-\-restore .
+.TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
 .TP

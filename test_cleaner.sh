@@ -1772,6 +1772,90 @@ else
   exit 1
 fi
 
+# 56. Test Case: --restore --only PATTERN returns a single target and leaves the
+# rest quarantined with a consistent quarantine.meta -- so a later full restore of
+# the same session still succeeds (the invariant the failed-move fix established).
+setup_mock_env
+cat << 'EOF' > "$TEST_ENV_DIR/only.conf"
+safe|Yarn Cache|$HOME/.cache/yarn|yarn cache|0||
+safe|NPM Cache|$HOME/.npm/_cacache|npm cache|0||
+EOF
+if run_test_case "Quarantine for Selective Restore" 0 "only_setup.log" \
+     --config "$TEST_ENV_DIR/only.conf" --trash --force; then
+  if run_test_case "Restore Only One Target" 0 "only_restore.log" \
+       --restore latest --only "/.cache/yarn"; then
+    only_meta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
+    if [[ -f "$MOCK_HOME/.cache/yarn/yarn-cache.json" ]] \
+       && [[ ! -e "$MOCK_HOME/.npm/_cacache" ]] \
+       && [[ -f "$only_meta" ]] \
+       && ! grep -q "/.cache/yarn" "$only_meta" \
+       && grep -q "_cacache" "$only_meta"; then
+      echo -e "${GREEN}PASS: --only restored just the matching target; the rest stayed quarantined and the meta is consistent.${NC}"
+    else
+      echo -e "${RED}FAIL: --only did not restore selectively or left inconsistent metadata.${NC}"
+      cat "$TEST_ENV_DIR/only_restore.log"
+      cat "$only_meta" 2>/dev/null
+      exit 1
+    fi
+    # The session must still be fully restorable afterwards.
+    if run_test_case "Full Restore After Selective Restore" 0 "only_rest2.log" --restore latest; then
+      if [[ -e "$MOCK_HOME/.npm/_cacache" ]]; then
+        echo -e "${GREEN}PASS: a later full restore of the same session succeeded and returned the remaining target.${NC}"
+      else
+        echo -e "${RED}FAIL: the remaining target was not restored by the follow-up full restore.${NC}"
+        cat "$TEST_ENV_DIR/only_rest2.log"
+        exit 1
+      fi
+    else
+      echo -e "${RED}FAIL: a full restore after a selective restore did not exit 0 (session left inconsistent).${NC}"
+      cat "$TEST_ENV_DIR/only_rest2.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A pattern matching nothing must fail loudly rather than "succeed" having done nothing.
+setup_mock_env
+cat << 'EOF' > "$TEST_ENV_DIR/only.conf"
+safe|Yarn Cache|$HOME/.cache/yarn|yarn cache|0||
+safe|NPM Cache|$HOME/.npm/_cacache|npm cache|0||
+EOF
+if run_test_case "Quarantine for No-Match Only" 0 "only_nomatch_setup.log" \
+     --config "$TEST_ENV_DIR/only.conf" --trash --force; then
+  if run_test_case "Restore Only No Match" 1 "only_nomatch.log" \
+       --restore latest --only "no_such_target_xyz"; then
+    if grep -q "matches '--only no_such_target_xyz'" "$TEST_ENV_DIR/only_nomatch.log"; then
+      echo -e "${GREEN}PASS: an --only pattern matching nothing exits 1 and restores nothing.${NC}"
+    else
+      echo -e "${RED}FAIL: a no-match --only did not report the empty match.${NC}"
+      cat "$TEST_ENV_DIR/only_nomatch.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# --only without --restore is a usage error, not a silently ignored flag.
+if run_test_case "Only Without Restore Rejected" 1 "only_norestore.log" \
+     --config "$TEST_ENV_DIR/only.conf" --only yarn --dry-run; then
+  if grep -q "only requires --restore" "$TEST_ENV_DIR/only_norestore.log"; then
+    echo -e "${GREEN}PASS: --only without --restore is rejected with a clear error.${NC}"
+  else
+    echo -e "${RED}FAIL: --only without --restore was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/only_norestore.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

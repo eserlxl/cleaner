@@ -16,6 +16,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- `--only PATTERN` — with `--restore`, recover a single target from a quarantine
+  session instead of the whole session. Targets whose original path does not match
+  stay quarantined, and the session's metadata is rewritten so a later full
+  `--restore` of it still succeeds. Previously the only way to get one cache back
+  was to restore everything and re-run the cleaner, which re-deleted the targets
+  you meant to keep. Pairs with `--list-sessions`, which now prints each target's
+  path. Exits 1 if the pattern matches nothing, or if used without `--restore`.
 - `--purge-sessions older-than:DAYS` — age-based quarantine retention. Purges
   every session last modified more than `DAYS` days ago, exits 0 when none match
   (so it is safe as a cron retention policy), and rejects a malformed day count.
