@@ -50,6 +50,7 @@ Options:
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --list-sessions            List quarantine sessions (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
+  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, or timestamp). Irreversible.
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -h, --help                 Display this help message and exit.
@@ -67,6 +68,7 @@ MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
 EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
+PURGE_TARGET=""
 LIST_SESSIONS=false
 
 # Operation log (opt-in, OFF by default). Enable via --log or by setting the
@@ -140,6 +142,14 @@ while [[ $# -gt 0 ]]; do
       RESTORE_TARGET="$2"
       shift 2
       ;;
+    --purge-sessions)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, or timestamp).${NC}" >&2
+        exit 1
+      fi
+      PURGE_TARGET="$2"
+      shift 2
+      ;;
     --allow-outside-home)
       ALLOW_OUTSIDE_HOME=true
       shift
@@ -187,8 +197,8 @@ if [[ -z "${HOME:-}" ]]; then
 fi
 USER="${USER:-$(id -un 2>/dev/null || true)}"
 
-# Check if config file exists (only if not restoring or listing sessions)
-if [[ -z "${RESTORE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
+# Check if config file exists (only if not restoring, purging, or listing sessions)
+if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given:
   # XDG user config > system config > dev-checkout config beside the script.
   if [[ -z "$CONFIG_FILE" ]]; then
@@ -401,6 +411,89 @@ list_quarantine_sessions() {
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
   done
+}
+
+# Purge (permanently delete) quarantine sessions to reclaim the disk space that
+# trash mode holds. Irreversible: purged sessions can no longer be restored. Only
+# ever removes directories under the tool-owned quarantine base -- never a path
+# outside it. Honors -f/--force to skip the confirmation prompt.
+purge_quarantine_sessions() {
+  local target="$1"
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+
+  if [[ ! -d "$quarantine_base" ]]; then
+    echo -e "${RED}Error: No quarantine directory exists at '$quarantine_base'.${NC}" >&2
+    exit 1
+  fi
+
+  # Resolve the set of session directories to purge.
+  local -a targets=()
+  if [[ "$target" == "all" ]]; then
+    local s
+    while IFS= read -r s; do
+      [[ -n "$s" ]] && targets+=("$s")
+    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+    if [[ ${#targets[@]} -eq 0 ]]; then
+      echo -e "${YELLOW}No quarantine sessions found.${NC}"
+      return 0
+    fi
+  elif [[ "$target" == "latest" ]]; then
+    local latest
+    latest=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)
+    if [[ -z "$latest" ]]; then
+      echo -e "${RED}Error: No quarantined sessions found in '$quarantine_base'.${NC}" >&2
+      exit 1
+    fi
+    targets+=("$latest")
+  else
+    # A named session must be an immediate child of the base: reject any path
+    # separator or dot-traversal so the purge can never escape the quarantine dir.
+    if [[ "$target" == */* || "$target" == "." || "$target" == ".." ]]; then
+      echo -e "${RED}Error: Invalid session name '$target'.${NC}" >&2
+      exit 1
+    fi
+    local dir="$quarantine_base/$target"
+    if [[ ! -d "$dir" ]]; then
+      echo -e "${RED}Error: Quarantine session directory '$dir' does not exist.${NC}" >&2
+      exit 1
+    fi
+    targets+=("$dir")
+  fi
+
+  # Show what will be freed before touching anything.
+  echo -e "${BOLD}${BLUE}=== Purge Quarantine Sessions ===${NC}"
+  local d ts size
+  for d in "${targets[@]}"; do
+    ts=$(basename "$d")
+    size=$(du -sh "$d" 2>/dev/null | awk '{print $1}')
+    echo -e "  ${ts}  size=${size:-?}"
+  done
+
+  # Confirm unless forced -- purge is irreversible.
+  if [[ "$FORCE" != true ]]; then
+    echo -n -e "${RED}Permanently delete the above quarantine session(s)? This cannot be undone. [y/N]: ${NC}"
+    local reply
+    read -r reply || true
+    if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
+      echo -e "${YELLOW}Aborted. No sessions were purged.${NC}"
+      return 0
+    fi
+  fi
+
+  local purged=0
+  for d in "${targets[@]}"; do
+    if rm -rf "$d"; then
+      echo -e "${GREEN}Purged $(basename "$d")${NC}"
+      purged=$((purged + 1))
+    else
+      echo -e "${RED}Error: Failed to purge '$d'.${NC}" >&2
+    fi
+  done
+
+  # Remove the base directory if it is now empty (mirrors restore cleanup).
+  rmdir "$quarantine_base" 2>/dev/null || true
+
+  echo -e "${BOLD}Purged ${purged} session(s).${NC}"
 }
 
 # Restore files and folders from a quarantine session
@@ -854,6 +947,12 @@ fi
 # Check if restore mode is active
 if [[ -n "${RESTORE_TARGET:-}" ]]; then
   restore_quarantine "$RESTORE_TARGET"
+  exit 0
+fi
+
+# Check if purge mode is active
+if [[ -n "${PURGE_TARGET:-}" ]]; then
+  purge_quarantine_sessions "$PURGE_TARGET"
   exit 0
 fi
 

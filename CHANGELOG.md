@@ -15,6 +15,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+- `--purge-sessions SESSION` to permanently delete quarantine sessions
+  (`latest`, `all`, or a specific timestamp) and reclaim the disk space that
+  trash mode holds. Irreversible; prompts for confirmation unless `-f/--force`
+  is given, and only ever removes directories under the tool-owned quarantine
+  base.
+
 ## [1.0.0] - 2026-07-12
 
 ### Added

@@ -14,6 +14,7 @@ A safe, configuration-driven Bash utility designed to estimate and reclaim disk 
 - **Running-Process Checks**: Skip targets if their associated applications/processes are running (e.g., skip chromium cache if Chrome is open).
 - **Trash Quarantine**: Move deleted files to a quarantine folder (`~/.cache/linux-cleaner/quarantine/`) with collision prevention and path sanitization instead of deleting permanently.
 - **Quarantine Restoration**: Restore files from any previous quarantine session back to their original paths, preserving original ownership (`UID` and `GID`).
+- **Quarantine Purge**: Permanently delete quarantine sessions (`latest`, `all`, or a specific timestamp) to reclaim the space trash mode holds, with a confirmation prompt before any irreversible deletion.
 - **Predefined Custom Actions**: Execute specific system commands (like package cache cleaners) instead of path deletion.
 
 ---
@@ -88,6 +89,9 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date). Read-only and requires no config file.
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
+- **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, or a specific timestamp/folder name. Requires no config file.
+  > [!WARNING]
+  > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-h, --help`**: Display usage details.
 - **`-V, --version`**: Print the tool version and exit.

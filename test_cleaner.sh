@@ -505,6 +505,38 @@ else
   exit 1
 fi
 
+# 11b. Test Case: Purge quarantine sessions to reclaim space
+setup_mock_env
+if run_test_case "Quarantine for Purge" 0 "quarantine_purge_setup.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  if [[ ! -d "$quarantine_base" ]] || [[ -z "$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d)" ]]; then
+    echo -e "${RED}FAIL: Quarantine session not created for purge test.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Purging a non-existent named session must fail (base exists, session does not).
+if run_test_case "Purge Missing Session" 1 "purge_missing.log" --purge-sessions 19700101-000000 --force; then
+  echo -e "${GREEN}PASS: Purging a missing session exits non-zero.${NC}"
+else
+  exit 1
+fi
+
+# --force skips the confirmation prompt (stdin is /dev/null in the harness).
+if run_test_case "Purge All Sessions" 0 "purge_all.log" --purge-sessions all --force; then
+  if [[ -d "$quarantine_base" ]]; then
+    echo -e "${RED}FAIL: Quarantine base still exists after purging all sessions.${NC}"
+    find "$quarantine_base"
+    exit 1
+  else
+    echo -e "${GREEN}PASS: All quarantine sessions purged and empty base removed.${NC}"
+  fi
+else
+  exit 1
+fi
+
 # 12. Test Case: Ownership Metadata and Preservation
 setup_mock_env
 current_uid=$(id -u)

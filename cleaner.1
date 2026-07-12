@@ -56,6 +56,13 @@ List quarantine sessions (read-only) and exit.
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
 .TP
+.B \-\-purge\-sessions \fISESSION\fR
+Permanently delete quarantine session(s) to reclaim space:
+.IR latest ", " all ", or a specific timestamp."
+Irreversible; prompts for confirmation unless
+.B \-\-force
+is given.
+.TP
 .BR \-V ", " \-\-version
 Print the tool version and exit.
 .TP
@@ -95,7 +102,7 @@ System configuration.
 .TP
 .I ~/.cache/linux\-cleaner/quarantine/
 Quarantine sessions for
-.BR \-\-trash / \-\-restore .
+.BR \-\-trash / \-\-restore / \-\-purge\-sessions .
 .TP
 .I ~/.cache/linux\-cleaner/operations.log
 Default operation log (only when
@@ -115,6 +122,9 @@ List and restore quarantined files:
 .B cleaner \-\-list\-sessions
 .br
 .B cleaner \-\-restore latest
+.TP
+Reclaim space by purging all quarantine sessions:
+.B cleaner \-\-purge\-sessions all \-\-force
 .SH SEE ALSO
 .BR paccache (8),
 .BR find (1)
