@@ -13,11 +13,16 @@ This project ships as a single script; releases are cut from `main` as annotated
 1. **Pick the version** `X.Y.Z` per the [bump policy](CHANGELOG.md#versioning)
    (major = config/CLI break, minor = feature / safety-guard / new action,
    patch = fix / docs).
-2. **Bump the version constant** in `cleaner.sh`:
+2. **Bump the version everywhere it is carried** — `cleaner.sh`, `PKGBUILD`, and
+   `.SRCINFO`. The pre-release gate (below) checks all three against the changelog,
+   so a partial bump fails it:
    ```sh
    sed -i 's/^readonly VERSION=.*/readonly VERSION="X.Y.Z"/' cleaner.sh
+   sed -i -e 's/^pkgver=.*/pkgver=X.Y.Z/' -e 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
+   makepkg --printsrcinfo > .SRCINFO   # rewrites .SRCINFO's pkgver and source line
    ```
-   Confirm `./cleaner.sh --version` prints the new version.
+   Confirm `./cleaner.sh --version` prints the new version. (The tarball checksum
+   cannot be computed yet — it needs the pushed tag, so it stays in *Packaging (AUR)*.)
 3. **Roll the changelog**: move the `[Unreleased]` entries under a new
    `## [X.Y.Z] - <YYYY-MM-DD>` heading in `CHANGELOG.md`, and update the
    compare/tag links at the bottom.
@@ -52,21 +57,23 @@ warning to the bad GitHub Release's notes (or mark it a pre-release).
 The repository ships an Arch `PKGBUILD` and `.SRCINFO` whose `package()` delegates to
 `make install DESTDIR="$pkgdir" PREFIX=/usr`. To build and publish a package for a release:
 
-1. Bump `pkgver` in `PKGBUILD` to the release version and reset `pkgrel=1`.
-2. Replace the placeholder checksum with the real one against the release tarball:
+`pkgver` was already bumped by release step 2; everything below needs the pushed tag,
+so it runs only after the release is cut.
+
+1. Replace the placeholder checksum with the real one against the release tarball:
    ```sh
    updpkgsums                       # rewrites the SKIP sha256 for the v<pkgver> tarball
    ```
-3. Build and lint locally:
+2. Build and lint locally:
    ```sh
    makepkg -f                       # builds the package
    namcap PKGBUILD                  # lint the PKGBUILD
    namcap *.pkg.tar.zst             # lint the built package
    ```
-4. Regenerate and commit the metadata alongside the PKGBUILD:
+3. Regenerate and commit the metadata alongside the PKGBUILD:
    ```sh
    makepkg --printsrcinfo > .SRCINFO
    ```
-5. **Submit to the AUR** — a deliberate, human-gated maintainer action: push the
+4. **Submit to the AUR** — a deliberate, human-gated maintainer action: push the
    updated `PKGBUILD` and `.SRCINFO` to the package's AUR git remote. This is never
    automated.
