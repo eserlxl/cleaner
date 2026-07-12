@@ -325,10 +325,12 @@ log_operation() {
   local message="$1"
   local target="${LOG_FILE:-}"
   [[ -z "$target" ]] && target="$HOME/.cache/linux-cleaner/operations.log"
-  local literal_dir resolved_dir
+  local literal_dir resolved_target
   literal_dir=$(dirname "$target")
-  resolved_dir=$(canonicalize_physical "$literal_dir")
-  if [[ "$resolved_dir" != "$HOME" && "$resolved_dir" != "$HOME"/* ]]; then
+  # Canonicalize the FULL target (not just its parent) so a symlinked leaf that
+  # resolves outside $HOME is refused, not silently followed by the append.
+  resolved_target=$(canonicalize_physical "$target")
+  if [[ "$resolved_target" != "$HOME" && "$resolved_target" != "$HOME"/* ]]; then
     echo -e "  [${YELLOW}LOG${NC}] Refusing to write log outside \$HOME ('$target'); logging disabled." >&2
     LOG_ENABLED=false
     return 0
@@ -786,32 +788,18 @@ detect_package_manager() {
   fi
 }
 
-# Single source of truth: package manager -> its supported predefined action
-# family. New managers' actions extend exactly this one structure, which the
-# validation and execution arms consume.
-declare -A PKG_MANAGER_ACTIONS=(
-  [pacman]="paccache_keep1 paccache_keep2 paccache_keep3 pacman_clean"
-  [apt]="apt_clean"
-  [dnf]="dnf_clean"
-)
-
-# Which package manager an action:* token requires (empty if none/unknown).
-action_required_manager() {
-  local action="${1#action:}" mgr
-  for mgr in "${!PKG_MANAGER_ACTIONS[@]}"; do
-    if [[ " ${PKG_MANAGER_ACTIONS[$mgr]} " == *" $action "* ]]; then
-      echo "$mgr"
-      return 0
-    fi
-  done
-  echo ""
-}
-
-# True if the given manager token is available (apt covers apt/apt-get).
-manager_present() {
-  case "$1" in
-    apt) command -v apt >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1 ;;
-    *) command -v "$1" >/dev/null 2>&1 ;;
+# Single source of truth: map each predefined action to the binary its execution
+# arm actually invokes. This is the binary the safe-degradation guard checks --
+# note paccache ships separately from pacman (in pacman-contrib), so checking the
+# package manager alone would not catch a missing paccache. New actions extend
+# exactly this one structure (empty for an unknown token).
+action_required_binary() {
+  case "${1#action:}" in
+    paccache_keep1|paccache_keep2|paccache_keep3) echo "paccache" ;;
+    pacman_clean) echo "pacman" ;;
+    apt_clean) echo "apt-get" ;;
+    dnf_clean) echo "dnf" ;;
+    *) echo "" ;;
   esac
 }
 
@@ -1201,11 +1189,12 @@ for i in "${!parsed_names[@]}"; do
   cleanup_bytes_before=$total_deleted_bytes
 
   if [[ -n "$custom_clean_cmd" ]]; then
-    # Safe degradation: skip an action whose package manager is absent, before
-    # any sudo call, so an apt/dnf action on the wrong distro is a clean skip.
-    required_mgr=$(action_required_manager "$custom_clean_cmd")
-    if [[ -n "$required_mgr" ]] && ! manager_present "$required_mgr"; then
-      echo -e "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_mgr' not available on this platform."
+    # Safe degradation: skip an action whose actual binary is absent, before any
+    # sudo call (e.g. paccache when pacman-contrib is not installed, or apt/dnf on
+    # the wrong distro), so it is a clean skip rather than a failed sudo call.
+    required_bin=$(action_required_binary "$custom_clean_cmd")
+    if [[ -n "$required_bin" ]] && ! command -v "$required_bin" >/dev/null 2>&1; then
+      echo -e "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
       continue
     fi
     if [[ "$TRASH_MODE" = true ]]; then

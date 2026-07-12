@@ -1253,6 +1253,47 @@ else
   exit 1
 fi
 
+# 42. Test Case: action_required_binary maps each action to the binary its arm invokes
+setup_mock_env
+arb_fn=$(awk '/^action_required_binary\(\) \{/,/^\}/' "$CLEANER_SH")
+arb_script="$TEST_ENV_DIR/arb_probe.sh"
+# shellcheck disable=SC2016  # literal $1 is intentional: the probe script's own positional
+{ echo "$arb_fn"; echo 'action_required_binary "$1"'; } > "$arb_script"
+arb() { bash "$arb_script" "$1"; }
+echo -e "\n${BOLD}Test Case: Action Required Binary Mapping${NC}"
+arb_ok=true
+[[ "$(arb action:paccache_keep1)" == "paccache" ]] || arb_ok=false
+[[ "$(arb action:paccache_keep3)" == "paccache" ]] || arb_ok=false
+[[ "$(arb action:pacman_clean)" == "pacman" ]] || arb_ok=false
+[[ "$(arb action:apt_clean)" == "apt-get" ]] || arb_ok=false
+[[ "$(arb action:dnf_clean)" == "dnf" ]] || arb_ok=false
+[[ -z "$(arb action:bogus)" ]] || arb_ok=false
+if [[ "$arb_ok" == true ]]; then
+  echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf map to their real binaries.${NC}"
+else
+  echo -e "${RED}FAIL: action_required_binary returned an unexpected binary.${NC}"
+  exit 1
+fi
+
+# 43. Test Case: opt-in log refuses a symlinked leaf that escapes $HOME
+setup_mock_env
+ext_target="$OUTSIDE_DIR/exfil.log"
+ln -s "$ext_target" "$MOCK_HOME/planted.log"   # the log leaf is a symlink pointing outside HOME
+cat << EOF > "$TEST_ENV_DIR/log_symlink_config.conf"
+safe|NPM Cache|\$HOME/.npm/_cacache|Mock NPM cache|0||
+EOF
+if run_test_case "Log Symlink Leaf Refused" 0 "log_symlink.log" --config "$TEST_ENV_DIR/log_symlink_config.conf" --force --log "$MOCK_HOME/planted.log"; then
+  if grep -qi "Refusing to write log outside" "$TEST_ENV_DIR/log_symlink.log" && [[ ! -f "$ext_target" ]]; then
+    echo -e "${GREEN}PASS: opt-in log refused a symlinked leaf escaping HOME; nothing written outside HOME.${NC}"
+  else
+    echo -e "${RED}FAIL: opt-in log followed a symlinked leaf outside HOME.${NC}"
+    cat "$TEST_ENV_DIR/log_symlink.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
