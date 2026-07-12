@@ -47,6 +47,7 @@ Options:
   -t, --trash                Move files to quarantine instead of permanent deletion.
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
+  --list-sessions            List quarantine sessions (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   -h, --help                 Display this help message and exit.
