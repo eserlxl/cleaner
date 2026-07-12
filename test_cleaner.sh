@@ -963,6 +963,58 @@ else
   exit 1
 fi
 
+# 31. Test Case: Opt-in operation logging (default-off, opt-in-on, no-leak, $HOME-confined)
+setup_mock_env
+log_path="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+
+# (a) Default run writes no log file
+if run_test_case "Log Default Off" 0 "log_default.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run; then
+  if [[ ! -f "$log_path" ]]; then
+    echo -e "${GREEN}PASS: Default run wrote no operation log.${NC}"
+  else
+    echo -e "${RED}FAIL: An operation log was created without opt-in.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# (b)+(c) Opted-in clean run writes a log entry and leaks no file contents
+setup_mock_env
+if run_test_case "Log Opt-In Write" 0 "log_optin.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force --log; then
+  if [[ -f "$log_path" ]] && grep -q "target='NPM Cache'" "$log_path"; then
+    echo -e "${GREEN}PASS: Opted-in run logged a cleaned target.${NC}"
+  else
+    echo -e "${RED}FAIL: Opted-in run did not log the expected target.${NC}"
+    cat "$log_path" 2>/dev/null
+    exit 1
+  fi
+  if ! grep -qE "dummy npm cache|dummy aurman pkg|dummy yarn cache" "$log_path"; then
+    echo -e "${GREEN}PASS: Operation log leaked no mock file contents.${NC}"
+  else
+    echo -e "${RED}FAIL: Operation log leaked file contents.${NC}"
+    cat "$log_path"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# (d) Out-of-$HOME log path is refused (no file created outside HOME)
+setup_mock_env
+outside_log="$OUTSIDE_DIR/should_not_exist.log"
+if run_test_case "Log Outside HOME Rejected" 0 "log_outside.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force --log "$outside_log"; then
+  if [[ ! -f "$outside_log" ]] && grep -qi "Refusing to write log outside" "$TEST_ENV_DIR/log_outside.log"; then
+    echo -e "${GREEN}PASS: Out-of-HOME log path was refused; no file created.${NC}"
+  else
+    echo -e "${RED}FAIL: Out-of-HOME log path was not properly refused.${NC}"
+    cat "$TEST_ENV_DIR/log_outside.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
