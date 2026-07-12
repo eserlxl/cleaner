@@ -46,3 +46,27 @@ A release must never be cut on a failing safety suite. Before tagging, confirm a
 If a released version is broken, do **not** delete the tag. Cut a new patch release
 (`X.Y.Z+1`) with the fix, note the regression in the changelog, and add a prominent
 warning to the bad GitHub Release's notes (or mark it a pre-release).
+
+## Packaging (AUR)
+
+The repository ships an Arch `PKGBUILD` and `.SRCINFO` whose `package()` delegates to
+`make install DESTDIR="$pkgdir" PREFIX=/usr`. To build and publish a package for a release:
+
+1. Bump `pkgver` in `PKGBUILD` to the release version and reset `pkgrel=1`.
+2. Replace the placeholder checksum with the real one against the release tarball:
+   ```sh
+   updpkgsums                       # rewrites the SKIP sha256 for the v<pkgver> tarball
+   ```
+3. Build and lint locally:
+   ```sh
+   makepkg -f                       # builds the package
+   namcap PKGBUILD                  # lint the PKGBUILD
+   namcap *.pkg.tar.zst             # lint the built package
+   ```
+4. Regenerate and commit the metadata alongside the PKGBUILD:
+   ```sh
+   makepkg --printsrcinfo > .SRCINFO
+   ```
+5. **Submit to the AUR** — a deliberate, human-gated maintainer action: push the
+   updated `PKGBUILD` and `.SRCINFO` to the package's AUR git remote. This is never
+   automated.
