@@ -124,6 +124,20 @@ After installation, `man cleaner` shows the manual page.
 
 ---
 
+## Supported Platforms & Requirements
+
+The tool targets Linux with a **GNU userland**. It relies on GNU coreutils/findutils behavior (`du -sb`, `stat -c`, `find -print0`/`-quit`, and GNU `realpath`); on a non-GNU userland it **refuses `--clean`/`--trash`** with a clear message (a `--dry-run` preview is still best-effort).
+
+Predefined package-cache actions are supported for three package managers:
+
+- **pacman** — `action:paccache_keep1/2/3`, `action:pacman_clean`
+- **apt** — `action:apt_clean`
+- **dnf** — `action:dnf_clean`
+
+An action whose package manager is not installed is **skipped** with a clear message rather than failing the run, so the same config is safe to carry across distributions.
+
+---
+
 ## Safety Features
 
 1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
