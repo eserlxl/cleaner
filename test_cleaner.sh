@@ -1220,6 +1220,39 @@ else
   exit 1
 fi
 
+# 41. Test Case: GNU-userland guard (transparent on GNU, refuses on non-GNU)
+setup_mock_env
+# (a) On this GNU host, a normal --force clean succeeds with no refusal
+if run_test_case "GNU Guard Transparent" 0 "gnu_transparent.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then
+  if ! grep -q "GNU coreutils are required" "$TEST_ENV_DIR/gnu_transparent.log"; then
+    echo -e "${GREEN}PASS: GNU-userland guard is transparent on a GNU host.${NC}"
+  else
+    echo -e "${RED}FAIL: GNU guard refused on a GNU host.${NC}"
+    cat "$TEST_ENV_DIR/gnu_transparent.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+# (b) Shadow stat with a -c-rejecting stub -> --force must refuse and delete nothing
+setup_mock_env
+# shellcheck disable=SC2016  # literal $1/$@ are the stub's own positionals
+printf '#!/bin/sh\ncase "$1" in -c) exit 1;; esac; exec /usr/bin/stat "$@"\n' > "$TEST_ENV_DIR/bin/stat"
+chmod +x "$TEST_ENV_DIR/bin/stat"
+if run_test_case "GNU Guard Refuses" 1 "gnu_refuse.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then
+  if grep -q "GNU coreutils are required" "$TEST_ENV_DIR/gnu_refuse.log" && \
+     [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+    echo -e "${GREEN}PASS: GNU guard refused --force on a non-GNU userland; nothing was deleted.${NC}"
+  else
+    echo -e "${RED}FAIL: GNU guard did not refuse or deleted files on a non-GNU userland.${NC}"
+    cat "$TEST_ENV_DIR/gnu_refuse.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: non-GNU --force did not exit 1.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
