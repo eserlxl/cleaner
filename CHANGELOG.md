@@ -15,6 +15,18 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Changed
+- Release-notes extraction moved out of the release workflow's inline `awk` into a
+  tracked, tested `release-notes.sh`. The workflow's fallback — which silently turned a
+  missing changelog section into a release published with an empty body — is gone: a
+  missing section now fails the release. Extraction also stops at the changelog's link
+  footer, which the old extractor dragged into the newest release's notes.
+- `bash test_cleaner.sh` now fails when a **tagged** HEAD still has entries under
+  `[Unreleased]`. The release workflow publishes only the tagged version's section, so
+  stranded entries were silently dropped — and a pushed tag is never deleted. The
+  guard's assertion runs against fixtures on every test run, so it cannot rot while the
+  repository sits untagged.
+
 ## [1.1.0] - 2026-07-13
 
 ### Added

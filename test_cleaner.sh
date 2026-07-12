@@ -1911,6 +1911,45 @@ else
   exit 1
 fi
 
+# 57. Test Case: release-notes extraction. This decides what a published release SAYS,
+# and a published release cannot be cleanly un-published — so it must be tested, not
+# left as inline awk inside a workflow where nothing covers it.
+echo -e "\n${BOLD}Test Case: Release Notes Extraction${NC}"
+rn_sh="$SCRIPT_DIR/release-notes.sh"
+rn_ver=$("$CLEANER_SH" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+rn_out="$TEST_ENV_DIR/notes.md"
+rn_ec=0
+"$rn_sh" extract "$rn_ver" > "$rn_out" 2>&1 || rn_ec=$?
+if [[ $rn_ec -eq 0 ]] && [[ -s "$rn_out" ]] \
+   && ! grep -q '^## \[' "$rn_out" \
+   && ! grep -qE '^\[[^]]+\]: https?://' "$rn_out"; then
+  echo -e "${GREEN}PASS: extracted the $rn_ver section without the [Unreleased] heading above it or the link footer below it.${NC}"
+else
+  echo -e "${RED}FAIL: release-notes extraction returned the wrong block (ec=$rn_ec).${NC}"
+  cat "$rn_out"
+  exit 1
+fi
+
+# A version with no changelog section must FAIL, never publish an empty-bodied release.
+rn_ec=0
+"$rn_sh" extract 9.9.9 > "$TEST_ENV_DIR/notes_missing.md" 2>&1 || rn_ec=$?
+if [[ $rn_ec -ne 0 ]] && grep -q "no changelog section found" "$TEST_ENV_DIR/notes_missing.md"; then
+  echo -e "${GREEN}PASS: a missing changelog section exits non-zero instead of publishing empty notes.${NC}"
+else
+  echo -e "${RED}FAIL: a missing changelog section did not fail (ec=$rn_ec).${NC}"
+  cat "$TEST_ENV_DIR/notes_missing.md"
+  exit 1
+fi
+
+# The release workflow must actually call the tested script, not carry its own copy.
+if grep -q "release-notes.sh extract" "$SCRIPT_DIR/.github/workflows/release.yml" \
+   && ! grep -q "printf 'Release %s" "$SCRIPT_DIR/.github/workflows/release.yml"; then
+  echo -e "${GREEN}PASS: release.yml calls release-notes.sh and carries no empty-notes fallback.${NC}"
+else
+  echo -e "${RED}FAIL: release.yml does not use release-notes.sh, or still has the empty-notes fallback.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

@@ -41,7 +41,7 @@ This project ships as a single script; releases are cut from `main` as annotated
 
 A release must never be cut on a failing safety suite. Before tagging, confirm all of:
 
-- `shellcheck cleaner.sh test_cleaner.sh install.sh` is clean;
+- `shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh` is clean;
 - `bash test_cleaner.sh` (or `make check`) passes;
 - the version-consistency check passes (the CHANGELOG top version equals
   `cleaner.sh --version`, and `PKGBUILD`/`.SRCINFO` carry the same `pkgver`);

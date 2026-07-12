@@ -202,7 +202,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design cons
 Every change runs through two gate commands, both of which must pass:
 
 ```bash
-shellcheck cleaner.sh test_cleaner.sh   # static analysis / lint
+shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static analysis / lint
 bash test_cleaner.sh                    # full safety test suite
 ```
 

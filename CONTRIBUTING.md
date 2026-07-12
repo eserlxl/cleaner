@@ -11,7 +11,7 @@ Every change must pass both gate commands before it is merged (they also run in
 CI on push and pull request):
 
 ```bash
-shellcheck cleaner.sh test_cleaner.sh   # lint — must be clean
+shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # lint — must be clean
 bash test_cleaner.sh                    # full safety suite — must end "All refactored tests passed successfully!"
 ```
 

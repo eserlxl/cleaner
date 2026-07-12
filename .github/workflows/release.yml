@@ -17,24 +17,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint with ShellCheck
-        run: shellcheck cleaner.sh test_cleaner.sh install.sh
+        run: shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
 
       - name: Run the safety test suite
         run: bash test_cleaner.sh
 
+      # No fallback: if the tag has no changelog section, the release must FAIL rather
+      # than publish an empty-bodied release. A published release cannot be cleanly
+      # un-published, and the tag can never be deleted (see RELEASING.md).
       - name: Extract changelog notes for this tag
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          version="${TAG#v}"
-          awk -v ver="$version" '
-            $0 ~ ("^## \\[" ver "\\]") { inblk = 1; next }
-            inblk && /^## \[/ { exit }
-            inblk { print }
-          ' CHANGELOG.md > release_notes.md
-          if [ ! -s release_notes.md ]; then
-            printf 'Release %s\n' "$TAG" > release_notes.md
-          fi
+        run: ./release-notes.sh extract "${TAG#v}" > release_notes.md
 
       - name: Create draft GitHub Release
         env:
