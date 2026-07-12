@@ -91,6 +91,8 @@ Run the script directly from the project directory:
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints a change must preserve.
+
 Every change runs through two gate commands, both of which must pass:
 
 ```bash
