@@ -1,0 +1,15 @@
+# Planning / tool state
+.qb/
+.planwright/
+.remember/
+
+# Test harness workspace (created and torn down by test_cleaner.sh)
+test_env/
+
+# Logs and local artifacts
+*.log
+
+# Editor / OS junk
+*.swp
+*~
+.DS_Store
