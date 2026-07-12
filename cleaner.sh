@@ -786,6 +786,16 @@ detect_package_manager() {
   fi
 }
 
+# Single source of truth: package manager -> its supported predefined action
+# family. New managers' actions extend exactly this one structure, which the
+# validation and execution arms consume.
+# shellcheck disable=SC2034  # consumed by the action validation/execution arms (Phase 6.2)
+declare -A PKG_MANAGER_ACTIONS=(
+  [pacman]="paccache_keep1 paccache_keep2 paccache_keep3 pacman_clean"
+  [apt]="apt_clean"
+  [dnf]="dnf_clean"
+)
+
 MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
 # Build exclude arguments for find
