@@ -892,7 +892,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # Validate custom clean action if provided
   if [[ -n "$custom_clean_cmd" ]]; then
     case "$custom_clean_cmd" in
-      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean)
+      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean)
         ;;
       *)
         echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
