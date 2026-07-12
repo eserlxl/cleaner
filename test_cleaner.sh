@@ -734,6 +734,25 @@ else
   exit 1
 fi
 
+# 22. Test Case: format_bytes GB scaling (unit_idx reaching 3)
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/gb_probe"
+truncate -s 2G "$MOCK_HOME/.cache/gb_probe/big.sparse"
+cat << EOF > "$TEST_ENV_DIR/gb_size.conf"
+safe|GB Size Probe|\$HOME/.cache/gb_probe|Sparse 2G file to exercise GB scaling|0||
+EOF
+if run_test_case "format_bytes GB Scaling" 0 "gb_size.log" --config "$TEST_ENV_DIR/gb_size.conf" --dry-run; then
+  if grep -q "GB Size Probe (2 GB)" "$TEST_ENV_DIR/gb_size.log"; then
+    echo -e "${GREEN}PASS: format_bytes rendered a GB-magnitude target as '2 GB'.${NC}"
+  else
+    echo -e "${RED}FAIL: GB-magnitude size was not rendered as '2 GB'.${NC}"
+    cat "$TEST_ENV_DIR/gb_size.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
