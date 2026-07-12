@@ -7,6 +7,7 @@ PREFIX="${PREFIX:-/usr/local}"
 DESTDIR="${DESTDIR:-}"
 BINDIR="${BINDIR:-$PREFIX/bin}"
 SYSCONFDIR="${SYSCONFDIR:-/etc}"
+MANDIR="${MANDIR:-$PREFIX/share/man}"
 DATADIR="${DATADIR:-$PREFIX/share}"
 BINNAME="${BINNAME:-cleaner.sh}"
 PKGNAME="${PKGNAME:-linux-cleaner}"
@@ -28,6 +29,8 @@ do_install() {
   else
     install -m 0644 "$SRC_DIR/cleaner.conf" "$DESTDIR$SYSCONFDIR/$PKGNAME/cleaner.conf"
   fi
+  install -d "$DESTDIR$MANDIR/man1"
+  install -m 0644 "$SRC_DIR/cleaner.1" "$DESTDIR$MANDIR/man1/$BINNAME.1"
   install -d "$DESTDIR$DATADIR/licenses/$PKGNAME"
   install -m 0644 "$SRC_DIR/LICENSE" "$DESTDIR$DATADIR/licenses/$PKGNAME/LICENSE"
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
@@ -35,6 +38,7 @@ do_install() {
 
 do_uninstall() {
   rm -f "$DESTDIR$BINDIR/$BINNAME"
+  rm -f "$DESTDIR$MANDIR/man1/$BINNAME.1"
   rm -f "$DESTDIR$DATADIR/licenses/$PKGNAME/LICENSE"
   rmdir "$DESTDIR$DATADIR/licenses/$PKGNAME" 2>/dev/null || true
   echo "Uninstalled $BINNAME (system config preserved)"

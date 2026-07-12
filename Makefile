@@ -20,7 +20,7 @@ help:
 	@echo "Targets: install, uninstall, install-man, check, clean"
 	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR"
 
-install:
+install: install-man
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 0755 cleaner.sh "$(DESTDIR)$(BINDIR)/$(BINNAME)"
 	install -d "$(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)"
@@ -34,10 +34,12 @@ install:
 	install -m 0644 LICENSE "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
 
 install-man:
-	@echo "install-man: no man page yet (added in a later step)."
+	install -d "$(DESTDIR)$(MANDIR)/man1"
+	install -m 0644 cleaner.1 "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/$(BINNAME)"
+	rm -f "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
 	rm -f "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
 	-rmdir "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)" 2>/dev/null
 	@echo "Note: the system config $(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)/cleaner.conf is preserved (it may hold user edits)."
