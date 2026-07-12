@@ -156,7 +156,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints a change must preserve.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints a change must preserve. Record user-facing changes under the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md).
 
 Every change runs through two gate commands, both of which must pass:
 
