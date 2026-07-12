@@ -70,14 +70,10 @@ LIST_SESSIONS=false
 # Operation log (opt-in, OFF by default). Enable via --log or by setting the
 # LINUX_CLEANER_LOG environment variable. The log lives under $HOME (see the
 # writer). When disabled, no log file is created or written.
-# shellcheck disable=SC2034  # LOG_ENABLED/LOG_FILE are consumed by the log writer (next change)
 LOG_ENABLED=false
-# shellcheck disable=SC2034
 LOG_FILE=""
 if [[ -n "${LINUX_CLEANER_LOG:-}" ]]; then
-  # shellcheck disable=SC2034  # consumed by the log writer (next change)
   LOG_ENABLED=true
-  # shellcheck disable=SC2034
   LOG_FILE="$LINUX_CLEANER_LOG"
 fi
 
@@ -289,6 +285,29 @@ build_exclude_find_args() {
   
   if [[ ${#clauses[@]} -gt 0 ]]; then
     EXCLUDE_FIND_ARGS+=("!" "(" "${clauses[@]}" ")")
+  fi
+}
+
+# Append one human-readable operation-log line (opt-in). The log is confined to
+# $HOME: an out-of-$HOME LINUX_CLEANER_LOG/--log path is refused and logging is
+# disabled. Records only path/metadata the tool already prints -- never file
+# contents, environment values, or credentials. Non-fatal: a failed write warns
+# but never aborts a cleanup under set -euo pipefail.
+log_operation() {
+  [[ "$LOG_ENABLED" == true ]] || return 0
+  local message="$1"
+  local target="${LOG_FILE:-}"
+  [[ -z "$target" ]] && target="$HOME/.cache/linux-cleaner/operations.log"
+  local literal_dir resolved_dir
+  literal_dir=$(dirname "$target")
+  resolved_dir=$(canonicalize_physical "$literal_dir")
+  if [[ "$resolved_dir" != "$HOME" && "$resolved_dir" != "$HOME"/* ]]; then
+    echo -e "  [${YELLOW}LOG${NC}] Refusing to write log outside \$HOME ('$target'); logging disabled." >&2
+    LOG_ENABLED=false
+    return 0
+  fi
+  if ! { mkdir -p "$literal_dir" && printf '%s\n' "$message" >> "$target"; } 2>/dev/null; then
+    echo -e "  [${YELLOW}LOG${NC}] Warning: could not write to log '$target'." >&2
   fi
 }
 
