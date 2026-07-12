@@ -772,6 +772,20 @@ risk_to_int() {
 }
 
 # Parse custom max risk
+# Detect the system package manager (pure: command -v only, no sudo/network/eval).
+# Echoes exactly one canonical token: pacman | apt | dnf | none.
+detect_package_manager() {
+  if command -v pacman >/dev/null 2>&1; then
+    echo "pacman"
+  elif command -v apt >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1; then
+    echo "apt"
+  elif command -v dnf >/dev/null 2>&1; then
+    echo "dnf"
+  else
+    echo "none"
+  fi
+}
+
 MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
 # Build exclude arguments for find
