@@ -1950,6 +1950,29 @@ else
   exit 1
 fi
 
+# 58. Test Case: every documented lint command names the same files as CI does. This
+# drifted once already, silently — README.md and CONTRIBUTING.md told contributors to
+# lint two files while CI linted three, so a contributor could run the documented
+# command, see green, and still fail the build.
+echo -e "\n${BOLD}Test Case: ShellCheck Invocation Parity${NC}"
+# CI is the source of truth: extract the file list from its shellcheck step.
+ci_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$SCRIPT_DIR/.github/workflows/ci.yml" \
+  | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
+sc_drift=""
+for f in ".github/workflows/release.yml" "README.md" "RELEASING.md" "CONTRIBUTING.md"; do
+  site_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$SCRIPT_DIR/$f" \
+    | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
+  if [[ "$site_files" != "$ci_files" ]]; then
+    sc_drift+=" $f(=$site_files)"
+  fi
+done
+if [[ -z "$sc_drift" && -n "$ci_files" ]]; then
+  echo -e "${GREEN}PASS: all five shellcheck invocations lint the same files (${ci_files% }).${NC}"
+else
+  echo -e "${RED}FAIL: shellcheck invocation drift — CI lints '${ci_files% }' but:$sc_drift${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
