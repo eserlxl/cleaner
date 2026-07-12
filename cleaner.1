@@ -1,0 +1,120 @@
+.TH CLEANER.SH 1 "2026-07-12" "linux-cleaner 1.0.0" "User Commands"
+.SH NAME
+cleaner.sh \- safely clean cache and temporary files
+.SH SYNOPSIS
+.B cleaner.sh
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B cleaner.sh
+is a configuration-driven Bash utility that estimates and reclaims disk space by
+cleaning caches, temporary files, and logs. It runs in dry-run mode by default,
+routes every deletion through a path-safety check, blocks system directories and
+paths outside the user's
+.BR $HOME ,
+refuses to follow symlinks, and can move files to a restorable quarantine instead
+of deleting them permanently.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " " \fIFILE\fR
+Use a custom configuration file instead of the resolved default.
+.TP
+.BR \-d ", " \-\-dry\-run
+Calculate and display potential space savings without deleting anything (default).
+.TP
+.B \-\-clean
+Perform cleanup with a summary confirmation prompt.
+.TP
+.BR \-i ", " \-\-interactive
+Prompt for confirmation before cleaning each target.
+.TP
+.BR \-f ", " \-\-force
+Clean immediately without confirmation prompts (except danger level).
+.TP
+.B \-\-yes\-danger
+Bypass the manual confirmation prompt for danger-risk targets.
+.TP
+.BR \-t ", " \-\-trash
+Move files to quarantine instead of permanent deletion.
+.TP
+.BR \-r ", " \-\-risk " " \fILEVEL\fR
+Maximum risk level to clean: safe, medium, or danger (default: safe).
+.TP
+.BR \-e ", " \-\-exclude " " \fIPATTERNS\fR
+Comma-separated glob patterns to exclude from cleanup.
+.TP
+.B \-\-allow\-outside\-home
+Explicitly allow cleaning targets outside the user's
+.BR $HOME .
+.TP
+.B \-\-log \fR[\fIFILE\fR]
+Append an operation log (opt-in, off by default; kept under
+.BR $HOME ).
+.TP
+.B \-\-list\-sessions
+List quarantine sessions (read-only) and exit.
+.TP
+.B \-\-restore \fISESSION\fR
+Restore files from a quarantine session (latest or a timestamp).
+.TP
+.BR \-V ", " \-\-version
+Print the tool version and exit.
+.TP
+.BR \-h ", " \-\-help
+Display the usage message and exit.
+.SH CONFIGURATION
+Targets are pipe-delimited lines:
+.PP
+.nf
+RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_ACTION
+.fi
+.PP
+The first five fields are required; the last two are optional. A malformed line is
+rejected with a line-numbered error. The default config is resolved from an explicit
+.BR \-c ,
+then the XDG user config, then
+.IR /etc/linux\-cleaner/cleaner.conf ,
+then a
+.I cleaner.conf
+beside the script.
+.SH SAFETY
+Deletions are blocked for the filesystem root, system directories
+.RI ( /usr ", " /etc ", " /var ", " /lib ", "
+and similar), and any path resolving outside
+.BR $HOME
+unless
+.B \-\-allow\-outside\-home
+is given. Symlinked targets are refused, and paths are physically canonicalized to
+prevent traversal or symlink escapes.
+.SH FILES
+.TP
+.I ~/.config/linux\-cleaner/cleaner.conf
+XDG user configuration.
+.TP
+.I /etc/linux\-cleaner/cleaner.conf
+System configuration.
+.TP
+.I ~/.cache/linux\-cleaner/quarantine/
+Quarantine sessions for
+.BR \-\-trash / \-\-restore .
+.TP
+.I ~/.cache/linux\-cleaner/operations.log
+Default operation log (only when
+.B \-\-log
+is enabled).
+.SH EXIT STATUS
+Returns 0 on success and non-zero on a configuration error or a failed operation.
+.SH EXAMPLES
+.TP
+Preview what would be cleaned:
+.B cleaner.sh
+.TP
+Clean safe targets, moving files to quarantine:
+.B cleaner.sh \-\-trash \-\-clean
+.TP
+List and restore quarantined files:
+.B cleaner.sh \-\-list\-sessions
+.br
+.B cleaner.sh \-\-restore latest
+.SH SEE ALSO
+.BR paccache (8),
+.BR find (1)
