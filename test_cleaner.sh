@@ -1719,6 +1719,59 @@ else
   exit 1
 fi
 
+# 55. Test Case: age-based quarantine retention (--purge-sessions older-than:DAYS).
+# This is what makes trash mode viable unattended: a cron '--trash --force' would
+# otherwise accumulate one session per run forever.
+setup_mock_env
+ret_qb="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+mkdir -p "$ret_qb/2020-01-01_00-00-00" "$ret_qb/2099-12-31_23-59-59"
+echo old > "$ret_qb/2020-01-01_00-00-00/payload"
+echo new > "$ret_qb/2099-12-31_23-59-59/payload"
+# Age only the first session; the second keeps its fresh mtime.
+touch -d '60 days ago' "$ret_qb/2020-01-01_00-00-00"
+if run_test_case "Purge Older-Than Retention" 0 "purge_older.log" \
+     --purge-sessions older-than:30 --force; then
+  if [[ ! -d "$ret_qb/2020-01-01_00-00-00" && -d "$ret_qb/2099-12-31_23-59-59" ]]; then
+    echo -e "${GREEN}PASS: older-than:30 purged the aged session and kept the fresh one.${NC}"
+  else
+    echo -e "${RED}FAIL: older-than:30 did not purge selectively.${NC}"
+    cat "$TEST_ENV_DIR/purge_older.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A retention run that matches nothing is a success for a cron wrapper, not an error.
+if run_test_case "Purge Older-Than No Match" 0 "purge_older_none.log" \
+     --purge-sessions older-than:30 --force; then
+  if grep -q "No quarantine sessions older than 30 day" "$TEST_ENV_DIR/purge_older_none.log" \
+     && [[ -d "$ret_qb/2099-12-31_23-59-59" ]]; then
+    echo -e "${GREEN}PASS: a retention run matching nothing exits 0 and purges nothing.${NC}"
+  else
+    echo -e "${RED}FAIL: a no-match retention run did not behave as expected.${NC}"
+    cat "$TEST_ENV_DIR/purge_older_none.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A malformed day count is a hard error, not a silently-ignored selector.
+if run_test_case "Purge Older-Than Invalid Days" 1 "purge_older_bad.log" \
+     --purge-sessions older-than:abc --force; then
+  if grep -q "Invalid day count" "$TEST_ENV_DIR/purge_older_bad.log" \
+     && [[ -d "$ret_qb/2099-12-31_23-59-59" ]]; then
+    echo -e "${GREEN}PASS: a malformed day count exits 1 and purges nothing.${NC}"
+  else
+    echo -e "${RED}FAIL: a malformed day count was not rejected cleanly.${NC}"
+    cat "$TEST_ENV_DIR/purge_older_bad.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

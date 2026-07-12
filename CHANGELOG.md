@@ -16,6 +16,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- `--purge-sessions older-than:DAYS` — age-based quarantine retention. Purges
+  every session last modified more than `DAYS` days ago, exits 0 when none match
+  (so it is safe as a cron retention policy), and rejects a malformed day count.
+  Trash mode previously had no expiry at all: an unattended `--trash` run
+  accumulated one session per run forever, so the tool held the very space it
+  claims to reclaim. Pairing a `--trash` job with a periodic `older-than:` purge
+  now keeps quarantine bounded.
 - `--purge-sessions SESSION` to permanently delete quarantine sessions
   (`latest`, `all`, or a specific timestamp) and reclaim the disk space that
   trash mode holds. Irreversible; prompts for confirmation unless `-f/--force`

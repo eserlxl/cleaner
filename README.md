@@ -14,7 +14,7 @@ A safe, configuration-driven Bash utility designed to estimate and reclaim disk 
 - **Running-Process Checks**: Skip targets if their associated applications/processes are running (e.g., skip chromium cache if Chrome is open).
 - **Trash Quarantine**: Move deleted files to a quarantine folder (`~/.cache/linux-cleaner/quarantine/`) with collision prevention and path sanitization instead of deleting permanently.
 - **Quarantine Restoration**: Restore files from any previous quarantine session back to their original paths, preserving original ownership (`UID` and `GID`).
-- **Quarantine Purge**: Permanently delete quarantine sessions (`latest`, `all`, or a specific timestamp) to reclaim the space trash mode holds, with a confirmation prompt before any irreversible deletion.
+- **Quarantine Purge & Retention**: Permanently delete quarantine sessions (`latest`, `all`, `older-than:DAYS`, or a specific timestamp) to reclaim the space trash mode holds, with a confirmation prompt naming every target before any irreversible deletion. The `older-than:DAYS` selector is what makes trash mode viable unattended — pair a `--trash` cron job with a periodic retention purge and quarantine stays bounded.
 - **Predefined Custom Actions**: Execute specific system commands (like package cache cleaners) instead of path deletion.
 
 ---
@@ -89,7 +89,14 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date) and the targets each one holds — the type (`full` or `aged`) and original path of every quarantined item, so you can see what a session contains before restoring it or permanently purging it. Read-only and requires no config file.
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
-- **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, or a specific timestamp/folder name. Requires no config file.
+- **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. Requires no config file.
+
+  A bounded unattended setup — clean into quarantine daily, expire it weekly:
+
+  ```sh
+  cleaner --clean --trash --force                 # daily: reclaim into quarantine
+  cleaner --purge-sessions older-than:30 --force  # weekly: expire what is 30+ days old
+  ```
   > [!WARNING]
   > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.

@@ -64,8 +64,15 @@ Restore files from a quarantine session (latest or a timestamp).
 .TP
 .B \-\-purge\-sessions \fISESSION\fR
 Permanently delete quarantine session(s) to reclaim space:
-.IR latest ", " all ", or a specific timestamp."
-Irreversible; prompts for confirmation unless
+.IR latest ", " all ", " older\-than:DAYS ", or a specific timestamp."
+The
+.I older\-than:DAYS
+selector purges every session last modified more than
+.I DAYS
+days ago, and exits 0 when none match, so it is safe to run from cron as a
+retention policy that keeps quarantine bounded. A malformed day count is an error.
+Irreversible; the confirmation prompt names every target it would destroy, and is
+skipped only when
 .B \-\-force
 is given.
 .TP

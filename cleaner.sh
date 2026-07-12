@@ -50,7 +50,7 @@ Options:
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --list-sessions            List quarantine sessions (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
-  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, or timestamp). Irreversible.
+  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -h, --help                 Display this help message and exit.
@@ -152,7 +152,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
-        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, or timestamp).${NC}" >&2
+        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
         exit 1
       fi
       PURGE_TARGET="$2"
@@ -475,6 +475,24 @@ purge_quarantine_sessions() {
       exit 1
     fi
     targets+=("$latest")
+  elif [[ "$target" == older-than:* ]]; then
+    # Age-based retention: what makes trash mode viable unattended. Without it a
+    # cron '--trash --force' accumulates one session per run forever, so the tool
+    # would hold the very space it claims to reclaim.
+    local days="${target#older-than:}"
+    if [[ ! "$days" =~ ^[0-9]+$ ]]; then
+      echo -e "${RED}Error: Invalid day count in '$target'. Use older-than:<days>, e.g. older-than:30.${NC}" >&2
+      exit 1
+    fi
+    local s
+    while IFS= read -r s; do
+      [[ -n "$s" ]] && targets+=("$s")
+    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -mtime +"$days" 2>/dev/null | sort)
+    # Nothing old enough is a success for a cron wrapper, not an error.
+    if [[ ${#targets[@]} -eq 0 ]]; then
+      echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      return 0
+    fi
   else
     # A named session must be an immediate child of the base: reject any path
     # separator or dot-traversal so the purge can never escape the quarantine dir.
