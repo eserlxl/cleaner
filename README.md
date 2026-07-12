@@ -96,6 +96,14 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
 - **`-h, --help`**: Display usage details.
 - **`-V, --version`**: Print the tool version and exit.
 
+### Exit status
+
+Returns **0** on success and **non-zero** on a configuration error or a failed operation — so an unattended run (cron, systemd) can detect a cleanup that did not happen by checking the exit code.
+
+A **failed operation** is one that was attempted and did not succeed: a delete, a quarantine move, a predefined action, or a session purge. The tool reports every failure on stderr, keeps going with the remaining targets, and then exits `1`.
+
+A **skip is not a failure**, and still exits `0`: a danger target you declined, a target blocked by a running process, a path rejected as unsafe or outside `$HOME`, or a predefined action whose binary is not installed on this platform.
+
 ---
 
 ## Installation
