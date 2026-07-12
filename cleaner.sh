@@ -741,6 +741,16 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   check_procs=$(trim "${check_procs:-}")
   custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
   
+  # Reject empty required fields (a strong field-shift signal) before use.
+  if [[ -z "$name" ]]; then
+    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
+    exit 1
+  fi
+  if [[ -z "$raw_path" ]]; then
+    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
+    exit 1
+  fi
+
   # Validate custom clean action if provided
   if [[ -n "$custom_clean_cmd" ]]; then
     case "$custom_clean_cmd" in
