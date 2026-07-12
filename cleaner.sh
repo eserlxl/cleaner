@@ -50,6 +50,7 @@ Options:
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   -h, --help                 Display this help message and exit.
+  -V, --version              Print the tool version and exit.
 EOF
 }
 
