@@ -711,7 +711,15 @@ total_reclaimable_bytes=0
 echo -e "${BOLD}Analyzing targets...${NC}"
 
 # Read configuration file line by line
-while IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd || [[ -n "$risk" ]]; do
+while IFS= read -r config_line || [[ -n "$config_line" ]]; do
+  # Expose the true (nominal) field count: fields are pipe-delimited, so the
+  # count is the number of '|' delimiters plus one. Counting delimiters stays
+  # correct even when trailing optional fields are empty (unlike an array length).
+  config_pipes="${config_line//[^|]/}"
+  # shellcheck disable=SC2034  # consumed by the field-count guard (Phase 3.1 follow-up)
+  field_count=$(( ${#config_pipes} + 1 ))
+  # Split into the named fields (fields beyond the 7th collapse into the last).
+  IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
   # Trim and check empty/comment
   risk=$(trim "$risk")
   [[ -z "$risk" || "$risk" =~ ^# ]] && continue
