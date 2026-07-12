@@ -789,12 +789,31 @@ detect_package_manager() {
 # Single source of truth: package manager -> its supported predefined action
 # family. New managers' actions extend exactly this one structure, which the
 # validation and execution arms consume.
-# shellcheck disable=SC2034  # consumed by the action validation/execution arms (Phase 6.2)
 declare -A PKG_MANAGER_ACTIONS=(
   [pacman]="paccache_keep1 paccache_keep2 paccache_keep3 pacman_clean"
   [apt]="apt_clean"
   [dnf]="dnf_clean"
 )
+
+# Which package manager an action:* token requires (empty if none/unknown).
+action_required_manager() {
+  local action="${1#action:}" mgr
+  for mgr in "${!PKG_MANAGER_ACTIONS[@]}"; do
+    if [[ " ${PKG_MANAGER_ACTIONS[$mgr]} " == *" $action "* ]]; then
+      echo "$mgr"
+      return 0
+    fi
+  done
+  echo ""
+}
+
+# True if the given manager token is available (apt covers apt/apt-get).
+manager_present() {
+  case "$1" in
+    apt) command -v apt >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1 ;;
+    *) command -v "$1" >/dev/null 2>&1 ;;
+  esac
+}
 
 MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
@@ -1158,6 +1177,13 @@ for i in "${!parsed_names[@]}"; do
   cleanup_bytes_before=$total_deleted_bytes
 
   if [[ -n "$custom_clean_cmd" ]]; then
+    # Safe degradation: skip an action whose package manager is absent, before
+    # any sudo call, so an apt/dnf action on the wrong distro is a clean skip.
+    required_mgr=$(action_required_manager "$custom_clean_cmd")
+    if [[ -n "$required_mgr" ]] && ! manager_present "$required_mgr"; then
+      echo -e "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_mgr' not available on this platform."
+      continue
+    fi
     if [[ "$TRASH_MODE" = true ]]; then
       echo -e "  ${YELLOW}WARNING:${NC} Target '$name' uses a predefined action. This action will bypass quarantine and run directly (irreversible deletion)!"
     else
