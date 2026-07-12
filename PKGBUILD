@@ -10,6 +10,10 @@ depends=('bash' 'findutils' 'coreutils')
 optdepends=('pacman-contrib: paccache-based package-cache actions')
 backup=('etc/linux-cleaner/cleaner.conf')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# SECURITY: 'SKIP' disables source-tarball integrity verification and is a
+# PLACEHOLDER ONLY -- no v$pkgver release tarball exists yet to checksum. Before
+# any real build or AUR submission, run `updpkgsums` to pin the real sha256 of
+# the release tarball (see RELEASING.md "Packaging"). Never publish with SKIP.
 sha256sums=('SKIP')
 
 package() {
