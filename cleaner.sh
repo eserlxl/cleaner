@@ -277,15 +277,26 @@ build_exclude_find_args() {
 # deletes, or modifies any session or its metadata.
 list_quarantine_sessions() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+  local -a sessions=()
+  if [[ -d "$quarantine_base" ]]; then
+    local s
+    while IFS= read -r s; do
+      [[ -n "$s" ]] && sessions+=("$s")
+    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  fi
+  # Empty/missing quarantine is not an error for an informational query.
+  if [[ ${#sessions[@]} -eq 0 ]]; then
+    echo -e "${YELLOW}No quarantine sessions found.${NC}"
+    return 0
+  fi
   echo -e "${BOLD}${BLUE}=== Quarantine Sessions ===${NC}"
   local session ts size mdate
-  while IFS= read -r session; do
-    [[ -z "$session" ]] && continue
+  for session in "${sessions[@]}"; do
     ts=$(basename "$session")
     size=$(du -sh "$session" 2>/dev/null | awk '{print $1}')
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
-  done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  done
 }
 
 # Restore files and folders from a quarantine session
