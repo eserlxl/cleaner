@@ -7,8 +7,9 @@ set -euo pipefail
 
 # Determine script directory to find the default configuration file
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_CONFIG="$SCRIPT_DIR/cleaner.conf"
-CONFIG_FILE="$DEFAULT_CONFIG"
+# Config resolution: an explicit -c/--config wins; otherwise the default is
+# resolved by search order (XDG user > /etc > dev checkout) after arg parsing.
+CONFIG_FILE=""
 
 # Single source of truth for the tool version (semantic version).
 readonly VERSION="1.0.0"
@@ -175,6 +176,21 @@ done
 
 # Check if config file exists (only if not restoring or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
+  # Resolve the default config by search order when -c/--config was not given:
+  # XDG user config > system config > dev-checkout config beside the script.
+  if [[ -z "$CONFIG_FILE" ]]; then
+    for candidate in \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf" \
+        "/etc/linux-cleaner/cleaner.conf" \
+        "$SCRIPT_DIR/cleaner.conf"; do
+      if [[ -f "$candidate" ]]; then
+        CONFIG_FILE="$candidate"
+        break
+      fi
+    done
+    # No candidate exists: keep the dev path so the not-found error is actionable.
+    [[ -z "$CONFIG_FILE" ]] && CONFIG_FILE="$SCRIPT_DIR/cleaner.conf"
+  fi
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
     exit 1
