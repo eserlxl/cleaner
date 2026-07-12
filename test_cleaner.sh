@@ -785,6 +785,44 @@ else
   exit 1
 fi
 
+# 25. Test Case: Malformed structure (field-count contract, line-numbered errors)
+setup_mock_env
+# A. Too few fields (4 < 5) on a known line number (row 2)
+cat << EOF > "$TEST_ENV_DIR/too_few.conf"
+# header comment
+safe|Too Few Fields|\$HOME/.cache/aurman|Missing min_age and beyond
+EOF
+if run_test_case "Malformed Too Few Fields" 1 "too_few.log" --config "$TEST_ENV_DIR/too_few.conf" --dry-run; then
+  if grep -q ":2: expected 5-7 fields, found 4" "$TEST_ENV_DIR/too_few.log"; then
+    echo -e "${GREEN}PASS: Too-few-fields line rejected with the correct line number.${NC}"
+  else
+    echo -e "${RED}FAIL: Too-few-fields error/line-number not found.${NC}"
+    cat "$TEST_ENV_DIR/too_few.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Too-few-fields config did not exit non-zero.${NC}"
+  exit 1
+fi
+
+# B. Too many fields (8 > 7) on a known line number (row 2)
+cat << EOF > "$TEST_ENV_DIR/too_many.conf"
+# header comment
+safe|Too Many Fields|\$HOME/.cache/aurman|desc|0|proc|action:pacman_clean|stray
+EOF
+if run_test_case "Malformed Too Many Fields" 1 "too_many.log" --config "$TEST_ENV_DIR/too_many.conf" --dry-run; then
+  if grep -q ":2: expected 5-7 fields, found 8" "$TEST_ENV_DIR/too_many.log"; then
+    echo -e "${GREEN}PASS: Too-many-fields line rejected with the correct line number.${NC}"
+  else
+    echo -e "${RED}FAIL: Too-many-fields error/line-number not found.${NC}"
+    cat "$TEST_ENV_DIR/too_many.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Too-many-fields config did not exit non-zero.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
