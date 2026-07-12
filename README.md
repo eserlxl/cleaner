@@ -85,6 +85,7 @@ Run the script directly from the project directory:
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-h, --help`**: Display usage details.
+- **`-V, --version`**: Print the tool version and exit.
 
 ---
 
