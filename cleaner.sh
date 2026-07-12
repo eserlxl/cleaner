@@ -272,6 +272,22 @@ build_exclude_find_args() {
   fi
 }
 
+# List quarantine sessions (strictly read-only): print each session's
+# timestamp (directory name), size, and modification date. Never moves,
+# deletes, or modifies any session or its metadata.
+list_quarantine_sessions() {
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+  echo -e "${BOLD}${BLUE}=== Quarantine Sessions ===${NC}"
+  local session ts size mdate
+  while IFS= read -r session; do
+    [[ -z "$session" ]] && continue
+    ts=$(basename "$session")
+    size=$(du -sh "$session" 2>/dev/null | awk '{print $1}')
+    mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
+    echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
+  done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1"
