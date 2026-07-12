@@ -84,3 +84,21 @@ Run the script directly from the project directory:
 4. **No Wildcard Eval**: Path expansion only resolves explicit placeholders (`$HOME`, `~`, and `$USER`) to avoid unintended wildcard expansion accidents.
 5. **Physical Canonicalization**: Resolves target paths physically by resolving the closest existing parent directory. This prevents directory traversal or symlink-based boundary escapes.
 6. **Conflict Guard during Restore**: During quarantine restoration, if the original destination path already exists, the restoration is skipped for that file to prevent overwriting active data.
+
+---
+
+## Development
+
+Every change runs through two gate commands, both of which must pass:
+
+```bash
+shellcheck cleaner.sh test_cleaner.sh   # static analysis / lint
+bash test_cleaner.sh                    # full safety test suite
+```
+
+The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. Runner dependencies are:
+
+- `bash`
+- `coreutils`
+- `findutils`
+- `shellcheck` (for the lint gate)
