@@ -760,9 +760,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     continue
   fi
   
-  # Validate age number
-  if [[ ! "$min_age" =~ ^[0-9]+$ ]]; then
+  # Validate age number: empty stays effective 0 (documented whole-directory
+  # case); a non-empty non-numeric value is a hard error (likely a field shift).
+  if [[ -z "$min_age" ]]; then
     min_age=0
+  elif [[ ! "$min_age" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'${NC}" >&2
+    exit 1
   fi
   
   # Safe path expansions & cleanup trailing slashes
