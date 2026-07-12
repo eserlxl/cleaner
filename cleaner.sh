@@ -496,6 +496,36 @@ purge_quarantine_sessions() {
   echo -e "${BOLD}Purged ${purged} session(s).${NC}"
 }
 
+# Move a whole target into quarantine and record it in quarantine.meta. The
+# record is written ONLY after the move actually succeeded: a record for a file
+# that never moved makes every later --restore of the session fail on a missing
+# source (and keep the session forever), even though nothing was lost.
+# Returns non-zero if the move (or the sudo chown that follows it) failed.
+quarantine_move_full() {
+  local src="$1" dest="$2" rel="$3" use_sudo="$4" owner_info="$5"
+  local moved=false ok=true
+
+  if [[ "$use_sudo" = true ]]; then
+    if sudo mv "$src" "$dest"; then
+      moved=true
+      sudo chown -R "$(id -u):$(id -g)" "$dest" || ok=false
+    else
+      ok=false
+    fi
+  else
+    if mv "$src" "$dest"; then
+      moved=true
+    else
+      ok=false
+    fi
+  fi
+
+  if [[ "$moved" = true ]]; then
+    echo "full|$rel|$src|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
+  fi
+  [[ "$ok" = true ]]
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1"
@@ -1433,32 +1463,14 @@ for i in "${!parsed_names[@]}"; do
         fi
       else
         # Single file or symlink
-        echo "full|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
-        if [[ "$use_sudo" = true ]]; then
-          if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
-            success=true
-          else
-            success=false
-          fi
-        else
-          if ! mv "$path" "$q_target"; then
-            success=false
-          fi
+        if ! quarantine_move_full "$path" "$q_target" "${i}_${safe_name}" "$use_sudo" "$owner_info"; then
+          success=false
         fi
       fi
     else
       # Full folder/file quarantine (no age limit, no exclusions)
-      echo "full|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
-      if [[ "$use_sudo" = true ]]; then
-        if sudo mv "$path" "$q_target" && sudo chown -R "$(id -u):$(id -g)" "$q_target"; then
-          success=true
-        else
-          success=false
-        fi
-      else
-        if ! mv "$path" "$q_target"; then
-          success=false
-        fi
+      if ! quarantine_move_full "$path" "$q_target" "${i}_${safe_name}" "$use_sudo" "$owner_info"; then
+        success=false
       fi
     fi
     

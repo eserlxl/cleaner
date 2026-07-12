@@ -1432,6 +1432,58 @@ else
   exit 1
 fi
 
+# 48. Test Case: a failed quarantine move must not be recorded in quarantine.meta
+# (a record for a file that never moved made every later --restore of that
+# session exit 1 on a missing source, and kept the session forever).
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/qfail_test" "$MOCK_HOME/.cache/qok_test"
+echo "unmovable" > "$MOCK_HOME/.cache/qfail_test/data.txt"
+echo "movable" > "$MOCK_HOME/.cache/qok_test/data.txt"
+cat << 'EOF' > "$TEST_ENV_DIR/qfail.conf"
+safe|Qfail Target|$HOME/.cache/qfail_test|Target whose quarantine move fails|0||
+safe|Qok Target|$HOME/.cache/qok_test|Target that quarantines cleanly|0||
+EOF
+# Stub mv so only the qfail_test move fails; every other mv passes through.
+cat << 'EOF' > "$TEST_ENV_DIR/bin/mv"
+#!/usr/bin/env bash
+case "$1" in
+  *qfail_test*) exit 1 ;;
+esac
+real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
+exec "$real_mv" "$@"
+EOF
+chmod +x "$TEST_ENV_DIR/bin/mv"
+if run_test_case "Failed Quarantine Move Not Recorded" 0 "qfail.log" \
+     --config "$TEST_ENV_DIR/qfail.conf" --trash --force; then
+  rm -f "$TEST_ENV_DIR/bin/mv"
+  qmeta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
+  if [[ -f "$qmeta" ]] \
+     && ! grep -q "qfail_test" "$qmeta" \
+     && grep -q "qok_test" "$qmeta" \
+     && [[ -f "$MOCK_HOME/.cache/qfail_test/data.txt" ]]; then
+    echo -e "${GREEN}PASS: the failed move left no quarantine.meta record and the file stayed in place.${NC}"
+  else
+    echo -e "${RED}FAIL: a failed quarantine move was still recorded in quarantine.meta.${NC}"
+    cat "$qmeta" 2>/dev/null
+    cat "$TEST_ENV_DIR/qfail.log"
+    exit 1
+  fi
+  if run_test_case "Restore After a Failed Quarantine Move" 0 "qfail_restore.log" --restore latest; then
+    if [[ -f "$MOCK_HOME/.cache/qok_test/data.txt" ]]; then
+      echo -e "${GREEN}PASS: restore succeeded and returned the file that did reach quarantine.${NC}"
+    else
+      echo -e "${RED}FAIL: restore did not return the quarantined file.${NC}"
+      cat "$TEST_ENV_DIR/qfail_restore.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  rm -f "$TEST_ENV_DIR/bin/mv"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
