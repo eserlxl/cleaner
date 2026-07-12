@@ -1015,6 +1015,43 @@ else
   exit 1
 fi
 
+# 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
+setup_mock_env
+mkdir -p "$MOCK_HOME/.config/linux-cleaner"
+# shellcheck disable=SC2016  # literal $HOME is intentional; the tool expands it at runtime
+printf 'safe|XDG Only Target|$HOME/.cache/aurman|d|0||\n' > "$MOCK_HOME/.config/linux-cleaner/cleaner.conf"
+run_cleaner_env() {  # run the cleaner with controlled HOME + unset XDG, capture output
+  local log="$1"; shift
+  env -u XDG_CONFIG_HOME HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" "$CLEANER_SH" "$@" < /dev/null > "$TEST_ENV_DIR/$log" 2>&1
+}
+# (a) Explicit -c wins over any resolved default
+run_cleaner_env "cfg_c.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run
+if grep -q "Config file: $TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/cfg_c.log" && ! grep -q "XDG Only Target" "$TEST_ENV_DIR/cfg_c.log"; then
+  echo -e "${GREEN}PASS: Explicit -c overrides the resolved default config.${NC}"
+else
+  echo -e "${RED}FAIL: Explicit -c did not win.${NC}"; cat "$TEST_ENV_DIR/cfg_c.log"; exit 1
+fi
+# (b) XDG user config used when no -c (XDG_CONFIG_HOME unset -> $HOME/.config)
+run_cleaner_env "cfg_xdg.log" --dry-run
+if grep -q "Config file: $MOCK_HOME/.config/linux-cleaner/cleaner.conf" "$TEST_ENV_DIR/cfg_xdg.log"; then
+  echo -e "${GREEN}PASS: XDG user config resolved when no -c is given.${NC}"
+else
+  echo -e "${RED}FAIL: XDG user config was not resolved.${NC}"; cat "$TEST_ENV_DIR/cfg_xdg.log"; exit 1
+fi
+# (c) Dev-checkout fallback when no XDG/system config exists
+rm -rf "$MOCK_HOME/.config/linux-cleaner"
+if [[ -f /etc/linux-cleaner/cleaner.conf ]]; then
+  echo -e "${GREEN}PASS: Dev-fallback assertion skipped (a system config is installed at /etc/linux-cleaner).${NC}"
+else
+  run_cleaner_env "cfg_dev.log" --dry-run
+  if grep -q "Config file: $SCRIPT_DIR/cleaner.conf" "$TEST_ENV_DIR/cfg_dev.log"; then
+    echo -e "${GREEN}PASS: Dev-checkout config beside the script resolved as fallback.${NC}"
+  else
+    echo -e "${RED}FAIL: Dev-checkout fallback did not resolve.${NC}"; cat "$TEST_ENV_DIR/cfg_dev.log"; exit 1
+  fi
+fi
+# Note: the /etc/linux-cleaner rung is not hermetically testable without touching a real system path.
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
