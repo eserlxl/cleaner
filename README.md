@@ -118,6 +118,8 @@ sudo make uninstall                 # remove installed files (the system config 
 
 A reinstall never overwrites an edited system config: if `cleaner.conf` already exists it is left untouched and `cleaner.conf.example` is written alongside it instead.
 
+After installation, `man cleaner.sh` shows the manual page.
+
 ---
 
 ## Safety Features
