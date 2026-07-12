@@ -879,6 +879,25 @@ assert_value_error "Value Empty Path" "$TEST_ENV_DIR/vv_path.conf" ":2: PATH (fi
 printf '# header\nbadrisk|N|/p|desc|0\n' > "$TEST_ENV_DIR/vv_risk.conf"
 assert_value_error "Value Risk LineNumber" "$TEST_ENV_DIR/vv_risk.conf" ":2: Error: Unknown risk level 'badrisk'"
 
+# 27. Test Case: Positive control — a valid config with trailing-empty optionals parses clean
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/positive_control.conf"
+# a valid target with trailing-empty optional fields (like cleaner.conf's |0||)
+safe|Positive Control|\$HOME/.cache/aurman|Valid target with trailing empties|0||
+EOF
+if run_test_case "Positive Control Valid Config" 0 "positive_control.log" --config "$TEST_ENV_DIR/positive_control.conf" --dry-run; then
+  if ! grep -q "expected 5-7 fields\|invalid MIN_AGE_DAYS\|is empty\|malformed CHECK_PROCESSES\|Unknown risk level\|Unknown action" "$TEST_ENV_DIR/positive_control.log"; then
+    echo -e "${GREEN}PASS: Valid config with trailing-empty optional fields parsed and ran clean.${NC}"
+  else
+    echo -e "${RED}FAIL: A valid config triggered a validation error.${NC}"
+    cat "$TEST_ENV_DIR/positive_control.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Valid config did not exit 0.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
