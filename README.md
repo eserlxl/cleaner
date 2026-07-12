@@ -37,6 +37,8 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   - `action:paccache_keep2`: Runs `sudo paccache -rk2` (retains latest 2 versions of package cache).
   - `action:paccache_keep3`: Runs `sudo paccache -rk3` (retains latest 3 versions of package cache).
   - `action:pacman_clean`: Runs `sudo pacman -Sc --noconfirm` (purges all cached packages not currently installed).
+  - `action:apt_clean`: Runs `sudo apt-get clean` (clears the downloaded APT package archive cache). Skipped if apt is not present.
+  - `action:dnf_clean`: Runs `sudo dnf clean all` (clears all DNF caches). Skipped if dnf is not present.
   > [!WARNING]
   > Custom clean actions bypass quarantine/trash mode and run directly, resulting in irreversible deletion.
 
