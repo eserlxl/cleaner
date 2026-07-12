@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+# Least-privilege: only the release job needs write access to create the release.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Lint with ShellCheck
+        run: shellcheck cleaner.sh test_cleaner.sh install.sh
+
+      - name: Run the safety test suite
+        run: bash test_cleaner.sh
+
+      - name: Extract changelog notes for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          awk -v ver="$version" '
+            $0 ~ ("^## \\[" ver "\\]") { inblk = 1; next }
+            inblk && /^## \[/ { exit }
+            inblk { print }
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            printf 'Release %s\n' "$TAG" > release_notes.md
+          fi
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release_notes.md \
+            --draft
