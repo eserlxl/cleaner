@@ -82,6 +82,7 @@ Run the script directly from the project directory:
 - **`-e, --exclude PATTERNS`**: Comma-separated list of glob patterns to exclude from cleanup (e.g. `.git,*.log`).
   > [!WARNING]
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
+- **`--list-sessions`**: List quarantine sessions (timestamp, size, date). Read-only and requires no config file.
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-h, --help`**: Display usage details.
