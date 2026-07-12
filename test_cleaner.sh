@@ -1161,6 +1161,31 @@ else
   exit 1
 fi
 
+# 38. Test Case: a package-cache action safely degrades when its manager is absent
+setup_mock_env
+rm -f "$TEST_ENV_DIR/bin/dnf"   # simulate a host without dnf
+echo -e "\n${BOLD}Test Case: Cross-Distro Safe Degradation${NC}"
+if command -v dnf >/dev/null 2>&1; then
+  echo -e "${GREEN}PASS (skipped): a real dnf is installed on this host; cannot simulate its absence.${NC}"
+else
+  cat << EOF > "$TEST_ENV_DIR/degrade_config.conf"
+medium|DNF Clean|$OUTSIDE_DIR|Mock DNF cache|0||action:dnf_clean
+EOF
+  if run_test_case "Cross-Distro Degradation" 0 "degrade.log" --config "$TEST_ENV_DIR/degrade_config.conf" --clean --force --allow-outside-home --risk medium; then
+    if grep -qi "not available on this platform" "$TEST_ENV_DIR/degrade.log" && \
+       ! grep -q "command not found" "$TEST_ENV_DIR/degrade.log" && \
+       ! grep -q "Mock dnf called" "$TEST_ENV_DIR/degrade.log"; then
+      echo -e "${GREEN}PASS: dnf action skipped cleanly when dnf is absent (non-fatal, no command-not-found).${NC}"
+    else
+      echo -e "${RED}FAIL: dnf action did not degrade safely when dnf is absent.${NC}"
+      cat "$TEST_ENV_DIR/degrade.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
