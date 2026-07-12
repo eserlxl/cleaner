@@ -22,6 +22,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   is given, and only ever removes directories under the tool-owned quarantine
   base.
 
+### Fixed
+- A quarantine move that fails is no longer recorded in `quarantine.meta`. The
+  record was written before the move was attempted, so a failed move left an
+  entry pointing at a file that never reached quarantine — which made every
+  later `--restore` of that session exit 1 on the missing source and refuse to
+  clean the session up, even though nothing had been lost.
+
 ## [1.0.0] - 2026-07-12
 
 ### Added

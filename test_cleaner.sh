@@ -1145,15 +1145,25 @@ else
   exit 1
 fi
 
-# 34. Test Case: CHANGELOG top released version matches --version
+# 34. Test Case: CHANGELOG top released version matches --version, and so do the
+# packaging manifests -- a partial bump would otherwise ship an AUR package whose
+# pkgver disagrees with the installed script (RELEASING.md pre-release gate).
 setup_mock_env
 changelog_version=$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$SCRIPT_DIR/CHANGELOG.md" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 tool_version=$(HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" "$CLEANER_SH" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+pkgbuild_version=$(awk -F= '/^pkgver=/ {print $2; exit}' "$SCRIPT_DIR/PKGBUILD")
+srcinfo_version=$(awk -F' = ' '/^[[:space:]]*pkgver = / {print $2; exit}' "$SCRIPT_DIR/.SRCINFO")
 echo -e "\n${BOLD}Test Case: Changelog/Version Consistency${NC}"
 if [[ -n "$changelog_version" && "$changelog_version" == "$tool_version" ]]; then
   echo -e "${GREEN}PASS: CHANGELOG top version ($changelog_version) matches --version ($tool_version).${NC}"
 else
   echo -e "${RED}FAIL: CHANGELOG version '$changelog_version' != --version '$tool_version'.${NC}"
+  exit 1
+fi
+if [[ "$pkgbuild_version" == "$tool_version" && "$srcinfo_version" == "$tool_version" ]]; then
+  echo -e "${GREEN}PASS: PKGBUILD and .SRCINFO pkgver both match --version ($tool_version).${NC}"
+else
+  echo -e "${RED}FAIL: packaging version mismatch — PKGBUILD='$pkgbuild_version' .SRCINFO='$srcinfo_version' --version='$tool_version'.${NC}"
   exit 1
 fi
 
