@@ -898,6 +898,22 @@ else
   exit 1
 fi
 
+# 28. Test Case: Self-consistency — the shipped cleaner.conf passes the validator
+setup_mock_env
+if run_test_case "Shipped Config Self-Validates" 0 "shipped_config.log" --config "$SCRIPT_DIR/cleaner.conf" --dry-run; then
+  if ! grep -q "expected 5-7 fields\|invalid MIN_AGE_DAYS\|is empty\|malformed CHECK_PROCESSES\|Unknown risk level\|Unknown action" "$TEST_ENV_DIR/shipped_config.log"; then
+    echo -e "${GREEN}PASS: The shipped cleaner.conf passes the field/value validator.${NC}"
+  else
+    echo -e "${RED}FAIL: The shipped cleaner.conf triggered a validation error.${NC}"
+    cat "$TEST_ENV_DIR/shipped_config.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: Dry-run against the shipped cleaner.conf did not exit 0.${NC}"
+  cat "$TEST_ENV_DIR/shipped_config.log"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
