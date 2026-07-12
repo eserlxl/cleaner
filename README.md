@@ -90,6 +90,22 @@ Run the script directly from the project directory:
 
 ---
 
+## Installation
+
+The tool is a single script; run it from a checkout (`./cleaner.sh`) or install it system-wide. Install paths derive from `PREFIX` and honor `DESTDIR` for staged/packaged installs:
+
+| Variable | Default | Installs |
+|----------|---------|----------|
+| `PREFIX` | `/usr/local` | base install prefix |
+| `BINDIR` | `$PREFIX/bin` | `cleaner.sh` (as an executable) |
+| `SYSCONFDIR` | `/etc` | the config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
+| `MANDIR` | `$PREFIX/share/man` | the `man1` page |
+| `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
+
+At runtime the config is resolved in this order: an explicit `-c/--config` path, then `$XDG_CONFIG_HOME/linux-cleaner/cleaner.conf` (default `~/.config/linux-cleaner/cleaner.conf`), then `/etc/linux-cleaner/cleaner.conf`, then a `cleaner.conf` beside the script (development checkout).
+
+---
+
 ## Safety Features
 
 1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
