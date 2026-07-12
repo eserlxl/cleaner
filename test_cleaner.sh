@@ -1140,6 +1140,27 @@ else
   exit 1
 fi
 
+# 37. Test Case: apt/dnf actions invoke their exact commands (and no other manager)
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/aptdnf_config.conf"
+medium|APT Clean|$OUTSIDE_DIR|Mock APT cache|0||action:apt_clean
+medium|DNF Clean|$OUTSIDE_DIR|Mock DNF cache|0||action:dnf_clean
+EOF
+if run_test_case "Cross-Distro Actions" 0 "aptdnf.log" --config "$TEST_ENV_DIR/aptdnf_config.conf" --clean --force --allow-outside-home --risk medium; then
+  if grep -q "Mock apt-get called with: clean" "$TEST_ENV_DIR/aptdnf.log" && \
+     grep -q "Mock dnf called with: clean all" "$TEST_ENV_DIR/aptdnf.log" && \
+     ! grep -q "Mock pacman called" "$TEST_ENV_DIR/aptdnf.log" && \
+     ! grep -q "Mock paccache called" "$TEST_ENV_DIR/aptdnf.log"; then
+    echo -e "${GREEN}PASS: apt_clean ran 'apt-get clean' and dnf_clean ran 'dnf clean all'; no other manager was called.${NC}"
+  else
+    echo -e "${RED}FAIL: apt/dnf actions did not invoke their exact commands.${NC}"
+    cat "$TEST_ENV_DIR/aptdnf.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
