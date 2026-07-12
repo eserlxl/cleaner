@@ -104,3 +104,7 @@ The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` a
 - `coreutils`
 - `findutils`
 - `shellcheck` (for the lint gate)
+
+### Continuous Integration
+
+Both gate commands run automatically on every push and pull request (see the badge above). **Both must pass before a change is merged**: the ShellCheck lint and the full `bash test_cleaner.sh` suite. To enforce this, a maintainer should enable a branch-protection rule on `main` marking the `CI` workflow's `gate` job as a **required status check** (Settings → Branches → Branch protection rules).
