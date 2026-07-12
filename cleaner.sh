@@ -67,6 +67,20 @@ EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
 LIST_SESSIONS=false
 
+# Operation log (opt-in, OFF by default). Enable via --log or by setting the
+# LINUX_CLEANER_LOG environment variable. The log lives under $HOME (see the
+# writer). When disabled, no log file is created or written.
+# shellcheck disable=SC2034  # LOG_ENABLED/LOG_FILE are consumed by the log writer (next change)
+LOG_ENABLED=false
+# shellcheck disable=SC2034
+LOG_FILE=""
+if [[ -n "${LINUX_CLEANER_LOG:-}" ]]; then
+  # shellcheck disable=SC2034  # consumed by the log writer (next change)
+  LOG_ENABLED=true
+  # shellcheck disable=SC2034
+  LOG_FILE="$LINUX_CLEANER_LOG"
+fi
+
 # Parse command line options
 while [[ $# -gt 0 ]]; do
   case "$1" in
