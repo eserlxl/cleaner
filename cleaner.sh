@@ -809,21 +809,6 @@ risk_to_int() {
   esac
 }
 
-# Parse custom max risk
-# Detect the system package manager (pure: command -v only, no sudo/network/eval).
-# Echoes exactly one canonical token: pacman | apt | dnf | none.
-detect_package_manager() {
-  if command -v pacman >/dev/null 2>&1; then
-    echo "pacman"
-  elif command -v apt >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1; then
-    echo "apt"
-  elif command -v dnf >/dev/null 2>&1; then
-    echo "dnf"
-  else
-    echo "none"
-  fi
-}
-
 # Single source of truth: map each predefined action to the binary its execution
 # arm actually invokes. This is the binary the safe-degradation guard checks --
 # note paccache ships separately from pacman (in pacman-contrib), so checking the
