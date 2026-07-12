@@ -92,6 +92,18 @@ exit 0
 EOF
   chmod +x "$TEST_ENV_DIR/bin/pacman"
 
+  # Cross-distro package-manager mocks (apt/apt-get/dnf), same template as above.
+  local _mgr
+  for _mgr in apt apt-get dnf; do
+    cat > "$TEST_ENV_DIR/bin/$_mgr" << EOF
+#!/usr/bin/env bash
+# Mock $_mgr command
+echo "Mock $_mgr called with: \$@"
+exit 0
+EOF
+    chmod +x "$TEST_ENV_DIR/bin/$_mgr"
+  done
+
   # Create dummy files
   echo "dummy npm cache" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
   truncate -s 2M "$MOCK_HOME/.npm/_cacache/cache1.txt"
