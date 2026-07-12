@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Versioning
+
+This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump policy:
+
+- **Major** — a breaking change to the `cleaner.conf` format or the CLI contract.
+- **Minor** — a new feature, a change to a safety guard, or a new predefined config action.
+- **Patch** — a bug fix, documentation, or internal change with no behavior change.
+
 ## [Unreleased]
 
 ## [1.0.0] - 2026-07-12
