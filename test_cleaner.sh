@@ -1316,6 +1316,29 @@ else
   exit 1
 fi
 
+# 45. Test Case: --interactive per-target confirmation (y cleans, n skips)
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/interactive.conf"
+safe|Interactive Clean|\$HOME/.npm/_cacache|First target: answer yes|0||
+safe|Interactive Skip|\$HOME/.cache/aurman|Second target: answer no|0||
+EOF
+echo -e "\n${BOLD}Test Case: Interactive Per-Target Confirmation${NC}"
+inter_log="$TEST_ENV_DIR/interactive.log"
+inter_ec=0
+# Feed 'y' to the first per-target prompt and 'n' to the second (stdin, not /dev/null).
+printf 'y\nn\n' | PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/interactive.conf" --interactive > "$inter_log" 2>&1 || inter_ec=$?
+if [[ $inter_ec -eq 0 ]] \
+   && [[ ! -e "$MOCK_HOME/.npm/_cacache" ]] \
+   && [[ -f "$MOCK_HOME/.cache/aurman/pkg1.tar.zst" ]] \
+   && grep -qi "Skipping" "$inter_log"; then
+  echo -e "${GREEN}PASS: --interactive cleaned the y-confirmed target and skipped the n-declined one.${NC}"
+else
+  echo -e "${RED}FAIL: --interactive per-target confirmation did not behave as expected (ec=$inter_ec).${NC}"
+  cat "$inter_log"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
