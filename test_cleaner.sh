@@ -636,6 +636,23 @@ else
   exit 1
 fi
 
+# 16. Test Case: Canonicalization ..-traversal escape (REJECTED, not classified in-HOME safe)
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/dotdot_escape.conf"
+safe|Dotdot Escape Probe|\$HOME/../dotdot_escape_probe|Path climbing above HOME via ..|0||
+EOF
+if run_test_case "Canonicalization Dotdot Escape" 0 "dotdot_escape.log" --config "$TEST_ENV_DIR/dotdot_escape.conf" --dry-run; then
+  if grep -q "REJECTED.*Dotdot Escape Probe" "$TEST_ENV_DIR/dotdot_escape.log"; then
+    echo -e "${GREEN}PASS: '..'-traversal path escaping HOME was resolved and REJECTED, not classified as in-HOME safe.${NC}"
+  else
+    echo -e "${RED}FAIL: '..'-traversal escape was not rejected (canonicalization may not resolve '..').${NC}"
+    cat "$TEST_ENV_DIR/dotdot_escape.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
