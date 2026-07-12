@@ -50,6 +50,7 @@ Options:
   --list-sessions            List quarantine sessions (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
+  --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -141,6 +142,16 @@ while [[ $# -gt 0 ]]; do
     --allow-outside-home)
       ALLOW_OUTSIDE_HOME=true
       shift
+      ;;
+    --log)
+      LOG_ENABLED=true
+      # Optional explicit path: consume the next token only if it is not a flag.
+      if [[ -n "${2:-}" && "$2" != -* ]]; then
+        LOG_FILE="$2"
+        shift 2
+      else
+        shift
+      fi
       ;;
     -V|--version)
       echo "$(basename "$0") $VERSION"
