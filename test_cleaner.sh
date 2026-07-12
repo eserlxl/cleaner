@@ -1646,6 +1646,30 @@ else
   exit 1
 fi
 
+# 52. Test Case: the irreversible purge confirmation names the targets it would
+# destroy, not just a session size -- and declining still purges nothing.
+setup_mock_env
+if run_test_case "Quarantine for Purge Preview" 0 "purge_preview_setup.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force --yes-danger; then
+  # stdin is /dev/null, so the [y/N] prompt is declined.
+  if run_test_case "Purge Preview Names Targets" 0 "purge_preview.log" --purge-sessions all; then
+    if grep -qE '^\s+(full|aged)\s+.*/\.npm/_cacache' "$TEST_ENV_DIR/purge_preview.log" \
+       && grep -q "This cannot be undone" "$TEST_ENV_DIR/purge_preview.log" \
+       && grep -q "No sessions were purged" "$TEST_ENV_DIR/purge_preview.log" \
+       && [[ -d "$MOCK_HOME/.cache/linux-cleaner/quarantine" ]]; then
+      echo -e "${GREEN}PASS: the purge confirmation named the targets it would destroy; declining purged nothing.${NC}"
+    else
+      echo -e "${RED}FAIL: the purge confirmation did not name its targets.${NC}"
+      cat "$TEST_ENV_DIR/purge_preview.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

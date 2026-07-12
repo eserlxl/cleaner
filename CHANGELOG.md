@@ -25,6 +25,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   type (`full` or `aged`) and original path of every quarantined item — so a
   session's contents can be inspected before it is restored or permanently
   purged. The metadata was already recorded; it was simply never surfaced.
+- The `--purge-sessions` confirmation now names every target it is about to
+  destroy, using the same read-only listing as `--list-sessions`, so the tool's
+  one irreversible prompt is no longer less informative than its read-only query.
 
 ### Fixed
 - Cleanup now exits non-zero when an operation fails, matching the documented

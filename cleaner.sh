@@ -394,9 +394,30 @@ log_operation() {
   fi
 }
 
+# Print what one quarantine session holds -- the type (full/aged) and original
+# path of every record in its quarantine.meta. Strictly read-only. Shared by the
+# --list-sessions query and the irreversible purge confirmation, so the safety
+# prompt can never be less informative than the read-only one.
+print_session_contents() {
+  local session="$1"
+  local meta="$session/quarantine.meta"
+  local mtype morig
+
+  if [[ ! -f "$meta" ]]; then
+    echo -e "      ${YELLOW}(no metadata)${NC}"
+    return 0
+  fi
+  while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
+    mtype=$(trim "$mtype")
+    [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
+    morig=$(trim "${morig:-}")
+    echo -e "      ${mtype}  ${morig}"
+  done < "$meta"
+}
+
 # List quarantine sessions (strictly read-only): print each session's
-# timestamp (directory name), size, and modification date. Never moves,
-# deletes, or modifies any session or its metadata.
+# timestamp (directory name), size, and modification date, plus the targets it
+# holds. Never moves, deletes, or modifies any session or its metadata.
 list_quarantine_sessions() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   local -a sessions=()
@@ -412,26 +433,13 @@ list_quarantine_sessions() {
     return 0
   fi
   echo -e "${BOLD}${BLUE}=== Quarantine Sessions ===${NC}"
-  local session ts size mdate meta mtype morig
+  local session ts size mdate
   for session in "${sessions[@]}"; do
     ts=$(basename "$session")
     size=$(du -sh "$session" 2>/dev/null | awk '{print $1}')
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
-
-    # Show what the session actually holds, so an irreversible --purge-sessions
-    # (or a --restore) can be decided on sight instead of guessing from a size.
-    meta="$session/quarantine.meta"
-    if [[ -f "$meta" ]]; then
-      while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
-        mtype=$(trim "$mtype")
-        [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
-        morig=$(trim "${morig:-}")
-        echo -e "      ${mtype}  ${morig}"
-      done < "$meta"
-    else
-      echo -e "      ${YELLOW}(no metadata)${NC}"
-    fi
+    print_session_contents "$session"
   done
 }
 
@@ -482,13 +490,16 @@ purge_quarantine_sessions() {
     targets+=("$dir")
   fi
 
-  # Show what will be freed before touching anything.
+  # Show what will be freed -- and exactly which targets are about to be destroyed
+  # -- before touching anything. This is the last thing a user sees before the
+  # data is gone, so it names every item, not just the session size.
   echo -e "${BOLD}${BLUE}=== Purge Quarantine Sessions ===${NC}"
   local d ts size
   for d in "${targets[@]}"; do
     ts=$(basename "$d")
     size=$(du -sh "$d" 2>/dev/null | awk '{print $1}')
     echo -e "  ${ts}  size=${size:-?}"
+    print_session_contents "$d"
   done
 
   # Confirm unless forced -- purge is irreversible.
