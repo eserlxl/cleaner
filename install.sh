@@ -22,7 +22,12 @@ do_install() {
   install -d "$DESTDIR$BINDIR"
   install -m 0755 "$SRC_DIR/cleaner.sh" "$DESTDIR$BINDIR/$BINNAME"
   install -d "$DESTDIR$SYSCONFDIR/$PKGNAME"
-  install -m 0644 "$SRC_DIR/cleaner.conf" "$DESTDIR$SYSCONFDIR/$PKGNAME/cleaner.conf"
+  if [ -f "$DESTDIR$SYSCONFDIR/$PKGNAME/cleaner.conf" ]; then
+    echo "Existing config found; installing cleaner.conf.example instead."
+    install -m 0644 "$SRC_DIR/cleaner.conf" "$DESTDIR$SYSCONFDIR/$PKGNAME/cleaner.conf.example"
+  else
+    install -m 0644 "$SRC_DIR/cleaner.conf" "$DESTDIR$SYSCONFDIR/$PKGNAME/cleaner.conf"
+  fi
   install -d "$DESTDIR$DATADIR/licenses/$PKGNAME"
   install -m 0644 "$SRC_DIR/LICENSE" "$DESTDIR$DATADIR/licenses/$PKGNAME/LICENSE"
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
