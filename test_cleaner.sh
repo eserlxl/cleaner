@@ -672,6 +672,23 @@ else
   exit 1
 fi
 
+# 18. Test Case: Protected system directory classified UNSAFE
+setup_mock_env
+cat << 'EOF' > "$TEST_ENV_DIR/system_dir.conf"
+safe|System Usr Probe|/usr|Hardcoded blocked system directory|0||
+EOF
+if run_test_case "Protected System Dir UNSAFE" 0 "system_dir.log" --config "$TEST_ENV_DIR/system_dir.conf" --dry-run; then
+  if grep -q "UNSAFE.*System Usr Probe.*protected system directory" "$TEST_ENV_DIR/system_dir.log" && [[ -d /usr ]]; then
+    echo -e "${GREEN}PASS: Protected system directory '/usr' was classified UNSAFE and left intact.${NC}"
+  else
+    echo -e "${RED}FAIL: '/usr' was not classified UNSAFE (or was somehow affected).${NC}"
+    cat "$TEST_ENV_DIR/system_dir.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
