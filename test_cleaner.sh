@@ -1083,6 +1083,24 @@ else
   exit 1
 fi
 
+# 35. Test Case: version/tag/changelog three-way consistency (skipped without a release tag)
+setup_mock_env
+echo -e "\n${BOLD}Test Case: Version/Tag/Changelog Consistency${NC}"
+git_tag=$(git -C "$SCRIPT_DIR" describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null || true)
+if [[ -z "$git_tag" ]]; then
+  echo -e "${GREEN}PASS (skipped): HEAD is not a v* release tag; the three-way check applies only on a tagged release.${NC}"
+else
+  tag_version="${git_tag#v}"
+  changelog_version=$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$SCRIPT_DIR/CHANGELOG.md" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+  tool_version=$(HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" "$CLEANER_SH" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  if [[ "$tag_version" == "$changelog_version" && "$changelog_version" == "$tool_version" ]]; then
+    echo -e "${GREEN}PASS: tag ($tag_version), CHANGELOG ($changelog_version), and --version ($tool_version) all agree.${NC}"
+  else
+    echo -e "${RED}FAIL: version mismatch — tag='$tag_version' changelog='$changelog_version' --version='$tool_version'.${NC}"
+    exit 1
+  fi
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
