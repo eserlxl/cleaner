@@ -1670,6 +1670,35 @@ else
   exit 1
 fi
 
+# 53. Test Case: the shipped man page must render without roff diagnostics. The
+# option-coverage test only greps cleaner.1 for flag tokens, so a broken macro or
+# an unterminated font escape would ship a garbled page with nothing failing.
+echo -e "\n${BOLD}Test Case: Man Page Renders Cleanly${NC}"
+man_err="$TEST_ENV_DIR/man_render.err"
+man_out="$TEST_ENV_DIR/man_render.out"
+man_ec=0
+# groff first: it renders and warns without a pager or locale noise on stderr,
+# so an empty stderr is a trustworthy signal. man -l is the fallback.
+if command -v groff > /dev/null 2>&1; then
+  groff -man -ww -Tutf8 "$SCRIPT_DIR/cleaner.1" > "$man_out" 2> "$man_err" || man_ec=$?
+elif command -v mandoc > /dev/null 2>&1; then
+  mandoc -T ascii "$SCRIPT_DIR/cleaner.1" > "$man_out" 2> "$man_err" || man_ec=$?
+elif command -v man > /dev/null 2>&1; then
+  man --warnings -E UTF-8 -l "$SCRIPT_DIR/cleaner.1" > "$man_out" 2> "$man_err" || man_ec=$?
+else
+  man_ec=-1
+fi
+if [[ $man_ec -eq -1 ]]; then
+  echo -e "${GREEN}PASS (skipped): no roff formatter (man/groff/mandoc) on PATH.${NC}"
+elif [[ $man_ec -eq 0 ]] && [[ ! -s "$man_err" ]] && [[ -s "$man_out" ]] \
+     && grep -q "NAME" "$man_out"; then
+  echo -e "${GREEN}PASS: cleaner.1 renders with no roff diagnostics.${NC}"
+else
+  echo -e "${RED}FAIL: cleaner.1 did not render cleanly (ec=$man_ec).${NC}"
+  cat "$man_err"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
