@@ -64,6 +64,7 @@ MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
 EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
+LIST_SESSIONS=false
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -134,6 +135,10 @@ while [[ $# -gt 0 ]]; do
       echo "$(basename "$0") $VERSION"
       exit 0
       ;;
+    --list-sessions)
+      LIST_SESSIONS=true
+      shift
+      ;;
     -h|--help)
       show_usage
       exit 0
@@ -146,8 +151,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check if config file exists (only if not restoring)
-if [[ -z "${RESTORE_TARGET:-}" ]]; then
+# Check if config file exists (only if not restoring or listing sessions)
+if [[ -z "${RESTORE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
     exit 1
@@ -710,6 +715,12 @@ MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
 # Build exclude arguments for find
 build_exclude_find_args
+
+# Read-only: list quarantine sessions and exit
+if [[ "$LIST_SESSIONS" == true ]]; then
+  list_quarantine_sessions
+  exit 0
+fi
 
 # Check if restore mode is active
 if [[ -n "${RESTORE_TARGET:-}" ]]; then
