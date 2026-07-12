@@ -106,6 +106,18 @@ The tool is a single script; run it from a checkout (`./cleaner.sh`) or install 
 
 At runtime the config is resolved in this order: an explicit `-c/--config` path, then `$XDG_CONFIG_HOME/linux-cleaner/cleaner.conf` (default `~/.config/linux-cleaner/cleaner.conf`), then `/etc/linux-cleaner/cleaner.conf`, then a `cleaner.conf` beside the script (development checkout).
 
+Install and uninstall with `make` (or the POSIX-sh `install.sh` wrapper):
+
+```bash
+sudo make install                  # install under /usr/local (PREFIX)
+sudo make install PREFIX=/usr       # install under /usr
+make install DESTDIR=/tmp/stage     # stage into a packaging root
+sudo ./install.sh install           # POSIX-sh alternative (honors PREFIX/DESTDIR)
+sudo make uninstall                 # remove installed files (the system config is preserved)
+```
+
+A reinstall never overwrites an edited system config: if `cleaner.conf` already exists it is left untouched and `cleaner.conf.example` is written alongside it instead.
+
 ---
 
 ## Safety Features
