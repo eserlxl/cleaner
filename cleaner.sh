@@ -664,7 +664,7 @@ risk_to_int() {
     medium) echo 2 ;;
     danger|dangerous) echo 3 ;;
     *)
-      echo -e "${RED}Error: Unknown risk level '$1'. Valid levels are: safe, medium, danger.${NC}" >&2
+      echo -e "${RED}${2:-}Error: Unknown risk level '$1'. Valid levels are: safe, medium, danger.${NC}" >&2
       exit 1
       ;;
   esac
@@ -757,14 +757,14 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean)
         ;;
       *)
-        echo -e "${RED}Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
+        echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
         exit 1
         ;;
     esac
   fi
   
   # Map risk levels
-  target_risk_int=$(risk_to_int "$risk") || exit 1
+  target_risk_int=$(risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: ") || exit 1
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
     # Skip target quietly or verbosely
     continue
