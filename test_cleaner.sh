@@ -1339,6 +1339,27 @@ else
   exit 1
 fi
 
+# 46. Test Case: restore tolerates a failing sudo chown (does not abort mid-loop)
+setup_mock_env
+qroot="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+qsession="$qroot/2020-01-01_00-00-00"
+mkdir -p "$qsession"
+echo "restored payload" > "$qsession/0_RootOwned"
+# Record a full item as sudo-owned uid/gid 0; under the mock sudo, 'chown 0:0'
+# fails with EPERM (running as a normal user), exercising the chown-failure path.
+printf 'full|0_RootOwned|%s/.cache/restored_root|true|0|0\n' "$MOCK_HOME" > "$qsession/quarantine.meta"
+if run_test_case "Restore Tolerates Chown Failure" 0 "restore_chown.log" --restore 2020-01-01_00-00-00; then
+  if [[ -f "$MOCK_HOME/.cache/restored_root" ]]; then
+    echo -e "${GREEN}PASS: restore completed despite a failing sudo chown; file was restored.${NC}"
+  else
+    echo -e "${RED}FAIL: restore did not place the file (chown-failure path aborted the restore).${NC}"
+    cat "$TEST_ENV_DIR/restore_chown.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

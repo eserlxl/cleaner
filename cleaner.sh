@@ -482,7 +482,7 @@ restore_quarantine() {
         ensure_sudo
         sudo mkdir -p "$(dirname "$original_path")"
         if sudo mv "$src_path" "$original_path"; then
-          sudo chown -hR "$uid:$gid" "$original_path"
+          sudo chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
         else
           success=false
         fi
@@ -512,7 +512,7 @@ restore_quarantine() {
           fi
           sudo mkdir -p "$(dirname "$dest_file")"
           if sudo mv "$file" "$dest_file"; then
-            sudo chown -h "$uid:$gid" "$dest_file"
+            sudo chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
           else
             success=false
           fi
