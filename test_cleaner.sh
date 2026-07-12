@@ -720,6 +720,20 @@ else
   exit 1
 fi
 
+# 21. Test Case: Destructive run WITHOUT --allow-outside-home leaves outside target intact
+setup_mock_env
+if run_test_case "Destructive Without Escape Flag" 0 "outside_gated.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then
+  if [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
+    echo -e "${GREEN}PASS: Outside-HOME target survived a real --force run because --allow-outside-home was absent.${NC}"
+  else
+    echo -e "${RED}FAIL: Outside-HOME target was deleted under --force without --allow-outside-home.${NC}"
+    cat "$TEST_ENV_DIR/outside_gated.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
