@@ -1,0 +1,48 @@
+# Releasing
+
+This project ships as a single script; releases are cut from `main` as annotated
+`v*` git tags. Follow this runbook for every release.
+
+## Prerequisites
+
+- The working tree is clean and on `main`.
+- You have push access to the repository.
+
+## Release steps
+
+1. **Pick the version** `X.Y.Z` per the [bump policy](CHANGELOG.md#versioning)
+   (major = config/CLI break, minor = feature / safety-guard / new action,
+   patch = fix / docs).
+2. **Bump the version constant** in `cleaner.sh`:
+   ```sh
+   sed -i 's/^readonly VERSION=.*/readonly VERSION="X.Y.Z"/' cleaner.sh
+   ```
+   Confirm `./cleaner.sh --version` prints the new version.
+3. **Roll the changelog**: move the `[Unreleased]` entries under a new
+   `## [X.Y.Z] - <YYYY-MM-DD>` heading in `CHANGELOG.md`, and update the
+   compare/tag links at the bottom.
+4. **Run the pre-release gate** (below) — it must be green.
+5. **Commit** the version bump and changelog roll.
+6. **Tag** an annotated release and push it:
+   ```sh
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin main --follow-tags
+   ```
+7. **Publish the GitHub Release** for the `vX.Y.Z` tag with the changelog section
+   as the release notes and the source tarball attached. The release workflow can
+   do this automatically on the tag push; live publication stays human-gated.
+
+## Pre-release gate
+
+A release must never be cut on a failing safety suite. Before tagging, confirm all of:
+
+- `shellcheck cleaner.sh test_cleaner.sh install.sh` is clean;
+- `bash test_cleaner.sh` (or `make check`) passes;
+- the version-consistency check passes (the CHANGELOG top version equals
+  `cleaner.sh --version`).
+
+## Yanking or patching a bad release
+
+If a released version is broken, do **not** delete the tag. Cut a new patch release
+(`X.Y.Z+1`) with the fix, note the regression in the changelog, and add a prominent
+warning to the bad GitHub Release's notes (or mark it a pre-release).
