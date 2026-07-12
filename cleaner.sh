@@ -207,22 +207,45 @@ trim() {
   echo -n "$var"
 }
 
+# Replace every whole-token occurrence of $NAME (arg 2) with VALUE (arg 3) in
+# STRING (arg 1). "Whole token" means the $NAME is not immediately followed by
+# an identifier character, so $HOMEDATA / $USERNAME are left literal -- only the
+# explicit $HOME / $USER placeholders are resolved (no eval, no substring creep).
+_expand_var_token() {
+  local str="$1" name="$2" value="$3"
+  local token="\$$name"
+  local out="" rest="$str" before after nextc
+  while [[ "$rest" == *"$token"* ]]; do
+    before="${rest%%"$token"*}"
+    after="${rest#*"$token"}"
+    nextc="${after:0:1}"
+    if [[ -z "$nextc" || "$nextc" != [A-Za-z0-9_] ]]; then
+      out+="$before$value"
+    else
+      out+="$before$token"
+    fi
+    rest="$after"
+  done
+  printf '%s' "$out$rest"
+}
+
 # Expand standard environment variables in a safe way (avoiding eval)
 expand_path_safe() {
   local raw_path="$1"
   local expanded="$raw_path"
-  
+
   # Safe leading ~ expansion
   # shellcheck disable=SC2088
   case "$expanded" in
     "~") expanded="$HOME" ;;
     "~/"*) expanded="$HOME/${expanded#~/}" ;;
   esac
-  
-  # Replace $HOME and $USER anywhere they appear
-  expanded="${expanded//\$HOME/$HOME}"
-  expanded="${expanded//\$USER/$USER}"
-  
+
+  # Replace $HOME and $USER only as whole tokens (so $HOMEDATA / $USERNAME stay
+  # literal, matching the documented "explicit placeholders only" contract).
+  expanded=$(_expand_var_token "$expanded" "HOME" "$HOME")
+  expanded=$(_expand_var_token "$expanded" "USER" "$USER")
+
   echo "$expanded"
 }
 

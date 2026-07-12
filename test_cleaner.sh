@@ -1294,6 +1294,27 @@ else
   exit 1
 fi
 
+# 44. Test Case: $HOME/$USER expand only as whole tokens (no substring over-expansion)
+setup_mock_env
+cat << EOF > "$TEST_ENV_DIR/token_expand.conf"
+safe|Prefixed HOME Token|\$HOMEDATA/x|Must stay literal, not \$HOME-expanded|0||
+safe|Real HOME Target|\$HOME/.cache/aurman|Real target that must still expand|0||
+EOF
+if run_test_case "Whole-Token HOME/USER Expansion" 0 "token_expand.log" --config "$TEST_ENV_DIR/token_expand.conf" --dry-run; then
+  # The prefixed token must be left literal ('$HOMEDATA' present verbatim) and
+  # must NOT be over-expanded to <mock_home>DATA.
+  if grep -qF '$HOMEDATA' "$TEST_ENV_DIR/token_expand.log" \
+     && ! grep -qF "${MOCK_HOME}DATA" "$TEST_ENV_DIR/token_expand.log"; then
+    echo -e "${GREEN}PASS: \$HOMEDATA left literal; only whole \$HOME/\$USER tokens expand.${NC}"
+  else
+    echo -e "${RED}FAIL: \$HOME substring was over-expanded inside \$HOMEDATA.${NC}"
+    cat "$TEST_ENV_DIR/token_expand.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
