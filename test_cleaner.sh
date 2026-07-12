@@ -1699,6 +1699,26 @@ else
   exit 1
 fi
 
+# 54. Test Case: the shipped default config must target caches and temp files only.
+# $HOME/.config is configuration and persistent state (e.g. a browser's per-site
+# IndexedDB storage) -- a target there is data loss, not reclamation, and the README
+# rates that class "danger". The default every install receives must not carry one.
+echo -e "\n${BOLD}Test Case: Shipped Config Targets No \$HOME/.config Path${NC}"
+config_offenders=""
+while IFS='|' read -r c_risk _ c_path _; do
+  c_risk="${c_risk#"${c_risk%%[![:space:]]*}"}"
+  [[ -z "$c_risk" || "$c_risk" == \#* ]] && continue
+  case "$c_path" in
+    */.config/*) config_offenders+=" $c_path" ;;
+  esac
+done < "$SCRIPT_DIR/cleaner.conf"
+if [[ -z "$config_offenders" ]]; then
+  echo -e "${GREEN}PASS: the shipped config targets no \$HOME/.config path (caches and temp files only).${NC}"
+else
+  echo -e "${RED}FAIL: the shipped config targets configuration/state, not cache:$config_offenders${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 

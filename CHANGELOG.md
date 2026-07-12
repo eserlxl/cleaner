@@ -30,6 +30,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   one irreversible prompt is no longer less informative than its read-only query.
 
 ### Fixed
+- The shipped default config no longer targets a Chromium per-site IndexedDB
+  store under `$HOME/.config`. That tree is configuration and persistent state,
+  not cache, so cleaning it at the `medium` risk level was data loss rather than
+  reclamation — and it contradicted the README, which rates site-database storage
+  `danger`. The default now targets caches and temp files only, and the suite
+  fails if a `$HOME/.config` target is added back.
 - Cleanup now exits non-zero when an operation fails, matching the documented
   exit-status contract. A failed delete, quarantine move, predefined action, or
   session purge previously printed an error to stderr and still exited 0, so an
