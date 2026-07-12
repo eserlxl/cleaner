@@ -711,7 +711,11 @@ total_reclaimable_bytes=0
 echo -e "${BOLD}Analyzing targets...${NC}"
 
 # Read configuration file line by line
+config_lineno=0
 while IFS= read -r config_line || [[ -n "$config_line" ]]; do
+  # Track the physical (1-based) line number for every line (comments and
+  # blanks included) so error messages can cite the real line.
+  config_lineno=$((config_lineno + 1))
   # Expose the true (nominal) field count: fields are pipe-delimited, so the
   # count is the number of '|' delimiters plus one. Counting delimiters stays
   # correct even when trailing optional fields are empty (unlike an array length).
