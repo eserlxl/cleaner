@@ -174,6 +174,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# HOME is the tool's entire safety boundary: every target path is expanded,
+# canonicalized, and bounded against it. Refuse to run without it -- a bare $HOME
+# deref under set -u would otherwise abort mid-parse, or (via expand_path_safe's
+# swallowed command substitution) silently collapse a target to the current
+# directory. USER is only a convenience placeholder; normalize it once so an
+# unset USER (cron, systemd, containers, 'su' without -) cannot trigger the same
+# collapse.
+if [[ -z "${HOME:-}" ]]; then
+  echo -e "${RED}Error: HOME is not set; refusing to run without a home-directory boundary.${NC}" >&2
+  exit 1
+fi
+USER="${USER:-$(id -un 2>/dev/null || true)}"
+
 # Check if config file exists (only if not restoring or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given:

@@ -1360,6 +1360,43 @@ else
   exit 1
 fi
 
+# 47. Test Case: an unset USER/HOME cannot collapse a target path to CWD
+setup_mock_env
+echo -e "\n${BOLD}Test Case: Unset USER/HOME Robustness${NC}"
+robust_conf="$TEST_ENV_DIR/robust.conf"
+# A non-existent target so the resolved path is printed verbatim ("...does not
+# exist."), letting us assert it stayed under HOME instead of collapsing to CWD.
+# shellcheck disable=SC2016  # literal $HOME is intentional: the cleaner expands it, not the shell
+printf 'safe|Robust Probe|$HOME/.cache/robust_probe_xyz|USER-unset resolution guard|0||\n' > "$robust_conf"
+# (a) USER unset: expand_path_safe must not abort on an unbound $USER deref and
+#     silently return "" (which canonicalize_physical would turn into $PWD).
+robust_log="$TEST_ENV_DIR/robust_user.log"
+robust_ec=0
+env -u USER HOME="$MOCK_HOME" XDG_CONFIG_HOME="$TEST_ENV_DIR/nope" PATH="$TEST_ENV_DIR/bin:$PATH" \
+  "$CLEANER_SH" --config "$robust_conf" --dry-run < /dev/null > "$robust_log" 2>&1 || robust_ec=$?
+if [[ $robust_ec -eq 0 ]] \
+   && ! grep -qi "unbound variable" "$robust_log" \
+   && grep -q "$MOCK_HOME/.cache/robust_probe_xyz" "$robust_log"; then
+  echo -e "${GREEN}PASS: unset USER kept the target under HOME (no CWD collapse).${NC}"
+else
+  echo -e "${RED}FAIL: unset USER broke path resolution (ec=$robust_ec).${NC}"
+  cat "$robust_log"
+  exit 1
+fi
+# (b) HOME unset: HOME is the safety boundary, so the tool must refuse to run with
+#     a clear error and a non-zero exit rather than crash cryptically.
+home_log="$TEST_ENV_DIR/robust_home.log"
+home_ec=0
+env -u HOME PATH="$TEST_ENV_DIR/bin:$PATH" \
+  "$CLEANER_SH" --config "$robust_conf" --dry-run < /dev/null > "$home_log" 2>&1 || home_ec=$?
+if [[ $home_ec -ne 0 ]] && grep -qi "HOME is not set" "$home_log"; then
+  echo -e "${GREEN}PASS: unset HOME is refused with a clear error and non-zero exit.${NC}"
+else
+  echo -e "${RED}FAIL: unset HOME was not refused cleanly (ec=$home_ec).${NC}"
+  cat "$home_log"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
