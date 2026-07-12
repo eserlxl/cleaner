@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-13
+
 ### Added
 - `--only PATTERN` — with `--restore`, recover a single target from a quarantine
   session instead of the whole session. Targets whose original path does not match
@@ -87,5 +89,6 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.1.0
 [1.0.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.0.0

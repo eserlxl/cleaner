@@ -1,6 +1,6 @@
 # Maintainer: Eser KUBALI <eserlxl@gmail.com>
 pkgname=linux-cleaner
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Safe, configuration-driven cleaner for caches and temporary files"
 arch=('any')
