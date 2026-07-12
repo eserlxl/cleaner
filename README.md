@@ -101,6 +101,27 @@ Run the script directly from the project directory:
 
 ---
 
+## Operation Log
+
+The tool can keep an **opt-in** operation log, **off by default**. Enable it with the `--log` flag or by setting the `LINUX_CLEANER_LOG` environment variable:
+
+```bash
+./cleaner.sh --clean --log                 # logs to ~/.cache/linux-cleaner/operations.log
+LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
+```
+
+- The log lives **under `$HOME`** (default `~/.cache/linux-cleaner/operations.log`); a path that resolves outside `$HOME` is refused and logging is disabled.
+- Each entry is one line recording the timestamp, mode (`delete`/`quarantine`/`action`), risk level, target name, path, and outcome — for example:
+
+```text
+2026-01-01T12:00:00 mode=delete risk=safe target='NPM Cache' path='/home/you/.npm/_cacache' outcome=success
+```
+
+- The log **records no secrets**: only the path and metadata the tool already prints — never file contents, environment values, or credentials.
+- Only real cleanups are logged; a dry-run writes nothing.
+
+---
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints a change must preserve.
