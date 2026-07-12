@@ -1484,6 +1484,79 @@ else
   exit 1
 fi
 
+# 49. Test Case: both installers ship the same tree under DESTDIR, and uninstall
+# removes what it shipped while preserving the system config. install.sh and the
+# Makefile duplicate the layout independently, so nothing else catches them drifting.
+setup_mock_env
+echo -e "\n${BOLD}Test Case: Installer DESTDIR Smoke Test${NC}"
+destroot="$TEST_ENV_DIR/destroot"
+if ! DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
+     > "$TEST_ENV_DIR/install_sh.log" 2>&1; then
+  echo -e "${RED}FAIL: install.sh install exited non-zero.${NC}"
+  cat "$TEST_ENV_DIR/install_sh.log"
+  exit 1
+fi
+install_ok=true
+for asset in "usr/bin/cleaner" \
+             "etc/linux-cleaner/cleaner.conf" \
+             "usr/share/man/man1/cleaner.1" \
+             "usr/share/licenses/linux-cleaner/LICENSE"; do
+  if [[ ! -f "$destroot/$asset" ]]; then
+    echo -e "${RED}FAIL: install.sh did not ship '$asset'.${NC}"
+    install_ok=false
+  fi
+done
+if [[ "$(stat -c '%a' "$destroot/usr/bin/cleaner" 2>/dev/null)" != "755" ]]; then
+  echo -e "${RED}FAIL: the installed cleaner binary is not mode 0755.${NC}"
+  install_ok=false
+fi
+if [[ "$install_ok" != true ]]; then
+  exit 1
+fi
+echo -e "${GREEN}PASS: install.sh shipped all four assets under DESTDIR with a 0755 binary.${NC}"
+
+# Re-installing over an existing config must preserve it and ship .example instead.
+DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
+  > "$TEST_ENV_DIR/install_sh2.log" 2>&1
+if [[ -f "$destroot/etc/linux-cleaner/cleaner.conf.example" ]]; then
+  echo -e "${GREEN}PASS: re-install preserved the existing config and shipped cleaner.conf.example.${NC}"
+else
+  echo -e "${RED}FAIL: re-install did not take the existing-config branch.${NC}"
+  cat "$TEST_ENV_DIR/install_sh2.log"
+  exit 1
+fi
+
+DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" uninstall \
+  > "$TEST_ENV_DIR/uninstall_sh.log" 2>&1
+if [[ ! -e "$destroot/usr/bin/cleaner" ]] \
+   && [[ ! -e "$destroot/usr/share/man/man1/cleaner.1" ]] \
+   && [[ ! -e "$destroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
+   && [[ -f "$destroot/etc/linux-cleaner/cleaner.conf" ]]; then
+  echo -e "${GREEN}PASS: uninstall removed the binary, man page, and license but kept the config.${NC}"
+else
+  echo -e "${RED}FAIL: uninstall did not clean up correctly (or removed the system config).${NC}"
+  cat "$TEST_ENV_DIR/uninstall_sh.log"
+  exit 1
+fi
+
+if command -v make > /dev/null 2>&1; then
+  freshroot="$TEST_ENV_DIR/freshroot"
+  makeroot="$TEST_ENV_DIR/makeroot"
+  DESTDIR="$freshroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install > /dev/null 2>&1
+  make -C "$SCRIPT_DIR" install DESTDIR="$makeroot" PREFIX=/usr \
+    > "$TEST_ENV_DIR/make_install.log" 2>&1
+  if diff <(cd "$freshroot" && find . -type f | sort) \
+          <(cd "$makeroot" && find . -type f | sort) > "$TEST_ENV_DIR/drift.log" 2>&1; then
+    echo -e "${GREEN}PASS: make install and install.sh ship an identical file tree.${NC}"
+  else
+    echo -e "${RED}FAIL: install.sh and the Makefile install target have drifted.${NC}"
+    cat "$TEST_ENV_DIR/drift.log"
+    exit 1
+  fi
+else
+  echo -e "${GREEN}PASS (skipped): make is not installed; cannot cross-check the Makefile tree.${NC}"
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
