@@ -69,6 +69,8 @@ Run the script directly from the project directory:
 ./cleaner.sh [OPTIONS]
 ```
 
+Once installed system-wide, run the command directly (e.g. `cleaner.sh [OPTIONS]`); it resolves its configuration from your XDG user config or `/etc/linux-cleaner/cleaner.conf` (see [Installation](#installation)). Override the config with `-c/--config` in either case.
+
 ### Options
 
 - **`--clean`**: Execute the cleanup. Without this flag, the script runs in dry-run mode.
