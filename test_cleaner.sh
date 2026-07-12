@@ -914,6 +914,21 @@ else
   exit 1
 fi
 
+# 29. Test Case: --version prints a version token and exits 0
+setup_mock_env
+if run_test_case "Version Flag" 0 "version.log" --version; then
+  if grep -qE '[0-9]+\.[0-9]+' "$TEST_ENV_DIR/version.log"; then
+    echo -e "${GREEN}PASS: --version printed a version token and exited 0.${NC}"
+  else
+    echo -e "${RED}FAIL: --version output had no version token.${NC}"
+    cat "$TEST_ENV_DIR/version.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: --version did not exit 0.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
