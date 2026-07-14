@@ -2186,6 +2186,41 @@ else
   exit 1
 fi
 
+# Target names with quotes/backslashes must still produce valid JSON.
+echo -e "\n${BOLD}Test Case: JSON Escaping Special Target Names${NC}"
+cat > "$TEST_ENV_DIR/json_escape.conf" << 'EOF'
+safe|Cache "quoted" \\name|$HOME/.cache/json_escape_test|Adversarial name chars|0||
+EOF
+mkdir -p "$MOCK_HOME/.cache/json_escape_test"
+echo "payload" > "$MOCK_HOME/.cache/json_escape_test/file.txt"
+if run_test_case "JSON Escaping Special Target Names" 0 "json_escape.log" \
+     --config "$TEST_ENV_DIR/json_escape.conf" --json --dry-run; then
+  if python3 -m json.tool < "$TEST_ENV_DIR/json_escape.log" > /tmp/json_escape_parsed.out 2>/tmp/json_escape_parse.err; then
+    if python3 - "$TEST_ENV_DIR/json_escape.conf" /tmp/json_escape_parsed.out << 'PY'
+import json, sys
+data = json.load(open(sys.argv[2]))
+# Config NAME uses two literal backslashes before "name" in the heredoc line.
+expected = 'Cache "quoted" \\\\name'
+if data["targets"][0]["name"] != expected:
+    raise SystemExit(1)
+PY
+    then
+      echo -e "${GREEN}PASS: --json --dry-run escapes special characters in target names.${NC}"
+    else
+      echo -e "${RED}FAIL: escaped target name missing from parsed JSON.${NC}"
+      cat /tmp/json_escape_parsed.out
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: --json output with special target names is not valid JSON.${NC}"
+    cat /tmp/json_escape_parse.err
+    cat "$TEST_ENV_DIR/json_escape.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 if run_test_case "JSON Requires Dry Run" 1 "json_nodry.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --json --force; then
   if grep -q "json is valid only with --dry-run" "$TEST_ENV_DIR/json_nodry.log"; then
