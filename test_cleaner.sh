@@ -2059,6 +2059,20 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Only Target Missing Pattern Argument${NC}"
+if run_test_case "Only Target Missing Pattern" 1 "only_target_noarg.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target; then
+  if grep -q "only-target requires a pattern argument" "$TEST_ENV_DIR/only_target_noarg.log"; then
+    echo -e "${GREEN}PASS: bare --only-target is rejected with a clear error.${NC}"
+  else
+    echo -e "${RED}FAIL: missing --only-target pattern was not rejected cleanly.${NC}"
+    cat "$TEST_ENV_DIR/only_target_noarg.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: Only Target With List Sessions Rejected${NC}"
 if run_test_case "Only Target With List Sessions Rejected" 1 "only_target_nolistsess.log" \
      --list-sessions --only-target NPM; then
