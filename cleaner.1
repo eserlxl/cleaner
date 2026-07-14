@@ -70,6 +70,16 @@ or
 and original path of every quarantined item, so a session's contents can be
 inspected before it is restored or permanently purged.
 .TP
+.B \-\-list\-targets
+List every target defined in the configuration file
+.RB ( NAME ", " risk ", " path )
+without analyzing disk usage or modifying anything. Read-only; requires a
+configuration file. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+or
+.BR \-\-list\-sessions .
+.TP
 .B \-\-only \fIPATTERN\fR
 Used with
 .BR \-\-restore :

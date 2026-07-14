@@ -49,6 +49,7 @@ Options:
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --list-sessions            List quarantine sessions (read-only) and exit.
+  --list-targets             List configured cleanup targets (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
@@ -78,6 +79,7 @@ RESTORE_ONLY=""
 ONLY_TARGET=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
+LIST_TARGETS=false
 
 # Set by any operation that was attempted and failed (a delete, a quarantine move,
 # a predefined action, a purge). The tool exits non-zero when it is set, per the
@@ -212,6 +214,10 @@ while [[ $# -gt 0 ]]; do
       LIST_SESSIONS=true
       shift
       ;;
+    --list-targets)
+      LIST_TARGETS=true
+      shift
+      ;;
     -h|--help)
       show_usage
       exit 0
@@ -244,8 +250,13 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true ) ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, or --list-sessions).${NC}" >&2
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, or --list-targets).${NC}" >&2
+  exit 1
+fi
+
+if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true ) ]]; then
+  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, or --list-sessions.${NC}" >&2
   exit 1
 fi
 
@@ -494,6 +505,41 @@ log_operation() {
   if ! { mkdir -p "$literal_dir" && printf '%s\n' "$message" >> "$target"; } 2>/dev/null; then
     echo -e "  [${YELLOW}LOG${NC}] Warning: could not write to log '$target'." >&2
   fi
+}
+
+# Print configured cleanup targets (strictly read-only): NAME, risk, and path
+# for every active config line. No disk analysis or mutation.
+list_config_targets() {
+  local config_line config_lineno=0 config_pipes field_count
+  local risk name raw_path desc min_age check_procs custom_clean_cmd
+
+  echo -e "${BOLD}${BLUE}=== Configured Targets ===${NC}"
+  echo -e "Config file: ${YELLOW}$CONFIG_FILE${NC}"
+  echo
+
+  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
+    config_lineno=$((config_lineno + 1))
+    config_pipes="${config_line//[^|]/}"
+    field_count=$(( ${#config_pipes} + 1 ))
+    IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
+    risk=$(trim "$risk")
+    [[ -z "$risk" || "$risk" =~ ^# ]] && continue
+    if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
+      exit 1
+    fi
+    name=$(trim "$name")
+    raw_path=$(trim "$raw_path")
+    if [[ -z "$name" ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
+      exit 1
+    fi
+    if [[ -z "$raw_path" ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
+      exit 1
+    fi
+    printf '%s\t%s\t%s\n' "$name" "$risk" "$raw_path"
+  done < "$CONFIG_FILE"
 }
 
 # Print what one quarantine session holds -- the type (full/aged) and original
@@ -1200,6 +1246,11 @@ build_exclude_find_args
 # Read-only: list quarantine sessions and exit
 if [[ "$LIST_SESSIONS" == true ]]; then
   list_quarantine_sessions
+  exit 0
+fi
+
+if [[ "$LIST_TARGETS" == true ]]; then
+  list_config_targets
   exit 0
 fi
 

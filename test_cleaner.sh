@@ -2085,6 +2085,35 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: List Targets Read-Only${NC}"
+if run_test_case "List Targets" 0 "list_targets.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets; then
+  if grep -q $'NPM Cache\tsafe\t' "$TEST_ENV_DIR/list_targets.log" \
+     && ! grep -q 'Total potential space savings' "$TEST_ENV_DIR/list_targets.log" \
+     && ! grep -q 'Analyzing targets' "$TEST_ENV_DIR/list_targets.log"; then
+    echo -e "${GREEN}PASS: --list-targets prints configured targets without dry-run analysis.${NC}"
+  else
+    echo -e "${RED}FAIL: --list-targets output missing targets or ran analysis.${NC}"
+    cat "$TEST_ENV_DIR/list_targets.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "List Targets With Restore Rejected" 1 "list_targets_bad.log" \
+     --restore latest --list-targets; then
+  if grep -q "list-targets cannot be combined" "$TEST_ENV_DIR/list_targets_bad.log"; then
+    echo -e "${GREEN}PASS: --list-targets with --restore is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --list-targets with --restore was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/list_targets_bad.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 57. Test Case: release-notes extraction. This decides what a published release SAYS,
 # and a published release cannot be cleanly un-published — so it must be tested, not
 # left as inline awk inside a workflow where nothing covers it.

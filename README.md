@@ -88,6 +88,11 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > [!WARNING]
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date) and the targets each one holds — the type (`full` or `aged`) and original path of every quarantined item, so you can see what a session contains before restoring it or permanently purging it. Read-only and requires no config file.
+- **`--list-targets`**: List every target defined in the configuration file (name, risk, path) without analyzing disk usage or modifying anything. Read-only; requires a config file.
+
+  ```sh
+  cleaner --list-targets --config cleaner.conf   # inventory before a selective --only-target run
+  ```
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
 - **`--only PATTERN`**: With `--restore`, restore only the targets whose original path contains `PATTERN`; every other target stays quarantined and the session is kept (its metadata is rewritten, so a later full `--restore` of that session still succeeds). Exits 1 if nothing matches. Pairs with `--list-sessions`, which prints each target's path:
 
