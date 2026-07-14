@@ -57,7 +57,7 @@ Options:
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
-  --json                     Emit machine-readable JSON summary (dry-run only).
+  --json                     Emit machine-readable JSON (--dry-run summary or --list-targets inventory).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -271,8 +271,8 @@ if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGE
   exit 1
 fi
 
-if [[ "$JSON_OUTPUT" == true && "$DRY_RUN" != true ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview).${NC}" >&2
+if [[ "$JSON_OUTPUT" == true && "$DRY_RUN" != true && "$LIST_TARGETS" != true ]]; then
+  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview) or --list-targets.${NC}" >&2
   exit 1
 fi
 
@@ -350,6 +350,56 @@ emit_dry_run_json() {
       "$(json_escape "${json_risks[$i]}")" \
       "${json_bytes[$i]}" \
       "$(json_escape "${json_statuses[$i]}")"
+  done
+  printf ']}'
+  printf '\n'
+}
+
+emit_list_targets_json() {
+  local -a lt_names=() lt_risks=() lt_paths=()
+  local config_line config_lineno=0 config_pipes field_count
+  local risk name raw_path desc min_age check_procs custom_clean_cmd
+  local i first=true
+
+  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
+    config_lineno=$((config_lineno + 1))
+    config_pipes="${config_line//[^|]/}"
+    field_count=$(( ${#config_pipes} + 1 ))
+    IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
+    risk=$(trim "$risk")
+    [[ -z "$risk" || "$risk" =~ ^# ]] && continue
+    if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
+      exit 1
+    fi
+    name=$(trim "$name")
+    raw_path=$(trim "$raw_path")
+    if [[ -z "$name" ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
+      exit 1
+    fi
+    if [[ -z "$raw_path" ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
+      exit 1
+    fi
+    lt_names+=("$name")
+    lt_risks+=("$risk")
+    lt_paths+=("$raw_path")
+  done < "$CONFIG_FILE"
+
+  printf '{'
+  printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
+  printf '"targets":['
+  for i in "${!lt_names[@]}"; do
+    if [[ "$first" == true ]]; then
+      first=false
+    else
+      printf ','
+    fi
+    printf '{"name":"%s","risk":"%s","path":"%s"}' \
+      "$(json_escape "${lt_names[$i]}")" \
+      "$(json_escape "${lt_risks[$i]}")" \
+      "$(json_escape "${lt_paths[$i]}")"
   done
   printf ']}'
   printf '\n'
@@ -523,6 +573,11 @@ log_operation() {
 list_config_targets() {
   local config_line config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    emit_list_targets_json
+    return 0
+  fi
 
   echo -e "${BOLD}${BLUE}=== Configured Targets ===${NC}"
   echo -e "Config file: ${YELLOW}$CONFIG_FILE${NC}"

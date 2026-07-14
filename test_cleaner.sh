@@ -2277,6 +2277,36 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: List Targets JSON Output${NC}"
+setup_mock_env
+if run_test_case "List Targets JSON" 0 "list_targets_json.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets --json; then
+  if python3 -m json.tool < "$TEST_ENV_DIR/list_targets_json.log" > /tmp/list_targets_json_parsed.out 2>/tmp/list_targets_json_parse.err; then
+    if python3 - /tmp/list_targets_json_parsed.out << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+targets = data.get("targets", [])
+names = [t.get("name") for t in targets]
+assert "NPM Cache" in names
+assert all("risk" in t and "path" in t for t in targets)
+PY
+    then
+      echo -e "${GREEN}PASS: --list-targets --json emits valid JSON inventory.${NC}"
+    else
+      echo -e "${RED}FAIL: --list-targets JSON missing expected target fields.${NC}"
+      cat /tmp/list_targets_json_parsed.out
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: --list-targets --json is not valid JSON.${NC}"
+    cat /tmp/list_targets_json_parse.err
+    cat "$TEST_ENV_DIR/list_targets_json.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 if run_test_case "List Targets With Restore Rejected" 1 "list_targets_bad.log" \
      --restore latest --list-targets; then
   if grep -q "list-targets cannot be combined" "$TEST_ENV_DIR/list_targets_bad.log"; then
