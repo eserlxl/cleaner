@@ -1089,6 +1089,47 @@ else
   exit 1
 fi
 
+# (b) LINUX_CLEANER_LOG env enables logging without --log
+setup_mock_env
+env_log_path="$MOCK_HOME/.cache/linux-cleaner/env-ops.log"
+env_ec=0
+LINUX_CLEANER_LOG="$env_log_path" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --force < /dev/null \
+  > "$TEST_ENV_DIR/log_env.log" 2>&1 || env_ec=$?
+if [[ $env_ec -ne 0 ]]; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_LOG activation run exited $env_ec.${NC}"
+  cat "$TEST_ENV_DIR/log_env.log"
+  exit 1
+fi
+if [[ -f "$env_log_path" ]] && grep -q "target='NPM Cache'" "$env_log_path"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_LOG enabled logging without --log.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_LOG did not write the expected log entry.${NC}"
+  cat "$env_log_path" 2>/dev/null
+  exit 1
+fi
+
+# (c) LINUX_CLEANER_LOG tilde expansion resolves under mock HOME
+setup_mock_env
+tilde_log_path="$MOCK_HOME/.cache/linux-cleaner/tilde-log-test.log"
+tilde_ec=0
+# shellcheck disable=SC2088  # literal ~ is intentional; cleaner expands it at runtime
+LINUX_CLEANER_LOG='~/.cache/linux-cleaner/tilde-log-test.log' PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --force < /dev/null \
+  > "$TEST_ENV_DIR/log_tilde.log" 2>&1 || tilde_ec=$?
+if [[ $tilde_ec -ne 0 ]]; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_LOG tilde expansion run exited $tilde_ec.${NC}"
+  cat "$TEST_ENV_DIR/log_tilde.log"
+  exit 1
+fi
+if [[ -f "$tilde_log_path" ]] && grep -q "target='NPM Cache'" "$tilde_log_path"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_LOG tilde path expanded and logged under mock HOME.${NC}"
+else
+  echo -e "${RED}FAIL: tilde log path was not created at '$tilde_log_path'.${NC}"
+  cat "$TEST_ENV_DIR/log_tilde.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"
@@ -1164,6 +1205,13 @@ if [[ "$pkgbuild_version" == "$tool_version" && "$srcinfo_version" == "$tool_ver
   echo -e "${GREEN}PASS: PKGBUILD and .SRCINFO pkgver both match --version ($tool_version).${NC}"
 else
   echo -e "${RED}FAIL: packaging version mismatch — PKGBUILD='$pkgbuild_version' .SRCINFO='$srcinfo_version' --version='$tool_version'.${NC}"
+  exit 1
+fi
+man_th_version=$(sed -n '1s/.*"linux-cleaner \([^"]*\)".*/\1/p' "$SCRIPT_DIR/cleaner.1")
+if [[ "$man_th_version" == "$tool_version" ]]; then
+  echo -e "${GREEN}PASS: cleaner.1 .TH version ($man_th_version) matches --version ($tool_version).${NC}"
+else
+  echo -e "${RED}FAIL: cleaner.1 .TH version '$man_th_version' != --version '$tool_version'.${NC}"
   exit 1
 fi
 
