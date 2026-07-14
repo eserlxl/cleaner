@@ -284,10 +284,11 @@ expand_path_safe() {
 
   # Safe leading ~ expansion
   # shellcheck disable=SC2088
-  case "$expanded" in
-    "~") expanded="$HOME" ;;
-    "~/"*) expanded="$HOME/${expanded#~/}" ;;
-  esac
+  if [[ "$expanded" == "~" ]]; then
+    expanded="$HOME"
+  elif [[ "$expanded" == "~/"* ]]; then
+    expanded="$HOME/${expanded:2}"
+  fi
 
   # Replace $HOME and $USER only as whole tokens (so $HOMEDATA / $USERNAME stay
   # literal, matching the documented "explicit placeholders only" contract).
@@ -296,6 +297,12 @@ expand_path_safe() {
 
   echo "$expanded"
 }
+
+# Resolve a user-supplied log path (--log / LINUX_CLEANER_LOG) with the same
+# placeholder rules as config targets, so ~ and $HOME in documented examples work.
+if [[ -n "$LOG_FILE" ]]; then
+  LOG_FILE=$(expand_path_safe "$LOG_FILE")
+fi
 
 # Strip trailing slashes safely (except when path is just "/")
 strip_trailing_slashes() {
