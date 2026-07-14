@@ -1998,6 +1998,30 @@ else
   exit 1
 fi
 
+# CHANGELOG env override must read an alternate file, not only the default beside the script.
+rn_alt="$TEST_ENV_DIR/alt-changelog.md"
+cp "$SCRIPT_DIR/CHANGELOG.md" "$rn_alt"
+rn_alt_ec=0
+CHANGELOG="$rn_alt" "$rn_sh" extract "$rn_ver" > "$TEST_ENV_DIR/notes_alt.md" 2>&1 || rn_alt_ec=$?
+if [[ $rn_alt_ec -eq 0 ]] && cmp -s "$rn_out" "$TEST_ENV_DIR/notes_alt.md"; then
+  echo -e "${GREEN}PASS: release-notes.sh honors the CHANGELOG env override.${NC}"
+else
+  echo -e "${RED}FAIL: CHANGELOG env override did not extract the same block (ec=$rn_alt_ec).${NC}"
+  cat "$TEST_ENV_DIR/notes_alt.md"
+  exit 1
+fi
+
+# extract without a version argument must fail with a clear error.
+rn_noarg_ec=0
+"$rn_sh" extract > "$TEST_ENV_DIR/notes_noarg.md" 2>&1 || rn_noarg_ec=$?
+if [[ $rn_noarg_ec -ne 0 ]] && grep -q "requires a version argument" "$TEST_ENV_DIR/notes_noarg.md"; then
+  echo -e "${GREEN}PASS: release-notes.sh extract rejects a missing version argument.${NC}"
+else
+  echo -e "${RED}FAIL: missing extract argument was not rejected cleanly (ec=$rn_noarg_ec).${NC}"
+  cat "$TEST_ENV_DIR/notes_noarg.md"
+  exit 1
+fi
+
 # 58. Test Case: every documented lint command names the same files as CI does. This
 # drifted once already, silently — README.md and CONTRIBUTING.md told contributors to
 # lint two files while CI linted three, so a contributor could run the documented
