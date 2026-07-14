@@ -2059,6 +2059,20 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Only Target With Purge Sessions Rejected${NC}"
+if run_test_case "Only Target With Purge Rejected" 1 "only_target_nopurge.log" \
+     --purge-sessions all --only-target NPM; then
+  if grep -q "only-target applies only to cleanup" "$TEST_ENV_DIR/only_target_nopurge.log"; then
+    echo -e "${GREEN}PASS: --only-target with --purge-sessions is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target with --purge-sessions was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/only_target_nopurge.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # --quiet: minimal output for unattended cron runs.
 echo -e "\n${BOLD}Test Case: Quiet Dry Run Output${NC}"
 if run_test_case "Quiet Dry Run" 0 "quiet_dry.log" \
