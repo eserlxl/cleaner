@@ -2070,6 +2070,17 @@ else
   exit 1
 fi
 
+rn_nofile_ec=0
+CHANGELOG="$TEST_ENV_DIR/no-such-changelog.md" "$rn_sh" extract 1.0.0 \
+  > "$TEST_ENV_DIR/rn_nofile.log" 2>&1 || rn_nofile_ec=$?
+if [[ $rn_nofile_ec -ne 0 ]] && grep -q "changelog not found" "$TEST_ENV_DIR/rn_nofile.log"; then
+  echo -e "${GREEN}PASS: release-notes.sh rejects a missing CHANGELOG file.${NC}"
+else
+  echo -e "${RED}FAIL: missing CHANGELOG file was not rejected cleanly (ec=$rn_nofile_ec).${NC}"
+  cat "$TEST_ENV_DIR/rn_nofile.log"
+  exit 1
+fi
+
 # 58. Test Case: every documented lint command names the same files as CI does. This
 # drifted once already, silently — README.md and CONTRIBUTING.md told contributors to
 # lint two files while CI linted three, so a contributor could run the documented
