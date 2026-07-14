@@ -95,6 +95,12 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   cleaner --list-sessions                       # see exactly what a session holds
   cleaner --restore latest --only /.cache/yarn  # take back just that one target
   ```
+- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, or `--list-sessions`.
+
+  ```sh
+  cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
+  cleaner --only-target "NPM" --config cleaner.conf --force     # clean only that target
+  ```
 - **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. Requires no config file.
 
   A bounded unattended setup — clean into quarantine daily, expire it weekly:

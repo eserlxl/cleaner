@@ -51,6 +51,7 @@ Options:
   --list-sessions            List quarantine sessions (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
+  --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
@@ -70,6 +71,7 @@ ALLOW_OUTSIDE_HOME=false
 EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
 RESTORE_ONLY=""
+ONLY_TARGET=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
 
@@ -160,6 +162,14 @@ while [[ $# -gt 0 ]]; do
       RESTORE_ONLY="$2"
       shift 2
       ;;
+    --only-target)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --only-target requires a pattern argument.${NC}" >&2
+        exit 1
+      fi
+      ONLY_TARGET="$2"
+      shift 2
+      ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
@@ -219,6 +229,11 @@ USER="${USER:-$(id -un 2>/dev/null || true)}"
 # let a user believe a cleanup or purge was narrowed when it was not.
 if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   echo -e "${RED}Error: --only requires --restore (it filters which quarantined targets are restored).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, or --list-sessions).${NC}" >&2
   exit 1
 fi
 
@@ -1164,6 +1179,7 @@ parsed_cmds=()
 parsed_sudos=()
 
 total_reclaimable_bytes=0
+only_target_matched=false
 
 # First pass: Parse config line-by-line safely and analyze targets
 echo -e "${BOLD}Analyzing targets...${NC}"
@@ -1207,6 +1223,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   if [[ -z "$raw_path" ]]; then
     echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
     exit 1
+  fi
+
+  if [[ -n "$ONLY_TARGET" ]]; then
+    if [[ "$name" != *"$ONLY_TARGET"* ]]; then
+      continue
+    fi
+    only_target_matched=true
   fi
 
   # Minimal CHECK_PROCESSES shape check: reject empty/whitespace-only tokens or
@@ -1382,6 +1405,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   parsed_sudos+=("$use_sudo")
   
 done < "$CONFIG_FILE"
+
+if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
+  echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
+  exit 1
+fi
 
 echo
 echo -e "${BOLD}Total potential space savings: ${GREEN}$(format_bytes "$total_reclaimable_bytes")${NC}"

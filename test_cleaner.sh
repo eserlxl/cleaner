@@ -1985,6 +1985,50 @@ else
   exit 1
 fi
 
+# --only-target: scoped cleanup by config target NAME (invent tier).
+echo -e "\n${BOLD}Test Case: Only Target Dry Run Filter${NC}"
+if run_test_case "Only Target Dry Run" 0 "only_target_dry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --dry-run; then
+  if grep -q "NPM Cache" "$TEST_ENV_DIR/only_target_dry.log" \
+     && ! grep -q "Yarn Cache" "$TEST_ENV_DIR/only_target_dry.log"; then
+    echo -e "${GREEN}PASS: --only-target NPM shows NPM Cache only.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target did not filter to NPM Cache only.${NC}"
+    cat "$TEST_ENV_DIR/only_target_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Only Target No Match${NC}"
+if run_test_case "Only Target No Match" 1 "only_target_nomatch.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target no_such_target_xyz --dry-run; then
+  if grep -q "matches '--only-target no_such_target_xyz'" "$TEST_ENV_DIR/only_target_nomatch.log"; then
+    echo -e "${GREEN}PASS: --only-target with no matching NAME exits 1.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target no-match did not report the empty match.${NC}"
+    cat "$TEST_ENV_DIR/only_target_nomatch.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Only Target With Restore Rejected${NC}"
+if run_test_case "Only Target With Restore Rejected" 1 "only_target_norestore.log" \
+     --restore latest --only-target NPM; then
+  if grep -q "only-target applies only to cleanup" "$TEST_ENV_DIR/only_target_norestore.log"; then
+    echo -e "${GREEN}PASS: --only-target with --restore is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target with --restore was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/only_target_norestore.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 57. Test Case: release-notes extraction. This decides what a published release SAYS,
 # and a published release cannot be cleanly un-published — so it must be tested, not
 # left as inline awk inside a workflow where nothing covers it.

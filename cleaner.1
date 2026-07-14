@@ -72,6 +72,18 @@ of that session still succeeds. Exits 1 if no target matches, or if
 is given without
 .BR \-\-restore .
 .TP
+.B \-\-only\-target \fIPATTERN\fR
+Used with cleanup: process only config targets whose
+.B NAME
+contains
+.IR PATTERN
+(substring match). Other targets are skipped. Exits 1 if no target name matches.
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+or
+.BR \-\-list\-sessions .
+.TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
 .TP
