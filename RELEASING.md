@@ -13,11 +13,12 @@ This project ships as a single script; releases are cut from `main` as annotated
 1. **Pick the version** `X.Y.Z` per the [bump policy](CHANGELOG.md#versioning)
    (major = config/CLI break, minor = feature / safety-guard / new action,
    patch = fix / docs).
-2. **Bump the version everywhere it is carried** — `cleaner.sh`, `PKGBUILD`, and
+2. **Bump the version everywhere it is carried** — `cleaner.sh`, `cleaner.1`, `PKGBUILD`, and
    `.SRCINFO`. The pre-release gate (below) checks all three against the changelog,
    so a partial bump fails it:
    ```sh
    sed -i 's/^readonly VERSION=.*/readonly VERSION="X.Y.Z"/' cleaner.sh
+   sed -i '1s/"linux-cleaner [^"]*"/"linux-cleaner X.Y.Z"/' cleaner.1
    sed -i -e 's/^pkgver=.*/pkgver=X.Y.Z/' -e 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
    makepkg --printsrcinfo > .SRCINFO   # rewrites .SRCINFO's pkgver and source line
    ```
@@ -44,7 +45,8 @@ A release must never be cut on a failing safety suite. Before tagging, confirm a
 - `shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh` is clean;
 - `bash test_cleaner.sh` (or `make check`) passes;
 - the version-consistency check passes (the CHANGELOG top version equals
-  `cleaner.sh --version`, and `PKGBUILD`/`.SRCINFO` carry the same `pkgver`);
+  `cleaner.sh --version`, `cleaner.1`'s `.TH` version matches, and `PKGBUILD`/`.SRCINFO`
+  carry the same `pkgver`);
 - the **stranded-entries guard** passes: once HEAD is tagged, `bash test_cleaner.sh`
   fails if `## [Unreleased]` still holds entries. The release workflow builds its notes
   by extracting only the tagged version's changelog section, so anything left under
