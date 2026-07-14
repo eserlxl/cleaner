@@ -50,6 +50,10 @@ Explicitly allow cleaning targets outside the user's
 Append an operation log (opt-in, off by default; kept under
 .BR $HOME ).
 .TP
+.BR \-q ", " \-\-quiet
+Suppress per-target status lines and the decorative header; errors, total
+savings, and the final summary still print.
+.TP
 .B \-\-list\-sessions
 List quarantine sessions (read-only) and exit. Each session is shown with its
 timestamp, size, and date, followed by the targets it holds: the type

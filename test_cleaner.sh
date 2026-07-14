@@ -2029,6 +2029,24 @@ else
   exit 1
 fi
 
+# --quiet: minimal output for unattended cron runs.
+echo -e "\n${BOLD}Test Case: Quiet Dry Run Output${NC}"
+if run_test_case "Quiet Dry Run" 0 "quiet_dry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --quiet --dry-run; then
+  if grep -q "Total potential space savings" "$TEST_ENV_DIR/quiet_dry.log" \
+     && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/quiet_dry.log" \
+     && ! grep -q '\[BLOCKED\]' "$TEST_ENV_DIR/quiet_dry.log" \
+     && ! grep -q 'Linux Cache & Temp File Cleaner' "$TEST_ENV_DIR/quiet_dry.log"; then
+    echo -e "${GREEN}PASS: --quiet keeps totals and hides per-target status and header.${NC}"
+  else
+    echo -e "${RED}FAIL: --quiet did not suppress status lines or lost the total.${NC}"
+    cat "$TEST_ENV_DIR/quiet_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 57. Test Case: release-notes extraction. This decides what a published release SAYS,
 # and a published release cannot be cleanly un-published — so it must be tested, not
 # left as inline awk inside a workflow where nothing covers it.

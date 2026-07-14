@@ -55,6 +55,7 @@ Options:
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
+  -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -65,6 +66,7 @@ DRY_RUN=true
 INTERACTIVE=false
 FORCE=false
 YES_DANGER=false
+QUIET=false
 TRASH_MODE=false
 MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
@@ -120,6 +122,10 @@ while [[ $# -gt 0 ]]; do
     -f|--force)
       FORCE=true
       DRY_RUN=false
+      shift
+      ;;
+    -q|--quiet)
+      QUIET=true
       shift
       ;;
     --yes-danger)
@@ -268,6 +274,15 @@ trim() {
   # remove trailing whitespace
   var="${var%"${var##*[![:space:]]}"}"
   echo -n "$var"
+}
+
+# User-facing status lines (per-target progress, headers). Suppressed by --quiet;
+# errors and final summaries still print via echo/stderr.
+status_echo() {
+  if [[ "$QUIET" == true ]]; then
+    return 0
+  fi
+  echo -e "$@"
 }
 
 # Replace every whole-token occurrence of $NAME (arg 2) with VALUE (arg 3) in
@@ -1156,15 +1171,15 @@ if [[ -n "${PURGE_TARGET:-}" ]]; then
 fi
 
 # Header output
-echo -e "${BOLD}${BLUE}=== Linux Cache & Temp File Cleaner ===${NC}"
-echo -e "Config file: ${YELLOW}$CONFIG_FILE${NC}"
-echo -e "Max Risk Level: ${YELLOW}$MAX_RISK${NC}"
+status_echo "${BOLD}${BLUE}=== Linux Cache & Temp File Cleaner ===${NC}"
+status_echo "Config file: ${YELLOW}$CONFIG_FILE${NC}"
+status_echo "Max Risk Level: ${YELLOW}$MAX_RISK${NC}"
 if [[ "$TRASH_MODE" = true ]]; then
-  echo -e "Trash mode: ${GREEN}ON (Quarantine)${NC}"
+  status_echo "Trash mode: ${GREEN}ON (Quarantine)${NC}"
 else
-  echo -e "Trash mode: ${RED}OFF (Permanent deletion)${NC}"
+  status_echo "Trash mode: ${RED}OFF (Permanent deletion)${NC}"
 fi
-echo
+status_echo ""
 
 # Arrays to store processed target info
 parsed_names=()
@@ -1182,7 +1197,7 @@ total_reclaimable_bytes=0
 only_target_matched=false
 
 # First pass: Parse config line-by-line safely and analyze targets
-echo -e "${BOLD}Analyzing targets...${NC}"
+status_echo "${BOLD}Analyzing targets...${NC}"
 
 # Read configuration file line by line
 config_lineno=0
@@ -1287,20 +1302,20 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   use_sudo=false
   
   if [[ $safety_status -eq 1 ]]; then
-    echo -e "  [${RED}UNSAFE${NC}] $name: Path '$path' is a protected system directory! Skipping."
+    status_echo "  [${RED}UNSAFE${NC}] $name: Path '$path' is a protected system directory! Skipping."
   elif [[ $safety_status -eq 3 ]]; then
-    echo -e "  [${RED}SYMLINK${NC}] $name: Refusing to delete symlink target '$path'. Skipping."
+    status_echo "  [${RED}SYMLINK${NC}] $name: Refusing to delete symlink target '$path'. Skipping."
     safety_status=1 # Treat as completely unsafe to skip deletion later
   else
     # Enforce outside HOME restriction unless flag is set
     if [[ $safety_status -eq 2 && "$ALLOW_OUTSIDE_HOME" != true ]]; then
-      echo -e "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
+      status_echo "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
       safety_status=1 # Skipped
     else
       # Check if running processes block this target
       running_proc=$(is_process_running "$check_procs" || true)
       if [[ -n "$running_proc" ]]; then
-        echo -e "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
+        status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
         # Determine if sudo is needed
         requires_sudo=false
@@ -1323,10 +1338,10 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           size_bytes=$(get_size_bytes "$path" "$min_age" false)
           readable_size=$(format_bytes "$size_bytes")
           if [[ "$size_bytes" -gt 0 ]]; then
-            echo -e "  [${YELLOW}ROOT${NC}] $name ($readable_size): Requires sudo; size may be inaccurate and sudo is required for cleanup."
+            status_echo "  [${YELLOW}ROOT${NC}] $name ($readable_size): Requires sudo; size may be inaccurate and sudo is required for cleanup."
             total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
           else
-            echo -e "  [${YELLOW}ROOT${NC}] $name: Requires sudo; size is unavailable in dry-run."
+            status_echo "  [${YELLOW}ROOT${NC}] $name: Requires sudo; size is unavailable in dry-run."
           fi
           exists=true
         else
@@ -1369,23 +1384,23 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
               
               if [[ $safety_status -eq 2 ]]; then
-                echo -e "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
+                status_echo "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
               else
                 if [[ "$min_age" -gt 0 ]]; then
-                  echo -e "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
+                  status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
                 else
-                  echo -e "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc"
+                  status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc"
                 fi
               fi
             else
               if [[ "$min_age" -gt 0 ]]; then
-                echo -e "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
+                status_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
               else
-                echo -e "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
+                status_echo "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
               fi
             fi
           else
-            echo -e "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
+            status_echo "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
           fi
         fi
       fi
@@ -1417,7 +1432,7 @@ echo
 
 # If dry-run is specified, we stop here
 if [[ "$DRY_RUN" = true ]]; then
-  echo -e "${YELLOW}Dry-run mode active. No files were modified.${NC}"
+  status_echo "${YELLOW}Dry-run mode active. No files were modified.${NC}"
   exit 0
 fi
 
@@ -1452,7 +1467,7 @@ if [[ "$GNU_USERLAND_OK" != true ]]; then
 fi
 
 # Second pass: Perform deletion or move to quarantine
-echo -e "${BOLD}Starting cleanup...${NC}"
+status_echo "${BOLD}Starting cleanup...${NC}"
 total_deleted_bytes=0
 
 # Create a quarantine timestamp directory if in trash mode
@@ -1461,7 +1476,7 @@ if [[ "$TRASH_MODE" = true && "$total_reclaimable_bytes" -gt 0 ]]; then
   time_stamp=$(date +%Y-%m-%d_%H-%M-%S)
   QUARANTINE_DIR="$HOME/.cache/linux-cleaner/quarantine/$time_stamp"
   mkdir -p "$QUARANTINE_DIR"
-  echo -e "Quarantine directory: ${YELLOW}$QUARANTINE_DIR${NC}"
+  status_echo "Quarantine directory: ${YELLOW}$QUARANTINE_DIR${NC}"
 fi
 
 for i in "${!parsed_names[@]}"; do
@@ -1484,7 +1499,7 @@ for i in "${!parsed_names[@]}"; do
     echo -n -e "${RED}Danger target '$name' ($path) requires explicit confirmation. Clean anyway? [y/N]: ${NC}"
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
-      echo -e "  Skipping $name..."
+      status_echo "  Skipping $name..."
       continue
     fi
     danger_prompted=true
@@ -1495,7 +1510,7 @@ for i in "${!parsed_names[@]}"; do
     echo -n -e "${YELLOW}Warning: Target '$name' points outside HOME ('$path'). Clean anyway? [y/N]: ${NC}"
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
-      echo -e "  Skipping $name..."
+      status_echo "  Skipping $name..."
       continue
     fi
   fi
@@ -1510,7 +1525,7 @@ for i in "${!parsed_names[@]}"; do
     fi
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
-      echo -e "  Skipping $name..."
+      status_echo "  Skipping $name..."
       continue
     fi
   fi
@@ -1526,13 +1541,13 @@ for i in "${!parsed_names[@]}"; do
     # the wrong distro), so it is a clean skip rather than a failed sudo call.
     required_bin=$(action_required_binary "$custom_clean_cmd")
     if [[ -n "$required_bin" ]] && ! command -v "$required_bin" >/dev/null 2>&1; then
-      echo -e "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
+      status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
       continue
     fi
     if [[ "$TRASH_MODE" = true ]]; then
-      echo -e "  ${YELLOW}WARNING:${NC} Target '$name' uses a predefined action. This action will bypass quarantine and run directly (irreversible deletion)!"
+      status_echo "  ${YELLOW}WARNING:${NC} Target '$name' uses a predefined action. This action will bypass quarantine and run directly (irreversible deletion)!"
     else
-      echo -e "  Executing action for ${YELLOW}$name${NC}..."
+      status_echo "  Executing action for ${YELLOW}$name${NC}..."
     fi
     action_success=false
     case "$custom_clean_cmd" in
@@ -1579,7 +1594,7 @@ for i in "${!parsed_names[@]}"; do
   fi
 
   if [[ "$TRASH_MODE" = true ]]; then
-    echo -e "  Moving ${YELLOW}$name${NC} to quarantine..."
+    status_echo "  Moving ${YELLOW}$name${NC} to quarantine..."
     
     safe_name=$(printf '%s' "$name" | tr '/[:space:]' '__')
     q_target="$QUARANTINE_DIR/${i}_${safe_name}"
@@ -1685,7 +1700,7 @@ for i in "${!parsed_names[@]}"; do
         fi
         
         if [[ "$use_sudo" = true ]]; then
-          echo -e "  Cleaning filtered files in ${YELLOW}$name${NC} with sudo..."
+          status_echo "  Cleaning filtered files in ${YELLOW}$name${NC} with sudo..."
           if sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
              sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
             total_deleted_bytes=$((total_deleted_bytes + size))
@@ -1694,7 +1709,7 @@ for i in "${!parsed_names[@]}"; do
             OPERATION_FAILED=true
           fi
         else
-          echo -e "  Cleaning filtered files in ${YELLOW}$name${NC}..."
+          status_echo "  Cleaning filtered files in ${YELLOW}$name${NC}..."
           if find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
              find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
             total_deleted_bytes=$((total_deleted_bytes + size))
