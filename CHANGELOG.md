@@ -15,6 +15,25 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+- `--only-target PATTERN` — with cleanup, process only config targets whose
+  `NAME` contains `PATTERN` (substring match). Other targets are skipped for
+  analysis and cleaning. Exits 1 if no target name matches. Cannot be combined
+  with `--restore`, `--purge-sessions`, or `--list-sessions`.
+- `--quiet` (`-q`) — suppress per-target status lines and the decorative header;
+  errors, total savings, and the final summary still print. Useful for cron jobs
+  that only need the reclaim total and exit code.
+- `--json` — with `--dry-run`, emit a machine-readable JSON summary (`config`,
+  `total_reclaimable_bytes`, per-target `name`/`path`/`risk`/`bytes`/`status`)
+  instead of human-formatted output. Implies `--quiet`.
+- `--list-targets` — list every target defined in the configuration file
+  (`NAME`, risk, path) without analyzing disk usage or modifying anything.
+  Read-only; requires a config file.
+- `LINUX_CLEANER_QUIET` — when set to `1`, `true`, or `yes`, enables
+  `--quiet` (suppress per-target status lines).
+- `LINUX_CLEANER_JSON` — when set to `1`, `true`, or `yes`, enables `--json`
+  (requires dry-run).
+
 ### Changed
 - Release-notes extraction moved out of the release workflow's inline `awk` into a
   tracked, tested `release-notes.sh`. The workflow's fallback — which silently turned a
