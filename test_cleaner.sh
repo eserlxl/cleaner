@@ -2186,6 +2186,19 @@ else
   exit 1
 fi
 
+if run_test_case "List Targets With Purge Rejected" 1 "list_targets_nopurge.log" \
+     --purge-sessions all --list-targets; then
+  if grep -q "list-targets cannot be combined" "$TEST_ENV_DIR/list_targets_nopurge.log"; then
+    echo -e "${GREEN}PASS: --list-targets with --purge-sessions is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --list-targets with --purge-sessions was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/list_targets_nopurge.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 57. Test Case: release-notes extraction. This decides what a published release SAYS,
 # and a published release cannot be cleanly un-published — so it must be tested, not
 # left as inline awk inside a workflow where nothing covers it.
