@@ -2072,6 +2072,20 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Only Target With List Targets Rejected${NC}"
+if run_test_case "Only Target With List Targets Rejected" 1 "only_target_nolist.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --list-targets; then
+  if grep -q "only-target applies only to cleanup" "$TEST_ENV_DIR/only_target_nolist.log"; then
+    echo -e "${GREEN}PASS: --only-target with --list-targets is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target with --list-targets was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/only_target_nolist.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: Only Target Missing Pattern Argument${NC}"
 if run_test_case "Only Target Missing Pattern" 1 "only_target_noarg.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target; then
