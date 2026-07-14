@@ -1269,6 +1269,20 @@ else
   exit 1
 fi
 
+# LINUX_CLEANER_YES_DANGER env mirrors --yes-danger for unattended danger-tier cron.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_YES_DANGER Env${NC}"
+setup_mock_env
+LINUX_CLEANER_YES_DANGER=1 LINUX_CLEANER_FORCE=1 LINUX_CLEANER_RISK=danger PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target "Danger Risk" \
+  < /dev/null > "$TEST_ENV_DIR/env_yes_danger.log" 2>&1 || true
+if [[ ! -d "$MOCK_HOME/.cache/danger_test" ]]; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_YES_DANGER enables danger-tier unattended clean.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_YES_DANGER did not clean danger target.${NC}"
+  cat "$TEST_ENV_DIR/env_yes_danger.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"

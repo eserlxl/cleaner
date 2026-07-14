@@ -121,6 +121,9 @@ fi
 case "${LINUX_CLEANER_FORCE:-}" in
   1|true|TRUE|yes|YES) FORCE=true; DRY_RUN=false ;;
 esac
+case "${LINUX_CLEANER_YES_DANGER:-}" in
+  1|true|TRUE|yes|YES) YES_DANGER=true ;;
+esac
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do

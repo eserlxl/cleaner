@@ -218,6 +218,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_TRASH` | When set to `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
 | `LINUX_CLEANER_EXCLUDE` | When set to a non-empty pattern list, enables `--exclude` (comma-separated globs). |
 | `LINUX_CLEANER_FORCE` | When set to `1`, `true`, or `yes`, enables `--force` (non-interactive clean). |
+| `LINUX_CLEANER_YES_DANGER` | When set to `1`, `true`, or `yes`, enables `--yes-danger` (bypass danger confirmation). |
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 

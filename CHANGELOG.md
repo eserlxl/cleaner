@@ -31,6 +31,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `--exclude` (comma-separated globs). CLI flags override this variable.
 - `LINUX_CLEANER_FORCE` — when set to `1`, `true`, or `yes`, enables `--force`
   (non-interactive clean). CLI flags override this variable.
+- `LINUX_CLEANER_YES_DANGER` — when set to `1`, `true`, or `yes`, enables
+  `--yes-danger` (bypass danger confirmation). CLI flags override this variable.
 
 ## [1.2.0] - 2026-07-15
 
