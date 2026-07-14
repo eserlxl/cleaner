@@ -206,6 +206,16 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 - The log **records no secrets**: only the path and metadata the tool already prints — never file contents, environment values, or credentials.
 - Only real cleanups are logged; a dry-run writes nothing.
 
+### Environment variables
+
+| Variable | Effect |
+|----------|--------|
+| `LINUX_CLEANER_LOG` | Enable operation logging to the given path (same rules as `--log`). |
+| `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
+| `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (requires dry-run). |
+
+CLI flags always override these environment toggles when both are present.
+
 ---
 
 ## Development

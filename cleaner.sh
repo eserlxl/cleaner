@@ -99,6 +99,14 @@ if [[ -n "${LINUX_CLEANER_LOG:-}" ]]; then
   LOG_FILE="$LINUX_CLEANER_LOG"
 fi
 
+# Env mirrors for automation (same truthy set as common shell tools).
+case "${LINUX_CLEANER_QUIET:-}" in
+  1|true|TRUE|yes|YES) QUIET=true ;;
+esac
+case "${LINUX_CLEANER_JSON:-}" in
+  1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
+esac
+
 # Parse command line options
 while [[ $# -gt 0 ]]; do
   case "$1" in

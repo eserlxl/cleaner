@@ -141,6 +141,20 @@ and
 placeholders as configuration targets. A path outside
 .BR $HOME
 is refused and logging is disabled.
+.TP
+.B LINUX_CLEANER_QUIET
+When set to
+.BR 1 ", " true ", or " yes ,
+enables
+.BR \-\-quiet
+(suppress per-target status lines). CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_JSON
+When set to
+.BR 1 ", " true ", or " yes ,
+enables
+.BR \-\-json
+for dry-run output. Requires dry-run mode; CLI flags override this variable.
 .SH CONFIGURATION
 Targets are pipe-delimited lines:
 .PP

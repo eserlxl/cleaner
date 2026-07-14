@@ -1130,6 +1130,36 @@ else
   exit 1
 fi
 
+# LINUX_CLEANER_QUIET env mirrors --quiet for cron wrappers.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_QUIET Env${NC}"
+setup_mock_env
+LINUX_CLEANER_QUIET=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_quiet.log" 2>&1 || true
+if grep -q "Total potential space savings" "$TEST_ENV_DIR/env_quiet.log" \
+   && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/env_quiet.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_QUIET enables quiet dry-run output.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_QUIET did not suppress status lines.${NC}"
+  cat "$TEST_ENV_DIR/env_quiet.log"
+  exit 1
+fi
+
+# LINUX_CLEANER_JSON env mirrors --json (dry-run only).
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_JSON Env${NC}"
+setup_mock_env
+LINUX_CLEANER_JSON=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_json.log" 2>&1 || true
+if python3 -m json.tool < "$TEST_ENV_DIR/env_json.log" > /tmp/env_json_parsed.out 2>/tmp/env_json_parse.err; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_JSON enables JSON dry-run output.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_JSON did not emit valid JSON.${NC}"
+  cat /tmp/env_json_parse.err
+  cat "$TEST_ENV_DIR/env_json.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"
