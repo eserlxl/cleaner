@@ -217,6 +217,8 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_RISK` | When set to `safe`, `medium`, or `danger`, sets the default `--risk` ceiling. |
 | `LINUX_CLEANER_TRASH` | When set to `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
 
+Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
+
 CLI flags always override these environment toggles when both are present.
 
 ---

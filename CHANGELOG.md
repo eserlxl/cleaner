@@ -25,6 +25,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   default `--risk` ceiling. CLI flags override this variable.
 - `LINUX_CLEANER_TRASH` — when set to `1`, `true`, or `yes`, enables `--trash`
   (quarantine mode). CLI flags override this variable.
+- `NO_COLOR` — when set to any non-empty value, disables ANSI color codes in
+  output (per no-color.org).
 
 ## [1.2.0] - 2026-07-15
 

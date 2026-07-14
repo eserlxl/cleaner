@@ -1227,6 +1227,19 @@ else
   exit 1
 fi
 
+# NO_COLOR disables ANSI escapes for log-friendly cron output.
+echo -e "\n${BOLD}Test Case: NO_COLOR Disables ANSI${NC}"
+setup_mock_env
+script -q -c "NO_COLOR=1 PATH=\"$TEST_ENV_DIR/bin:$PATH\" HOME=\"$MOCK_HOME\" \"$CLEANER_SH\" --config \"$TEST_ENV_DIR/test_cleaner.conf\" --dry-run" /dev/null \
+  > "$TEST_ENV_DIR/no_color.log" 2>&1 || true
+if grep -q $'\033' "$TEST_ENV_DIR/no_color.log"; then
+  echo -e "${RED}FAIL: NO_COLOR=1 still emitted ANSI escape sequences.${NC}"
+  cat "$TEST_ENV_DIR/no_color.log"
+  exit 1
+else
+  echo -e "${GREEN}PASS: NO_COLOR suppresses ANSI color codes.${NC}"
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"

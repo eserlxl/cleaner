@@ -15,7 +15,7 @@ CONFIG_FILE=""
 readonly VERSION="1.2.0"
 
 # Colors for terminal output
-if [[ -t 1 ]]; then
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   GREEN='\033[0;32m'
   RED='\033[0;31m'
   YELLOW='\033[1;33m'
