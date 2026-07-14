@@ -2047,6 +2047,44 @@ else
   exit 1
 fi
 
+# --json: machine-readable dry-run summary for wrappers and dashboards.
+echo -e "\n${BOLD}Test Case: JSON Dry Run Output${NC}"
+if run_test_case "JSON Dry Run" 0 "json_dry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --json --dry-run; then
+  if python3 -m json.tool < "$TEST_ENV_DIR/json_dry.log" > /tmp/json_parsed.out 2>/tmp/json_parse.err; then
+    if grep -q '"total_reclaimable_bytes"' /tmp/json_parsed.out \
+       && grep -q '"NPM Cache"' /tmp/json_parsed.out \
+       && grep -q '"status": "found"' /tmp/json_parsed.out \
+       && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/json_dry.log"; then
+      echo -e "${GREEN}PASS: --json --dry-run emits valid JSON with target metadata.${NC}"
+    else
+      echo -e "${RED}FAIL: --json output missing expected fields or still has human status lines.${NC}"
+      cat /tmp/json_parsed.out
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: --json output is not valid JSON.${NC}"
+    cat /tmp/json_parse.err
+    cat "$TEST_ENV_DIR/json_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "JSON Requires Dry Run" 1 "json_nodry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --json --force; then
+  if grep -q "json is valid only with --dry-run" "$TEST_ENV_DIR/json_nodry.log"; then
+    echo -e "${GREEN}PASS: --json without --dry-run is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --json without --dry-run was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/json_nodry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 57. Test Case: release-notes extraction. This decides what a published release SAYS,
 # and a published release cannot be cleanly un-published — so it must be tested, not
 # left as inline awk inside a workflow where nothing covers it.

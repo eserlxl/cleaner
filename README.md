@@ -113,6 +113,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
+- **`--json`**: With `--dry-run`, emit a machine-readable JSON summary (`config`, `total_reclaimable_bytes`, per-target `name`/`path`/`risk`/`bytes`/`status`) instead of human-formatted output. Implies `--quiet`.
 - **`-h, --help`**: Display usage details.
 - **`-V, --version`**: Print the tool version and exit.
 

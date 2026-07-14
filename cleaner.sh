@@ -56,6 +56,7 @@ Options:
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
+  --json                     Emit machine-readable JSON summary (dry-run only).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -67,6 +68,7 @@ INTERACTIVE=false
 FORCE=false
 YES_DANGER=false
 QUIET=false
+JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
 ALLOW_OUTSIDE_HOME=false
@@ -126,6 +128,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -q|--quiet)
       QUIET=true
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=true
       shift
       ;;
     --yes-danger)
@@ -243,6 +249,15 @@ if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" 
   exit 1
 fi
 
+if [[ "$JSON_OUTPUT" == true && "$DRY_RUN" != true ]]; then
+  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview).${NC}" >&2
+  exit 1
+fi
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  QUIET=true
+fi
+
 # Check if config file exists (only if not restoring, purging, or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given:
@@ -283,6 +298,39 @@ status_echo() {
     return 0
   fi
   echo -e "$@"
+}
+
+json_escape() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+
+emit_dry_run_json() {
+  local i first=true
+  printf '{'
+  printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
+  printf '"total_reclaimable_bytes":%s,' "$total_reclaimable_bytes"
+  printf '"targets":['
+  for i in "${!json_names[@]}"; do
+    if [[ "$first" == true ]]; then
+      first=false
+    else
+      printf ','
+    fi
+    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"status":"%s"}' \
+      "$(json_escape "${json_names[$i]}")" \
+      "$(json_escape "${json_paths[$i]}")" \
+      "$(json_escape "${json_risks[$i]}")" \
+      "${json_bytes[$i]}" \
+      "$(json_escape "${json_statuses[$i]}")"
+  done
+  printf ']}'
+  printf '\n'
 }
 
 # Replace every whole-token occurrence of $NAME (arg 2) with VALUE (arg 3) in
@@ -1193,6 +1241,12 @@ parsed_risks=()
 parsed_cmds=()
 parsed_sudos=()
 
+json_names=()
+json_paths=()
+json_risks=()
+json_bytes=()
+json_statuses=()
+
 total_reclaimable_bytes=0
 only_target_matched=false
 
@@ -1300,21 +1354,26 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   exists=false
   size_bytes=0
   use_sudo=false
+  target_status=""
   
   if [[ $safety_status -eq 1 ]]; then
+    target_status=unsafe
     status_echo "  [${RED}UNSAFE${NC}] $name: Path '$path' is a protected system directory! Skipping."
   elif [[ $safety_status -eq 3 ]]; then
+    target_status=symlink
     status_echo "  [${RED}SYMLINK${NC}] $name: Refusing to delete symlink target '$path'. Skipping."
     safety_status=1 # Treat as completely unsafe to skip deletion later
   else
     # Enforce outside HOME restriction unless flag is set
     if [[ $safety_status -eq 2 && "$ALLOW_OUTSIDE_HOME" != true ]]; then
+      target_status=rejected
       status_echo "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
       safety_status=1 # Skipped
     else
       # Check if running processes block this target
       running_proc=$(is_process_running "$check_procs" || true)
       if [[ -n "$running_proc" ]]; then
+        target_status=blocked
         status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
         # Determine if sudo is needed
@@ -1338,9 +1397,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           size_bytes=$(get_size_bytes "$path" "$min_age" false)
           readable_size=$(format_bytes "$size_bytes")
           if [[ "$size_bytes" -gt 0 ]]; then
+            target_status=root
             status_echo "  [${YELLOW}ROOT${NC}] $name ($readable_size): Requires sudo; size may be inaccurate and sudo is required for cleanup."
             total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
           else
+            target_status=root
             status_echo "  [${YELLOW}ROOT${NC}] $name: Requires sudo; size is unavailable in dry-run."
           fi
           exists=true
@@ -1384,8 +1445,10 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
               
               if [[ $safety_status -eq 2 ]]; then
+                target_status=found
                 status_echo "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
               else
+                target_status=found
                 if [[ "$min_age" -gt 0 ]]; then
                   status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
                 else
@@ -1393,6 +1456,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
                 fi
               fi
             else
+              target_status=clean
               if [[ "$min_age" -gt 0 ]]; then
                 status_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
               else
@@ -1400,6 +1464,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               fi
             fi
           else
+            target_status=missing
             status_echo "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
           fi
         fi
@@ -1407,6 +1472,14 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     fi
   fi
   
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    json_names+=("$name")
+    json_paths+=("$path")
+    json_risks+=("$risk")
+    json_bytes+=("$size_bytes")
+    json_statuses+=("${target_status:-skipped}")
+  fi
+
   # Keep track of valid targets for execution
   parsed_names+=("$name")
   parsed_paths+=("$path")
@@ -1424,6 +1497,11 @@ done < "$CONFIG_FILE"
 if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
   echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
   exit 1
+fi
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  emit_dry_run_json
+  exit 0
 fi
 
 echo

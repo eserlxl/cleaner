@@ -54,6 +54,13 @@ Append an operation log (opt-in, off by default; kept under
 Suppress per-target status lines and the decorative header; errors, total
 savings, and the final summary still print.
 .TP
+.B \-\-json
+With
+.BR \-\-dry\-run ,
+emit a machine-readable JSON summary instead of human-formatted output.
+Implies
+.BR \-\-quiet .
+.TP
 .B \-\-list\-sessions
 List quarantine sessions (read-only) and exit. Each session is shown with its
 timestamp, size, and date, followed by the targets it holds: the type
