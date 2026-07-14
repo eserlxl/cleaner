@@ -1,4 +1,4 @@
-.TH CLEANER 1 "2026-07-12" "linux-cleaner 1.0.0" "User Commands"
+.TH CLEANER 1 "2026-07-13" "linux-cleaner 1.1.0" "User Commands"
 .SH NAME
 cleaner \- safely clean cache and temporary files
 .SH SYNOPSIS
@@ -94,6 +94,20 @@ Print the tool version and exit.
 .TP
 .BR \-h ", " \-\-help
 Display the usage message and exit.
+.SH ENVIRONMENT
+.TP
+.B LINUX_CLEANER_LOG
+If set to a path under
+.BR $HOME ,
+enables the operation log without
+.BR \-\-log .
+The path accepts the same
+.BR $HOME ", " ~
+and
+.B $USER
+placeholders as configuration targets. A path outside
+.BR $HOME
+is refused and logging is disabled.
 .SH CONFIGURATION
 Targets are pipe-delimited lines:
 .PP
@@ -131,9 +145,11 @@ Quarantine sessions for
 .BR \-\-trash / \-\-restore / \-\-purge\-sessions .
 .TP
 .I ~/.cache/linux\-cleaner/operations.log
-Default operation log (only when
+Default operation log when
 .B \-\-log
-is enabled).
+or
+.B LINUX_CLEANER_LOG
+is enabled and no explicit path is given.
 .SH EXIT STATUS
 Returns 0 on success and non-zero on a configuration error or a failed operation.
 .SH EXAMPLES
