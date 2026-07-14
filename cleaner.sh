@@ -118,6 +118,9 @@ esac
 if [[ -n "${LINUX_CLEANER_EXCLUDE:-}" ]]; then
   EXCLUDE_PATTERNS="$LINUX_CLEANER_EXCLUDE"
 fi
+case "${LINUX_CLEANER_FORCE:-}" in
+  1|true|TRUE|yes|YES) FORCE=true; DRY_RUN=false ;;
+esac
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do

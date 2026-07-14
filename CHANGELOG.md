@@ -29,6 +29,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   output (per no-color.org).
 - `LINUX_CLEANER_EXCLUDE` — when set to a non-empty pattern list, enables
   `--exclude` (comma-separated globs). CLI flags override this variable.
+- `LINUX_CLEANER_FORCE` — when set to `1`, `true`, or `yes`, enables `--force`
+  (non-interactive clean). CLI flags override this variable.
 
 ## [1.2.0] - 2026-07-15
 

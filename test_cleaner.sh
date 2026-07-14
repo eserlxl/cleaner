@@ -1255,6 +1255,20 @@ else
   exit 1
 fi
 
+# LINUX_CLEANER_FORCE env mirrors --force for cron wrappers.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_FORCE Env${NC}"
+setup_mock_env
+LINUX_CLEANER_FORCE=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM \
+  < /dev/null > "$TEST_ENV_DIR/env_force.log" 2>&1 || true
+if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_FORCE enables non-interactive clean.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_FORCE did not perform a real clean.${NC}"
+  cat "$TEST_ENV_DIR/env_force.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"
