@@ -1213,6 +1213,20 @@ else
   exit 1
 fi
 
+# LINUX_CLEANER_TRASH env mirrors --trash for cron wrappers.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_TRASH Env${NC}"
+setup_mock_env
+LINUX_CLEANER_TRASH=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_trash.log" 2>&1 || true
+if grep -q "Trash mode:.*ON" "$TEST_ENV_DIR/env_trash.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_TRASH enables trash/quarantine mode.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_TRASH did not enable trash mode.${NC}"
+  cat "$TEST_ENV_DIR/env_trash.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"

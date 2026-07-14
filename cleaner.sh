@@ -112,6 +112,9 @@ fi
 if [[ -n "${LINUX_CLEANER_RISK:-}" ]]; then
   MAX_RISK="$LINUX_CLEANER_RISK"
 fi
+case "${LINUX_CLEANER_TRASH:-}" in
+  1|true|TRUE|yes|YES) TRASH_MODE=true ;;
+esac
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do

@@ -215,6 +215,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (requires dry-run). |
 | `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
 | `LINUX_CLEANER_RISK` | When set to `safe`, `medium`, or `danger`, sets the default `--risk` ceiling. |
+| `LINUX_CLEANER_TRASH` | When set to `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
 
 CLI flags always override these environment toggles when both are present.
 
