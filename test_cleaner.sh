@@ -2015,6 +2015,19 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_JSON Requires Dry Run${NC}"
+LINUX_CLEANER_JSON=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --force --clean \
+  > "$TEST_ENV_DIR/json_env_nodry.log" 2>&1 || json_env_ec=$?
+if [[ ${json_env_ec:-0} -ne 0 ]] \
+   && grep -q "json is valid only with --dry-run" "$TEST_ENV_DIR/json_env_nodry.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_JSON without dry-run is rejected.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_JSON enabled JSON on a non-dry-run run (ec=${json_env_ec:-0}).${NC}"
+  cat "$TEST_ENV_DIR/json_env_nodry.log"
+  exit 1
+fi
+
 # --only-target: scoped cleanup by config target NAME (invent tier).
 echo -e "\n${BOLD}Test Case: Only Target Dry Run Filter${NC}"
 if run_test_case "Only Target Dry Run" 0 "only_target_dry.log" \
