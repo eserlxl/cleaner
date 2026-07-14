@@ -155,6 +155,13 @@ When set to
 enables
 .BR \-\-json
 for dry-run output. Requires dry-run mode; CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_ONLY_TARGET
+When set to a non-empty pattern, enables
+.BR \-\-only\-target
+(substring match on config target
+.BR NAME ).
+CLI flags override this variable.
 .SH CONFIGURATION
 Targets are pipe-delimited lines:
 .PP

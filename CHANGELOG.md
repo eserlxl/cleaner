@@ -15,6 +15,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+- `LINUX_CLEANER_ONLY_TARGET` — when set to a non-empty pattern, enables
+  `--only-target` (substring match on config target `NAME`). CLI flags override
+  this variable.
+
 ## [1.2.0] - 2026-07-15
 
 ### Added

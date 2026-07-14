@@ -1160,6 +1160,33 @@ else
   exit 1
 fi
 
+# LINUX_CLEANER_ONLY_TARGET env mirrors --only-target for cron wrappers.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_ONLY_TARGET Env${NC}"
+setup_mock_env
+LINUX_CLEANER_ONLY_TARGET=NPM PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_only_target.log" 2>&1 || true
+if grep -q "NPM Cache" "$TEST_ENV_DIR/env_only_target.log" \
+   && ! grep -q "Gemini Temp" "$TEST_ENV_DIR/env_only_target.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_ONLY_TARGET filters to NPM Cache only.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_ONLY_TARGET did not filter targets.${NC}"
+  cat "$TEST_ENV_DIR/env_only_target.log"
+  exit 1
+fi
+# CLI --only-target overrides env when both are set.
+LINUX_CLEANER_ONLY_TARGET=NPM PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target Gemini --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_only_target_cli.log" 2>&1 || true
+if grep -q "Gemini Temp" "$TEST_ENV_DIR/env_only_target_cli.log" \
+   && ! grep -q "NPM Cache" "$TEST_ENV_DIR/env_only_target_cli.log"; then
+  echo -e "${GREEN}PASS: --only-target overrides LINUX_CLEANER_ONLY_TARGET.${NC}"
+else
+  echo -e "${RED}FAIL: CLI --only-target did not override LINUX_CLEANER_ONLY_TARGET.${NC}"
+  cat "$TEST_ENV_DIR/env_only_target_cli.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"

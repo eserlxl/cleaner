@@ -106,6 +106,9 @@ esac
 case "${LINUX_CLEANER_JSON:-}" in
   1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
 esac
+if [[ -n "${LINUX_CLEANER_ONLY_TARGET:-}" ]]; then
+  ONLY_TARGET="$LINUX_CLEANER_ONLY_TARGET"
+fi
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do

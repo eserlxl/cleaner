@@ -213,6 +213,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_LOG` | Enable operation logging to the given path (same rules as `--log`). |
 | `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
 | `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (requires dry-run). |
+| `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
 
 CLI flags always override these environment toggles when both are present.
 
