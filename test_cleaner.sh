@@ -2048,6 +2048,28 @@ else
   exit 1
 fi
 
+rn_help_ec=0
+"$rn_sh" --help > "$TEST_ENV_DIR/rn_help.log" 2>&1 || rn_help_ec=$?
+if [[ $rn_help_ec -eq 0 ]] \
+   && grep -q "Usage:" "$TEST_ENV_DIR/rn_help.log" \
+   && grep -q "extract" "$TEST_ENV_DIR/rn_help.log"; then
+  echo -e "${GREEN}PASS: release-notes.sh --help prints usage and exits 0.${NC}"
+else
+  echo -e "${RED}FAIL: release-notes.sh --help did not print expected usage (ec=$rn_help_ec).${NC}"
+  cat "$TEST_ENV_DIR/rn_help.log"
+  exit 1
+fi
+
+rn_bad_ec=0
+"$rn_sh" not-a-command > "$TEST_ENV_DIR/rn_bad.log" 2>&1 || rn_bad_ec=$?
+if [[ $rn_bad_ec -ne 0 ]] && grep -q "Usage:" "$TEST_ENV_DIR/rn_bad.log"; then
+  echo -e "${GREEN}PASS: release-notes.sh rejects unknown subcommands with usage and exit 1.${NC}"
+else
+  echo -e "${RED}FAIL: release-notes.sh accepted or silently ignored an unknown subcommand (ec=$rn_bad_ec).${NC}"
+  cat "$TEST_ENV_DIR/rn_bad.log"
+  exit 1
+fi
+
 # 58. Test Case: every documented lint command names the same files as CI does. This
 # drifted once already, silently — README.md and CONTRIBUTING.md told contributors to
 # lint two files while CI linted three, so a contributor could run the documented
