@@ -1339,6 +1339,22 @@ else
   exit 1
 fi
 
+# Man page documents every LINUX_CLEANER_* env var named in README.
+echo -e "\n${BOLD}Test Case: Man Page Env Var Parity${NC}"
+missing_env_vars=""
+while IFS= read -r env_name; do
+  [[ -z "$env_name" ]] && continue
+  if ! grep -q "\\.B $env_name" "$SCRIPT_DIR/cleaner.1"; then
+    missing_env_vars+=" $env_name"
+  fi
+done < <(grep -oE 'LINUX_CLEANER_[A-Z_]+' "$SCRIPT_DIR/README.md" | sort -u)
+if [[ -z "$missing_env_vars" ]]; then
+  echo -e "${GREEN}PASS: cleaner.1 documents every README LINUX_CLEANER_* env var.${NC}"
+else
+  echo -e "${RED}FAIL: README env vars missing from cleaner.1:$missing_env_vars${NC}"
+  exit 1
+fi
+
 # 34. Test Case: CHANGELOG top released version matches --version, and so do the
 # packaging manifests -- a partial bump would otherwise ship an AUR package whose
 # pkgver disagrees with the installed script (RELEASING.md pre-release gate).
