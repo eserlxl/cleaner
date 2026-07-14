@@ -1671,6 +1671,32 @@ else
   echo -e "${GREEN}PASS (skipped): make is not installed; cannot cross-check the Makefile tree.${NC}"
 fi
 
+# install.sh --help must print usage and exit cleanly (cold-frontier CLI path).
+echo -e "\n${BOLD}Test Case: install.sh --help${NC}"
+install_help_ec=0
+sh "$SCRIPT_DIR/install.sh" --help > "$TEST_ENV_DIR/install_help.log" 2>&1 || install_help_ec=$?
+if [[ $install_help_ec -eq 0 ]] \
+   && grep -q "Usage:" "$TEST_ENV_DIR/install_help.log" \
+   && grep -qE 'install\|uninstall' "$TEST_ENV_DIR/install_help.log"; then
+  echo -e "${GREEN}PASS: install.sh --help prints usage and exits 0.${NC}"
+else
+  echo -e "${RED}FAIL: install.sh --help did not print expected usage (ec=$install_help_ec).${NC}"
+  cat "$TEST_ENV_DIR/install_help.log"
+  exit 1
+fi
+
+# Unknown subcommands must fail after printing usage.
+echo -e "\n${BOLD}Test Case: install.sh unknown subcommand${NC}"
+install_bad_ec=0
+sh "$SCRIPT_DIR/install.sh" not-a-command > "$TEST_ENV_DIR/install_bad.log" 2>&1 || install_bad_ec=$?
+if [[ $install_bad_ec -ne 0 ]] && grep -q "Usage:" "$TEST_ENV_DIR/install_bad.log"; then
+  echo -e "${GREEN}PASS: install.sh rejects unknown subcommands with usage and exit 1.${NC}"
+else
+  echo -e "${RED}FAIL: install.sh accepted or silently ignored an unknown subcommand (ec=$install_bad_ec).${NC}"
+  cat "$TEST_ENV_DIR/install_bad.log"
+  exit 1
+fi
+
 # 50. Test Case: a failed permanent delete must exit non-zero (cleaner.1 EXIT
 # STATUS: "non-zero on ... a failed operation"), while a clean run still exits 0,
 # so an unattended cron run can detect a cleanup that did not happen.
