@@ -115,6 +115,9 @@ fi
 case "${LINUX_CLEANER_TRASH:-}" in
   1|true|TRUE|yes|YES) TRASH_MODE=true ;;
 esac
+if [[ -n "${LINUX_CLEANER_EXCLUDE:-}" ]]; then
+  EXCLUDE_PATTERNS="$LINUX_CLEANER_EXCLUDE"
+fi
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do

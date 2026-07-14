@@ -1240,6 +1240,21 @@ else
   echo -e "${GREEN}PASS: NO_COLOR suppresses ANSI color codes.${NC}"
 fi
 
+# LINUX_CLEANER_EXCLUDE env mirrors --exclude for cron wrappers.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_EXCLUDE Env${NC}"
+setup_mock_env
+echo "exclude this log" > "$MOCK_HOME/.npm/_cacache/excl1.log"
+LINUX_CLEANER_EXCLUDE='*.log' PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --force \
+  < /dev/null > "$TEST_ENV_DIR/env_exclude.log" 2>&1 || true
+if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/excl1.log" ]]; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_EXCLUDE preserves matching files during clean.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_EXCLUDE did not apply exclusion patterns.${NC}"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"

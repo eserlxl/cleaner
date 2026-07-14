@@ -27,6 +27,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   (quarantine mode). CLI flags override this variable.
 - `NO_COLOR` — when set to any non-empty value, disables ANSI color codes in
   output (per no-color.org).
+- `LINUX_CLEANER_EXCLUDE` — when set to a non-empty pattern list, enables
+  `--exclude` (comma-separated globs). CLI flags override this variable.
 
 ## [1.2.0] - 2026-07-15
 
