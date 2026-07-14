@@ -12,7 +12,7 @@ CI on push and pull request):
 
 ```bash
 shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # lint — must be clean
-bash test_cleaner.sh                    # full safety suite — must end "All refactored tests passed successfully!"
+make check                            # full safety suite (same as bash test_cleaner.sh)
 ```
 
 The suite is hermetic: it builds a mock `$HOME` and stubs `sudo`, `pgrep`,

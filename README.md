@@ -226,7 +226,7 @@ Every change runs through two gate commands, both of which must pass:
 
 ```bash
 shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static analysis / lint
-bash test_cleaner.sh                    # full safety test suite
+make check                            # full safety test suite (same as bash test_cleaner.sh)
 ```
 
 The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. Runner dependencies are:
