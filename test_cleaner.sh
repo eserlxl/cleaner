@@ -1697,6 +1697,21 @@ if command -v make > /dev/null 2>&1; then
     cat "$TEST_ENV_DIR/drift.log"
     exit 1
   fi
+  unmakeroot="$TEST_ENV_DIR/unmakeroot"
+  make -C "$SCRIPT_DIR" install DESTDIR="$unmakeroot" PREFIX=/usr \
+    > "$TEST_ENV_DIR/make_install_for_uninstall.log" 2>&1
+  make -C "$SCRIPT_DIR" uninstall DESTDIR="$unmakeroot" PREFIX=/usr \
+    > "$TEST_ENV_DIR/make_uninstall.log" 2>&1
+  if [[ ! -e "$unmakeroot/usr/bin/cleaner" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/man/man1/cleaner.1" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
+     && [[ -f "$unmakeroot/etc/linux-cleaner/cleaner.conf" ]]; then
+    echo -e "${GREEN}PASS: make uninstall removed the binary, man page, and license but kept the config.${NC}"
+  else
+    echo -e "${RED}FAIL: make uninstall did not clean up correctly (or removed the system config).${NC}"
+    cat "$TEST_ENV_DIR/make_uninstall.log"
+    exit 1
+  fi
 else
   echo -e "${GREEN}PASS (skipped): make is not installed; cannot cross-check the Makefile tree.${NC}"
 fi
