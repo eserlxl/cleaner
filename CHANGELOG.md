@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-15
+
 ### Added
 - `--only-target PATTERN` — with cleanup, process only config targets whose
   `NAME` contains `PATTERN` (substring match). Other targets are skipped for
@@ -120,6 +122,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.2.0
 [1.1.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.1.0
 [1.0.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.0.0
