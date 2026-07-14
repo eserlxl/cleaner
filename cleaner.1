@@ -214,6 +214,19 @@ List and restore quarantined files:
 .TP
 Reclaim space by purging all quarantine sessions:
 .B cleaner \-\-purge\-sessions all \-\-force
+.TP
+Cron-friendly dry-run preview (quiet output, exit code only matters):
+.B cleaner \-\-quiet \-\-dry\-run
+.TP
+Machine-readable dry-run summary for wrapper scripts:
+.B cleaner \-\-json \-\-dry\-run
+.TP
+Preview cleanup for a single config target by name:
+.B cleaner \-\-only\-target "NPM" \-\-dry\-run
+.TP
+Enable quiet mode via environment (same as
+.BR \-\-quiet ):
+.B LINUX_CLEANER_QUIET=1 cleaner \-\-dry\-run
 .SH SEE ALSO
 .BR paccache (8),
 .BR find (1)
