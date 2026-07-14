@@ -165,6 +165,13 @@ When set to a non-empty pattern, enables
 (substring match on config target
 .BR NAME ).
 CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_RISK
+When set to
+.BR safe ", " medium ", or " danger ,
+sets the default
+.BR \-\-risk
+ceiling. CLI flags override this variable.
 .SH CONFIGURATION
 Targets are pipe-delimited lines:
 .PP

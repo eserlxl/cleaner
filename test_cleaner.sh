@@ -1187,6 +1187,32 @@ else
   exit 1
 fi
 
+# LINUX_CLEANER_RISK env mirrors --risk for cron wrappers.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_RISK Env${NC}"
+setup_mock_env
+LINUX_CLEANER_RISK=medium PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_risk.log" 2>&1 || true
+if grep -q "Medium Risk Target" "$TEST_ENV_DIR/env_risk.log" \
+   && ! grep -q "Danger Risk Target" "$TEST_ENV_DIR/env_risk.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_RISK=medium includes medium targets only.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_RISK did not set the risk ceiling.${NC}"
+  cat "$TEST_ENV_DIR/env_risk.log"
+  exit 1
+fi
+LINUX_CLEANER_RISK=medium PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --risk safe --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_risk_cli.log" 2>&1 || true
+if grep -q "NPM Cache" "$TEST_ENV_DIR/env_risk_cli.log" \
+   && ! grep -q "Medium Risk Target" "$TEST_ENV_DIR/env_risk_cli.log"; then
+  echo -e "${GREEN}PASS: --risk overrides LINUX_CLEANER_RISK.${NC}"
+else
+  echo -e "${RED}FAIL: CLI --risk did not override LINUX_CLEANER_RISK.${NC}"
+  cat "$TEST_ENV_DIR/env_risk_cli.log"
+  exit 1
+fi
+
 # 32. Test Case: Config resolution order (explicit -c, XDG user config, dev fallback)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.config/linux-cleaner"

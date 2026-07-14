@@ -21,6 +21,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   this variable.
 - `--list-targets --json` — emit a machine-readable JSON inventory of configured
   targets (`config`, per-target `name`/`risk`/`path`).
+- `LINUX_CLEANER_RISK` — when set to `safe`, `medium`, or `danger`, sets the
+  default `--risk` ceiling. CLI flags override this variable.
 
 ## [1.2.0] - 2026-07-15
 

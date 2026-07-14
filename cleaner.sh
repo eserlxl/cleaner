@@ -109,6 +109,9 @@ esac
 if [[ -n "${LINUX_CLEANER_ONLY_TARGET:-}" ]]; then
   ONLY_TARGET="$LINUX_CLEANER_ONLY_TARGET"
 fi
+if [[ -n "${LINUX_CLEANER_RISK:-}" ]]; then
+  MAX_RISK="$LINUX_CLEANER_RISK"
+fi
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
