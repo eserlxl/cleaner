@@ -248,6 +248,8 @@ The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` a
 
 Both gate commands run automatically on every push and pull request (see the badge above). **Both must pass before a change is merged**: the ShellCheck lint and the full `bash test_cleaner.sh` suite. To enforce this, a maintainer should enable a branch-protection rule on `main` marking the `CI` workflow's `gate` job as a **required status check** (Settings → Branches → Branch protection rules).
 
+After cutting a release tag, verify consistency on the tagged HEAD: `git fetch --tags`, `git checkout vX.Y.Z`, then `make check` (exercises the `Version/Tag/Changelog Consistency` guard). See [RELEASING.md](RELEASING.md#post-tag-local-verification).
+
 ---
 
 ## License
