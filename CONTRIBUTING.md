@@ -70,3 +70,20 @@ Non-hermetic validation: `docs/manual-smoke-checklist.md`.
 3. Titles must match log output.
 4. Use mock `$HOME` paths only.
 5. Update coverage matrix for new `[Unreleased]` bullets.
+
+### Reviewer checklist
+
+- ShellCheck clean
+- `make check` green
+- Named test for new behavior
+- Matrix row added
+- No real system paths
+- Danger tests use mock configs
+- Irreversible actions keep WARNING assertions
+
+## Test documentation map
+
+- `docs/test-coverage-matrix.md`
+- `docs/manual-smoke-checklist.md`
+
+Hermetic suite is the merge gate; manual smoke is release/ops optional.
