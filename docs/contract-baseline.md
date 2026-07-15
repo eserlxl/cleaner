@@ -72,3 +72,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 5.5 — RUNBOOK integration and table of conte -->
 
 <!-- no-op stamp: Phase 5.5 — README scheduling section consolidatio -->
+
+<!-- no-op stamp: Phase 5.5 — Example command flag crosswalk script  -->
