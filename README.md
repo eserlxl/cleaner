@@ -266,4 +266,6 @@ Cron and systemd recipes: [RUNBOOK.md](RUNBOOK.md) and `examples/systemd/`.
 
 Quarantine operations: [docs/QUARANTINE-OPS.md](docs/QUARANTINE-OPS.md).
 
+Maintainer manual smoke (hermetic boundaries, `/etc` config resolution, optional live PM/sudo): [docs/manual-smoke-checklist.md](docs/manual-smoke-checklist.md).
+
 Arch users: `paccache` actions require the `pacman-contrib` package (see PKGBUILD `optdepends`).
