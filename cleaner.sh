@@ -665,7 +665,7 @@ print_session_contents() {
 emit_list_sessions_json() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   local -a sessions=()
-  local s session ts size_bytes meta mtype morig
+  local s session ts size_bytes size_human mdate meta mtype morig
   local sess_first=true tgt_first
 
   if [[ -d "$quarantine_base" ]]; then
@@ -685,8 +685,10 @@ emit_list_sessions_json() {
     ts=$(basename "$session")
     size_bytes=$(du -sb "$session" 2>/dev/null | awk '{print $1+0}')
     [[ -z "$size_bytes" ]] && size_bytes=0
-    printf '{"timestamp":"%s","size_bytes":%s,"targets":[' \
-      "$(json_escape "$ts")" "$size_bytes"
+    size_human=$(format_bytes "$size_bytes")
+    mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
+    printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","targets":[' \
+      "$(json_escape "$ts")" "$size_bytes" "$(json_escape "$size_human")" "$(json_escape "${mdate:-}")"
     tgt_first=true
     meta="$session/quarantine.meta"
     if [[ -f "$meta" ]]; then

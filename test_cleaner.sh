@@ -1119,6 +1119,8 @@ d=json.load(open(sys.argv[1]))
 assert "sessions" in d and len(d["sessions"])>=1
 s=d["sessions"][0]
 assert "timestamp" in s and "size_bytes" in s and isinstance(s["size_bytes"], int)
+assert "size_human" in s and isinstance(s["size_human"], str) and len(s["size_human"])>0
+assert "date" in s and isinstance(s["date"], str) and len(s["date"])>0
 assert any(t.get("type")=="full" and "/.npm/_cacache" in t.get("path","") for t in s.get("targets",[]))
 ' "$TEST_ENV_DIR/list_sessions_json.log" 2>/dev/null \
        && ! grep -q "Quarantine Sessions" "$TEST_ENV_DIR/list_sessions_json.log"; then
