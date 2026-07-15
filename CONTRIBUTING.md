@@ -40,6 +40,17 @@ A change to `cleaner.sh` must preserve all of these:
 
 - **Single file.** The tool is one self-contained `cleaner.sh`. Keep it that
   way — no splitting into sourced libraries.
+
+## Config contract
+
+Field-change checklist (see [config-field-governance.md](docs/config-field-governance.md)):
+
+1. Update parser and line-numbered errors in `cleaner.sh`.
+2. Add malformed and positive `run_test_case` entries in `test_cleaner.sh`.
+3. Update README field table and shipped `cleaner.conf` if user-facing.
+4. Classify SemVer bump via [contract-semver-taxonomy.md](docs/contract-semver-taxonomy.md).
+5. Roll CHANGELOG `[Unreleased]` under the correct heading.
+
 - **Config contract.** Targets are pipe-delimited lines:
   `RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_ACTION`.
   The first five fields are required; the last two are optional.
