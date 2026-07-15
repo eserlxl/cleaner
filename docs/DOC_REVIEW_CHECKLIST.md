@@ -23,3 +23,17 @@
 - Reviewer:
 - Date:
 - Branch:
+
+## Sign-off (execute pass)
+
+- Reviewer: planwright execute
+- Date: 2026-07-15
+- Branch: main
+- Result: checklist walked; gates green
+
+## Sign-off (execute pass)
+
+- Reviewer: planwright execute
+- Date: 2026-07-15
+- Branch: main
+- Result: checklist walked; gates green

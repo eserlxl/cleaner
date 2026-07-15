@@ -58,3 +58,5 @@ project's **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`); see
 [LICENSE](LICENSE).
 
 User-facing doc changes should follow `docs/DOC_REVIEW_CHECKLIST.md`.
+
+Check `docs/test-coverage-matrix.md` before adding duplicate coverage.
