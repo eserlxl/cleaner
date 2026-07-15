@@ -26,3 +26,7 @@ Cross-walk of `README.md` CLI sections, `cleaner.sh --help`, and `cleaner.1` on 
 | Exit-code semantics (skip ≠ failure) | Documented | Documented in EXIT STATUS | aligned |
 
 **Mismatches (prose contradicts help/man):** none. Short flags, mutual-exclusion notes, and irreversible-operation callouts are consistent across the three surfaces.
+
+## F1.1-03 conditional fix (skipped)
+
+No prose contradictions were listed in the findings above; no README, `cleaner.1`, or `cleaner.sh` edits were required.
