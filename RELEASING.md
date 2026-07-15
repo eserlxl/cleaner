@@ -67,7 +67,35 @@ The repository ships an Arch `PKGBUILD` and `.SRCINFO` whose `package()` delegat
 `make install DESTDIR="$pkgdir" PREFIX=/usr`. To build and publish a package for a release:
 
 `pkgver` was already bumped by release step 2; everything below needs the pushed tag,
-so it runs only after the release is cut.
+so it runs only after the release is cut. The `source` URL in `PKGBUILD` points at
+`$url/archive/refs/tags/v$pkgver.tar.gz` — **`updpkgsums` cannot succeed until that tag
+exists on the remote.** Never publish with `sha256sums=('SKIP')`.
+
+### Release workflow permissions (fail-closed)
+
+The tag-push workflow (`.github/workflows/release.yml`) uses the minimum GitHub token scope
+needed to create a **draft** release:
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `permissions.contents` | `write` | Required for `gh release create` on the tag |
+| `id-token` | absent | Not needed; no OIDC publishing |
+| Empty-notes fallback | **none** | `release-notes.sh extract` must succeed or the job fails |
+
+There is no fallback path that publishes empty release notes if changelog extraction fails.
+See `docs/release-workflow-audit.md` for the step-by-step cross-walk.
+
+### Ordered AUR packaging checklist
+
+1. Confirm the `vX.Y.Z` tag exists on the remote (`git ls-remote --tags origin`).
+2. Run `updpkgsums` — rewrites the `SKIP` sha256 for the release tarball.
+3. Verify `sha256sums` is a 64-hex digest, e.g. `sha256sums=("<64-hex>")` — **never publish with SKIP**.
+4. `makepkg -f` — build the package locally.
+5. `namcap PKGBUILD` — lint the recipe.
+6. `namcap *.pkg.tar.zst` — lint the built package.
+7. `makepkg --printsrcinfo > .SRCINFO` — regenerate metadata.
+8. Commit `PKGBUILD` and `.SRCINFO`.
+9. Human AUR push (never automated).
 
 1. Replace the placeholder checksum with the real one against the release tarball:
    ```sh
