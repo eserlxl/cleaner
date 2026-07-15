@@ -17,4 +17,4 @@ jobs:
         run: shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
 
       - name: Run the safety test suite
-        run: bash test_cleaner.sh
+        run: make check
