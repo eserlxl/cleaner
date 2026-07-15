@@ -74,3 +74,9 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 | Metadata tampering | quarantine.meta validation |
 | Restore conflicts | Restore with Conflict test (collision detection) |
 | Action vs trash confusion | irreversible action:* WARNING |
+
+### Quarantine operator guidance
+
+- Audit with `--list-sessions` before destructive purge.
+- Pair `--trash` with `purge-sessions older-than:DAYS` for bounded disk use.
+- Irreversible action:* bypasses quarantine — distinct from trash mode.
