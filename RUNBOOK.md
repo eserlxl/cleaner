@@ -43,9 +43,23 @@ Recommended DAY values: 30 (default), 7 (aggressive small disks). Exits 0 when n
 
 ## systemd user timers
 
-Copy units from `examples/systemd/` to `~/.config/systemd/user/`. Enable with `systemctl --user enable --now linux-cleaner-clean.timer`. User linger may be required for timers without an active session.
+Copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) so both service units load the safe-tier defaults.
 
-Journal review: `journalctl --user -u linux-cleaner-clean.service`
+Enable the paired timers:
+
+```sh
+systemctl --user enable --now linux-cleaner-clean.timer
+systemctl --user enable --now linux-cleaner-retention.timer
+```
+
+User linger may be required for timers without an active session.
+
+Journal review:
+
+```sh
+journalctl --user -u linux-cleaner-clean.service
+journalctl --user -u linux-cleaner-retention.service
+```
 
 ## Env recipe: safe-tier cleanup
 
