@@ -68,3 +68,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 5.4 — Danger-tier env recipe with guardrails -->
 
 <!-- no-op stamp: Phase 5.4 — EnvironmentFile template for systemd/c -->
+
+<!-- no-op stamp: Phase 5.5 — RUNBOOK integration and table of conte -->
