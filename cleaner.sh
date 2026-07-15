@@ -418,7 +418,7 @@ emit_dry_run_json() {
 }
 
 emit_list_targets_json() {
-  local -a lt_names=() lt_risks=() lt_paths=() lt_descs=() lt_min_ages=()
+  local -a lt_names=() lt_risks=() lt_paths=() lt_descs=() lt_min_ages=() lt_procs=() lt_actions=()
   local config_line config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
   local i first=true
@@ -438,6 +438,8 @@ emit_list_targets_json() {
     raw_path=$(trim "$raw_path")
     desc=$(trim "$desc")
     min_age=$(trim "$min_age")
+    check_procs=$(trim "${check_procs:-}")
+    custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
     if [[ -z "$name" ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
       exit 1
@@ -451,6 +453,8 @@ emit_list_targets_json() {
     lt_paths+=("$raw_path")
     lt_descs+=("$desc")
     lt_min_ages+=("$min_age")
+    lt_procs+=("$check_procs")
+    lt_actions+=("$custom_clean_cmd")
   done < "$CONFIG_FILE"
 
   printf '{'
@@ -462,12 +466,14 @@ emit_list_targets_json() {
     else
       printf ','
     fi
-    printf '{"name":"%s","risk":"%s","path":"%s","description":"%s","min_age_days":"%s"}' \
+    printf '{"name":"%s","risk":"%s","path":"%s","description":"%s","min_age_days":"%s","check_processes":"%s","custom_action":"%s"}' \
       "$(json_escape "${lt_names[$i]}")" \
       "$(json_escape "${lt_risks[$i]}")" \
       "$(json_escape "${lt_paths[$i]}")" \
       "$(json_escape "${lt_descs[$i]}")" \
-      "$(json_escape "${lt_min_ages[$i]}")"
+      "$(json_escape "${lt_min_ages[$i]}")" \
+      "$(json_escape "${lt_procs[$i]}")" \
+      "$(json_escape "${lt_actions[$i]}")"
   done
   printf ']}'
   printf '\n'

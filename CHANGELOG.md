@@ -23,6 +23,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `size_human` alongside the existing byte fields.
 - `--list-targets --json` also emits per-target `description` and
   `min_age_days` alongside the existing `name`/`risk`/`path` fields.
+- `--list-targets --json` also emits per-target `check_processes` and
+  `custom_action` when those optional config fields are present.
 - `--exclude-target PATTERN` — with cleanup, skip config targets whose
   `NAME` contains `PATTERN` (substring match). Combined with
   `--only-target`, both filters apply. Exits 1 if nothing remains.

@@ -20,6 +20,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-12 | --exclude-target / LINUX_CLEANER_EXCLUDE_TARGET | Exclude Target Dry Run / Env |
 | U-13 | LINUX_CLEANER_CONFIG | LINUX_CLEANER_CONFIG Env |
 | U-14 | --check-config | Check Config Valid / Invalid |
+| U-15 | --list-targets --json check_processes/custom_action | List Targets JSON |
 
 ## Drift guards
 
