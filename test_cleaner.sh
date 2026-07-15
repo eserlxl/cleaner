@@ -524,6 +524,32 @@ else
   exit 1
 fi
 
+# Path-escaping SESSION names must be rejected before any restore/purge work.
+for bad_session in '../x' '.' '..'; do
+  if run_test_case "Restore Invalid Session ${bad_session}" 1 "restore_invalid_${bad_session//\//_}.log" --restore "$bad_session"; then
+    if grep -q "Invalid session name" "$TEST_ENV_DIR/restore_invalid_${bad_session//\//_}.log"; then
+      echo -e "${GREEN}PASS: --restore '${bad_session}' rejected as Invalid session name.${NC}"
+    else
+      echo -e "${RED}FAIL: --restore '${bad_session}' exited 1 without Invalid session name.${NC}"
+      cat "$TEST_ENV_DIR/restore_invalid_${bad_session//\//_}.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+  if run_test_case "Purge Invalid Session ${bad_session}" 1 "purge_invalid_${bad_session//\//_}.log" --purge-sessions "$bad_session" --force; then
+    if grep -q "Invalid session name" "$TEST_ENV_DIR/purge_invalid_${bad_session//\//_}.log"; then
+      echo -e "${GREEN}PASS: --purge-sessions '${bad_session}' rejected as Invalid session name.${NC}"
+    else
+      echo -e "${RED}FAIL: --purge-sessions '${bad_session}' exited 1 without Invalid session name.${NC}"
+      cat "$TEST_ENV_DIR/purge_invalid_${bad_session//\//_}.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+done
+
 # --force skips the confirmation prompt (stdin is /dev/null in the harness).
 if run_test_case "Purge All Sessions" 0 "purge_all.log" --purge-sessions all --force; then
   if [[ -d "$quarantine_base" ]]; then

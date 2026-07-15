@@ -623,6 +623,17 @@ list_config_targets() {
   done < "$CONFIG_FILE"
 }
 
+# Named SESSION arguments for --restore / --purge-sessions must be an immediate
+# child of the quarantine base. Reject path separators and `.`/`..` so neither
+# mode can escape ~/.cache/linux-cleaner/quarantine/ via a crafted SESSION.
+validate_quarantine_session_name() {
+  local target="$1"
+  if [[ "$target" == */* || "$target" == "." || "$target" == ".." ]]; then
+    echo -e "${RED}Error: Invalid session name '$target'.${NC}" >&2
+    exit 1
+  fi
+}
+
 # Print what one quarantine session holds -- the type (full/aged) and original
 # path of every record in its quarantine.meta. Strictly read-only. Shared by the
 # --list-sessions query and the irreversible purge confirmation, so the safety
@@ -723,12 +734,8 @@ purge_quarantine_sessions() {
       return 0
     fi
   else
-    # A named session must be an immediate child of the base: reject any path
-    # separator or dot-traversal so the purge can never escape the quarantine dir.
-    if [[ "$target" == */* || "$target" == "." || "$target" == ".." ]]; then
-      echo -e "${RED}Error: Invalid session name '$target'.${NC}" >&2
-      exit 1
-    fi
+    # A named session must be an immediate child of the base.
+    validate_quarantine_session_name "$target"
     local dir="$quarantine_base/$target"
     if [[ ! -d "$dir" ]]; then
       echo -e "${RED}Error: Quarantine session directory '$dir' does not exist.${NC}" >&2
@@ -852,6 +859,8 @@ restore_quarantine() {
     fi
     restore_dir="$latest"
   else
+    # Named session must be an immediate child of the base (same rule as purge).
+    validate_quarantine_session_name "$target"
     restore_dir="$quarantine_base/$target"
     if [[ ! -d "$restore_dir" ]]; then
       echo -e "${RED}Error: Quarantine session directory '$restore_dir' does not exist.${NC}" >&2
