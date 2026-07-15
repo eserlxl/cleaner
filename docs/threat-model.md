@@ -66,3 +66,11 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 
 GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protection).
 `--allow-outside-home` is high-risk opt-in for paths like /var/cache/pacman/pkg.
+
+## Quarantine Integrity and Collisions
+
+| Scenario | Control |
+|----------|---------|
+| Metadata tampering | quarantine.meta validation |
+| Restore conflicts | Restore with Conflict test (collision detection) |
+| Action vs trash confusion | irreversible action:* WARNING |
