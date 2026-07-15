@@ -86,3 +86,5 @@ so it runs only after the release is cut.
 4. **Submit to the AUR** — a deliberate, human-gated maintainer action: push the
    updated `PKGBUILD` and `.SRCINFO` to the package's AUR git remote. This is never
    automated.
+
+- Documentation review: walk `docs/DOC_REVIEW_CHECKLIST.md` before tagging.
