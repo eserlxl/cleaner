@@ -78,3 +78,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 6.1 — Quarantine on-disk layout reference (q -->
 
 <!-- no-op stamp: Phase 6.1 — Disk growth and bounded-trash primer ( -->
+
+<!-- no-op stamp: Phase 6.1 — Test contract cross-reference table (q -->
