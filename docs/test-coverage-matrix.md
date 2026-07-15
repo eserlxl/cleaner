@@ -15,6 +15,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-07 | LINUX_CLEANER_FORCE | LINUX_CLEANER_FORCE Env |
 | U-08 | LINUX_CLEANER_YES_DANGER | LINUX_CLEANER_YES_DANGER Env |
 | U-09 | --list-sessions --json | List Sessions JSON / List Sessions JSON Empty |
+| U-10 | LINUX_CLEANER_ALLOW_OUTSIDE_HOME | LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env |
 
 ## Drift guards
 

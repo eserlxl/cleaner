@@ -124,6 +124,9 @@ esac
 case "${LINUX_CLEANER_YES_DANGER:-}" in
   1|true|TRUE|yes|YES) YES_DANGER=true ;;
 esac
+case "${LINUX_CLEANER_ALLOW_OUTSIDE_HOME:-}" in
+  1|true|TRUE|yes|YES) ALLOW_OUTSIDE_HOME=true ;;
+esac
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do

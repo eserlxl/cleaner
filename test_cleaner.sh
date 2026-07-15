@@ -274,6 +274,21 @@ else
   exit 1
 fi
 
+# Env mirror for --allow-outside-home (unattended package-cache cleans).
+setup_mock_env
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env${NC}"
+LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  > "$TEST_ENV_DIR/allow_outside_env.log" 2>&1 || allow_env_ec=$?
+if [[ ${allow_env_ec:-0} -eq 0 ]] \
+   && grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/allow_outside_env.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_ALLOW_OUTSIDE_HOME allows outside-HOME targets without the CLI flag.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_ALLOW_OUTSIDE_HOME did not allow outside-HOME targets (ec=${allow_env_ec:-0}).${NC}"
+  cat "$TEST_ENV_DIR/allow_outside_env.log"
+  exit 1
+fi
+
 # 5. Test Case: Age Filter execution (Force Clean)
 setup_mock_env
 if run_test_case "Age Filter Execution" 0 "age_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then

@@ -13,6 +13,7 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | `LINUX_CLEANER_EXCLUDE` | `-e`, `--exclude PATTERNS` | non-empty list | Comma-separated globs; CLI overrides | aligned |
 | `LINUX_CLEANER_FORCE` | `-f`, `--force` | `1`, `true`, `yes` | Non-interactive; danger still needs `--yes-danger` unless bypassed | aligned |
 | `LINUX_CLEANER_YES_DANGER` | `--yes-danger` | `1`, `true`, `yes` | Only meaningful with `--force` and `--risk danger` | aligned |
+| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | `--allow-outside-home` | `1`, `true`, `yes` | High-risk; permits targets outside `$HOME`; CLI overrides | aligned |
 | `NO_COLOR` | (none) | any non-empty | Disables ANSI per no-color.org; not a `LINUX_CLEANER_*` mirror | aligned (README prose below env table; man ENVIRONMENT) |
 
 **Override rule:** CLI flags always override environment toggles when both are present (`cleaner.sh` applies env before CLI parsing completes).

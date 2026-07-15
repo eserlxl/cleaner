@@ -260,6 +260,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_EXCLUDE` | When set to a non-empty pattern list, enables `--exclude` (comma-separated globs). |
 | `LINUX_CLEANER_FORCE` | When set to `1`, `true`, or `yes`, enables `--force` (non-interactive clean). |
 | `LINUX_CLEANER_YES_DANGER` | When set to `1`, `true`, or `yes`, enables `--yes-danger` (bypass danger confirmation). |
+| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | When set to `1`, `true`, or `yes`, enables `--allow-outside-home` (permit targets outside `$HOME`). |
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
