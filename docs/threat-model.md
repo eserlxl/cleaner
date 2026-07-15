@@ -95,3 +95,7 @@ Primary threats: misconfiguration, config tampering, path escape, irreversible a
 ## Periodic refresh policy
 
 Review on new action:*, config format changes, or annually.
+
+## Appendix: Gap Review 2026-07-15
+
+Cross-walk of CONTRIBUTING invariants, threat scenarios, and make check inventory: no code changes required.
