@@ -10,7 +10,7 @@ Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine
 
 ## Disk growth primer
 
-Each `--trash` clean creates a new session. Bound growth: `estimated_disk = sessions × average_session_size`. Pair daily trash with `older-than` retention (see RUNBOOK.md).
+Each `--trash` clean creates a new session. Bound growth: `estimated_disk = sessions × average_session_size`. Pair daily trash with `older-than` retention (see [RUNBOOK.md](../RUNBOOK.md)).
 
 ## Test contract cross-reference
 
