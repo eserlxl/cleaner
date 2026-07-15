@@ -18,6 +18,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-10 | LINUX_CLEANER_ALLOW_OUTSIDE_HOME | LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env |
 | U-11 | --list-targets --json description/min_age_days | List Targets JSON |
 | U-12 | --exclude-target / LINUX_CLEANER_EXCLUDE_TARGET | Exclude Target Dry Run / Env |
+| U-13 | LINUX_CLEANER_CONFIG | LINUX_CLEANER_CONFIG Env |
 
 ## Drift guards
 

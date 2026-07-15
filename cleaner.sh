@@ -102,6 +102,9 @@ if [[ -n "${LINUX_CLEANER_LOG:-}" ]]; then
 fi
 
 # Env mirrors for automation (same truthy set as common shell tools).
+if [[ -n "${LINUX_CLEANER_CONFIG:-}" ]]; then
+  CONFIG_FILE="$LINUX_CLEANER_CONFIG"
+fi
 case "${LINUX_CLEANER_QUIET:-}" in
   1|true|TRUE|yes|YES) QUIET=true ;;
 esac

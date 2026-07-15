@@ -170,6 +170,14 @@ Print the tool version and exit.
 Display the usage message and exit.
 .SH ENVIRONMENT
 .TP
+.B LINUX_CLEANER_CONFIG
+When set to a non-empty path, uses that file as the configuration
+(same as
+.BR \-\-config ).
+An explicit
+.B \-\-config
+still overrides. When unset, the XDG / system / checkout search order is unchanged.
+.TP
 .B LINUX_CLEANER_LOG
 If set to a path under
 .BR $HOME ,

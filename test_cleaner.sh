@@ -1420,6 +1420,37 @@ else
 fi
 # Note: the /etc/linux-cleaner rung is not hermetically testable without touching a real system path.
 
+# LINUX_CLEANER_CONFIG env selects config without -c; CLI -c still wins.
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_CONFIG Env${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/.config/linux-cleaner"
+# shellcheck disable=SC2016
+printf 'safe|Env Config Target|$HOME/.cache/aurman|d|0||\n' > "$MOCK_HOME/.config/linux-cleaner/cleaner.conf"
+LINUX_CLEANER_CONFIG="$TEST_ENV_DIR/test_cleaner.conf" \
+  env -u XDG_CONFIG_HOME HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" \
+  "$CLEANER_SH" --dry-run < /dev/null > "$TEST_ENV_DIR/env_config.log" 2>&1 || true
+if grep -q "Config file: $TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/env_config.log" \
+   && grep -q "NPM Cache" "$TEST_ENV_DIR/env_config.log" \
+   && ! grep -q "Env Config Target" "$TEST_ENV_DIR/env_config.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_CONFIG selects the env config path without -c.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_CONFIG did not select the env config.${NC}"
+  cat "$TEST_ENV_DIR/env_config.log"
+  exit 1
+fi
+LINUX_CLEANER_CONFIG="$MOCK_HOME/.config/linux-cleaner/cleaner.conf" \
+  env -u XDG_CONFIG_HOME HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_config_cli.log" 2>&1 || true
+if grep -q "Config file: $TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/env_config_cli.log" \
+   && ! grep -q "Env Config Target" "$TEST_ENV_DIR/env_config_cli.log"; then
+  echo -e "${GREEN}PASS: --config overrides LINUX_CLEANER_CONFIG.${NC}"
+else
+  echo -e "${RED}FAIL: --config did not override LINUX_CLEANER_CONFIG.${NC}"
+  cat "$TEST_ENV_DIR/env_config_cli.log"
+  exit 1
+fi
+
 # 33. Test Case: the man page documents every --help option (drift guard)
 setup_mock_env
 help_out="$TEST_ENV_DIR/help_flags.txt"

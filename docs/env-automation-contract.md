@@ -4,6 +4,7 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 
 | Environment variable | CLI flag | Truthy values | Constraints | README vs man |
 |---------------------|----------|---------------|-------------|---------------|
+| `LINUX_CLEANER_CONFIG` | `-c`, `--config FILE` | non-empty path | Explicit `-c/--config` overrides; when unset, XDG/system/dev search order unchanged | aligned |
 | `LINUX_CLEANER_LOG` | `--log [FILE]` | non-empty path | Path must resolve under `$HOME`; tilde/`$HOME`/`$USER` expansion allowed | aligned |
 | `LINUX_CLEANER_QUIET` | `-q`, `--quiet` | `1`, `true`, `yes` | CLI overrides env | aligned |
 | `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Valid with dry-run (`--dry-run` or default), `--list-targets`, or `--list-sessions` | aligned |
