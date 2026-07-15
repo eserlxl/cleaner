@@ -23,3 +23,5 @@
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
 | Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, CHANGELOG.md |
 | ShellCheck Invocation Parity | lint parity | Makefile, ci.yml, test_cleaner.sh |
+
+Manual smoke: see `docs/manual-smoke-checklist.md`.
