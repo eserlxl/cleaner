@@ -12,7 +12,7 @@ DATADIR    ?= $(PREFIX)/share
 BINNAME    ?= cleaner
 PKGNAME    ?= linux-cleaner
 
-.PHONY: all help install uninstall install-man check clean
+.PHONY: all help install uninstall install-man check clean pre-release check-aur-ready
 
 all: help
 
@@ -53,13 +53,6 @@ clean:
 pre-release:
 	shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
 	bash test_cleaner.sh
-
-pre-release:
-	shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
-	bash test_cleaner.sh
-
-check-aur-ready:
-	@test "$${AUR_PREP:-0}" != 1 || grep -vq "SKIP" PKGBUILD
 
 check-aur-ready:
 	@test "$${AUR_PREP:-0}" != 1 || grep -vq "SKIP" PKGBUILD
