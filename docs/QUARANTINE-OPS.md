@@ -31,7 +31,7 @@ Session age uses the quarantine session directory mtime (`find -mtime +DAYS`), n
 | No match (`Purge Older-Than No Match`) | 0 |
 | Successful selective purge | 0 |
 | Invalid day count | 1 |
-| Missing quarantine base (`cleaner.sh:683-686`) | 1 (no dedicated hermetic test yet) |
+| Missing quarantine base (`Purge Missing Base`) | 1 |
 
 Message on no match includes: `No quarantine sessions older than`
 
@@ -48,6 +48,8 @@ Message on no match includes: `No quarantine sessions older than`
 ## Restore workflows
 
 Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does not use `--force` for overwrite; conflicts skip.
+
+A named `SESSION` (anything other than `latest`) must be an immediate child of the quarantine base: path separators and `.`/`..` are rejected (`Restore Invalid Session`). The same rule applies to named `--purge-sessions` arguments (`Purge Invalid Session`).
 
 Selective restore: `--restore latest --only PATTERN` (`Restore Only One Target`, `Full Restore After Selective Restore`).
 
@@ -66,7 +68,7 @@ If destination exists, restore skips (`Restore with Conflict`). Partial failures
 
 > **WARNING:** Targets with `action:custom` or other irreversible `action:*` handlers bypass quarantine and delete in place. Review `cleaner.conf` before any automated `--force` run.
 
-Selectors: `latest`, `all`, timestamp, `older-than:DAYS`.
+Selectors: `latest`, `all`, timestamp, `older-than:DAYS`. A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
 
 Interactive: run without `--force` to see `This cannot be undone`; declining prints `No sessions were purged` (`Purge Preview Names Targets`, `Purge Declined Keeps Sessions`).
 

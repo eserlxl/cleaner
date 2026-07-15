@@ -111,10 +111,16 @@ or
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
+A named session must be an immediate child of the quarantine directory;
+path separators and
+.BR . / ..
+are rejected.
 .TP
 .B \-\-purge\-sessions \fISESSION\fR
 Permanently delete quarantine session(s) to reclaim space:
 .IR latest ", " all ", " older\-than:DAYS ", or a specific timestamp."
+A named timestamp must likewise be an immediate child name (no path separators or
+.BR . / .. ).
 The
 .I older\-than:DAYS
 selector purges every session last modified more than

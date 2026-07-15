@@ -105,7 +105,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   ```sh
   cleaner --list-targets --config cleaner.conf   # inventory before a selective --only-target run
   ```
-- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name).
+- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name). A named session must be an immediate child of the quarantine directory — path separators and `.`/`..` are rejected.
 - **`--only PATTERN`**: With `--restore`, restore only the targets whose original path contains `PATTERN`; every other target stays quarantined and the session is kept (its metadata is rewritten, so a later full `--restore` of that session still succeeds). Exits 1 if nothing matches. Pairs with `--list-sessions`, which prints each target's path:
 
   ```sh
@@ -118,7 +118,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
   cleaner --only-target "NPM" --config cleaner.conf --force     # clean only that target
   ```
-- **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. Requires no config file.
+- **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. A named timestamp must be an immediate child directory name (no path separators or `.`/`..`). Requires no config file.
 
   A bounded unattended setup — clean into quarantine daily, expire it weekly:
 

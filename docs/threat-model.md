@@ -33,6 +33,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 3 | CUSTOM_ACTION injection | Enumerated `action:*` whitelist | Predefined Action |
 | 4 | Compromised `/etc/linux-cleaner/cleaner.conf` | File permissions + operator review | Operator mitigations (below) |
 | 5 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
+| 6 | Path escape via quarantine SESSION name | `validate_quarantine_session_name` | Restore Invalid Session / Purge Invalid Session |
 
 ## Config Tampering and Injection
 
@@ -80,6 +81,7 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 | Metadata tampering | quarantine.meta validation |
 | Restore conflicts | Restore with Conflict test (collision detection) |
 | Action vs trash confusion | irreversible action:* WARNING |
+| Path escape via SESSION name | `validate_quarantine_session_name` rejects `/`, `.`, `..` (Restore/Purge Invalid Session) |
 
 ### Quarantine operator guidance
 
