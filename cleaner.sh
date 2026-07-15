@@ -57,7 +57,7 @@ Options:
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
-  --json                     Emit machine-readable JSON (--dry-run summary or --list-targets inventory).
+  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, or --list-sessions inventory).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -286,8 +286,8 @@ if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGE
   exit 1
 fi
 
-if [[ "$JSON_OUTPUT" == true && "$DRY_RUN" != true && "$LIST_TARGETS" != true ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview) or --list-targets.${NC}" >&2
+if [[ "$JSON_OUTPUT" == true && "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true ]]; then
+  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, or --list-sessions.${NC}" >&2
   exit 1
 fi
 
@@ -658,7 +658,59 @@ print_session_contents() {
 # List quarantine sessions (strictly read-only): print each session's
 # timestamp (directory name), size, and modification date, plus the targets it
 # holds. Never moves, deletes, or modifies any session or its metadata.
+# With --json, emit a machine-readable inventory instead of human banners.
+emit_list_sessions_json() {
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+  local -a sessions=()
+  local s session ts size_bytes meta mtype morig
+  local sess_first=true tgt_first
+
+  if [[ -d "$quarantine_base" ]]; then
+    while IFS= read -r s; do
+      [[ -n "$s" ]] && sessions+=("$s")
+    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  fi
+
+  printf '{'
+  printf '"sessions":['
+  for session in "${sessions[@]}"; do
+    if [[ "$sess_first" == true ]]; then
+      sess_first=false
+    else
+      printf ','
+    fi
+    ts=$(basename "$session")
+    size_bytes=$(du -sb "$session" 2>/dev/null | awk '{print $1+0}')
+    [[ -z "$size_bytes" ]] && size_bytes=0
+    printf '{"timestamp":"%s","size_bytes":%s,"targets":[' \
+      "$(json_escape "$ts")" "$size_bytes"
+    tgt_first=true
+    meta="$session/quarantine.meta"
+    if [[ -f "$meta" ]]; then
+      while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
+        mtype=$(trim "$mtype")
+        [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
+        morig=$(trim "${morig:-}")
+        if [[ "$tgt_first" == true ]]; then
+          tgt_first=false
+        else
+          printf ','
+        fi
+        printf '{"type":"%s","path":"%s"}' \
+          "$(json_escape "$mtype")" "$(json_escape "$morig")"
+      done < "$meta"
+    fi
+    printf ']}'
+  done
+  printf ']}\n'
+}
+
 list_quarantine_sessions() {
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    emit_list_sessions_json
+    return 0
+  fi
+
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   local -a sessions=()
   if [[ -d "$quarantine_base" ]]; then

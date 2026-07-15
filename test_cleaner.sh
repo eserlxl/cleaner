@@ -1078,6 +1078,48 @@ else
   exit 1
 fi
 
+# --list-sessions --json: empty inventory is {"sessions":[]} with no human banners.
+if run_test_case "List Sessions JSON Empty" 0 "list_sessions_json_empty.log" --list-sessions --json; then
+  if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d=={"sessions":[]}' \
+       "$TEST_ENV_DIR/list_sessions_json_empty.log" 2>/dev/null \
+     && ! grep -q "Quarantine Sessions" "$TEST_ENV_DIR/list_sessions_json_empty.log"; then
+    echo -e "${GREEN}PASS: --list-sessions --json emits an empty sessions array.${NC}"
+  else
+    echo -e "${RED}FAIL: --list-sessions --json empty inventory was not valid JSON.${NC}"
+    cat "$TEST_ENV_DIR/list_sessions_json_empty.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Populated --list-sessions --json after a trash run.
+setup_mock_env
+if run_test_case "Quarantine for List Sessions JSON" 0 "list_sessions_json_setup.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
+  if run_test_case "List Sessions JSON" 0 "list_sessions_json.log" --list-sessions --json; then
+    if python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert "sessions" in d and len(d["sessions"])>=1
+s=d["sessions"][0]
+assert "timestamp" in s and "size_bytes" in s and isinstance(s["size_bytes"], int)
+assert any(t.get("type")=="full" and "/.npm/_cacache" in t.get("path","") for t in s.get("targets",[]))
+' "$TEST_ENV_DIR/list_sessions_json.log" 2>/dev/null \
+       && ! grep -q "Quarantine Sessions" "$TEST_ENV_DIR/list_sessions_json.log"; then
+      echo -e "${GREEN}PASS: --list-sessions --json emits session timestamps and target paths.${NC}"
+    else
+      echo -e "${RED}FAIL: --list-sessions --json populated inventory was incomplete.${NC}"
+      cat "$TEST_ENV_DIR/list_sessions_json.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 31. Test Case: Opt-in operation logging (default-off, opt-in-on, no-leak, $HOME-confined)
 setup_mock_env
 log_path="$MOCK_HOME/.cache/linux-cleaner/operations.log"

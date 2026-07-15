@@ -61,6 +61,12 @@ emit a machine-readable JSON summary instead of human-formatted output.
 With
 .BR \-\-list\-targets ,
 emit a JSON inventory of configured targets.
+With
+.BR \-\-list\-sessions ,
+emit a JSON inventory of quarantine sessions
+.RB ( sessions
+array of
+.BR timestamp / size_bytes / targets ).
 Implies
 .BR \-\-quiet .
 .TP
@@ -72,6 +78,9 @@ or
 .BR aged )
 and original path of every quarantined item, so a session's contents can be
 inspected before it is restored or permanently purged.
+With
+.BR \-\-json ,
+emit a machine-readable inventory instead of human-formatted output.
 .TP
 .B \-\-list\-targets
 List every target defined in the configuration file
@@ -163,8 +172,12 @@ enables
 When set to
 .BR 1 ", " true ", or " yes ,
 enables
-.BR \-\-json
-for dry-run output. Requires dry-run mode; CLI flags override this variable.
+.BR \-\-json .
+Valid with dry-run,
+.BR \-\-list\-targets ,
+or
+.BR \-\-list\-sessions ;
+CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_ONLY_TARGET
 When set to a non-empty pattern, enables

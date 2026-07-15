@@ -16,6 +16,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- `--list-sessions --json` — emit a machine-readable JSON inventory of
+  quarantine sessions (`sessions` array of `timestamp`/`size_bytes`/`targets`
+  with per-target `type`/`path`).
 
 ## [1.3.0] - 2026-07-15
 

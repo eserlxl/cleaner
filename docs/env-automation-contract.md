@@ -6,7 +6,7 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 |---------------------|----------|---------------|-------------|---------------|
 | `LINUX_CLEANER_LOG` | `--log [FILE]` | non-empty path | Path must resolve under `$HOME`; tilde/`$HOME`/`$USER` expansion allowed | aligned |
 | `LINUX_CLEANER_QUIET` | `-q`, `--quiet` | `1`, `true`, `yes` | CLI overrides env | aligned |
-| `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Requires dry-run (`--dry-run` or default); inventory mode with `--list-targets` via CLI | aligned |
+| `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Valid with dry-run (`--dry-run` or default), `--list-targets`, or `--list-sessions` | aligned |
 | `LINUX_CLEANER_ONLY_TARGET` | `--only-target PATTERN` | non-empty pattern | Substring on config `NAME`; mutex with restore/purge/list modes | aligned |
 | `LINUX_CLEANER_RISK` | `-r`, `--risk LEVEL` | `safe`, `medium`, `danger` | Invalid values error; CLI overrides | aligned |
 | `LINUX_CLEANER_TRASH` | `-t`, `--trash` | `1`, `true`, `yes` | Quarantine mode; CLI overrides | aligned |
