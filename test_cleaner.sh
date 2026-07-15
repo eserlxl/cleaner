@@ -507,6 +507,21 @@ fi
 
 # 11b. Test Case: Purge quarantine sessions to reclaim space
 setup_mock_env
+
+# Missing quarantine base must exit 1 before any selector work.
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+if run_test_case "Purge Missing Base" 1 "purge_missing_base.log" --purge-sessions latest --force; then
+  if grep -q "No quarantine directory exists" "$TEST_ENV_DIR/purge_missing_base.log"; then
+    echo -e "${GREEN}PASS: Purging with no quarantine base exits non-zero.${NC}"
+  else
+    echo -e "${RED}FAIL: Purge Missing Base exited 1 without the expected message.${NC}"
+    cat "$TEST_ENV_DIR/purge_missing_base.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 if run_test_case "Quarantine for Purge" 0 "quarantine_purge_setup.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
   quarantine_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
   if [[ ! -d "$quarantine_base" ]] || [[ -z "$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d)" ]]; then
