@@ -13,11 +13,11 @@
 - [ ] Env test block in `test_cleaner.sh` green
 - [ ] `docs/env-automation-contract.md` matches README and man
 
-## Changelog unreleased map
-- [ ] `docs/changelog-doc-map.md` rows reviewed
+## Changelog / coverage inventory
+- [ ] `docs/test-coverage-matrix.md` shipped-feature rows reviewed
 
 ## Prose / warnings
-- [ ] `docs/prose-warnings-review.md` has no open gaps
+- [ ] `docs/contract-baseline.md` manual review findings current
 
 ## Sign-off
 - Reviewer:
