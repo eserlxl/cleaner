@@ -214,6 +214,9 @@ An action whose package manager is not installed is **skipped** with a clear mes
 
 ---
 
+
+Security threat model: [docs/threat-model.md](docs/threat-model.md).
+
 ## Safety Features
 
 1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.

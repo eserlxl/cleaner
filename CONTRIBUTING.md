@@ -36,6 +36,9 @@ A change to `cleaner.sh` must preserve all of these:
    explicitly passes `--clean` (or `--trash`); `danger` targets require
    confirmation even under `--force`.
 
+
+Threat model: [docs/threat-model.md](docs/threat-model.md) (maps invariants to scenarios).
+
 ## Design constraints
 
 - **Single file.** The tool is one self-contained `cleaner.sh`. Keep it that
