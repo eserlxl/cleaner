@@ -41,7 +41,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   - `action:apt_clean`: Runs `sudo apt-get clean` (clears the downloaded APT package archive cache). Skipped if apt is not present.
   - `action:dnf_clean`: Runs `sudo dnf clean all` (clears all DNF caches). Skipped if dnf is not present.
   > [!WARNING]
-  > Custom clean actions — the pacman, apt, and dnf package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion.
+  > Custom clean actions — the pacman, apt, and dnf package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion. See [action-registry-governance.md](docs/action-registry-governance.md) for adding new actions.
 
 
 ### Action cross-walk
