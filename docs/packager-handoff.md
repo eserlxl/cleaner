@@ -1,0 +1,49 @@
+# Packager handoff checklist
+
+Pre-release checklist for AUR/distro packagers. Complete every row before publishing.
+
+## Prerequisites
+
+- [ ] `make check` green on the release commit
+- [ ] ShellCheck clean on all shell entry points
+
+## Install parity
+
+- [ ] README install table matches `make install` / `install.sh` behavior (see [packaging-install-parity.md](packaging-install-parity.md))
+- [ ] `PKGBUILD` `depends` (`bash`, `findutils`, `coreutils`) and `optdepends` (`pacman-contrib`) align with README Supported Platforms
+
+## Version consistency
+
+- [ ] `cleaner.sh --version` == `PKGBUILD pkgver` == `.SRCINFO pkgver` == CHANGELOG top version
+- [ ] `cleaner.1` `.TH` version matches
+
+## AUR gate
+
+- [ ] Remote tag exists before `updpkgsums`
+- [ ] `sha256sums` is **not** `SKIP` (see [RELEASING.md](../RELEASING.md#ordered-aur-packaging-checklist))
+- [ ] `makepkg -f` succeeds locally
+- [ ] `namcap PKGBUILD` and `namcap *.pkg.tar.zst` clean
+
+## Action contract
+
+- [ ] README action table matches `cleaner.sh` enumeration (see [action-registry-governance.md](action-registry-governance.md))
+
+## Distro smoke log
+
+- [ ] [distro-smoke-log.md](distro-smoke-log.md) has pass rows for target distros or documented deferral
+
+## GNU / platform
+
+- [ ] README documents GNU userland requirement and non-GNU refusal behavior
+
+## Sign-off (v1.3.0)
+
+| Row | Status | Date | Initials |
+|-----|--------|------|----------|
+| Prerequisites | pass (hermetic) | 2026-07-15 | — |
+| Install parity | pass (drift guards) | 2026-07-15 | — |
+| Version consistency | pass (1.3.0) | 2026-07-15 | — |
+| AUR gate | deferred (tag pending) | 2026-07-15 | — |
+| Action contract | pass | 2026-07-15 | — |
+| Distro smoke | template ready | 2026-07-15 | — |
+| GNU / platform | pass | 2026-07-15 | — |

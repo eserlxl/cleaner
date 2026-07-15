@@ -306,3 +306,4 @@ Distro smoke log template: [docs/distro-smoke-log.md](docs/distro-smoke-log.md).
 Arch users: `paccache` actions require the `pacman-contrib` package (see PKGBUILD `optdepends`).
 
 AUR packaging checklist: [RELEASING.md](RELEASING.md#ordered-aur-packaging-checklist).
+Packager handoff: [docs/packager-handoff.md](docs/packager-handoff.md).
