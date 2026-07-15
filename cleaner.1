@@ -99,6 +99,18 @@ configuration file. Cannot be combined with
 or
 .BR \-\-list\-sessions .
 .TP
+.B \-\-check\-config
+Validate the configuration file with the same structural checks as a cleanup
+run (field count, required fields, CHECK_PROCESSES shape, MIN_AGE_DAYS,
+known actions, known risks) and exit without disk analysis. Prints
+.B OK: N targets in <path>
+on success. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+or
+.BR \-\-list\-targets .
+.TP
 .B \-\-only \fIPATTERN\fR
 Used with
 .BR \-\-restore :

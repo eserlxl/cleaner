@@ -2578,6 +2578,53 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Check Config Valid${NC}"
+if run_test_case "Check Config Valid" 0 "check_config_ok.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --check-config; then
+  if grep -qE '^OK: [0-9]+ targets in ' "$TEST_ENV_DIR/check_config_ok.log" \
+     && ! grep -q 'Analyzing targets' "$TEST_ENV_DIR/check_config_ok.log" \
+     && ! grep -q 'Total potential space savings' "$TEST_ENV_DIR/check_config_ok.log"; then
+    echo -e "${GREEN}PASS: --check-config validates without disk analysis.${NC}"
+  else
+    echo -e "${RED}FAIL: --check-config did not print OK or ran analysis.${NC}"
+    cat "$TEST_ENV_DIR/check_config_ok.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Check Config Invalid${NC}"
+cat > "$TEST_ENV_DIR/bad_check.conf" << 'EOF'
+safe|Broken|path only|
+EOF
+if run_test_case "Check Config Invalid" 1 "check_config_bad.log" \
+     --config "$TEST_ENV_DIR/bad_check.conf" --check-config; then
+  if grep -q "expected 5-7 fields" "$TEST_ENV_DIR/check_config_bad.log"; then
+    echo -e "${GREEN}PASS: --check-config rejects a malformed config line.${NC}"
+  else
+    echo -e "${RED}FAIL: --check-config did not report the field-count error.${NC}"
+    cat "$TEST_ENV_DIR/check_config_bad.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Check Config With List Targets Rejected${NC}"
+if run_test_case "Check Config With List Targets Rejected" 1 "check_config_nolist.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --check-config --list-targets; then
+  if grep -q "check-config cannot be combined" "$TEST_ENV_DIR/check_config_nolist.log"; then
+    echo -e "${GREEN}PASS: --check-config with --list-targets is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --check-config with --list-targets was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/check_config_nolist.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: List Targets Read-Only${NC}"
 if run_test_case "List Targets" 0 "list_targets.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets; then

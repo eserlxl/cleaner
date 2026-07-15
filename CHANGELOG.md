@@ -29,6 +29,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `LINUX_CLEANER_EXCLUDE_TARGET` mirrors the flag for automation.
 - `LINUX_CLEANER_CONFIG` — when set to a non-empty path, selects the
   configuration file (same as `--config`). Explicit `-c/--config` overrides.
+- `--check-config` — validate the configuration file with the same
+  structural checks as a cleanup run and exit without disk analysis.
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
   enables `--allow-outside-home`. CLI flags override this variable.
 

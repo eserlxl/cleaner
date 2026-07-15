@@ -105,6 +105,11 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   ```sh
   cleaner --list-targets --config cleaner.conf   # inventory before a selective --only-target run
   ```
+- **`--check-config`**: Validate the configuration file (field count, required fields, CHECK_PROCESSES, MIN_AGE_DAYS, known actions/risks) and exit without analyzing disk usage. Prints `OK: N targets in <path>` on success. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--list-targets`.
+
+  ```sh
+  cleaner --check-config --config cleaner.conf   # CI / packager structural check
+  ```
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name). A named session must be an immediate child of the quarantine directory — path separators and `.`/`..` are rejected.
 - **`--only PATTERN`**: With `--restore`, restore only the targets whose original path contains `PATTERN`; every other target stays quarantined and the session is kept (its metadata is rewritten, so a later full `--restore` of that session still succeeds). Exits 1 if nothing matches. Pairs with `--list-sessions`, which prints each target's path:
 

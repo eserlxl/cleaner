@@ -50,6 +50,7 @@ Options:
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --list-sessions            List quarantine sessions (read-only) and exit.
   --list-targets             List configured cleanup targets (read-only) and exit.
+  --check-config             Validate the configuration file and exit (no disk analysis).
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
@@ -82,6 +83,7 @@ EXCLUDE_TARGET=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
+CHECK_CONFIG=false
 
 # Set by any operation that was attempted and failed (a delete, a quarantine move,
 # a predefined action, a purge). The tool exits non-zero when it is set, per the
@@ -263,6 +265,10 @@ while [[ $# -gt 0 ]]; do
       LIST_TARGETS=true
       shift
       ;;
+    --check-config)
+      CHECK_CONFIG=true
+      shift
+      ;;
     -h|--help)
       show_usage
       exit 0
@@ -307,6 +313,21 @@ fi
 
 if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true ) ]]; then
   echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, or --list-sessions.${NC}" >&2
+  exit 1
+fi
+
+if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
+  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, or --list-targets.${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$ONLY_TARGET" && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --check-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_TARGET" && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -653,6 +674,66 @@ list_config_targets() {
     fi
     printf '%s\t%s\t%s\n' "$name" "$risk" "$raw_path"
   done < "$CONFIG_FILE"
+}
+
+# Validate every active config line with the same structural checks as the
+# cleanup parser (field count, required fields, CHECK_PROCESSES, MIN_AGE_DAYS,
+# known actions, known risks) without path expansion or disk analysis.
+validate_config_file() {
+  local config_line config_lineno=0 config_pipes field_count
+  local risk name raw_path desc min_age check_procs custom_clean_cmd
+  local target_count=0
+
+  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
+    config_lineno=$((config_lineno + 1))
+    config_pipes="${config_line//[^|]/}"
+    field_count=$(( ${#config_pipes} + 1 ))
+    IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
+    risk=$(trim "$risk")
+    [[ -z "$risk" || "$risk" =~ ^# ]] && continue
+    if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
+      exit 1
+    fi
+    name=$(trim "$name")
+    raw_path=$(trim "$raw_path")
+    desc=$(trim "$desc")
+    min_age=$(trim "$min_age")
+    check_procs=$(trim "${check_procs:-}")
+    custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+    if [[ -z "$name" ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
+      exit 1
+    fi
+    if [[ -z "$raw_path" ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
+      exit 1
+    fi
+    if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
+      exit 1
+    fi
+    if [[ -n "$custom_clean_cmd" ]]; then
+      case "$custom_clean_cmd" in
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean)
+          ;;
+        *)
+          echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
+          exit 1
+          ;;
+      esac
+    fi
+    risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: " >/dev/null || exit 1
+    if [[ -z "$min_age" ]]; then
+      :
+    elif [[ ! "$min_age" =~ ^[0-9]+$ ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'${NC}" >&2
+      exit 1
+    fi
+    target_count=$((target_count + 1))
+  done < "$CONFIG_FILE"
+
+  echo "OK: ${target_count} targets in ${CONFIG_FILE}"
 }
 
 # Named SESSION arguments for --restore / --purge-sessions must be an immediate
@@ -1427,6 +1508,11 @@ fi
 
 if [[ "$LIST_TARGETS" == true ]]; then
   list_config_targets
+  exit 0
+fi
+
+if [[ "$CHECK_CONFIG" == true ]]; then
+  validate_config_file
   exit 0
 fi
 
