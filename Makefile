@@ -12,7 +12,7 @@ DATADIR    ?= $(PREFIX)/share
 BINNAME    ?= cleaner
 PKGNAME    ?= linux-cleaner
 
-.PHONY: all help install uninstall install-man check clean pre-release check-aur-ready
+.PHONY: all help install uninstall install-man check clean pre-release check-aur-ready check-runbook-examples
 
 all: help
 
@@ -44,7 +44,10 @@ uninstall:
 	-rmdir "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)" 2>/dev/null
 	@echo "Note: the system config $(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)/cleaner.conf is preserved (it may hold user edits)."
 
-check:
+check-runbook-examples:
+	bash scripts/validate-runbook-examples.sh
+
+check: check-runbook-examples
 	bash test_cleaner.sh
 
 clean:

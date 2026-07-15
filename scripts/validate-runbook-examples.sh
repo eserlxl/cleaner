@@ -3,5 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HELP="$("$ROOT/cleaner.sh" --help)"
 while read -r f; do
-  echo "$HELP" | grep -q "$f" || { echo "missing in help: $f"; exit 1; }
-done < <(rg -o --no-filename '\-\-[a-z-]+' "$ROOT/RUNBOOK.md" "$ROOT/examples" 2>/dev/null | sort -u)
+  grep -qF -- "$f" <<< "$HELP" || { echo "missing in help: $f"; exit 1; }
+done < <(
+  rg 'cleaner ' "$ROOT/RUNBOOK.md" "$ROOT/examples" 2>/dev/null \
+    | rg -o --no-filename '\-\-[a-z][a-z-]*' \
+    | sort -u
+)
