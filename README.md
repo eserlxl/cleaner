@@ -192,6 +192,18 @@ Predefined package-cache actions are supported for three package managers:
 - **apt** — `action:apt_clean`
 - **dnf** — `action:dnf_clean`
 
+
+### Portable cross-distro config
+
+The same `cleaner.conf` may list pacman, apt, and dnf package-cache sections together.
+Actions whose package manager is **not installed** are **skipped** with a clear message
+(hermetic test: `Cross-Distro Safe Degradation`) rather than failing the run.
+
+Outside-HOME paths (e.g. `/var/cache/pacman/pkg`) require `--allow-outside-home`.
+
+> Irreversible `action:pacman_clean` should stay **commented** or at **danger** tier with
+> `--yes-danger` only — it purges all cached packages not currently installed.
+
 An action whose package manager is not installed is **skipped** with a clear message rather than failing the run, so the same config is safe to carry across distributions.
 
 ---
