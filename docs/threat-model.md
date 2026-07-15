@@ -29,3 +29,13 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Scenario | Control | Status |
 |----------|---------|--------|
 | (placeholder) | Phase 9.2–9.5 mappings | pending |
+
+## Config Tampering and Injection
+
+| # | Scenario | Likelihood | Impact |
+|---|----------|------------|--------|
+| 1 | Malformed lines | Medium | Low — run aborts |
+| 2 | Path traversal in PATH_EXPRESSION | Low | High |
+| 3 | Arbitrary command injection via CUSTOM_ACTION | Low | Critical — only enumerated action:* |
+| 4 | Compromised /etc/linux-cleaner/cleaner.conf | Low | High |
+| 5 | Env-token abuse ($HOMEDATA vs $HOME) | Low | Medium |
