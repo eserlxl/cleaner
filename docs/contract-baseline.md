@@ -64,3 +64,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 6.5 — Test contract appendix (qb) -->
 
 <!-- no-op stamp: Phase 5.4 — Selective target and exclusion env rec -->
+
+<!-- no-op stamp: Phase 5.4 — Danger-tier env recipe with guardrails -->
