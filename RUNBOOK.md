@@ -41,6 +41,16 @@ Recommended DAY values: 30 (default), 7 (aggressive small disks). Exits 0 when n
 0 */6 * * * LINUX_CLEANER_JSON=1 cleaner --quiet --dry-run
 ```
 
+## Cron: quarantine inventory (JSON)
+
+```cron
+0 */6 * * * cleaner --list-sessions --json
+```
+
+Use this to watch session growth under trash mode before retention runs. `LINUX_CLEANER_JSON=1` is also valid with `--list-sessions` or `--list-targets` (not only dry-run).
+
+Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) additionally need `LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1` or `--allow-outside-home`.
+
 ## systemd user timers
 
 Copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) so both service units load the safe-tier defaults.
@@ -76,7 +86,21 @@ cleaner --clean --trash --force
 
 ## Env recipe: JSON monitoring
 
-`LINUX_CLEANER_JSON=1` requires dry-run. Example: `LINUX_CLEANER_JSON=1 cleaner --dry-run`
+`LINUX_CLEANER_JSON=1` enables `--json` for dry-run reclaim summaries, `--list-targets` inventories, or `--list-sessions` quarantine inventories. Examples:
+
+```sh
+LINUX_CLEANER_JSON=1 cleaner --dry-run
+LINUX_CLEANER_JSON=1 cleaner --list-sessions
+cleaner --list-sessions --json
+```
+
+## Env recipe: outside-HOME package caches
+
+```sh
+# High-risk: only when cleaning paths outside $HOME (e.g. pacman/apt/dnf caches).
+export LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1
+cleaner --clean --force --risk medium
+```
 
 ## Env recipe: selective targets
 
