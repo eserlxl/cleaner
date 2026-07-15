@@ -62,3 +62,11 @@ User-facing doc changes should follow `docs/DOC_REVIEW_CHECKLIST.md`.
 Check `docs/test-coverage-matrix.md` before adding duplicate coverage.
 
 Non-hermetic validation: `docs/manual-smoke-checklist.md`.
+
+### Test governance
+
+1. New behavior requires a named `run_test_case`.
+2. Do not re-test drift guards.
+3. Titles must match log output.
+4. Use mock `$HOME` paths only.
+5. Update coverage matrix for new `[Unreleased]` bullets.
