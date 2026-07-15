@@ -277,7 +277,7 @@ Every change runs through two gate commands, both of which must pass:
 
 ```bash
 shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static analysis / lint
-make check                            # full safety test suite (same as bash test_cleaner.sh)
+make check                            # runbook example validation + full safety suite (test_cleaner.sh)
 ```
 
 The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. **Drift guards** (man-page parity, version consistency, env mirrors, and similar) run **after** mock `$HOME` setup and stub installation — guards must not require root or network. See the [guard catalog](docs/hermetic-test-guards.md) and [test coverage matrix](docs/test-coverage-matrix.md). Runner dependencies are:
@@ -289,7 +289,7 @@ The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` a
 
 ### Continuous Integration
 
-Both gate commands run automatically on every push and pull request (see the badge above). **Both must pass before a change is merged**: the ShellCheck lint and the full `bash test_cleaner.sh` suite. To enforce this, a maintainer should enable a branch-protection rule on `main` marking the `CI` workflow's `gate` job as a **required status check** (Settings → Branches → Branch protection rules).
+Both gate commands run automatically on every push and pull request (see the badge above). **Both must pass before a change is merged**: the ShellCheck lint and `make check` (runbook validation plus the full test suite). To enforce this, a maintainer should enable a branch-protection rule on `main` marking the `CI` workflow's `gate` job as a **required status check** (Settings → Branches → Branch protection rules).
 
 After cutting a release tag, verify consistency on the tagged HEAD: `git fetch --tags`, `git checkout vX.Y.Z`, then `make check` (exercises the `Version/Tag/Changelog Consistency` guard). See [RELEASING.md](RELEASING.md#post-tag-local-verification).
 
