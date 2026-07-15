@@ -118,4 +118,4 @@ Push `main` after green `make pre-release`; confirm the required CI status check
 Maintainer checklist (GitHub):
 
 - [ ] Branch protection on `main` requires the `gate` status check.
-- [ ] Draft release workflow tested on a prior tag (see [Release workflow permissions](#release-workflow-permissions-fail-closed) above).
+- [ ] Draft release workflow tested on a prior tag (see [Release workflow permissions](#release-workflow-permissions-fail-closed); do not duplicate full release validation here).
