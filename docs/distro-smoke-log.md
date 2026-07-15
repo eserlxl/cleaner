@@ -14,3 +14,5 @@ Manual cross-distro validation template. Hermetic CI does not replace these rows
 
 - Use `--dry-run` first; irreversible `action:pacman_clean` only with explicit maintainer intent and `--yes-danger` if danger-tier.
 - Link completed rows from [packager-handoff.md](packager-handoff.md) sign-off.
+
+Sign-off tracked in [packager-handoff.md](packager-handoff.md#sign-off-v130).
