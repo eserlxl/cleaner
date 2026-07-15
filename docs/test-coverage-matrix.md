@@ -1,6 +1,8 @@
 # Test coverage matrix
 
-## Unreleased changelog inventory
+## 1.3.0 shipped feature inventory
+
+Rows below moved here after the 1.3.0 release; add new unreleased rows only while `[Unreleased]` in `CHANGELOG.md` still holds entries.
 
 | ID | Feature | Test case |
 |----|---------|-----------|
