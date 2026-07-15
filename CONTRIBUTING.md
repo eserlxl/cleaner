@@ -62,6 +62,19 @@ New behavior needs a test. Follow the existing `run_test_case` pattern in
 mock `$HOME`, and assert on the exit code and the captured log. Never target a
 real absolute system path from a test.
 
+
+## Contract evolution
+
+Unified checklist — branch to the doc that matches the change:
+
+- [ ] **(A) Config field change** → [config-field-governance.md](docs/config-field-governance.md)
+- [ ] **(B) New `action:*`** → [action-registry-governance.md](docs/action-registry-governance.md)
+- [ ] **(C) CLI / env / JSON** → [cli-env-json-governance.md](docs/cli-env-json-governance.md)
+- [ ] **(D) Classify SemVer** → [contract-semver-taxonomy.md](docs/contract-semver-taxonomy.md)
+- [ ] **(E) CHANGELOG** → `[Unreleased]` entry under correct heading
+- [ ] **(F) Gates** → `make check` + ShellCheck green
+- [ ] **(G) Safety invariants** → unchanged (see above)
+
 ## License
 
 By contributing you agree that your contributions are licensed under the
