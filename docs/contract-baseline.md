@@ -48,3 +48,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 4.2 — Maintainer decision: wrapper vs. docum -->
 
 <!-- no-op stamp: Phase 6.2 — Older-than semantics and mtime documen -->
+
+<!-- no-op stamp: Phase 6.2 — Retention sizing worked examples (qb) -->
