@@ -1,6 +1,6 @@
 # Contract baseline
 
-Documentation contract work for linux-cleaner v1.2.0 starts from a green hermetic gate on `main`.
+Documentation contract work for linux-cleaner v1.3.0 starts from a green hermetic gate on `main`.
 
 ## Baseline gate (F1.1-01)
 
@@ -20,7 +20,7 @@ Cross-walk of `README.md` CLI sections, `cleaner.sh --help`, and `cleaner.1` on 
 | Topic | README | help / man | Status |
 |-------|--------|------------|--------|
 | Short-option letters (`-c`, `-d`, `-f`, `-i`, `-q`, `-r`, `-t`, `-e`, `-V`, `-h`) | Present | Present | aligned |
-| `--only-target` mutual exclusion (no `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`) | Documented | Enforced in code; man documents exclusions | aligned |
+| `--only-target` mutual exclusion (no `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`) | README omits `--list-targets` (line 103) | Enforced in code (`cleaner.sh:279-280`); man omits `--list-targets` (lines 105-109) | drift — code rejects combo; README/man sync tracked outside docs shard |
 | `--json` requires dry-run for cleanup summary; inventory with `--list-targets` | Documented | Documented | aligned |
 | Irreversible purge / custom-action warnings | GFM admonitions | `.B` WARNING-style prose in man SAFETY/OPTIONS | aligned (format differs, facts match) |
 | Exit-code semantics (skip ≠ failure) | Documented | Documented in EXIT STATUS | aligned |
