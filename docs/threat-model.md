@@ -39,3 +39,11 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 3 | Arbitrary command injection via CUSTOM_ACTION | Low | Critical — only enumerated action:* |
 | 4 | Compromised /etc/linux-cleaner/cleaner.conf | Low | High |
 | 5 | Env-token abuse ($HOMEDATA vs $HOME) | Low | Medium |
+
+### Controls mapping (config)
+
+| Scenario | Control | Test |
+|----------|---------|------|
+| Malformed lines | Parser rejection | Malformed Too Few Fields |
+| Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
+| Unknown action | Enumerated whitelist | Predefined Action |
