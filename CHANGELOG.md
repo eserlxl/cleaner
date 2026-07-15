@@ -21,6 +21,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `size_human`/`date`/`targets` with per-target `type`/`path`).
 - Dry-run `--json` also emits `total_reclaimable_human` and per-target
   `size_human` alongside the existing byte fields.
+- `--list-targets --json` also emits per-target `description` and
+  `min_age_days` alongside the existing `name`/`risk`/`path` fields.
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
   enables `--allow-outside-home`. CLI flags override this variable.
 

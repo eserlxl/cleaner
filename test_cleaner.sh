@@ -2503,6 +2503,10 @@ targets = data.get("targets", [])
 names = [t.get("name") for t in targets]
 assert "NPM Cache" in names
 assert all("risk" in t and "path" in t for t in targets)
+assert all("description" in t and "min_age_days" in t for t in targets)
+npm = next(t for t in targets if t.get("name") == "NPM Cache")
+assert isinstance(npm.get("description"), str) and len(npm["description"]) > 0
+assert isinstance(npm.get("min_age_days"), str)
 PY
     then
       echo -e "${GREEN}PASS: --list-targets --json emits valid JSON inventory.${NC}"

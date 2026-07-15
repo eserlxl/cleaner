@@ -16,6 +16,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-08 | LINUX_CLEANER_YES_DANGER | LINUX_CLEANER_YES_DANGER Env |
 | U-09 | --list-sessions --json | List Sessions JSON / List Sessions JSON Empty |
 | U-10 | LINUX_CLEANER_ALLOW_OUTSIDE_HOME | LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env |
+| U-11 | --list-targets --json description/min_age_days | List Targets JSON |
 
 ## Drift guards
 
