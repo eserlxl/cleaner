@@ -146,6 +146,8 @@ A **skip is not a failure**, and still exits `0`: a danger target you declined, 
 
 ## Installation
 
+Packager handoff checklist: [docs/packager-handoff.md](docs/packager-handoff.md).
+
 The tool is a single script; run it from a checkout (`./cleaner.sh`) or install it system-wide. Install paths derive from `PREFIX` and honor `DESTDIR` for staged/packaged installs:
 
 | Variable | Default | Installs |
