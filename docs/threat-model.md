@@ -47,3 +47,9 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Malformed lines | Parser rejection | Malformed Too Few Fields |
 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
 | Unknown action | Enumerated whitelist | Predefined Action |
+
+### Operator mitigations (/etc config)
+
+- File permissions on `/etc/linux-cleaner/cleaner.conf` (root-owned, not world-writable).
+- Run `cleaner --dry-run` and `cleaner --list-targets` before `--clean`.
+- Never enable irreversible action:pacman_clean without explicit intent.
