@@ -60,3 +60,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 5.3 — Cleanup timer unit (qb) -->
 
 <!-- no-op stamp: Phase 6.5 — Create consolidated QUARANTINE-OPS run -->
+
+<!-- no-op stamp: Phase 6.5 — Test contract appendix (qb) -->
