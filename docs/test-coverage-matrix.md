@@ -13,3 +13,13 @@
 | U-07 | LINUX_CLEANER_FORCE | LINUX_CLEANER_FORCE Env |
 | U-08 | LINUX_CLEANER_YES_DANGER | LINUX_CLEANER_YES_DANGER Env |
 
+## Drift guards
+
+| Test heading | Invariant | Files watched |
+|--------------|-----------|---------------|
+| Man Page Option Consistency | help options in man | cleaner.sh, cleaner.1 |
+| Man Page Env Var Parity | env vars in man | cleaner.sh, cleaner.1, README.md |
+| Stranded [Unreleased] Entries Are Detected | no stranded changelog | CHANGELOG.md, test_cleaner.sh |
+| Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
+| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, CHANGELOG.md |
+| ShellCheck Invocation Parity | lint parity | Makefile, ci.yml, test_cleaner.sh |

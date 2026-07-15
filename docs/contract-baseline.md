@@ -32,3 +32,7 @@ Cross-walk of `README.md` CLI sections, `cleaner.sh --help`, and `cleaner.1` on 
 No prose contradictions were listed in the findings above; no README, `cleaner.1`, or `cleaner.sh` edits were required.
 
 <!-- no-op stamp: Phase 1.5 — Wire checklist into release/contributo -->
+
+## F2.2-02
+
+`Quarantine for Purge` passes on HEAD; no test repair required.
