@@ -262,6 +262,8 @@ CLI flags always override these environment toggles when both are present.
 
 ## Development
 
+Contract governance: [docs/contract-semver-taxonomy.md](docs/contract-semver-taxonomy.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints a change must preserve. Record user-facing changes under the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md).
 
 Every change runs through two gate commands, both of which must pass:
