@@ -46,3 +46,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 `Quarantine for Purge` passes on HEAD; no test repair required.
 
 <!-- no-op stamp: Phase 4.2 — Maintainer decision: wrapper vs. docum -->
+
+<!-- no-op stamp: Phase 6.2 — Older-than semantics and mtime documen -->
