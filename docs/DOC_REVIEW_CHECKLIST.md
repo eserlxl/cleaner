@@ -19,17 +19,21 @@
 ## Prose / warnings
 - [ ] `docs/contract-baseline.md` manual review findings current
 
+## Governance and threat model
+- [ ] `docs/threat-model.md` controls index matches detailed sections
+- [ ] `docs/action-registry-governance.md` action:* registry current
+- [ ] `docs/config-field-governance.md` schema change checklist current
+- [ ] `docs/cli-env-json-governance.md` JSON/env contract current
+
+## Operations and packaging
+- [ ] `docs/QUARANTINE-OPS.md` cross-links and retention matrix current
+- [ ] `docs/packager-handoff.md` PKGBUILD/install parity current
+- [ ] `docs/release-workflow-audit.md` release gate inventory current
+
 ## Sign-off
 - Reviewer:
 - Date:
 - Branch:
-
-## Sign-off (execute pass)
-
-- Reviewer: planwright execute
-- Date: 2026-07-15
-- Branch: main
-- Result: checklist walked; gates green
 
 ## Sign-off (execute pass)
 
