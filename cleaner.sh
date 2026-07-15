@@ -53,6 +53,7 @@ Options:
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
+  --exclude-target PATTERN   With cleanup: skip config targets whose NAME contains PATTERN (substring match).
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
@@ -77,6 +78,7 @@ EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
 RESTORE_ONLY=""
 ONLY_TARGET=""
+EXCLUDE_TARGET=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
@@ -108,6 +110,9 @@ case "${LINUX_CLEANER_JSON:-}" in
 esac
 if [[ -n "${LINUX_CLEANER_ONLY_TARGET:-}" ]]; then
   ONLY_TARGET="$LINUX_CLEANER_ONLY_TARGET"
+fi
+if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET:-}" ]]; then
+  EXCLUDE_TARGET="$LINUX_CLEANER_EXCLUDE_TARGET"
 fi
 if [[ -n "${LINUX_CLEANER_RISK:-}" ]]; then
   MAX_RISK="$LINUX_CLEANER_RISK"
@@ -213,6 +218,14 @@ while [[ $# -gt 0 ]]; do
       ONLY_TARGET="$2"
       shift 2
       ;;
+    --exclude-target)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --exclude-target requires a pattern argument.${NC}" >&2
+        exit 1
+      fi
+      EXCLUDE_TARGET="$2"
+      shift 2
+      ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
@@ -281,6 +294,11 @@ fi
 
 if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
   echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, or --list-targets).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, or --list-targets).${NC}" >&2
   exit 1
 fi
 
@@ -1455,6 +1473,7 @@ json_statuses=()
 
 total_reclaimable_bytes=0
 only_target_matched=false
+name_filter_kept=false
 
 # First pass: Parse config line-by-line safely and analyze targets
 status_echo "${BOLD}Analyzing targets...${NC}"
@@ -1506,6 +1525,12 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     fi
     only_target_matched=true
   fi
+  if [[ -n "$EXCLUDE_TARGET" ]]; then
+    if [[ "$name" == *"$EXCLUDE_TARGET"* ]]; then
+      continue
+    fi
+  fi
+  name_filter_kept=true
 
   # Minimal CHECK_PROCESSES shape check: reject empty/whitespace-only tokens or
   # stray commas (a field-shift signal); normal comma-separated names are fine.
@@ -1702,6 +1727,11 @@ done < "$CONFIG_FILE"
 
 if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
   echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_TARGET" && "$name_filter_kept" != true ]]; then
+  echo -e "${RED}Error: --exclude-target ${EXCLUDE_TARGET} left no config targets to process.${NC}" >&2
   exit 1
 fi
 

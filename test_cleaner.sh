@@ -2382,6 +2382,78 @@ else
   exit 1
 fi
 
+# --exclude-target: skip matching NAMEs (inverse of --only-target).
+echo -e "\n${BOLD}Test Case: Exclude Target Dry Run Filter${NC}"
+if run_test_case "Exclude Target Dry Run" 0 "exclude_target_dry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target NPM --dry-run; then
+  if ! grep -q "NPM Cache" "$TEST_ENV_DIR/exclude_target_dry.log" \
+     && grep -q "Gemini Temp" "$TEST_ENV_DIR/exclude_target_dry.log"; then
+    echo -e "${GREEN}PASS: --exclude-target NPM skips NPM Cache and keeps Gemini Temp.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-target did not skip NPM Cache as expected.${NC}"
+    cat "$TEST_ENV_DIR/exclude_target_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Target Leaves Nothing${NC}"
+if run_test_case "Exclude Target Leaves Nothing" 1 "exclude_target_all.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --exclude-target NPM --dry-run; then
+  if grep -q "left no config targets to process" "$TEST_ENV_DIR/exclude_target_all.log"; then
+    echo -e "${GREEN}PASS: --exclude-target with --only-target leaving nothing exits 1.${NC}"
+  else
+    echo -e "${RED}FAIL: combined only/exclude empty set did not error clearly.${NC}"
+    cat "$TEST_ENV_DIR/exclude_target_all.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Target With Restore Rejected${NC}"
+if run_test_case "Exclude Target With Restore Rejected" 1 "exclude_target_norestore.log" \
+     --restore latest --exclude-target NPM; then
+  if grep -q "exclude-target applies only to cleanup" "$TEST_ENV_DIR/exclude_target_norestore.log"; then
+    echo -e "${GREEN}PASS: --exclude-target with --restore is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-target with --restore was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/exclude_target_norestore.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Target With List Targets Rejected${NC}"
+if run_test_case "Exclude Target With List Targets Rejected" 1 "exclude_target_nolist.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target NPM --list-targets; then
+  if grep -q "exclude-target applies only to cleanup" "$TEST_ENV_DIR/exclude_target_nolist.log"; then
+    echo -e "${GREEN}PASS: --exclude-target with --list-targets is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-target with --list-targets was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/exclude_target_nolist.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: LINUX_CLEANER_EXCLUDE_TARGET Env${NC}"
+setup_mock_env
+LINUX_CLEANER_EXCLUDE_TARGET=NPM PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_exclude_target.log" 2>&1 || true
+if ! grep -q "NPM Cache" "$TEST_ENV_DIR/env_exclude_target.log" \
+   && grep -q "Gemini Temp" "$TEST_ENV_DIR/env_exclude_target.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_EXCLUDE_TARGET skips NPM Cache.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_EXCLUDE_TARGET did not filter targets.${NC}"
+  cat "$TEST_ENV_DIR/env_exclude_target.log"
+  exit 1
+fi
+
 # --quiet: minimal output for unattended cron runs.
 echo -e "\n${BOLD}Test Case: Quiet Dry Run Output${NC}"
 if run_test_case "Quiet Dry Run" 0 "quiet_dry.log" \

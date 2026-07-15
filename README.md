@@ -118,6 +118,11 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
   cleaner --only-target "NPM" --config cleaner.conf --force     # clean only that target
   ```
+- **`--exclude-target PATTERN`**: With cleanup, skip config targets whose `NAME` contains `PATTERN` (substring match). Combined with `--only-target`, both filters apply. Exits 1 if the filters leave no targets to process. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--list-targets`.
+
+  ```sh
+  cleaner --exclude-target "Chromium" --config cleaner.conf --dry-run   # skip Chromium-named targets
+  ```
 - **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. A named timestamp must be an immediate child directory name (no path separators or `.`/`..`). Requires no config file.
 
   A bounded unattended setup — clean into quarantine daily, expire it weekly:
@@ -255,6 +260,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
 | `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
 | `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
+| `LINUX_CLEANER_EXCLUDE_TARGET` | When set to a non-empty pattern, enables `--exclude-target` (substring match on config target `NAME`). |
 | `LINUX_CLEANER_RISK` | When set to `safe`, `medium`, or `danger`, sets the default `--risk` ceiling. |
 | `LINUX_CLEANER_TRASH` | When set to `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
 | `LINUX_CLEANER_EXCLUDE` | When set to a non-empty pattern list, enables `--exclude` (comma-separated globs). |

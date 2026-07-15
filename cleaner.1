@@ -125,6 +125,21 @@ Cannot be combined with
 or
 .BR \-\-list\-targets .
 .TP
+.B \-\-exclude\-target \fIPATTERN\fR
+Used with cleanup: skip config targets whose
+.B NAME
+contains
+.IR PATTERN
+(substring match). Combined with
+.B \-\-only\-target ,
+both filters apply. Exits 1 if the filters leave no targets to process.
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+or
+.BR \-\-list\-targets .
+.TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
 A named session must be an immediate child of the quarantine directory;
@@ -189,6 +204,13 @@ CLI flags override this variable.
 .B LINUX_CLEANER_ONLY_TARGET
 When set to a non-empty pattern, enables
 .BR \-\-only\-target
+(substring match on config target
+.BR NAME ).
+CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_EXCLUDE_TARGET
+When set to a non-empty pattern, enables
+.BR \-\-exclude\-target
 (substring match on config target
 .BR NAME ).
 CLI flags override this variable.

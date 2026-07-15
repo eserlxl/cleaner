@@ -23,6 +23,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `size_human` alongside the existing byte fields.
 - `--list-targets --json` also emits per-target `description` and
   `min_age_days` alongside the existing `name`/`risk`/`path` fields.
+- `--exclude-target PATTERN` — with cleanup, skip config targets whose
+  `NAME` contains `PATTERN` (substring match). Combined with
+  `--only-target`, both filters apply. Exits 1 if nothing remains.
+  `LINUX_CLEANER_EXCLUDE_TARGET` mirrors the flag for automation.
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
   enables `--allow-outside-home`. CLI flags override this variable.
 

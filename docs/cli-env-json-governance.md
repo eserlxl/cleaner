@@ -29,6 +29,7 @@
 Documented mutual exclusions (enforced in code):
 
 - `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`
+- `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, or `--list-sessions`
 - `--only` requires `--restore`
 
