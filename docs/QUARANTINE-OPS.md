@@ -31,7 +31,7 @@ Session age uses the quarantine session directory mtime (`find -mtime +DAYS`), n
 | No match (`Purge Older-Than No Match`) | 0 |
 | Successful selective purge | 0 |
 | Invalid day count | 1 |
-| Missing quarantine base | 1 |
+| Missing quarantine base (`cleaner.sh:683-686`) | 1 (no dedicated hermetic test yet) |
 
 Message on no match includes: `No quarantine sessions older than`
 
@@ -64,6 +64,8 @@ If destination exists, restore skips (`Restore with Conflict`). Partial failures
 
 ## Purge reference
 
+> **WARNING:** Targets with `action:custom` or other irreversible `action:*` handlers bypass quarantine and delete in place. Review `cleaner.conf` before any automated `--force` run.
+
 Selectors: `latest`, `all`, timestamp, `older-than:DAYS`.
 
 Interactive: run without `--force` to see `This cannot be undone`; declining prints `No sessions were purged` (`Purge Preview Names Targets`, `Purge Declined Keeps Sessions`).
@@ -83,7 +85,7 @@ retention too aggressive? → increase DAYS; restore from remaining sessions if 
 
 ## Test contract appendix
 
-Purge Older-Than Retention, Purge Older-Than No Match, Purge Older-Than Invalid Days, Restore Only One Target, Full Restore After Selective Restore, Restore with Conflict, Restore with Partial Failure, Failed Quarantine Move Not Recorded, Trash Action Warning, Purge Missing Session, Only Target With Restore Rejected, Only Without Restore Rejected.
+Purge Older-Than Retention, Purge Older-Than No Match, Purge Older-Than Invalid Days, Restore Only One Target, Full Restore After Selective Restore, Restore with Conflict, Restore with Partial Failure, Failed Quarantine Move Not Recorded, Trash Action Warning, Purge Missing Session, Only Target With Restore Rejected, Only Without Restore Rejected, Only Target With List Targets Rejected, Only Target With List Sessions Rejected, Only Target With Purge Rejected.
 
 ## Maintainer sign-off
 
