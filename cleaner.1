@@ -219,6 +219,20 @@ then the XDG user config, then
 then a
 .I cleaner.conf
 beside the script.
+.PP
+Predefined
+.B CUSTOM_ACTION
+values (enumerated whitelist only):
+.RS
+.IP \(bu 3
+.BR action:paccache_keep1 ", " action:paccache_keep2 ", " action:paccache_keep3
+.IP \(bu 3
+.BR action:pacman_clean
+.IP \(bu 3
+.BR action:apt_clean
+.IP \(bu 3
+.BR action:dnf_clean
+.RE
 .SH SAFETY
 Deletions are blocked for the filesystem root, system directories
 .RI ( /usr ", " /etc ", " /var ", " /lib ", "

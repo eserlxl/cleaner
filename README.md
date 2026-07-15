@@ -43,6 +43,18 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   > [!WARNING]
   > Custom clean actions — the pacman, apt, and dnf package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion.
 
+
+### Action cross-walk
+
+| `action:*` | `cleaner.sh` command | README | `cleaner.conf` example | `cleaner.1` |
+|------------|---------------------|--------|------------------------|-------------|
+| `action:paccache_keep1` | `sudo paccache -rk1` | CUSTOM_ACTION list | line 43 | CONFIGURATION |
+| `action:paccache_keep2` | `sudo paccache -rk2` | CUSTOM_ACTION list | (same pattern) | CONFIGURATION |
+| `action:paccache_keep3` | `sudo paccache -rk3` | CUSTOM_ACTION list | example line 61 | CONFIGURATION |
+| `action:pacman_clean` | `sudo pacman -Sc --noconfirm` | CUSTOM_ACTION list | commented line 46 | CONFIGURATION |
+| `action:apt_clean` | `sudo apt-get clean` | CUSTOM_ACTION list | commented line 51 | CONFIGURATION |
+| `action:dnf_clean` | `sudo dnf clean all` | CUSTOM_ACTION list | commented line 52 | CONFIGURATION |
+
 ### Validation
 
 Each active line must have **5 to 7 fields**. `RISK_LEVEL`, `NAME`, `PATH_EXPRESSION`, `DESCRIPTION`, and `MIN_AGE_DAYS` are required; `CHECK_PROCESSES` and `CUSTOM_ACTION` are optional. `NAME` and `PATH_EXPRESSION` must be non-empty, and a non-empty `MIN_AGE_DAYS` must be numeric (leave it empty to mean "the whole directory"). A malformed line is rejected with a line-numbered error of the form `Error: <config-file>:<lineno>: ...`, for example:
