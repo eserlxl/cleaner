@@ -1,0 +1,11 @@
+[Unit]
+Description=Linux Cleaner JSON monitoring dry-run
+
+[Service]
+Type=oneshot
+# Matches RUNBOOK cron: 0 */6 * * * LINUX_CLEANER_JSON=1 cleaner --quiet --dry-run
+ExecStart=/usr/bin/env cleaner --quiet --dry-run
+Environment=LINUX_CLEANER_JSON=1
+
+[Install]
+WantedBy=default.target
