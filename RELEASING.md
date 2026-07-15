@@ -97,47 +97,25 @@ See `docs/release-workflow-audit.md` for the step-by-step cross-walk.
 8. Commit `PKGBUILD` and `.SRCINFO`.
 9. Human AUR push (never automated).
 
-1. Replace the placeholder checksum with the real one against the release tarball:
-   ```sh
-   updpkgsums                       # rewrites the SKIP sha256 for the v<pkgver> tarball
-   ```
-2. Build and lint locally:
-   ```sh
-   makepkg -f                       # builds the package
-   namcap PKGBUILD                  # lint the PKGBUILD
-   namcap *.pkg.tar.zst             # lint the built package
-   ```
-3. Regenerate and commit the metadata alongside the PKGBUILD:
-   ```sh
-   makepkg --printsrcinfo > .SRCINFO
-   ```
-4. **Submit to the AUR** — a deliberate, human-gated maintainer action: push the
-   updated `PKGBUILD` and `.SRCINFO` to the package's AUR git remote. This is never
-   automated.
+9. Human AUR push (never automated).
 
 - Documentation review: walk `docs/DOC_REVIEW_CHECKLIST.md` before tagging.
 
+## Post-tag local verification
 
-**Decision:** add `make pre-release` wrapper (ShellCheck + `make check`) instead of documenting dual commands only.
+After the tag is pushed:
 
-**F4.2-03:** standalone version script not needed; `make pre-release` sufficient.
+```sh
+git fetch --tags
+git checkout vX.Y.Z
+make check    # exercises Version/Tag/Changelog Consistency on real tagged HEAD
+```
 
-**F4.2-03:** standalone version script not needed; `make pre-release` sufficient.
+## Remote sync and external gates
 
-Ordered AUR prep: confirm remote tag → `updpkgsums` → expect `sha256sums=("<64-hex>")` line → `makepkg -f` → commit PKGBUILD/.SRCINFO.
+Push `main` after green `make pre-release`; confirm the required CI status check `gate` on `origin/main` before tagging.
 
-<!-- F4.4-02: updpkgsums deferred until v1.3.0 tag on remote; PKGBUILD still SKIP on main. -->
+Maintainer checklist (GitHub):
 
-## Remote sync
-
-Push `main` after green `make pre-release`; confirm CI `gate` on origin/main before tag.
-
-<!-- F4.4-02: updpkgsums deferred until v1.3.0 tag on remote; PKGBUILD still SKIP on main. -->
-
-After tag push: `git fetch --tags` and `git checkout vX.Y.Z` then `make check` for Version/Tag/Changelog Consistency.
-
-## Remote sync
-
-Push `main` after green `make pre-release`; confirm CI `gate` on origin/main before tag.
-
-After tag push: `git fetch --tags` and `git checkout vX.Y.Z` then `make check` for Version/Tag/Changelog Consistency.
+- [ ] Branch protection on `main` requires the `gate` status check.
+- [ ] Draft release workflow tested on a prior tag (see [Release workflow permissions](#release-workflow-permissions-fail-closed) above).
