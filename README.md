@@ -263,3 +263,5 @@ Systemd examples: `examples/systemd/` (see RUNBOOK.md).
 ## Unattended operations
 
 Cron and systemd recipes: [RUNBOOK.md](RUNBOOK.md) and `examples/systemd/`.
+
+Quarantine operations: [docs/QUARANTINE-OPS.md](docs/QUARANTINE-OPS.md).

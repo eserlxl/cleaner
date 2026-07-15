@@ -153,3 +153,6 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 <!-- Release planning: eight [Unreleased] env/CLI items warrant minor 1.3.0 per versioning policy. -->
 
 <!-- Release planning: eight [Unreleased] env/CLI items warrant minor 1.3.0 per versioning policy. -->
+
+### Added
+- Operator runbook `docs/QUARANTINE-OPS.md` for quarantine inventory, retention, restore, and purge.
