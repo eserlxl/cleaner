@@ -50,6 +50,8 @@ Enable the paired timers:
 ```sh
 systemctl --user enable --now linux-cleaner-clean.timer
 systemctl --user enable --now linux-cleaner-retention.timer
+# Optional JSON monitoring dry-run (parity with cron below):
+systemctl --user enable --now linux-cleaner-monitor.timer
 ```
 
 User linger may be required for timers without an active session.
@@ -59,6 +61,7 @@ Journal review:
 ```sh
 journalctl --user -u linux-cleaner-clean.service
 journalctl --user -u linux-cleaner-retention.service
+journalctl --user -u linux-cleaner-monitor.service
 ```
 
 ## Env recipe: safe-tier cleanup
@@ -99,4 +102,6 @@ cleaner --clean --trash --force
 | examples/systemd/linux-cleaner-clean.timer | clean timer |
 | examples/systemd/linux-cleaner-retention.service | retention purge |
 | examples/systemd/linux-cleaner-retention.timer | retention timer |
+| examples/systemd/linux-cleaner-monitor.service | JSON monitoring dry-run |
+| examples/systemd/linux-cleaner-monitor.timer | monitor timer (6-hourly) |
 | examples/linux-cleaner.env.example | EnvironmentFile template |
