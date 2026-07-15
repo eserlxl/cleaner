@@ -26,9 +26,13 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 
 ## Controls Index
 
-| Scenario | Control | Status |
-|----------|---------|--------|
-| (placeholder) | Phase 9.2–9.5 mappings | pending |
+| # | Scenario | Primary control | Verification |
+|---|----------|-----------------|--------------|
+| 1 | Malformed config lines | Parser rejection | Malformed Too Few Fields |
+| 2 | Path traversal in PATH_EXPRESSION | `check_path_safety` | Canonicalization Dotdot Escape |
+| 3 | CUSTOM_ACTION injection | Enumerated `action:*` whitelist | Predefined Action |
+| 4 | Compromised `/etc/linux-cleaner/cleaner.conf` | File permissions + operator review | Operator mitigations (below) |
+| 5 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
 
 ## Config Tampering and Injection
 
@@ -45,8 +49,10 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Scenario | Control | Test |
 |----------|---------|------|
 | Malformed lines | Parser rejection | Malformed Too Few Fields |
-| Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
+| Path traversal in PATH_EXPRESSION | `check_path_safety` rejects dotdot/symlink escape | Canonicalization Dotdot Escape |
 | Unknown action | Enumerated whitelist | Predefined Action |
+| Compromised /etc/linux-cleaner/cleaner.conf | Root-owned config + dry-run before clean | Operator mitigations (below) |
+| Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
 
 ### Operator mitigations (/etc config)
 
@@ -80,6 +86,9 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 - Audit with `--list-sessions` before destructive purge.
 - Pair `--trash` with `purge-sessions older-than:DAYS` for bounded disk use.
 - Irreversible action:* bypasses quarantine — distinct from trash mode.
+
+See also: [QUARANTINE-OPS.md](QUARANTINE-OPS.md) (session inventory, retention sizing) and
+[manual-smoke-checklist.md](manual-smoke-checklist.md) (TOCTOU manual VM review).
 
 ## Executive summary
 
