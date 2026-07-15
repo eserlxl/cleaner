@@ -53,3 +53,11 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 - File permissions on `/etc/linux-cleaner/cleaner.conf` (root-owned, not world-writable).
 - Run `cleaner --dry-run` and `cleaner --list-targets` before `--clean`.
 - Never enable irreversible action:pacman_clean without explicit intent.
+
+## Path Safety and Filesystem Races
+
+| Scenario | check_path_safety | Test |
+|----------|-------------------|------|
+| Dotdot escape | REJECTED | Canonicalization Dotdot Escape |
+| Symlink parent outside HOME | REJECTED | Symlinked Parent Escape |
+| TOCTOU on live paths | residual | manual VM review |
