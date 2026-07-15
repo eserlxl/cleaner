@@ -100,7 +100,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   cleaner --list-sessions                       # see exactly what a session holds
   cleaner --restore latest --only /.cache/yarn  # take back just that one target
   ```
-- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, or `--list-sessions`.
+- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--list-targets`.
 
   ```sh
   cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
