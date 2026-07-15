@@ -265,3 +265,5 @@ Systemd examples: `examples/systemd/` (see RUNBOOK.md).
 Cron and systemd recipes: [RUNBOOK.md](RUNBOOK.md) and `examples/systemd/`.
 
 Quarantine operations: [docs/QUARANTINE-OPS.md](docs/QUARANTINE-OPS.md).
+
+Arch users: `paccache` actions require the `pacman-contrib` package (see PKGBUILD `optdepends`).
