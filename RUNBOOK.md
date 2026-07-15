@@ -17,7 +17,13 @@ Phase 5 examples live in this `RUNBOOK.md` plus `examples/systemd/` and `example
 
 Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `purge-sessions older-than:DAYS`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
 
-Config resolution: `-c`, XDG user config, `/etc/linux-cleaner/cleaner.conf`, script-adjacent `cleaner.conf`.
+Config resolution: `-c` / `LINUX_CLEANER_CONFIG`, XDG user config, `/etc/linux-cleaner/cleaner.conf`, script-adjacent `cleaner.conf`.
+
+Validate a config without disk analysis (CI / packager gate):
+
+```sh
+cleaner --check-config --config /path/to/cleaner.conf
+```
 
 Exit codes: skips exit 0; failed operations exit 1 (see README Exit status).
 
@@ -97,14 +103,16 @@ cleaner --list-sessions --json
 ## Env recipe: outside-HOME package caches
 
 ```sh
-# High-risk: only when cleaning paths outside $HOME (e.g. pacman/apt/dnf caches).
+# High-risk: only when cleaning paths outside $HOME (e.g. pacman/apt/dnf/zypper caches).
 export LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1
 cleaner --clean --force --risk medium
 ```
 
+Package-cache `action:*` tokens include `action:apt_clean`, `action:dnf_clean`, and `action:zypper_clean` (each skipped when the manager binary is absent).
+
 ## Env recipe: selective targets
 
-`LINUX_CLEANER_ONLY_TARGET=NPM` and `LINUX_CLEANER_EXCLUDE=.git,*.log` for incident-style runs.
+`LINUX_CLEANER_ONLY_TARGET=NPM` narrows by NAME; `LINUX_CLEANER_EXCLUDE_TARGET=Chromium` skips matching NAMEs; `LINUX_CLEANER_EXCLUDE=.git,*.log` excludes path globs. `LINUX_CLEANER_CONFIG=/path/to.conf` selects the config without `-c`.
 
 ## danger tier (explicit opt-in)
 

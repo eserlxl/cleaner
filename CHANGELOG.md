@@ -36,6 +36,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `action:zypper_clean` — predefined action running `sudo zypper clean -a`
   (skipped when zypper is absent), matching the apt/dnf package-cache pattern.
 - Human `--list-targets` also prints each target's `DESCRIPTION` column.
+- RUNBOOK documents `--check-config`, `LINUX_CLEANER_CONFIG`,
+  `--exclude-target` / `LINUX_CLEANER_EXCLUDE_TARGET`, and `action:zypper_clean`.
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
   enables `--allow-outside-home`. CLI flags override this variable.
 
