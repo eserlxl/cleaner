@@ -19,6 +19,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `--list-sessions --json` — emit a machine-readable JSON inventory of
   quarantine sessions (`sessions` array of `timestamp`/`size_bytes`/
   `size_human`/`date`/`targets` with per-target `type`/`path`).
+- Dry-run `--json` also emits `total_reclaimable_human` and per-target
+  `size_human` alongside the existing byte fields.
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
   enables `--allow-outside-home`. CLI flags override this variable.
 

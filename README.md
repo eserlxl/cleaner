@@ -134,7 +134,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
 Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
 (forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
 
-- **`--json`**: With `--dry-run`, emit a machine-readable JSON summary (`config`, `total_reclaimable_bytes`, per-target `name`/`path`/`risk`/`bytes`/`status`) instead of human-formatted output. With `--list-targets`, emit a JSON inventory (`config`, per-target `name`/`risk`/`path`). With `--list-sessions`, emit a JSON inventory (`sessions` array of `timestamp`/`size_bytes`/`size_human`/`date`/`targets`). Implies `--quiet`.
+- **`--json`**: With `--dry-run`, emit a machine-readable JSON summary (`config`, `total_reclaimable_bytes`, `total_reclaimable_human`, per-target `name`/`path`/`risk`/`bytes`/`size_human`/`status`) instead of human-formatted output. With `--list-targets`, emit a JSON inventory (`config`, per-target `name`/`risk`/`path`). With `--list-sessions`, emit a JSON inventory (`sessions` array of `timestamp`/`size_bytes`/`size_human`/`date`/`targets`). Implies `--quiet`.
 - **`-h, --help`**: Display usage details.
 - **`-V, --version`**: Print the tool version and exit.
 

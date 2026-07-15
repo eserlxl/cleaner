@@ -355,6 +355,7 @@ emit_dry_run_json() {
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
   printf '"total_reclaimable_bytes":%s,' "$total_reclaimable_bytes"
+  printf '"total_reclaimable_human":"%s",' "$(json_escape "$(format_bytes "$total_reclaimable_bytes")")"
   printf '"targets":['
   for i in "${!json_names[@]}"; do
     if [[ "$first" == true ]]; then
@@ -362,11 +363,12 @@ emit_dry_run_json() {
     else
       printf ','
     fi
-    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"status":"%s"}' \
+    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s"}' \
       "$(json_escape "${json_names[$i]}")" \
       "$(json_escape "${json_paths[$i]}")" \
       "$(json_escape "${json_risks[$i]}")" \
       "${json_bytes[$i]}" \
+      "$(json_escape "$(format_bytes "${json_bytes[$i]}")")" \
       "$(json_escape "${json_statuses[$i]}")"
   done
   printf ']}'

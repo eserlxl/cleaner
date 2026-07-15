@@ -2406,6 +2406,8 @@ if run_test_case "JSON Dry Run" 0 "json_dry.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --json --dry-run; then
   if python3 -m json.tool < "$TEST_ENV_DIR/json_dry.log" > /tmp/json_parsed.out 2>/tmp/json_parse.err; then
     if grep -q '"total_reclaimable_bytes"' /tmp/json_parsed.out \
+       && grep -q '"total_reclaimable_human"' /tmp/json_parsed.out \
+       && grep -q '"size_human"' /tmp/json_parsed.out \
        && grep -q '"NPM Cache"' /tmp/json_parsed.out \
        && grep -q '"status": "found"' /tmp/json_parsed.out \
        && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/json_dry.log"; then
