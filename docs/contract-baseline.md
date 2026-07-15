@@ -54,3 +54,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 6.2 — Invalid selector operator guidance (qb -->
 
 <!-- no-op stamp: Phase 6.3 — Selective restore incident playbook (q -->
+
+<!-- no-op stamp: Phase 6.3 — Restore exit-code and flag-combination -->
