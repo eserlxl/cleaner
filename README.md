@@ -237,7 +237,7 @@ shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static ana
 make check                            # full safety test suite (same as bash test_cleaner.sh)
 ```
 
-The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. Runner dependencies are:
+The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. **Drift guards** (man-page parity, version consistency, env mirrors, and similar) run **after** mock `$HOME` setup and stub installation — guards must not require root or network. See the [guard catalog](docs/hermetic-test-guards.md) and [test coverage matrix](docs/test-coverage-matrix.md). Runner dependencies are:
 
 - `bash`
 - `coreutils`
