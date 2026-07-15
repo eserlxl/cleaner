@@ -80,3 +80,18 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 - Audit with `--list-sessions` before destructive purge.
 - Pair `--trash` with `purge-sessions older-than:DAYS` for bounded disk use.
 - Irreversible action:* bypasses quarantine — distinct from trash mode.
+
+## Executive summary
+
+Primary threats: misconfiguration, config tampering, path escape, irreversible actions vs quarantine.
+
+## Residual risk summary
+
+| Risk | Status |
+|------|--------|
+| Live /etc config tampering | residual |
+| TOCTOU | residual |
+
+## Periodic refresh policy
+
+Review on new action:*, config format changes, or annually.
