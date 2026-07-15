@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE=""
 
 # Single source of truth for the tool version (semantic version).
-readonly VERSION="1.2.0"
+readonly VERSION="1.3.0"
 
 # Colors for terminal output
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then

@@ -255,3 +255,11 @@ Both gate commands run automatically on every push and pull request (see the bad
 This project is licensed under the **GNU General Public License v3.0 or later** (SPDX identifier: `GPL-3.0-or-later`) — see the [LICENSE](LICENSE) file for the full text.
 
 Copyright (C) 2026 Eser KUBALI
+
+See [RUNBOOK.md](RUNBOOK.md) for unattended operations.
+
+Systemd examples: `examples/systemd/` (see RUNBOOK.md).
+
+## Unattended operations
+
+Cron and systemd recipes: [RUNBOOK.md](RUNBOOK.md) and `examples/systemd/`.

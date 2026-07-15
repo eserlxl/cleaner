@@ -1,0 +1,7 @@
+[Unit]
+Description=Linux Cleaner quarantine cleanup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cleaner --clean --trash --force
+EnvironmentFile=-%h/.config/linux-cleaner/env

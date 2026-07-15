@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly linux-cleaner retention
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+Unit=linux-cleaner-retention.service
+
+[Install]
+WantedBy=timers.target

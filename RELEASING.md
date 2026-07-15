@@ -91,3 +91,25 @@ so it runs only after the release is cut.
 
 
 **Decision:** add `make pre-release` wrapper (ShellCheck + `make check`) instead of documenting dual commands only.
+
+**F4.2-03:** standalone version script not needed; `make pre-release` sufficient.
+
+**F4.2-03:** standalone version script not needed; `make pre-release` sufficient.
+
+Ordered AUR prep: confirm remote tag → `updpkgsums` → expect `sha256sums=("<64-hex>")` line → `makepkg -f` → commit PKGBUILD/.SRCINFO.
+
+<!-- F4.4-02: updpkgsums deferred until v1.3.0 tag on remote; PKGBUILD still SKIP on main. -->
+
+## Remote sync
+
+Push `main` after green `make pre-release`; confirm CI `gate` on origin/main before tag.
+
+<!-- F4.4-02: updpkgsums deferred until v1.3.0 tag on remote; PKGBUILD still SKIP on main. -->
+
+After tag push: `git fetch --tags` and `git checkout vX.Y.Z` then `make check` for Version/Tag/Changelog Consistency.
+
+## Remote sync
+
+Push `main` after green `make pre-release`; confirm CI `gate` on origin/main before tag.
+
+After tag push: `git fetch --tags` and `git checkout vX.Y.Z` then `make check` for Version/Tag/Changelog Consistency.

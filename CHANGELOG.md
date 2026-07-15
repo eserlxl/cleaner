@@ -16,6 +16,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+
+## [1.3.0] - 2026-07-15
+
+### Added
 - `LINUX_CLEANER_ONLY_TARGET` — when set to a non-empty pattern, enables
   `--only-target` (substring match on config target `NAME`). CLI flags override
   this variable.
@@ -145,3 +149,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 [1.2.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.2.0
 [1.1.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.1.0
 [1.0.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.0.0
+
+<!-- Release planning: eight [Unreleased] env/CLI items warrant minor 1.3.0 per versioning policy. -->
+
+<!-- Release planning: eight [Unreleased] env/CLI items warrant minor 1.3.0 per versioning policy. -->

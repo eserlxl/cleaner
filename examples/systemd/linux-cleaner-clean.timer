@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily linux-cleaner cleanup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+Unit=linux-cleaner-clean.service

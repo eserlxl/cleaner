@@ -1,0 +1,6 @@
+[Unit]
+Description=Linux Cleaner quarantine retention purge
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cleaner --purge-sessions older-than:30 --force
