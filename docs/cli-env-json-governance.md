@@ -14,6 +14,7 @@
 - Mirrors use `LINUX_CLEANER_*` prefix (see `docs/env-automation-contract.md`).
 - Truthy values: `1`, `true`, `yes` (documented per variable).
 - **CLI overrides env** when both are set.
+- High-risk mirrors (`LINUX_CLEANER_ALLOW_OUTSIDE_HOME`, `LINUX_CLEANER_YES_DANGER`) stay off in default examples.
 
 ## 3. JSON additive vs breaking changes
 
@@ -28,7 +29,7 @@
 Documented mutual exclusions (enforced in code):
 
 - `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`
-- `--json` requires `--dry-run` for cleanup summary mode
+- `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, or `--list-sessions`
 - `--only` requires `--restore`
 
 See `test_cleaner.sh` mutex rejection cases.
@@ -39,4 +40,4 @@ When adding CLI/env/JSON surface:
 
 - `Man Page Option Consistency`
 - Environment mirror block (`LINUX_CLEANER_*` tests)
-- JSON output cases (`JSON Dry Run`, `List Targets JSON`)
+- JSON output cases (`JSON Dry Run`, `List Targets JSON`, `List Sessions JSON`, `List Sessions JSON Empty`)
