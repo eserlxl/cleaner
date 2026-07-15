@@ -61,3 +61,8 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Dotdot escape | REJECTED | Canonicalization Dotdot Escape |
 | Symlink parent outside HOME | REJECTED | Symlinked Parent Escape |
 | TOCTOU on live paths | residual | manual VM review |
+
+### GNU userland and --allow-outside-home
+
+GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protection).
+`--allow-outside-home` is high-risk opt-in for paths like /var/cache/pacman/pkg.
