@@ -4,7 +4,7 @@ Description=Daily linux-cleaner cleanup
 [Timer]
 OnCalendar=daily
 Persistent=true
+Unit=linux-cleaner-clean.service
 
 [Install]
 WantedBy=timers.target
-Unit=linux-cleaner-clean.service
