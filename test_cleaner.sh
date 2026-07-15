@@ -1636,6 +1636,31 @@ EOF
   fi
 fi
 
+# Parallel absent-zypper degradation for action:zypper_clean.
+setup_mock_env
+rm -f "$TEST_ENV_DIR/bin/zypper"
+echo -e "\n${BOLD}Test Case: Zypper Safe Degradation${NC}"
+if command -v zypper >/dev/null 2>&1; then
+  echo -e "${GREEN}PASS (skipped): a real zypper is installed on this host; cannot simulate its absence.${NC}"
+else
+  cat << EOF > "$TEST_ENV_DIR/zypper_degrade.conf"
+medium|Zypper Clean|$OUTSIDE_DIR|Mock Zypper cache|0||action:zypper_clean
+EOF
+  if run_test_case "Zypper Degradation" 0 "zypper_degrade.log" --config "$TEST_ENV_DIR/zypper_degrade.conf" --clean --force --allow-outside-home --risk medium; then
+    if grep -qi "not available on this platform" "$TEST_ENV_DIR/zypper_degrade.log" && \
+       ! grep -q "command not found" "$TEST_ENV_DIR/zypper_degrade.log" && \
+       ! grep -q "Mock zypper called" "$TEST_ENV_DIR/zypper_degrade.log"; then
+      echo -e "${GREEN}PASS: zypper action skipped cleanly when zypper is absent (non-fatal, no command-not-found).${NC}"
+    else
+      echo -e "${RED}FAIL: zypper action did not degrade safely when zypper is absent.${NC}"
+      cat "$TEST_ENV_DIR/zypper_degrade.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+fi
+
 # 39. Test Case: action:pacman_clean invokes 'pacman -Sc --noconfirm'
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/pacman_clean_config.conf"
