@@ -88,3 +88,6 @@ so it runs only after the release is cut.
    automated.
 
 - Documentation review: walk `docs/DOC_REVIEW_CHECKLIST.md` before tagging.
+
+
+**Decision:** add `make pre-release` wrapper (ShellCheck + `make check`) instead of documenting dual commands only.

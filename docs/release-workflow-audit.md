@@ -7,3 +7,7 @@
 | release-notes.sh extract | Publish notes | Release Notes Extraction |
 
 No mismatches recorded.
+
+## Permissions review
+
+`contents: write` only on release job. No empty-notes fallback; extract failure fails the job.
