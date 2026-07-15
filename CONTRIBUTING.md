@@ -58,6 +58,16 @@ Field-change checklist (see [config-field-governance.md](docs/config-field-gover
   `RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_ACTION`.
   The first five fields are required; the last two are optional.
 
+
+## Worked example: add a safe cache target and test
+
+1. Choose a mock path under `$HOME/.cache/my-tool` in the test config.
+2. Write the config line: `safe|My Tool Cache|$HOME/.cache/my-tool|desc|0||`
+3. Extend `setup_mock_env` (or local test setup) with a dummy file in that path.
+4. Add `run_test_case "My Tool Cache Dry Run" 0 "mytool.log" --config ... --dry-run` expecting exit 0 and a log substring.
+5. Optional: add a `--force` clean case once dry-run passes.
+6. Run `make check`.
+
 ## Adding tests
 
 New behavior needs a test. Follow the existing `run_test_case` pattern in
