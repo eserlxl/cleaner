@@ -92,7 +92,7 @@ emit a machine-readable inventory instead of human-formatted output.
 .TP
 .B \-\-list\-targets
 List every target defined in the configuration file
-.RB ( NAME ", " risk ", " path )
+.RB ( NAME ", " risk ", " path ", " description )
 without analyzing disk usage or modifying anything. Read-only; requires a
 configuration file. Cannot be combined with
 .BR \-\-restore ,
@@ -310,6 +310,8 @@ values (enumerated whitelist only):
 .BR action:apt_clean
 .IP \(bu 3
 .BR action:dnf_clean
+.IP \(bu 3
+.BR action:zypper_clean
 .RE
 .SH SAFETY
 Deletions are blocked for the filesystem root, system directories

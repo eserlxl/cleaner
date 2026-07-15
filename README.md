@@ -40,8 +40,9 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   - `action:pacman_clean`: Runs `sudo pacman -Sc --noconfirm` (purges all cached packages not currently installed).
   - `action:apt_clean`: Runs `sudo apt-get clean` (clears the downloaded APT package archive cache). Skipped if apt is not present.
   - `action:dnf_clean`: Runs `sudo dnf clean all` (clears all DNF caches). Skipped if dnf is not present.
+  - `action:zypper_clean`: Runs `sudo zypper clean -a` (clears all zypper caches). Skipped if zypper is not present.
   > [!WARNING]
-  > Custom clean actions — the pacman, apt, and dnf package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion. See [action-registry-governance.md](docs/action-registry-governance.md) for adding new actions.
+  > Custom clean actions — the pacman, apt, dnf, and zypper package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion. See [action-registry-governance.md](docs/action-registry-governance.md) for adding new actions.
 
 
 ### Action cross-walk
@@ -54,6 +55,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 | `action:pacman_clean` | `sudo pacman -Sc --noconfirm` | CUSTOM_ACTION list | commented line 46 | CONFIGURATION |
 | `action:apt_clean` | `sudo apt-get clean` | CUSTOM_ACTION list | commented line 51 | CONFIGURATION |
 | `action:dnf_clean` | `sudo dnf clean all` | CUSTOM_ACTION list | commented line 52 | CONFIGURATION |
+| `action:zypper_clean` | `sudo zypper clean -a` | CUSTOM_ACTION list | commented line 53 | CONFIGURATION |
 
 ### Validation
 
@@ -100,7 +102,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > [!WARNING]
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date) and the targets each one holds — the type (`full` or `aged`) and original path of every quarantined item, so you can see what a session contains before restoring it or permanently purging it. Read-only and requires no config file.
-- **`--list-targets`**: List every target defined in the configuration file (name, risk, path) without analyzing disk usage or modifying anything. Read-only; requires a config file.
+- **`--list-targets`**: List every target defined in the configuration file (name, risk, path, description) without analyzing disk usage or modifying anything. Read-only; requires a config file.
 
   ```sh
   cleaner --list-targets --config cleaner.conf   # inventory before a selective --only-target run

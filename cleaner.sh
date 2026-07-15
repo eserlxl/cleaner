@@ -642,8 +642,8 @@ log_operation() {
   fi
 }
 
-# Print configured cleanup targets (strictly read-only): NAME, risk, and path
-# for every active config line. No disk analysis or mutation.
+# Print configured cleanup targets (strictly read-only): NAME, risk, path, and
+# description for every active config line. No disk analysis or mutation.
 list_config_targets() {
   local config_line config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
@@ -670,6 +670,7 @@ list_config_targets() {
     fi
     name=$(trim "$name")
     raw_path=$(trim "$raw_path")
+    desc=$(trim "$desc")
     if [[ -z "$name" ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
       exit 1
@@ -678,7 +679,7 @@ list_config_targets() {
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
       exit 1
     fi
-    printf '%s\t%s\t%s\n' "$name" "$risk" "$raw_path"
+    printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
   done < "$CONFIG_FILE"
 }
 
@@ -721,7 +722,7 @@ validate_config_file() {
     fi
     if [[ -n "$custom_clean_cmd" ]]; then
       case "$custom_clean_cmd" in
-        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean)
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean)
           ;;
         *)
           echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -1481,6 +1482,7 @@ action_required_binary() {
     pacman_clean) echo "pacman" ;;
     apt_clean) echo "apt-get" ;;
     dnf_clean) echo "dnf" ;;
+    zypper_clean) echo "zypper" ;;
     *) echo "" ;;
   esac
 }
@@ -1637,7 +1639,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # Validate custom clean action if provided
   if [[ -n "$custom_clean_cmd" ]]; then
     case "$custom_clean_cmd" in
-      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean)
+      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean)
         ;;
       *)
         echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -1987,6 +1989,11 @@ for i in "${!parsed_names[@]}"; do
         ;;
       action:dnf_clean)
         if sudo dnf clean all; then
+          action_success=true
+        fi
+        ;;
+      action:zypper_clean)
+        if sudo zypper clean -a; then
           action_success=true
         fi
         ;;

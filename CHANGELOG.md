@@ -33,6 +33,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   configuration file (same as `--config`). Explicit `-c/--config` overrides.
 - `--check-config` — validate the configuration file with the same
   structural checks as a cleanup run and exit without disk analysis.
+- `action:zypper_clean` — predefined action running `sudo zypper clean -a`
+  (skipped when zypper is absent), matching the apt/dnf package-cache pattern.
+- Human `--list-targets` also prints each target's `DESCRIPTION` column.
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
   enables `--allow-outside-home`. CLI flags override this variable.
 

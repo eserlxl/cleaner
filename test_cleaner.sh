@@ -92,9 +92,9 @@ exit 0
 EOF
   chmod +x "$TEST_ENV_DIR/bin/pacman"
 
-  # Cross-distro package-manager mocks (apt/apt-get/dnf), same template as above.
+  # Cross-distro package-manager mocks (apt/apt-get/dnf/zypper), same template as above.
   local _mgr
-  for _mgr in apt apt-get dnf; do
+  for _mgr in apt apt-get dnf zypper; do
     cat > "$TEST_ENV_DIR/bin/$_mgr" << EOF
 #!/usr/bin/env bash
 # Mock $_mgr command
@@ -1588,20 +1588,22 @@ if [[ -n "$(git -C "$SCRIPT_DIR" tag -l 'v9.9.*' 2>/dev/null)" ]]; then
   exit 1
 fi
 
-# 37. Test Case: apt/dnf actions invoke their exact commands (and no other manager)
+# 37. Test Case: apt/dnf/zypper actions invoke their exact commands (and no other manager)
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/aptdnf_config.conf"
 medium|APT Clean|$OUTSIDE_DIR|Mock APT cache|0||action:apt_clean
 medium|DNF Clean|$OUTSIDE_DIR|Mock DNF cache|0||action:dnf_clean
+medium|Zypper Clean|$OUTSIDE_DIR|Mock Zypper cache|0||action:zypper_clean
 EOF
 if run_test_case "Cross-Distro Actions" 0 "aptdnf.log" --config "$TEST_ENV_DIR/aptdnf_config.conf" --clean --force --allow-outside-home --risk medium; then
   if grep -q "Mock apt-get called with: clean" "$TEST_ENV_DIR/aptdnf.log" && \
      grep -q "Mock dnf called with: clean all" "$TEST_ENV_DIR/aptdnf.log" && \
+     grep -q "Mock zypper called with: clean -a" "$TEST_ENV_DIR/aptdnf.log" && \
      ! grep -q "Mock pacman called" "$TEST_ENV_DIR/aptdnf.log" && \
      ! grep -q "Mock paccache called" "$TEST_ENV_DIR/aptdnf.log"; then
-    echo -e "${GREEN}PASS: apt_clean ran 'apt-get clean' and dnf_clean ran 'dnf clean all'; no other manager was called.${NC}"
+    echo -e "${GREEN}PASS: apt/dnf/zypper actions ran their exact commands; no other manager was called.${NC}"
   else
-    echo -e "${RED}FAIL: apt/dnf actions did not invoke their exact commands.${NC}"
+    echo -e "${RED}FAIL: apt/dnf/zypper actions did not invoke their exact commands.${NC}"
     cat "$TEST_ENV_DIR/aptdnf.log"
     exit 1
   fi
@@ -1715,9 +1717,10 @@ arb_ok=true
 [[ "$(arb action:pacman_clean)" == "pacman" ]] || arb_ok=false
 [[ "$(arb action:apt_clean)" == "apt-get" ]] || arb_ok=false
 [[ "$(arb action:dnf_clean)" == "dnf" ]] || arb_ok=false
+[[ "$(arb action:zypper_clean)" == "zypper" ]] || arb_ok=false
 [[ -z "$(arb action:bogus)" ]] || arb_ok=false
 if [[ "$arb_ok" == true ]]; then
-  echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf map to their real binaries.${NC}"
+  echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf/zypper map to their real binaries.${NC}"
 else
   echo -e "${RED}FAIL: action_required_binary returned an unexpected binary.${NC}"
   exit 1
@@ -2629,11 +2632,12 @@ echo -e "\n${BOLD}Test Case: List Targets Read-Only${NC}"
 if run_test_case "List Targets" 0 "list_targets.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets; then
   if grep -q $'NPM Cache\tsafe\t' "$TEST_ENV_DIR/list_targets.log" \
+     && grep -q $'Mock NPM cache' "$TEST_ENV_DIR/list_targets.log" \
      && ! grep -q 'Total potential space savings' "$TEST_ENV_DIR/list_targets.log" \
      && ! grep -q 'Analyzing targets' "$TEST_ENV_DIR/list_targets.log"; then
     echo -e "${GREEN}PASS: --list-targets prints configured targets without dry-run analysis.${NC}"
   else
-    echo -e "${RED}FAIL: --list-targets output missing targets or ran analysis.${NC}"
+    echo -e "${RED}FAIL: --list-targets output missing targets/description or ran analysis.${NC}"
     cat "$TEST_ENV_DIR/list_targets.log"
     exit 1
   fi
