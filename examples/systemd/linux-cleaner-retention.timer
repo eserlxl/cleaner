@@ -2,7 +2,8 @@
 Description=Weekly linux-cleaner retention
 
 [Timer]
-OnCalendar=weekly
+# Matches RUNBOOK cron: 0 4 * * 0 (Sunday 04:00)
+OnCalendar=Sun *-*-* 04:00:00
 Persistent=true
 Unit=linux-cleaner-retention.service
 
