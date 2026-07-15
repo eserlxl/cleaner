@@ -82,3 +82,5 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 6.1 — Test contract cross-reference table (q -->
 
 <!-- no-op stamp: Phase 6.2 — Older-than semantics and mtime documen -->
+
+<!-- no-op stamp: Phase 6.2 — Exit-code automation matrix (qb) -->
