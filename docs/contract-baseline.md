@@ -40,3 +40,7 @@ No prose contradictions were listed in the findings above; no README, `cleaner.1
 <!-- no-op stamp: Phase 2.1 — Commit coverage matrix and link from C -->
 
 <!-- no-op stamp: Phase 2.2 — Publish drift guard catalog (qb) -->
+
+## F2.2-02
+
+`Quarantine for Purge` passes on HEAD; no test repair required.
