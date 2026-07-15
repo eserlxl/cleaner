@@ -3,5 +3,5 @@ Description=Linux Cleaner quarantine retention purge
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/cleaner --purge-sessions older-than:30 --force
-EnvironmentFile=-%h/.config/linux-cleaner/env
+# Tune older-than:DAYS here (RUNBOOK default 30; aggressive tier: 7).
+ExecStart=/usr/bin/env cleaner --purge-sessions older-than:30 --force

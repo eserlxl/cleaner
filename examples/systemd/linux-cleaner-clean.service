@@ -3,5 +3,6 @@ Description=Linux Cleaner quarantine cleanup
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/cleaner --clean --trash --force
+# Adjust path if cleaner is not on PATH (default install: /usr/local/bin; Arch: /usr/bin).
+ExecStart=/usr/bin/env cleaner --clean --trash --force
 EnvironmentFile=-%h/.config/linux-cleaner/env
