@@ -166,6 +166,14 @@ After installation, `man cleaner` shows the manual page.
 
 The tool targets Linux with a **GNU userland**. It relies on GNU coreutils/findutils behavior (`du -sb`, `stat -c`, `find -print0`/`-quit`, and GNU `realpath`); on a non-GNU userland it **refuses `--clean`/`--trash`** with a clear message (a `--dry-run` preview is still best-effort).
 
+| Requirement | Source | Notes |
+|-------------|--------|-------|
+| `bash` | `PKGBUILD depends` | Script interpreter |
+| `findutils` | `PKGBUILD depends` | Age filter / discovery |
+| `coreutils` | `PKGBUILD depends` | `du`, `stat`, `rm`, etc. |
+| `pacman-contrib` | `PKGBUILD optdepends` | Required for `paccache_keep*` actions (`paccache` binary) |
+| `sudo` | runtime | Required for predefined `action:*` package-cache commands |
+
 Predefined package-cache actions are supported for three package managers:
 
 - **pacman** — `action:paccache_keep1/2/3`, `action:pacman_clean`
