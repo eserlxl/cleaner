@@ -348,6 +348,58 @@ else
   exit 1
 fi
 
+# 6b. Test Case: same-second trash runs allocate distinct, chronologically sortable sessions
+setup_mock_env
+cat << 'EOF' > "$TEST_ENV_DIR/bin/date"
+#!/usr/bin/env bash
+printf '%s\n' '2026-09-05_12-00-00'
+EOF
+chmod +x "$TEST_ENV_DIR/bin/date"
+cat << EOF > "$TEST_ENV_DIR/session_collision.conf"
+safe|Collision Cache|\$HOME/.cache/session_collision|Fixed-date collision target|0||
+EOF
+mkdir -p "$MOCK_HOME/.cache/session_collision"
+echo first > "$MOCK_HOME/.cache/session_collision/payload"
+if ! run_test_case "Quarantine Session Collision First Run" 0 "session_collision_first.log" \
+     --config "$TEST_ENV_DIR/session_collision.conf" --trash --force; then
+  exit 1
+fi
+
+collision_base="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-09-05_12-00-00"
+for collision_n in {1..10}; do
+  printf -v collision_suffix '%06d' "$collision_n"
+  mkdir -p "${collision_base}_${collision_suffix}"
+  echo sentinel > "${collision_base}_${collision_suffix}/sentinel"
+done
+
+mkdir -p "$MOCK_HOME/.cache/session_collision"
+echo second > "$MOCK_HOME/.cache/session_collision/payload"
+if ! run_test_case "Quarantine Session Collision Second Run" 0 "session_collision_second.log" \
+     --config "$TEST_ENV_DIR/session_collision.conf" --trash --force; then
+  exit 1
+fi
+
+collision_latest="${collision_base}_000011"
+collision_session_count=$(find "$(dirname "$collision_base")" -mindepth 1 -maxdepth 1 -type d | wc -l)
+if [[ "$collision_session_count" -ne 12 ]] \
+   || ! grep -qx first "$collision_base/0_Collision_Cache/payload" \
+   || ! grep -qx second "$collision_latest/0_Collision_Cache/payload"; then
+  echo -e "${RED}FAIL: same-second trash runs reused a session or produced the wrong payload layout.${NC}"
+  find "$(dirname "$collision_base")" -mindepth 1 -printf '%P %y\n' | sort
+  exit 1
+fi
+
+if run_test_case "Restore Latest Collision-Suffixed Session" 0 "session_collision_restore.log" --restore latest \
+   && grep -qx second "$MOCK_HOME/.cache/session_collision/payload" \
+   && [[ -f "$collision_base/0_Collision_Cache/payload" ]] \
+   && [[ ! -d "$collision_latest" ]]; then
+  echo -e "${GREEN}PASS: same-second trash runs use distinct padded sessions and latest restores the newest.${NC}"
+else
+  echo -e "${RED}FAIL: padded collision sessions did not preserve latest restore ordering.${NC}"
+  cat "$TEST_ENV_DIR/session_collision_restore.log"
+  exit 1
+fi
+
 # 7. Test Case: Unknown Risk Levels error handling
 setup_mock_env
 # A. CLI option risk level typo
