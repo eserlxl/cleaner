@@ -2199,6 +2199,81 @@ else
   exit 1
 fi
 
+# A move can succeed immediately before its quarantine.meta append fails. The
+# cleanup must report that failure, and restoring a recorded sibling must not
+# retire the session around the resulting unrecorded payload.
+setup_mock_env
+qmeta_recorded="$MOCK_HOME/.cache/qmeta_recorded"
+qmeta_unrecorded="$MOCK_HOME/.cache/qmeta_unrecorded"
+mkdir -p "$qmeta_recorded" "$qmeta_unrecorded"
+echo "recorded payload" > "$qmeta_recorded/data.txt"
+echo "unrecorded payload" > "$qmeta_unrecorded/data.txt"
+cat << 'EOF' > "$TEST_ENV_DIR/qmeta_fail.conf"
+safe|Recorded Sibling|$HOME/.cache/qmeta_recorded|Target recorded before metadata failure|0||
+safe|Unrecorded Empty|$HOME/.cache/qmeta_unrecorded|Empty target whose metadata append fails|0||
+EOF
+# Pass both moves through, but make metadata unwritable only after the second
+# target has moved. Permissions are restored before the restore probe.
+cat << 'EOF' > "$TEST_ENV_DIR/bin/mv"
+#!/usr/bin/env bash
+real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
+if ! "$real_mv" "$@"; then
+  exit 1
+fi
+case "${1:-}" in
+  *qmeta_unrecorded*) chmod u-w "$(dirname "$2")/quarantine.meta" ;;
+esac
+EOF
+chmod +x "$TEST_ENV_DIR/bin/mv"
+
+qmeta_failure_reported=true
+if ! run_test_case "Quarantine Metadata Write Failure" 1 "qmeta_fail.log" \
+     --config "$TEST_ENV_DIR/qmeta_fail.conf" --trash --force; then
+  qmeta_failure_reported=false
+fi
+rm -f "$TEST_ENV_DIR/bin/mv"
+qmeta_file=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
+qmeta_session=$(dirname "$qmeta_file")
+chmod u+w "$qmeta_file"
+cp "$qmeta_file" "$TEST_ENV_DIR/qmeta.before"
+
+qmeta_failure_state=true
+if [[ ! -f "$qmeta_file" ]] \
+   || ! grep -qF "|$qmeta_recorded|" "$qmeta_file" \
+   || grep -qF "|$qmeta_unrecorded|" "$qmeta_file" \
+   || [[ ! -f "$qmeta_session/1_Unrecorded_Empty/data.txt" ]] \
+   || [[ -e "$qmeta_unrecorded" ]] \
+   || ! grep -q "Failed to move some files" "$TEST_ENV_DIR/qmeta_fail.log"; then
+  qmeta_failure_state=false
+fi
+
+# Exercise both shell-glob blind spots explicitly: an empty unrecorded target
+# from the failed append and a hidden unrecorded entry in the same session.
+mv "$qmeta_session/1_Unrecorded_Empty/data.txt" "$qmeta_session/.hidden-unrecorded"
+qmeta_restore_refused=true
+if ! run_test_case "Restore Preserves Unrecorded Quarantine Payload" 1 "qmeta_restore.log" \
+     --restore latest; then
+  qmeta_restore_refused=false
+fi
+
+if [[ "$qmeta_failure_reported" == true && "$qmeta_failure_state" == true \
+      && "$qmeta_restore_refused" == true ]] \
+   && [[ -f "$qmeta_recorded/data.txt" ]] \
+   && grep -qx "recorded payload" "$qmeta_recorded/data.txt" \
+   && [[ -d "$qmeta_session/1_Unrecorded_Empty" ]] \
+   && [[ -f "$qmeta_session/.hidden-unrecorded" ]] \
+   && grep -qx "unrecorded payload" "$qmeta_session/.hidden-unrecorded" \
+   && cmp -s "$TEST_ENV_DIR/qmeta.before" "$qmeta_file" \
+   && grep -qi "unrecorded quarantine payload" "$TEST_ENV_DIR/qmeta_restore.log" \
+   && ! grep -q "Restoration complete" "$TEST_ENV_DIR/qmeta_restore.log"; then
+  echo -e "${GREEN}PASS: metadata write failure was reported and unrecorded payload blocked session retirement.${NC}"
+else
+  echo -e "${RED}FAIL: metadata failure or restore retirement lost its quarantine recovery invariant.${NC}"
+  cat "$TEST_ENV_DIR/qmeta_fail.log"
+  cat "$TEST_ENV_DIR/qmeta_restore.log"
+  exit 1
+fi
+
 # 49. Test Case: both installers ship the same tree under DESTDIR, and uninstall
 # removes what it shipped while preserving the system config. install.sh and the
 # Makefile duplicate the layout independently, so nothing else catches them drifting.

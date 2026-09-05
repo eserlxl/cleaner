@@ -1010,7 +1010,7 @@ quarantine_move_full() {
   fi
 
   if [[ "$moved" = true ]]; then
-    echo "full|$rel|$src|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
+    echo "full|$rel|$src|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta" || ok=false
   fi
   [[ "$ok" = true ]]
 }
@@ -1214,6 +1214,9 @@ restore_quarantine() {
       overall_success=false
     else
       restored_rels+=("$rel_path")
+      if [[ "$type" == "aged" ]]; then
+        find "$src_path" -depth -type d -empty -delete 2>/dev/null || true
+      fi
     fi
   done < "$meta_file"
 
@@ -1244,10 +1247,7 @@ restore_quarantine() {
     done < "$meta_file"
 
     if [[ ${#retained[@]} -eq 0 ]]; then
-      if [[ "$overall_success" == true ]]; then
-        rm -rf "$restore_dir"
-        rmdir "$quarantine_base" 2>/dev/null || true
-      else
+      if [[ "$overall_success" != true ]]; then
         : > "$meta_file"
       fi
     else
@@ -1260,14 +1260,26 @@ restore_quarantine() {
     exit 1
   fi
 
-  echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
-
-  if [[ -z "${RESTORE_ONLY:-}" ]]; then
+  # A complete restore may retire the session only when every payload entry was
+  # represented by metadata. This catches a move whose post-move metadata write
+  # failed, including hidden entries and empty top-level target directories.
+  if [[ -z "${RESTORE_ONLY:-}" || ${#retained[@]} -eq 0 ]]; then
+    local remaining_path=""
+    if ! remaining_path=$(find "$restore_dir" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -print -quit 2>/dev/null); then
+      echo -e "${RED}Error: Unable to verify quarantine session contents. The session and metadata have been kept for recovery at '$restore_dir'.${NC}" >&2
+      exit 1
+    fi
+    if [[ -n "$remaining_path" ]]; then
+      echo -e "${RED}Error: Unrecorded quarantine payload remains at '$remaining_path'. The session and metadata have been kept for manual recovery.${NC}" >&2
+      exit 1
+    fi
     rm -rf "$restore_dir"
     rmdir "$quarantine_base" 2>/dev/null || true
+    echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
     return 0
   fi
 
+  echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
   if [[ ${#retained[@]} -gt 0 ]]; then
     echo -e "Session ${YELLOW}$(basename "$restore_dir")${NC} kept: ${#retained[@]} target(s) still quarantined."
   fi
