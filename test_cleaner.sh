@@ -1808,18 +1808,39 @@ fi
 
 # 40. Test Case: trash-mode predefined action shows the irreversibility warning
 setup_mock_env
+trash_action_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+trash_action_prior="$trash_action_qbase/2020-01-01_00-00-00"
+trash_action_restore="$MOCK_HOME/.cache/restored_action_prior"
+mkdir -p "$trash_action_prior/0_Action_Prior"
+echo "prior payload" > "$trash_action_prior/0_Action_Prior/payload"
+printf 'full|0_Action_Prior|%s|false|%s|%s\n' \
+  "$trash_action_restore" "$(id -u)" "$(id -g)" > "$trash_action_prior/quarantine.meta"
 cat << EOF > "$TEST_ENV_DIR/trash_action_config.conf"
 medium|Paccache Trash|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
 EOF
 if run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV_DIR/trash_action_config.conf" --trash --force --allow-outside-home --risk medium; then
-  if grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/trash_action.log"; then
-    echo -e "${GREEN}PASS: trash-mode predefined action logged the irreversibility warning.${NC}"
+  trash_action_session_count=$(find "$trash_action_qbase" -mindepth 1 -maxdepth 1 -type d | wc -l)
+  if grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/trash_action.log" \
+     && grep -q "Mock paccache called with: -rk1" "$TEST_ENV_DIR/trash_action.log" \
+     && [[ "$trash_action_session_count" -eq 1 ]] \
+     && [[ -d "$trash_action_prior" ]]; then
+    echo -e "${GREEN}PASS: trash-mode predefined action used the mock command, warned, and created no empty session.${NC}"
   else
-    echo -e "${RED}FAIL: irreversibility warning not found for a trash-mode action.${NC}"
+    echo -e "${RED}FAIL: trash-mode action did not use the mock, warn, or preserve the sole prior session.${NC}"
     cat "$TEST_ENV_DIR/trash_action.log"
     exit 1
   fi
 else
+  exit 1
+fi
+
+if run_test_case "Restore Prior Session After Trash Action" 0 "trash_action_restore.log" --restore latest \
+   && grep -qx "prior payload" "$trash_action_restore/payload" \
+   && [[ ! -d "$trash_action_prior" ]]; then
+  echo -e "${GREEN}PASS: action-only trash run left the prior latest session restorable.${NC}"
+else
+  echo -e "${RED}FAIL: action-only trash run hid the prior restorable session.${NC}"
+  cat "$TEST_ENV_DIR/trash_action_restore.log"
   exit 1
 fi
 

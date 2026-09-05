@@ -1901,32 +1901,7 @@ fi
 status_echo "${BOLD}Starting cleanup...${NC}"
 total_deleted_bytes=0
 
-# Create a quarantine timestamp directory if in trash mode
 QUARANTINE_DIR=""
-if [[ "$TRASH_MODE" = true && "$total_reclaimable_bytes" -gt 0 ]]; then
-  time_stamp=$(date +%Y-%m-%d_%H-%M-%S)
-  quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
-  mkdir -p "$quarantine_base"
-  session_suffix=0
-  while true; do
-    if [[ "$session_suffix" -eq 0 ]]; then
-      QUARANTINE_DIR="$quarantine_base/$time_stamp"
-    else
-      printf -v session_suffix_text '%06d' "$session_suffix"
-      QUARANTINE_DIR="$quarantine_base/${time_stamp}_${session_suffix_text}"
-    fi
-    if mkdir "$QUARANTINE_DIR" 2>/dev/null; then
-      break
-    fi
-    if [[ -e "$QUARANTINE_DIR" || -L "$QUARANTINE_DIR" ]]; then
-      session_suffix=$((session_suffix + 1))
-      continue
-    fi
-    echo -e "${RED}Error: Failed to create quarantine session '$QUARANTINE_DIR'.${NC}" >&2
-    exit 1
-  done
-  status_echo "Quarantine directory: ${YELLOW}$QUARANTINE_DIR${NC}"
-fi
 
 for i in "${!parsed_names[@]}"; do
   name="${parsed_names[$i]}"
@@ -2048,6 +2023,33 @@ for i in "${!parsed_names[@]}"; do
   fi
 
   if [[ "$TRASH_MODE" = true ]]; then
+    # Allocate one session lazily, after confirmation and only for a target
+    # that will actually be moved to quarantine.
+    if [[ -z "$QUARANTINE_DIR" ]]; then
+      time_stamp=$(date +%Y-%m-%d_%H-%M-%S)
+      quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+      mkdir -p "$quarantine_base"
+      session_suffix=0
+      while true; do
+        if [[ "$session_suffix" -eq 0 ]]; then
+          QUARANTINE_DIR="$quarantine_base/$time_stamp"
+        else
+          printf -v session_suffix_text '%06d' "$session_suffix"
+          QUARANTINE_DIR="$quarantine_base/${time_stamp}_${session_suffix_text}"
+        fi
+        if mkdir "$QUARANTINE_DIR" 2>/dev/null; then
+          break
+        fi
+        if [[ -e "$QUARANTINE_DIR" || -L "$QUARANTINE_DIR" ]]; then
+          session_suffix=$((session_suffix + 1))
+          continue
+        fi
+        echo -e "${RED}Error: Failed to create quarantine session '$QUARANTINE_DIR'.${NC}" >&2
+        exit 1
+      done
+      status_echo "Quarantine directory: ${YELLOW}$QUARANTINE_DIR${NC}"
+    fi
+
     status_echo "  Moving ${YELLOW}$name${NC} to quarantine..."
     
     safe_name=$(printf '%s' "$name" | tr '/[:space:]' '__')
