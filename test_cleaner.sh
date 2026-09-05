@@ -2866,6 +2866,48 @@ echo "quarantined" > "$json_qsession/payload"
 printf 'full|payload|%s|false|%s|%s\n' \
   "$json_restore_dest" "$(id -u)" "$(id -g)" > "$json_qsession/quarantine.meta"
 
+if run_test_case "Dry Run With Restore Rejected" 1 "dry_run_restore.log" \
+     --restore 2020-01-01_00-00-00 --dry-run; then
+  if grep -q "dry-run cannot be combined" "$TEST_ENV_DIR/dry_run_restore.log" \
+     && [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
+    echo -e "${GREEN}PASS: explicit --dry-run blocked restore before moving quarantined data.${NC}"
+  else
+    echo -e "${RED}FAIL: explicit --dry-run with restore mutated data or returned the wrong error.${NC}"
+    cat "$TEST_ENV_DIR/dry_run_restore.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Dry Run With Purge Rejected" 1 "dry_run_purge.log" \
+     --purge-sessions 2020-01-01_00-00-00 --force --dry-run; then
+  if grep -q "dry-run cannot be combined" "$TEST_ENV_DIR/dry_run_purge.log" \
+     && [[ -d "$json_qsession" ]]; then
+    echo -e "${GREEN}PASS: explicit --dry-run blocked purge before deleting the session.${NC}"
+  else
+    echo -e "${RED}FAIL: explicit --dry-run with purge mutated data or returned the wrong error.${NC}"
+    cat "$TEST_ENV_DIR/dry_run_purge.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Dry Run Before Restore Rejected" 1 "dry_run_before_restore.log" \
+     --dry-run --restore 2020-01-01_00-00-00 \
+   && run_test_case "Dry Run Before Purge Rejected" 1 "dry_run_before_purge.log" \
+     --force --dry-run --purge-sessions 2020-01-01_00-00-00; then
+  if [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
+    echo -e "${GREEN}PASS: explicit --dry-run blocked restore and purge in either mode-argument position.${NC}"
+  else
+    echo -e "${RED}FAIL: reverse-position --dry-run restore/purge mutated quarantined data.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 if run_test_case "JSON With Restore Rejected" 1 "json_restore.log" \
      --restore 2020-01-01_00-00-00 --json; then
   if grep -q "json is valid only" "$TEST_ENV_DIR/json_restore.log" \
@@ -2901,6 +2943,19 @@ if run_test_case "JSON With Check Config Rejected" 1 "json_check_config.log" \
   else
     echo -e "${RED}FAIL: --check-config with --json returned the wrong output.${NC}"
     cat "$TEST_ENV_DIR/json_check_config.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Force Overrides Earlier Dry Run for Purge" 0 "dry_run_force_purge.log" \
+     --dry-run --purge-sessions 2020-01-01_00-00-00 --force; then
+  if [[ ! -d "$json_qsession" ]]; then
+    echo -e "${GREEN}PASS: a later --force preserves cleanup-flag precedence for purge.${NC}"
+  else
+    echo -e "${RED}FAIL: a later --force did not override the earlier --dry-run for purge.${NC}"
+    cat "$TEST_ENV_DIR/dry_run_force_purge.log"
     exit 1
   fi
 else

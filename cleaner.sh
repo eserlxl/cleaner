@@ -67,6 +67,7 @@ EOF
 
 # Default flags
 DRY_RUN=true
+DRY_RUN_EXPLICIT=false
 INTERACTIVE=false
 FORCE=false
 YES_DANGER=false
@@ -151,20 +152,24 @@ while [[ $# -gt 0 ]]; do
       ;;
     -d|--dry-run)
       DRY_RUN=true
+      DRY_RUN_EXPLICIT=true
       shift
       ;;
     --clean)
       DRY_RUN=false
+      DRY_RUN_EXPLICIT=false
       shift
       ;;
     -i|--interactive)
       INTERACTIVE=true
       DRY_RUN=false
+      DRY_RUN_EXPLICIT=false
       shift
       ;;
     -f|--force)
       FORCE=true
       DRY_RUN=false
+      DRY_RUN_EXPLICIT=false
       shift
       ;;
     -q|--quiet)
@@ -293,6 +298,14 @@ if [[ -z "${HOME:-}" ]]; then
   exit 1
 fi
 USER="${USER:-$(id -un 2>/dev/null || true)}"
+
+# Restore and purge are mutating modes that bypass the cleanup dry-run exit.
+# Distinguish an explicit active --dry-run from the default DRY_RUN=true so
+# ordinary restore/purge requests keep their established behavior.
+if [[ "$DRY_RUN_EXPLICIT" == true && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" ) ]]; then
+  echo -e "${RED}Error: --dry-run cannot be combined with --restore or --purge-sessions.${NC}" >&2
+  exit 1
+fi
 
 # --only only means anything as a filter on --restore; silently ignoring it would
 # let a user believe a cleanup or purge was narrowed when it was not.
