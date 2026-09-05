@@ -1312,6 +1312,13 @@ check_path_safety() {
   return 0
 }
 
+# Treat validated digit-only ages as decimal strings. Bash arithmetic parses a
+# leading zero as octal and can overflow on long values; only zero/nonzero is
+# needed to choose the age-filter path.
+has_positive_age() {
+  [[ "$1" =~ [1-9] ]]
+}
+
 # Check if there are files that match the age filter criteria
 has_matching_files() {
   local target_path="$1"
@@ -1330,7 +1337,7 @@ has_matching_files() {
     fi
   fi
 
-  if [[ "$age_days" -le 0 ]]; then
+  if ! has_positive_age "$age_days"; then
     if [[ "$use_sudo" = true ]]; then
       if sudo test -e "$target_path" || sudo test -L "$target_path"; then
         return 0
@@ -1406,12 +1413,12 @@ get_size_bytes() {
     # If EXCLUDE_PATTERNS is set, we must use find even if age_days is 0!
     if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
       local find_mtime_args=()
-      if [[ "$age_days" -gt 0 ]]; then
+      if has_positive_age "$age_days"; then
         find_mtime_args+=("-mtime" "+$age_days")
       fi
       $cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
     else
-      if [[ "$age_days" -gt 0 ]]; then
+      if has_positive_age "$age_days"; then
         $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
       else
         $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
@@ -1419,7 +1426,7 @@ get_size_bytes() {
     fi
   else
     # If target is a file or symlink, check if it's older than age_days
-    if [[ "$age_days" -gt 0 ]]; then
+    if has_positive_age "$age_days"; then
       if [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]]; then
         $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
       else
@@ -1770,7 +1777,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
             readable_size=$(format_bytes "$size_bytes")
             
             should_clean=false
-            if [[ "$min_age" -gt 0 ]]; then
+            if has_positive_age "$min_age"; then
               if has_matching_files "$path" "$min_age" "$use_sudo"; then
                 should_clean=true
               fi
@@ -1797,7 +1804,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
                 status_echo "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
               else
                 target_status=found
-                if [[ "$min_age" -gt 0 ]]; then
+                if has_positive_age "$min_age"; then
                   status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
                 else
                   status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc"
@@ -1805,7 +1812,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               fi
             else
               target_status=clean
-              if [[ "$min_age" -gt 0 ]]; then
+              if has_positive_age "$min_age"; then
                 status_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
               else
                 status_echo "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
@@ -1942,7 +1949,7 @@ for i in "${!parsed_names[@]}"; do
   # Interactive mode confirmation (ask for each target)
   if [[ "$INTERACTIVE" = true && "$proceed_all" = false && "$danger_prompted" != true ]]; then
     readable_size=$(format_bytes "$size")
-    if [[ "$age" -gt 0 ]]; then
+    if has_positive_age "$age"; then
       echo -n -e "Clean old files (> $age days) in '$name' ($readable_size) at '$path'? [y/N]: "
     else
       echo -n -e "Clean target '$name' ($readable_size) at '$path'? [y/N]: "
@@ -2080,14 +2087,14 @@ for i in "${!parsed_names[@]}"; do
       owner_info=$(stat -c '%u|%g' "$path" 2>/dev/null || echo "$(id -u)|$(id -g)")
     fi
 
-    if [[ "$age" -gt 0 || -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    if has_positive_age "$age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
       # File-by-file quarantine
       if [[ "$is_dir" = true && "$is_link" = false ]]; then
         # Record aged quarantine metadata
         echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
         
         find_mtime_args=()
-        if [[ "$age" -gt 0 ]]; then
+        if has_positive_age "$age"; then
           find_mtime_args+=("-mtime" "+$age")
         fi
         
@@ -2148,10 +2155,10 @@ for i in "${!parsed_names[@]}"; do
       if [[ -L "$path" ]]; then is_link=true; fi
     fi
 
-    if [[ "$age" -gt 0 || -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    if has_positive_age "$age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
       if [[ "$is_dir" = true && "$is_link" = false ]]; then
         find_mtime_args=()
-        if [[ "$age" -gt 0 ]]; then
+        if has_positive_age "$age"; then
           find_mtime_args+=("-mtime" "+$age")
         fi
         

@@ -316,6 +316,79 @@ else
   exit 1
 fi
 
+# Digit-only ages are decimal configuration values, not Bash arithmetic literals.
+assert_zero_padded_age_filter() {
+  local mode="$1" label="$2"
+  local target old_file recent_file quarantined_old=""
+  local -a mode_args=()
+
+  setup_mock_env
+  target="$MOCK_HOME/.cache/zero_padded_age"
+  old_file="$target/old.txt"
+  recent_file="$target/recent.txt"
+  mkdir -p "$target"
+  echo old > "$old_file"
+  echo recent > "$recent_file"
+  touch -d "10 days ago" "$old_file"
+  touch -d "2 days ago" "$recent_file"
+  printf 'safe|Zero Padded Age|%s|Decimal age filter|08||\n' "$target" > "$TEST_ENV_DIR/zero_padded_age.conf"
+  [[ "$mode" == trash ]] && mode_args+=(--trash)
+
+  if run_test_case "$label" 0 "zero_padded_${mode}.log" \
+       --config "$TEST_ENV_DIR/zero_padded_age.conf" --force "${mode_args[@]}"; then
+    if [[ "$mode" == trash ]]; then
+      quarantined_old=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name old.txt -print -quit)
+    fi
+    if [[ ! -e "$old_file" && -f "$recent_file" ]] \
+       && [[ "$mode" != trash || -n "$quarantined_old" ]] \
+       && ! grep -q "value too great for base" "$TEST_ENV_DIR/zero_padded_${mode}.log"; then
+      echo -e "${GREEN}PASS: $label treated 08 as an eight-day filter.${NC}"
+      return 0
+    fi
+  fi
+
+  echo -e "${RED}FAIL: $label did not preserve only the recent file.${NC}"
+  cat "$TEST_ENV_DIR/zero_padded_${mode}.log"
+  return 1
+}
+
+assert_zero_padded_age_filter permanent "Zero-Padded Age Permanent" || exit 1
+assert_zero_padded_age_filter trash "Zero-Padded Age Trash" || exit 1
+
+setup_mock_env
+zero_age_target="$MOCK_HOME/.cache/all_zero_age"
+mkdir -p "$zero_age_target"
+echo payload > "$zero_age_target/payload"
+printf 'safe|All Zero Age|%s|Whole target|000||\n' "$zero_age_target" > "$TEST_ENV_DIR/all_zero_age.conf"
+if run_test_case "All-Zero Age Whole Target" 0 "all_zero_age.log" \
+     --config "$TEST_ENV_DIR/all_zero_age.conf" --force \
+   && [[ ! -e "$zero_age_target" ]]; then
+  echo -e "${GREEN}PASS: an all-zero minimum age retained whole-target semantics.${NC}"
+else
+  echo -e "${RED}FAIL: an all-zero minimum age no longer selected the whole target.${NC}"
+  cat "$TEST_ENV_DIR/all_zero_age.log"
+  exit 1
+fi
+
+setup_mock_env
+huge_age_target="$MOCK_HOME/.cache/huge_age"
+mkdir -p "$huge_age_target"
+echo recent > "$huge_age_target/recent.txt"
+printf 'safe|Huge Age|%s|Overflow guard|999999999999999999999999999999999999||\n' \
+  "$huge_age_target" > "$TEST_ENV_DIR/huge_age.conf"
+huge_age_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/huge_age.conf" --force < /dev/null \
+  > "$TEST_ENV_DIR/huge_age.log" 2>&1 || huge_age_ec=$?
+if [[ -f "$huge_age_target/recent.txt" ]] \
+   && ! grep -Eq "value too great for base|invalid arithmetic" "$TEST_ENV_DIR/huge_age.log"; then
+  echo -e "${GREEN}PASS: an oversized nonzero age did not overflow into whole-target cleanup (exit $huge_age_ec).${NC}"
+else
+  echo -e "${RED}FAIL: an oversized age triggered arithmetic fallback or removed the target.${NC}"
+  cat "$TEST_ENV_DIR/huge_age.log"
+  exit 1
+fi
+
 # 6. Test Case: Trash Mode (Quarantine)
 setup_mock_env
 if run_test_case "Trash Quarantine Mode" 0 "trash_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
