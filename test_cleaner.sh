@@ -2682,6 +2682,58 @@ else
   exit 1
 fi
 
+# Restore, purge, and check-config are not JSON output modes. They leave the
+# default DRY_RUN flag true, so the partner guard must reject them explicitly
+# before restore/purge can mutate quarantine state.
+setup_mock_env
+json_qsession="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+json_restore_dest="$MOCK_HOME/.cache/json-restore-dest"
+mkdir -p "$json_qsession"
+echo "quarantined" > "$json_qsession/payload"
+printf 'full|payload|%s|false|%s|%s\n' \
+  "$json_restore_dest" "$(id -u)" "$(id -g)" > "$json_qsession/quarantine.meta"
+
+if run_test_case "JSON With Restore Rejected" 1 "json_restore.log" \
+     --restore 2020-01-01_00-00-00 --json; then
+  if grep -q "json is valid only" "$TEST_ENV_DIR/json_restore.log" \
+     && [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
+    echo -e "${GREEN}PASS: --restore with --json was rejected before moving quarantined data.${NC}"
+  else
+    echo -e "${RED}FAIL: --restore with --json mutated data or returned the wrong error.${NC}"
+    cat "$TEST_ENV_DIR/json_restore.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if LINUX_CLEANER_JSON=1 run_test_case "JSON Env With Purge Rejected" 1 "json_purge.log" \
+     --purge-sessions 2020-01-01_00-00-00 --force; then
+  if grep -q "json is valid only" "$TEST_ENV_DIR/json_purge.log" \
+     && [[ -d "$json_qsession" ]]; then
+    echo -e "${GREEN}PASS: LINUX_CLEANER_JSON blocked purge before deleting the session.${NC}"
+  else
+    echo -e "${RED}FAIL: LINUX_CLEANER_JSON did not block purge before mutation.${NC}"
+    cat "$TEST_ENV_DIR/json_purge.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "JSON With Check Config Rejected" 1 "json_check_config.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --check-config --json; then
+  if grep -q "json is valid only" "$TEST_ENV_DIR/json_check_config.log"; then
+    echo -e "${GREEN}PASS: --check-config with --json was rejected instead of printing non-JSON output.${NC}"
+  else
+    echo -e "${RED}FAIL: --check-config with --json returned the wrong output.${NC}"
+    cat "$TEST_ENV_DIR/json_check_config.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: Check Config Valid${NC}"
 if run_test_case "Check Config Valid" 0 "check_config_ok.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --check-config; then

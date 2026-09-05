@@ -331,7 +331,10 @@ if [[ -n "$EXCLUDE_TARGET" && "$CHECK_CONFIG" == true ]]; then
   exit 1
 fi
 
-if [[ "$JSON_OUTPUT" == true && "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true ]]; then
+if [[ "$JSON_OUTPUT" == true && ( \
+      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || \
+      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true ) \
+    ) ]]; then
   echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, or --list-sessions.${NC}" >&2
   exit 1
 fi
