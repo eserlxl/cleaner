@@ -1264,8 +1264,14 @@ check_path_safety() {
     return 3
   fi
   
-  local normalized
+  local normalized normalized_home
   normalized=$(canonicalize_physical "$target_path")
+  normalized_home=$(canonicalize_physical "$HOME")
+
+  # Never clean HOME itself, including trailing-slash and dot-dot aliases.
+  if [[ "$normalized" == "$normalized_home" ]]; then
+    return 1
+  fi
   
   # Block critical root and system directories
   if [[ "$normalized" =~ ^/+$ ]] || \
@@ -1285,7 +1291,7 @@ check_path_safety() {
   fi
   
   # Warn/error if outside HOME directory
-  if [[ "$normalized" != "$HOME" && "$normalized" != "$HOME"/* ]]; then
+  if [[ "$normalized" != "$normalized_home"/* ]]; then
     return 2
   fi
   

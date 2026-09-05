@@ -836,6 +836,32 @@ else
   exit 1
 fi
 
+# Test Case: HOME itself, including aliases, is protected even with bypass flags.
+setup_mock_env
+home_sentinel="$MOCK_HOME/home-sentinel.txt"
+echo "must survive" > "$home_sentinel"
+cat << EOF > "$TEST_ENV_DIR/home_root.conf"
+safe|HOME Root|\$HOME|Mock HOME root|0||
+safe|HOME Slash|\$HOME/|Mock HOME trailing slash|0||
+safe|HOME Dotdot|\$HOME/.cache/..|Mock HOME dot-dot alias|0||
+safe|NPM Descendant|\$HOME/.npm/_cacache|Allowed HOME descendant|0||
+EOF
+if run_test_case "HOME Root Protected from Bypass Flags" 0 "home_root.log" --force --allow-outside-home --dry-run --config "$TEST_ENV_DIR/home_root.conf"; then
+  if grep -q "UNSAFE.*HOME Root" "$TEST_ENV_DIR/home_root.log" && \
+     grep -q "UNSAFE.*HOME Slash" "$TEST_ENV_DIR/home_root.log" && \
+     grep -q "UNSAFE.*HOME Dotdot" "$TEST_ENV_DIR/home_root.log" && \
+     grep -q "FOUND.*NPM Descendant" "$TEST_ENV_DIR/home_root.log" && \
+     [[ -f "$home_sentinel" ]]; then
+    echo -e "${GREEN}PASS: HOME root aliases stay protected while descendants remain allowed, even with bypass flags.${NC}"
+  else
+    echo -e "${RED}FAIL: HOME root protection, alias handling, or descendant allowance regressed.${NC}"
+    cat "$TEST_ENV_DIR/home_root.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 20. Test Case: Actual outside-HOME deletion with --allow-outside-home --force
 setup_mock_env
 if run_test_case "Actual Outside HOME Clean" 0 "outside_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --force; then
