@@ -1895,9 +1895,11 @@ if run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV
   trash_action_session_count=$(find "$trash_action_qbase" -mindepth 1 -maxdepth 1 -type d | wc -l)
   if grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/trash_action.log" \
      && grep -q "Mock paccache called with: -rk1" "$TEST_ENV_DIR/trash_action.log" \
+     && grep -q "Total space quarantined: 0 B; permanently reclaimed by actions:" "$TEST_ENV_DIR/trash_action.log" \
+     && ! grep -q "permanently reclaimed by actions: 0 B" "$TEST_ENV_DIR/trash_action.log" \
      && [[ "$trash_action_session_count" -eq 1 ]] \
      && [[ -d "$trash_action_prior" ]]; then
-    echo -e "${GREEN}PASS: trash-mode predefined action used the mock command, warned, and created no empty session.${NC}"
+    echo -e "${GREEN}PASS: trash-mode predefined action used the mock, warned, reported irreversible bytes, and created no empty session.${NC}"
   else
     echo -e "${RED}FAIL: trash-mode action did not use the mock, warn, or preserve the sole prior session.${NC}"
     cat "$TEST_ENV_DIR/trash_action.log"
@@ -1914,6 +1916,32 @@ if run_test_case "Restore Prior Session After Trash Action" 0 "trash_action_rest
 else
   echo -e "${RED}FAIL: action-only trash run hid the prior restorable session.${NC}"
   cat "$TEST_ENV_DIR/trash_action_restore.log"
+  exit 1
+fi
+
+setup_mock_env
+mixed_trash_target="$MOCK_HOME/.cache/mixed_trash_target"
+mkdir -p "$mixed_trash_target"
+echo quarantined > "$mixed_trash_target/payload"
+cat << EOF > "$TEST_ENV_DIR/mixed_trash_action.conf"
+medium|Paccache Mixed|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
+safe|Mixed Quarantine|$mixed_trash_target|Mock path quarantine|0||
+EOF
+if run_test_case "Mixed Trash and Action Summary" 0 "mixed_trash_action.log" \
+     --config "$TEST_ENV_DIR/mixed_trash_action.conf" --trash --force --allow-outside-home --risk medium; then
+  mixed_quarantined=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name payload -print -quit)
+  if [[ ! -e "$mixed_trash_target" && -n "$mixed_quarantined" ]] \
+     && grep -q "Total space quarantined:" "$TEST_ENV_DIR/mixed_trash_action.log" \
+     && grep -q "; permanently reclaimed by actions:" "$TEST_ENV_DIR/mixed_trash_action.log" \
+     && ! grep -q "Total space quarantined: 0 B" "$TEST_ENV_DIR/mixed_trash_action.log" \
+     && ! grep -q "permanently reclaimed by actions: 0 B" "$TEST_ENV_DIR/mixed_trash_action.log"; then
+    echo -e "${GREEN}PASS: mixed trash/action summary reports both nonzero amounts separately.${NC}"
+  else
+    echo -e "${RED}FAIL: mixed trash/action summary combined or omitted one amount.${NC}"
+    cat "$TEST_ENV_DIR/mixed_trash_action.log"
+    exit 1
+  fi
+else
   exit 1
 fi
 

@@ -1907,6 +1907,7 @@ fi
 # Second pass: Perform deletion or move to quarantine
 status_echo "${BOLD}Starting cleanup...${NC}"
 total_deleted_bytes=0
+total_action_bytes=0
 
 QUARANTINE_DIR=""
 
@@ -2020,6 +2021,7 @@ for i in "${!parsed_names[@]}"; do
     esac
     if [[ "$action_success" = true ]]; then
       total_deleted_bytes=$((total_deleted_bytes + size))
+      total_action_bytes=$((total_action_bytes + size))
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=success"
     else
       echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
@@ -2210,7 +2212,12 @@ done
 
 echo
 if [[ "$TRASH_MODE" = true ]]; then
-  echo -e "${BOLD}${GREEN}Cleanup finished! Total space quarantined: $(format_bytes "$total_deleted_bytes")${NC}"
+  if [[ "$total_action_bytes" -gt 0 ]]; then
+    quarantine_bytes=$((total_deleted_bytes - total_action_bytes))
+    echo -e "${BOLD}${GREEN}Cleanup finished! Total space quarantined: $(format_bytes "$quarantine_bytes"); permanently reclaimed by actions: $(format_bytes "$total_action_bytes")${NC}"
+  else
+    echo -e "${BOLD}${GREEN}Cleanup finished! Total space quarantined: $(format_bytes "$total_deleted_bytes")${NC}"
+  fi
 else
   echo -e "${BOLD}${GREEN}Cleanup finished! Total space permanently reclaimed: $(format_bytes "$total_deleted_bytes")${NC}"
 fi
