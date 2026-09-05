@@ -1223,6 +1223,38 @@ restore_quarantine() {
     exit 1
   fi
 
+  # Keep metadata aligned with the files still in quarantine. This is required
+  # after a partial failure as well as --only: successful sibling restores have
+  # already moved out and must not poison a later retry as missing sources.
+  local -a retained=()
+  if [[ "$overall_success" != true || -n "${RESTORE_ONLY:-}" ]]; then
+    local line rp r keep
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" ]] && continue
+      IFS='|' read -r _ rp _ <<< "$line"
+      rp=$(trim "$rp")
+      keep=true
+      for r in "${restored_rels[@]}"; do
+        if [[ "$r" == "$rp" ]]; then
+          keep=false
+          break
+        fi
+      done
+      [[ "$keep" == true ]] && retained+=("$line")
+    done < "$meta_file"
+
+    if [[ ${#retained[@]} -eq 0 ]]; then
+      if [[ "$overall_success" == true ]]; then
+        rm -rf "$restore_dir"
+        rmdir "$quarantine_base" 2>/dev/null || true
+      else
+        : > "$meta_file"
+      fi
+    else
+      printf '%s\n' "${retained[@]}" > "$meta_file"
+    fi
+  fi
+
   if [[ "$overall_success" != true ]]; then
     echo -e "${RED}Error: Restoration completed with some errors. The quarantine session has been kept at '$restore_dir' for recovery.${NC}" >&2
     exit 1
@@ -1236,29 +1268,7 @@ restore_quarantine() {
     return 0
   fi
 
-  # Filtered restore: keep every record we did NOT move back, so the session stays
-  # consistent and a later full --restore of it still succeeds.
-  local -a retained=()
-  local line rp r keep
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -z "$line" ]] && continue
-    IFS='|' read -r _ rp _ <<< "$line"
-    rp=$(trim "$rp")
-    keep=true
-    for r in "${restored_rels[@]}"; do
-      if [[ "$r" == "$rp" ]]; then
-        keep=false
-        break
-      fi
-    done
-    [[ "$keep" == true ]] && retained+=("$line")
-  done < "$meta_file"
-
-  if [[ ${#retained[@]} -eq 0 ]]; then
-    rm -rf "$restore_dir"
-    rmdir "$quarantine_base" 2>/dev/null || true
-  else
-    printf '%s\n' "${retained[@]}" > "$meta_file"
+  if [[ ${#retained[@]} -gt 0 ]]; then
     echo -e "Session ${YELLOW}$(basename "$restore_dir")${NC} kept: ${#retained[@]} target(s) still quarantined."
   fi
 }

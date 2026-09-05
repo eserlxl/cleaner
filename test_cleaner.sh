@@ -923,6 +923,29 @@ if run_test_case "Quarantine for Conflict Test" 0 "quarantine_conflict.log" --co
   else
     exit 1
   fi
+
+  conflict_meta="$latest_session/quarantine.meta"
+  if [[ "$(grep -c '^[^#[:space:]]' "$conflict_meta")" -eq 1 ]] \
+     && grep -qF "|$MOCK_HOME/.npm/_cacache|" "$conflict_meta"; then
+    echo -e "${GREEN}PASS: partial restore metadata retained only the conflicted target.${NC}"
+  else
+    echo -e "${RED}FAIL: partial restore metadata retained stale records for targets already restored.${NC}"
+    cat "$conflict_meta"
+    exit 1
+  fi
+
+  rm -rf "$MOCK_HOME/.npm/_cacache"
+  if run_test_case "Restore Retry After Conflict" 0 "restore_conflict_retry.log" --restore latest; then
+    if [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" && ! -d "$latest_session" ]]; then
+      echo -e "${GREEN}PASS: restore retry succeeded after the destination conflict was cleared.${NC}"
+    else
+      echo -e "${RED}FAIL: restore retry did not restore the remaining target or retire the session.${NC}"
+      cat "$TEST_ENV_DIR/restore_conflict_retry.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
 else
   exit 1
 fi
