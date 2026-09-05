@@ -204,16 +204,17 @@ The tool targets Linux with a **GNU userland**. It relies on GNU coreutils/findu
 | `pacman-contrib` | `PKGBUILD optdepends` | Required for `paccache_keep*` actions (`paccache` binary) |
 | `sudo` | runtime | Required for predefined `action:*` package-cache commands |
 
-Predefined package-cache actions are supported for three package managers:
+Predefined package-cache actions are supported for four package managers:
 
 - **pacman** — `action:paccache_keep1/2/3`, `action:pacman_clean`
 - **apt** — `action:apt_clean`
 - **dnf** — `action:dnf_clean`
+- **zypper** — `action:zypper_clean`
 
 
 ### Portable cross-distro config
 
-The same `cleaner.conf` may list pacman, apt, and dnf package-cache sections together.
+The same `cleaner.conf` may list pacman, apt, dnf, and zypper package-cache sections together.
 Actions whose package manager is **not installed** are **skipped** with a clear message
 (hermetic test: `Cross-Distro Safe Degradation`) rather than failing the run.
 
