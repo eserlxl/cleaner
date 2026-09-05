@@ -72,6 +72,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Test-only privilege shim: make an unreadable target accessible when the
+# cleaner reaches it through its sudo branch.
+if [[ -n "${MOCK_SUDO_UNLOCK_PATH:-}" && "${1:-}" == "find" ]]; then
+  chmod u+rwx "$MOCK_SUDO_UNLOCK_PATH"
+fi
+
 exec "$@"
 EOF
   chmod +x "$TEST_ENV_DIR/bin/sudo"
@@ -476,6 +482,50 @@ if run_test_case "Exclusions Clean" 0 "exclusions_clean.log" --config "$TEST_ENV
 else
   exit 1
 fi
+
+# Excluded empty directories must survive the follow-up directory sweep. Cover
+# permanent/quarantine and plain/mock-sudo branches; ordinary empty directories
+# should still be removed.
+assert_excluded_empty_directory() {
+  local test_name="$1" mode="$2" via_sudo="$3"
+  local target="$MOCK_HOME/.cache/excluded-empty"
+  local -a mode_args=()
+
+  setup_mock_env
+  mkdir -p "$target/keep-empty" "$target/drop-empty"
+  echo "delete me" > "$target/delete.txt"
+  cat << EOF > "$TEST_ENV_DIR/excluded_empty.conf"
+safe|Excluded Empty|\$HOME/.cache/excluded-empty|empty directory exclusion|0||
+EOF
+  if [[ "$mode" == trash ]]; then
+    mode_args+=(--trash)
+  fi
+  if [[ "$via_sudo" == true ]]; then
+    chmod 000 "$target"
+    export MOCK_SUDO_UNLOCK_PATH="$target"
+  else
+    unset MOCK_SUDO_UNLOCK_PATH || true
+  fi
+
+  if run_test_case "$test_name" 0 "${test_name// /_}.log" \
+       --config "$TEST_ENV_DIR/excluded_empty.conf" --exclude keep-empty --force "${mode_args[@]}"; then
+    unset MOCK_SUDO_UNLOCK_PATH || true
+    if [[ -d "$target/keep-empty" && ! -d "$target/drop-empty" && ! -e "$target/delete.txt" ]]; then
+      echo -e "${GREEN}PASS: $test_name preserved the excluded empty directory and removed ordinary empty content.${NC}"
+      return 0
+    fi
+  fi
+
+  unset MOCK_SUDO_UNLOCK_PATH || true
+  chmod u+rwx "$target" 2>/dev/null || true
+  echo -e "${RED}FAIL: $test_name did not preserve only the excluded empty directory.${NC}"
+  return 1
+}
+
+assert_excluded_empty_directory "Excluded Empty Permanent Plain" permanent false || exit 1
+assert_excluded_empty_directory "Excluded Empty Trash Plain" trash false || exit 1
+assert_excluded_empty_directory "Excluded Empty Permanent Sudo" permanent true || exit 1
+assert_excluded_empty_directory "Excluded Empty Trash Sudo" trash true || exit 1
 
 # 11. Test Case: Quarantine and Restoration Support
 setup_mock_env

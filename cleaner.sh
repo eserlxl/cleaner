@@ -2068,7 +2068,7 @@ for i in "${!parsed_names[@]}"; do
             fi
           done < <(sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
           sudo chown -R "$(id -u):$(id -g)" "$q_target"
-          sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+          sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
         else
           mkdir -p "$q_target"
           while IFS= read -r -d '' file; do
@@ -2079,7 +2079,7 @@ for i in "${!parsed_names[@]}"; do
               success=false
             fi
           done < <(find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
-          find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+          find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
         fi
       else
         # Single file or symlink
@@ -2124,7 +2124,7 @@ for i in "${!parsed_names[@]}"; do
         if [[ "$use_sudo" = true ]]; then
           status_echo "  Cleaning filtered files in ${YELLOW}$name${NC} with sudo..."
           if sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
-             sudo find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
+             sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null; then
             total_deleted_bytes=$((total_deleted_bytes + size))
           else
             echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path' with sudo${NC}" >&2
@@ -2133,7 +2133,7 @@ for i in "${!parsed_names[@]}"; do
         else
           status_echo "  Cleaning filtered files in ${YELLOW}$name${NC}..."
           if find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
-             find "$path" -mindepth 1 -type d -empty -delete 2>/dev/null; then
+             find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null; then
             total_deleted_bytes=$((total_deleted_bytes + size))
           else
             echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${NC}" >&2
