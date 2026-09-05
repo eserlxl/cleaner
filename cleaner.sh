@@ -386,12 +386,23 @@ status_echo() {
 }
 
 json_escape() {
-  local s="$1"
+  local s="$1" code octal control escaped
   s=${s//\\/\\\\}
   s=${s//\"/\\\"}
+  s=${s//$'\b'/\\b}
+  s=${s//$'\f'/\\f}
   s=${s//$'\n'/\\n}
   s=${s//$'\r'/\\r}
   s=${s//$'\t'/\\t}
+
+  # Bash strings cannot contain NUL; encode every other representable C0 byte.
+  for ((code = 1; code < 32; code++)); do
+    case "$code" in 8|9|10|12|13) continue ;; esac
+    printf -v octal '%03o' "$code"
+    printf -v control '%b' "\\$octal"
+    printf -v escaped '\\u%04x' "$code"
+    s=${s//"$control"/"$escaped"}
+  done
   printf '%s' "$s"
 }
 

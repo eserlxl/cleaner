@@ -2634,11 +2634,10 @@ else
   exit 1
 fi
 
-# Target names with quotes/backslashes must still produce valid JSON.
+# Target names with quotes, backslashes, and C0 controls must still produce valid JSON.
 echo -e "\n${BOLD}Test Case: JSON Escaping Special Target Names${NC}"
-cat > "$TEST_ENV_DIR/json_escape.conf" << 'EOF'
-safe|Cache "quoted" \\name|$HOME/.cache/json_escape_test|Adversarial name chars|0||
-EOF
+printf '%s\n' $'safe|Türkçe Cache "quoted" \\\\name\b\f\v\001|$HOME/.cache/json_escape_test|Adversarial name chars|0||' \
+  > "$TEST_ENV_DIR/json_escape.conf"
 mkdir -p "$MOCK_HOME/.cache/json_escape_test"
 echo "payload" > "$MOCK_HOME/.cache/json_escape_test/file.txt"
 if run_test_case "JSON Escaping Special Target Names" 0 "json_escape.log" \
@@ -2647,8 +2646,8 @@ if run_test_case "JSON Escaping Special Target Names" 0 "json_escape.log" \
     if python3 - "$TEST_ENV_DIR/json_escape.conf" /tmp/json_escape_parsed.out << 'PY'
 import json, sys
 data = json.load(open(sys.argv[2]))
-# Config NAME uses two literal backslashes before "name" in the heredoc line.
-expected = 'Cache "quoted" \\\\name'
+# Config NAME includes two literal backslashes and representative C0 controls.
+expected = 'Türkçe Cache "quoted" \\\\name\b\f\v\x01'
 if data["targets"][0]["name"] != expected:
     raise SystemExit(1)
 PY
