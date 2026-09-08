@@ -32,7 +32,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 - **`PATH_EXPRESSION`**: The absolute or relative path to clean. Supports safe placeholder expansion for `$HOME`, `~`, and `$USER`. May also contain `*`/`?` wildcards, which expand to **one independent target per matching directory** — see [Wildcard paths](#wildcard-paths).
 - **`DESCRIPTION`**: A brief explanation of the files being cleaned.
 - **`MIN_AGE_DAYS`**: (Optional) Only delete files/symlinks older than N days. Set to `0` or leave empty to clean immediately.
-- **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped.
+- **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped. A token written as `cmdline:<pattern>` matches the **full command line** rather than the process name, which is what guards a tool launched through a shared runtime — `/usr/bin/cursor` execs `electron` and `cursor-agent` execs `node`, so neither runs under its own name and an exact-name guard would silently never fire. Prefer an install path (`cmdline:/usr/share/cursor`) over a bare word, so the pattern cannot collide with an unrelated process. The cleaner never matches its own invocation: its whole process ancestry, its descendants, and any already-exited PID are excluded.
 - **`CUSTOM_ACTION`**: (Optional) Predefined clean command to run instead of direct path deletion:
   - `action:paccache_keep1`: Runs `sudo paccache -rk1` (retains latest 1 version of package cache).
   - `action:paccache_keep2`: Runs `sudo paccache -rk2` (retains latest 2 versions of package cache).

@@ -50,11 +50,23 @@ setup_mock_env() {
 # Mock pgrep command
 if [[ "$1" == "-x" && "$2" == "mock_running_proc" ]]; then
   exit 0
-else
+fi
+# -f matches the full command line. Answer with the PID of a real process the suite
+# started, so the caller's liveness and ancestry checks see a genuine sibling rather
+# than a fabricated number.
+if [[ "$1" == "-f" ]]; then
+  shift
+  [[ "$1" == "--" ]] && shift
+  if [[ "$1" == *mock_cmdline_proc* && -r "${TEST_ENV_DIR:-}/mock_cmdline_pid" ]]; then
+    cat "${TEST_ENV_DIR}/mock_cmdline_pid"
+    exit 0
+  fi
   exit 1
 fi
+exit 1
 EOF
   chmod +x "$TEST_ENV_DIR/bin/pgrep"
+  export TEST_ENV_DIR
 
   cat << 'EOF' > "$TEST_ENV_DIR/bin/sudo"
 #!/usr/bin/env bash
@@ -3617,6 +3629,108 @@ if run_test_case "Wildcard Line Number Fidelity" 1 "glob_lineno.log" \
   else
     echo -e "${RED}FAIL: expansion shifted the reported config line number.${NC}"
     cat "$TEST_ENV_DIR/glob_lineno.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# 60. Test Case: cmdline: guards a tool whose process name is not its own. A tool
+# launched through a shared runtime runs as "electron" or "node", so exact-comm
+# matching silently never fires and its data would be deleted while it is open.
+echo -e "\n${BOLD}Test Case: Cmdline Process Guard${NC}"
+mkdir -p "$MOCK_HOME/guarded"
+echo "payload" > "$MOCK_HOME/guarded/data.txt"
+cat > "$TEST_ENV_DIR/cmdline_guard.conf" <<'CMDGUARD'
+safe|Cmdline Guarded|$HOME/guarded|Blocked while the runtime process lives|0|cmdline:mock_cmdline_proc|
+CMDGUARD
+
+# A real sibling process: not our ancestor, not our descendant, and genuinely alive.
+sleep 60 &
+mock_cmdline_pid=$!
+echo "$mock_cmdline_pid" > "$TEST_ENV_DIR/mock_cmdline_pid"
+
+if run_test_case "Cmdline Guard Blocks" 0 "cmdline_block.log" \
+     --config "$TEST_ENV_DIR/cmdline_guard.conf"; then
+  if grep -q "BLOCKED.*Cmdline Guarded.*cmdline:mock_cmdline_proc" "$TEST_ENV_DIR/cmdline_block.log"; then
+    echo -e "${GREEN}PASS: a cmdline: token blocked the target and named itself in the status line.${NC}"
+  else
+    echo -e "${RED}FAIL: the cmdline: token did not block the target.${NC}"
+    cat "$TEST_ENV_DIR/cmdline_block.log"
+    kill "$mock_cmdline_pid" 2>/dev/null || true
+    exit 1
+  fi
+else
+  kill "$mock_cmdline_pid" 2>/dev/null || true
+  exit 1
+fi
+
+# Once the process is gone the target must become cleanable again: a dead PID in the
+# match set is not an application still running.
+# wait reports 143 for a signalled job; tolerate it so set -e does not abort here.
+kill "$mock_cmdline_pid" 2>/dev/null || true
+wait "$mock_cmdline_pid" 2>/dev/null || true
+echo "$mock_cmdline_pid" > "$TEST_ENV_DIR/mock_cmdline_pid"
+if run_test_case "Cmdline Guard Releases" 0 "cmdline_release.log" \
+     --config "$TEST_ENV_DIR/cmdline_guard.conf"; then
+  if grep -q "FOUND.*Cmdline Guarded" "$TEST_ENV_DIR/cmdline_release.log"; then
+    echo -e "${GREEN}PASS: a dead PID in the match set does not block the target.${NC}"
+  else
+    echo -e "${RED}FAIL: the target stayed blocked after the process exited.${NC}"
+    cat "$TEST_ENV_DIR/cmdline_release.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# The pattern appearing in our own invocation must never block: that would make the
+# guard fire forever against nothing, which is how pgrep -f guards usually break.
+cat > "$TEST_ENV_DIR/cmdline_self.conf" <<'CMDSELF'
+safe|mock_cmdline_proc|$HOME/guarded|Pattern appears in our own argv|0|cmdline:mock_cmdline_proc|
+CMDSELF
+rm -f "$TEST_ENV_DIR/mock_cmdline_pid"
+if run_test_case "Cmdline Guard Ignores Self" 0 "cmdline_self.log" \
+     --config "$TEST_ENV_DIR/cmdline_self.conf" --only-target mock_cmdline_proc; then
+  if grep -q "FOUND.*mock_cmdline_proc" "$TEST_ENV_DIR/cmdline_self.log"; then
+    echo -e "${GREEN}PASS: a pattern present only in our own command line does not block.${NC}"
+  else
+    echo -e "${RED}FAIL: the guard matched the cleaner's own invocation.${NC}"
+    cat "$TEST_ENV_DIR/cmdline_self.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A bare token must keep matching comm exactly, so the two forms stay distinct.
+cat > "$TEST_ENV_DIR/cmdline_bare.conf" <<'CMDBARE'
+safe|Bare Token|$HOME/guarded|Exact comm match only|0|mock_running_proc|
+CMDBARE
+if run_test_case "Bare Token Still Matches Comm" 0 "cmdline_bare.log" \
+     --config "$TEST_ENV_DIR/cmdline_bare.conf"; then
+  if grep -q "BLOCKED.*Bare Token.*'mock_running_proc'" "$TEST_ENV_DIR/cmdline_bare.log"; then
+    echo -e "${GREEN}PASS: a bare token still matches the process name exactly.${NC}"
+  else
+    echo -e "${RED}FAIL: bare-token behaviour changed.${NC}"
+    cat "$TEST_ENV_DIR/cmdline_bare.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# An empty pattern after the prefix would match every process, so it is rejected.
+cat > "$TEST_ENV_DIR/cmdline_empty.conf" <<'CMDEMPTY'
+safe|Empty Pattern|$HOME/guarded|No pattern after the prefix|0|cmdline:|
+CMDEMPTY
+if run_test_case "Empty Cmdline Pattern Rejected" 1 "cmdline_empty.log" \
+     --check-config --config "$TEST_ENV_DIR/cmdline_empty.conf"; then
+  if grep -q "empty pattern after 'cmdline:'" "$TEST_ENV_DIR/cmdline_empty.log"; then
+    echo -e "${GREEN}PASS: an empty cmdline: pattern is rejected with a line-numbered error.${NC}"
+  else
+    echo -e "${RED}FAIL: an empty cmdline: pattern was accepted.${NC}"
+    cat "$TEST_ENV_DIR/cmdline_empty.log"
     exit 1
   fi
 else

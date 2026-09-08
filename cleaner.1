@@ -309,6 +309,16 @@ performed by
 below the literal part of the pattern and at exactly the depth the pattern
 describes, never by shell globbing and never through
 .BR eval .
+A
+.B CHECK_PROCESSES
+token written as
+.BI cmdline: pattern
+matches the full command line rather than the process name, which is required for a
+tool launched through a shared runtime (Electron or node), where the process does not
+run under its own name. Prefer an installation path over a bare word. The cleaner's own
+process ancestry, its descendants, and already-exited PIDs are excluded, so a pattern
+appearing in its own invocation never blocks a target.
+.PP
 The
 .B CUSTOM_ACTION
 field also accepts

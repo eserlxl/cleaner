@@ -859,6 +859,11 @@ validate_config_file() {
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
       exit 1
     fi
+    # A cmdline: token with nothing after the prefix would match every process.
+    if [[ "$check_procs" =~ (^|,)[[:space:]]*cmdline:[[:space:]]*(,|$) ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty pattern after 'cmdline:')${NC}" >&2
+      exit 1
+    fi
     if [[ -n "$custom_clean_cmd" ]]; then
       case "$custom_clean_cmd" in
         action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|filter:cxx_build)
@@ -1609,6 +1614,51 @@ format_bytes() {
 }
 
 # Check if any specified process is running
+# True when some process OTHER than this run matches PATTERN on its command line.
+# The whole ancestry is excluded, not just our own PID: an invoking shell, wrapper
+# script or scheduler carries our arguments in its command line too, so matching one
+# of those would block every target forever while nothing is actually running.
+_cmdline_match() {
+  local pattern="$1" pid ancestry=" "
+  [[ -z "$pattern" ]] && return 1
+
+  # Seed from $$, not $BASHPID: at script level the two are equal, so seeding with
+  # BASHPID would make the first loop test fail and the walk never start.
+  pid=$$
+  while [[ -n "$pid" && "$pid" != 0 && "$ancestry" != *" $pid "* ]]; do
+    ancestry+="$pid "
+    # Read PPid from status rather than stat: a comm containing spaces or parens
+    # shifts stat's positional fields and would give the wrong parent.
+    pid=$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null)
+  done
+  # Differs from $$ only inside a subshell, so add it after the walk.
+  ancestry+="$BASHPID "
+
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    # A process that has already exited cannot be the application running, and the
+    # match set routinely contains short-lived helpers (pgrep itself, subshells).
+    [[ -r "/proc/$pid/cmdline" ]] || continue
+    [[ "$ancestry" == *" $pid "* ]] && continue
+    _is_own_descendant "$pid" && continue
+    return 0
+  done < <(pgrep -f -- "$pattern" 2>/dev/null)
+  return 1
+}
+
+# True when PID sits below this run in the process tree. A subshell or helper we
+# spawned inherits our arguments, so it can match our own pattern; it is never the
+# application we are guarding against. Bounded so a malformed /proc cannot loop.
+_is_own_descendant() {
+  local pid="$1" hops=0
+  while [[ -n "$pid" && "$pid" != 0 && "$hops" -lt 32 ]]; do
+    [[ "$pid" == "$$" ]] && return 0
+    pid=$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null)
+    hops=$((hops + 1))
+  done
+  return 1
+}
+
 is_process_running() {
   local procs="$1"
   if [[ -z "$procs" ]]; then
@@ -1622,7 +1672,18 @@ is_process_running() {
   for proc in $procs; do
     IFS="$saved_ifs"
     proc=$(trim "$proc")
-    if pgrep -x "$proc" >/dev/null; then
+    if [[ "$proc" == cmdline:* ]]; then
+      # A tool launched through a shared runtime (Electron, node) has a comm that is
+      # not its own name, so exact-comm matching silently never fires. Match the full
+      # command line instead -- but pgrep -f also matches THIS script whenever the
+      # pattern appears in our own argv (a config path, or --only-target naming the
+      # tool), which would block every target forever. Drop our own PIDs first and
+      # treat an otherwise-empty result as "not running".
+      if _cmdline_match "${proc#cmdline:}"; then
+        echo "$proc"
+        return 0
+      fi
+    elif pgrep -x "$proc" >/dev/null; then
       echo "$proc"
       return 0
     fi
@@ -1809,6 +1870,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # stray commas (a field-shift signal); normal comma-separated names are fine.
   if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
     echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
+    exit 1
+  fi
+  # A cmdline: token with nothing after the prefix would match every process.
+  if [[ "$check_procs" =~ (^|,)[[:space:]]*cmdline:[[:space:]]*(,|$) ]]; then
+    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty pattern after 'cmdline:')${NC}" >&2
     exit 1
   fi
 

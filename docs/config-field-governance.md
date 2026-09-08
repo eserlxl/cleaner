@@ -44,3 +44,25 @@ line-numbered error.
 `.qmake.stash`) directly or one level below — the one-level allowance covers a qmake
 per-kit layout such as `build/Desktop-Debug`. Selecting by contents is what separates
 real build output from a source directory whose name merely begins with "build".
+
+## CHECK_PROCESSES: name tokens and cmdline tokens
+
+A bare token matches the kernel `comm` field exactly (`pgrep -x`). That works only when
+the tool runs under its own name. It does not for a tool launched through a shared
+runtime: `/usr/bin/cursor` execs `/usr/lib/electron42/electron`, and `cursor-agent` runs
+`exec -a "$0" node index.js` — measured to leave `comm` as `node-MainThread`, which
+matches neither `cursor-agent` nor `node`. An exact-name guard there fails **silently**,
+which is the dangerous direction: the target is cleaned while the tool is writing to it.
+
+A token written `cmdline:<pattern>` matches the full command line instead. Because that
+is far broader, three exclusions keep it from matching the cleaner itself — which would
+otherwise block every target forever while nothing is running:
+
+- the run's **whole process ancestry**, not just its own PID: an invoking shell, wrapper
+  script or scheduler carries the cleaner's arguments in its own command line;
+- its **descendants**, since a subshell or helper inherits the arguments;
+- any **already-exited PID**, which cannot be an application still running.
+
+Prefer an installation path (`cmdline:/usr/share/cursor`) over a bare word: a path cannot
+collide with an unrelated process the way a common word can. An empty pattern after the
+prefix would match every process and is rejected at config-validation time.
