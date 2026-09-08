@@ -564,7 +564,7 @@ GLOB_RECURSION_MAX_DEPTH=10
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes match
+  local prefix depth max_depth head tail_part slashes leaf match
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -615,12 +615,23 @@ expand_config_globs() {
       continue
     fi
 
+    # The last pattern component names the directory itself, so it is matched with
+    # -name, which never crosses '/'. -path alone would not do: its * spans slashes,
+    # so once the depth bounds widen for "**" a trailing "build*" would also swallow
+    # "build/CMakeFiles" and every path below it.
+    leaf="${raw_path##*/}"
+
+    # -prune stops the walk at a match, so a directory nested inside an already
+    # matched one is not emitted as a second target. Without it, cleaning the parent
+    # would delete the child a later target still refers to.
+    #
     # A pattern that matches nothing emits no target and is not an error, matching
     # the existing status of a configured path that does not exist.
     while IFS= read -r match; do
       [[ -z "$match" ]] && continue
       printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
-    done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" -type d -path "$raw_path" 2>/dev/null | sort)
+    done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
+                  -type d -name "$leaf" -path "$raw_path" -prune -print 2>/dev/null | sort)
   done < "$CONFIG_FILE"
 }
 

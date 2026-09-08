@@ -3455,6 +3455,26 @@ else
   exit 1
 fi
 
+# A trailing wildcard must name the directory itself, not swallow the paths below
+# it, and a build directory nested inside an already matched one must not become a
+# second target -- cleaning the parent would delete what the child still refers to.
+mkdir -p "$MOCK_HOME/deep/one/build/CMakeFiles/sub" \
+         "$MOCK_HOME/deep/one/build/nested/build"
+if run_test_case "Wildcard Recursive No Overlap" 0 "glob_overlap.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_rec.conf"; then
+  if ! grep -q "build/CMakeFiles" "$TEST_ENV_DIR/glob_overlap.log" \
+     && ! grep -q "build/nested/build" "$TEST_ENV_DIR/glob_overlap.log" \
+     && grep -q "deep/one/build" "$TEST_ENV_DIR/glob_overlap.log"; then
+    echo -e "${GREEN}PASS: recursion matched the directory itself and pruned nested matches.${NC}"
+  else
+    echo -e "${RED}FAIL: recursive expansion emitted paths below an already matched directory.${NC}"
+    cat "$TEST_ENV_DIR/glob_overlap.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # Without "**" the fixed-depth rule must still hold, so the two forms stay distinct.
 cat > "$TEST_ENV_DIR/glob_fixed.conf" <<'GLOBFIXED'
 safe|Shallow Builds|$HOME/deep/*/build*|Build output one level down|0||
