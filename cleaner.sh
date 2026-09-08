@@ -451,7 +451,8 @@ emit_list_targets_json() {
   local i first=true
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno=$((config_lineno + 1))
+    config_lineno="${config_line%%$'\t'*}"
+    config_line="${config_line#*$'\t'}"
     config_pipes="${config_line//[^|]/}"
     field_count=$(( ${#config_pipes} + 1 ))
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -482,7 +483,7 @@ emit_list_targets_json() {
     lt_min_ages+=("$min_age")
     lt_procs+=("$check_procs")
     lt_actions+=("$custom_clean_cmd")
-  done < "$CONFIG_FILE"
+  done < <(expand_config_globs)
 
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
@@ -547,6 +548,63 @@ expand_path_safe() {
   expanded=$(_expand_var_token "$expanded" "USER" "$USER")
 
   echo "$expanded"
+}
+
+# Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
+# one line per matching directory. Expansion runs through find, never a shell glob
+# and never eval, so the documented no-wildcard-eval contract still holds: only the
+# $HOME / ~ / $USER placeholders are substituted, and every expanded match re-enters
+# the same safety pipeline (check_path_safety, canonicalize_physical) as a literal
+# target. Each emitted line carries its physical source line number and a tab, so a
+# line that expands into many still reports config errors against the real line.
+expand_config_globs() {
+  local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
+  local prefix depth head tail_part slashes match
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    pipes="${line//[^|]/}"
+    fields=$(( ${#pipes} + 1 ))
+    IFS='|' read -r f1 f2 f3 frest <<< "$line"
+    risk=$(trim "$f1")
+    raw_path=$(trim "$f3")
+    # Comments, blanks, malformed lines (left for the existing field-count error)
+    # and wildcard-free targets pass through byte-identical.
+    if [[ -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$raw_path" != *[*?]* ]]; then
+      printf '%s\t%s\n' "$lineno" "$line"
+      continue
+    fi
+
+    raw_path=$(expand_path_safe "$raw_path")
+
+    # Split into the longest wildcard-free leading prefix and the depth of the
+    # remaining pattern components, so find scans only below a literal root.
+    # This uses parameter expansion only: an unquoted split would itself undergo
+    # pathname expansion, which is exactly the shell globbing this must avoid.
+    head="${raw_path%%[*?]*}"
+    prefix="${head%/*}"
+    tail_part="${raw_path#"$prefix"/}"
+    slashes="${tail_part//[^\/]/}"
+    depth=$(( ${#slashes} + 1 ))
+
+    # A wildcard in the first component would make find walk the whole filesystem.
+    # Refuse to expand it and pass the line through untouched: the literal pattern
+    # then fails the ordinary existence and HOME-boundary checks, so nothing is
+    # scanned and nothing is deleted. This runs inside a process substitution, so
+    # it warns and degrades rather than trying to abort the run from a subshell.
+    if [[ -z "$prefix" ]]; then
+      echo -e "${YELLOW}Warning: ${CONFIG_FILE}:${lineno}: wildcard must follow a literal directory, not the filesystem root; leaving '${raw_path}' unexpanded${NC}" >&2
+      printf '%s\t%s\n' "$lineno" "$line"
+      continue
+    fi
+
+    # A pattern that matches nothing emits no target and is not an error, matching
+    # the existing status of a configured path that does not exist.
+    while IFS= read -r match; do
+      [[ -z "$match" ]] && continue
+      printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
+    done < <(find "$prefix" -mindepth "$depth" -maxdepth "$depth" -type d -path "$raw_path" 2>/dev/null | sort)
+  done < "$CONFIG_FILE"
 }
 
 # Resolve a user-supplied log path (--log / LINUX_CLEANER_LOG) with the same
@@ -685,7 +743,8 @@ list_config_targets() {
   echo
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno=$((config_lineno + 1))
+    config_lineno="${config_line%%$'\t'*}"
+    config_line="${config_line#*$'\t'}"
     config_pipes="${config_line//[^|]/}"
     field_count=$(( ${#config_pipes} + 1 ))
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -707,7 +766,7 @@ list_config_targets() {
       exit 1
     fi
     printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
-  done < "$CONFIG_FILE"
+  done < <(expand_config_globs)
 }
 
 # Validate every active config line with the same structural checks as the
@@ -719,7 +778,8 @@ validate_config_file() {
   local target_count=0
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno=$((config_lineno + 1))
+    config_lineno="${config_line%%$'\t'*}"
+    config_line="${config_line#*$'\t'}"
     config_pipes="${config_line//[^|]/}"
     field_count=$(( ${#config_pipes} + 1 ))
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -765,7 +825,7 @@ validate_config_file() {
       exit 1
     fi
     target_count=$((target_count + 1))
-  done < "$CONFIG_FILE"
+  done < <(expand_config_globs)
 
   echo "OK: ${target_count} targets in ${CONFIG_FILE}"
 }
@@ -1640,9 +1700,11 @@ status_echo "${BOLD}Analyzing targets...${NC}"
 # Read configuration file line by line
 config_lineno=0
 while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-  # Track the physical (1-based) line number for every line (comments and
-  # blanks included) so error messages can cite the real line.
-  config_lineno=$((config_lineno + 1))
+  # The physical (1-based) source line number arrives as a tab-prefixed field from
+  # expand_config_globs, so a wildcard line that expands into many targets still
+  # reports errors against the real config line.
+  config_lineno="${config_line%%$'\t'*}"
+  config_line="${config_line#*$'\t'}"
   # Expose the true (nominal) field count: fields are pipe-delimited, so the
   # count is the number of '|' delimiters plus one. Counting delimiters stays
   # correct even when trailing optional fields are empty (unlike an array length).
@@ -1881,8 +1943,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   parsed_risks+=("$risk")
   parsed_cmds+=("$custom_clean_cmd")
   parsed_sudos+=("$use_sudo")
-  
-done < "$CONFIG_FILE"
+
+done < <(expand_config_globs)
 
 if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
   echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2

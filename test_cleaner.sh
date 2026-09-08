@@ -3319,6 +3319,101 @@ else
   exit 1
 fi
 
+# 59. Test Case: a wildcard PATH_EXPRESSION expands into one independently analyzed
+# target per matching directory, through find rather than a shell glob or eval, and
+# every match still passes the ordinary safety pipeline.
+echo -e "\n${BOLD}Test Case: Wildcard Path Expansion${NC}"
+mkdir -p "$MOCK_HOME/projects/alpha/build" \
+         "$MOCK_HOME/projects/beta/build-asan" \
+         "$MOCK_HOME/projects/gamma/src"
+echo "artifact" > "$MOCK_HOME/projects/alpha/build/out.o"
+echo "artifact" > "$MOCK_HOME/projects/beta/build-asan/out.o"
+echo "source" > "$MOCK_HOME/projects/gamma/src/main.c"
+cat > "$TEST_ENV_DIR/glob.conf" <<'GLOBCONF'
+safe|Project Builds|$HOME/projects/*/build*|Per-project build output|0||
+GLOBCONF
+
+if run_test_case "Wildcard Expansion Listing" 0 "glob_list.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob.conf"; then
+  glob_hits=$(grep -c "projects/.*/build" "$TEST_ENV_DIR/glob_list.log" || true)
+  if [[ "$glob_hits" -eq 2 ]] \
+     && grep -q "projects/alpha/build" "$TEST_ENV_DIR/glob_list.log" \
+     && grep -q "projects/beta/build-asan" "$TEST_ENV_DIR/glob_list.log" \
+     && ! grep -q "projects/gamma/src" "$TEST_ENV_DIR/glob_list.log" \
+     && ! grep -q '\*' "$TEST_ENV_DIR/glob_list.log"; then
+    echo -e "${GREEN}PASS: wildcard expanded to exactly the two matching build directories.${NC}"
+  else
+    echo -e "${RED}FAIL: wildcard expansion listed '$glob_hits' match(es); expected alpha/build and beta/build-asan only.${NC}"
+    cat "$TEST_ENV_DIR/glob_list.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# The same expansion must reach the analyzer, so each match is sized on its own.
+if run_test_case "Wildcard Expansion Dry Run" 0 "glob_dry.log" \
+     --config "$TEST_ENV_DIR/glob.conf"; then
+  if grep -q "FOUND.*Project Builds" "$TEST_ENV_DIR/glob_dry.log" \
+     && [[ "$(grep -c "Project Builds" "$TEST_ENV_DIR/glob_dry.log")" -eq 2 ]]; then
+    echo -e "${GREEN}PASS: both expanded targets were analyzed separately in dry-run.${NC}"
+  else
+    echo -e "${RED}FAIL: dry-run did not analyze each expanded match as its own target.${NC}"
+    cat "$TEST_ENV_DIR/glob_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A wildcard matching nothing is not an error — it simply contributes no target.
+cat > "$TEST_ENV_DIR/glob_empty.conf" <<'GLOBEMPTY'
+safe|Absent Builds|$HOME/projects/*/nosuchdir*|Nothing matches this|0||
+GLOBEMPTY
+if run_test_case "Wildcard No Match" 0 "glob_empty.log" \
+     --config "$TEST_ENV_DIR/glob_empty.conf"; then
+  echo -e "${GREEN}PASS: a wildcard matching nothing exits 0 without a target.${NC}"
+else
+  exit 1
+fi
+
+# A wildcard in the first component would make find walk the whole filesystem.
+cat > "$TEST_ENV_DIR/glob_root.conf" <<'GLOBROOT'
+safe|Root Wildcard|/*/build|Wildcard at the filesystem root|0||
+GLOBROOT
+if run_test_case "Wildcard Root Refusal" 0 "glob_root.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_root.conf"; then
+  if grep -q "wildcard must follow a literal directory" "$TEST_ENV_DIR/glob_root.log" \
+     && grep -q '/\*/build' "$TEST_ENV_DIR/glob_root.log"; then
+    echo -e "${GREEN}PASS: a root-level wildcard warns and stays unexpanded instead of scanning the filesystem.${NC}"
+  else
+    echo -e "${RED}FAIL: root-level wildcard was not refused with the documented message.${NC}"
+    cat "$TEST_ENV_DIR/glob_root.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Line numbers must survive expansion: an error after a wildcard line still cites
+# its real physical line, not a position shifted by the expanded matches.
+cat > "$TEST_ENV_DIR/glob_lineno.conf" <<'GLOBLINENO'
+safe|Project Builds|$HOME/projects/*/build*|Per-project build output|0||
+safe|Broken|$HOME/x|too few fields
+GLOBLINENO
+if run_test_case "Wildcard Line Number Fidelity" 1 "glob_lineno.log" \
+     --check-config --config "$TEST_ENV_DIR/glob_lineno.conf"; then
+  if grep -q ":2: expected 5-7 fields" "$TEST_ENV_DIR/glob_lineno.log"; then
+    echo -e "${GREEN}PASS: config errors still cite the real source line after expansion.${NC}"
+  else
+    echo -e "${RED}FAIL: expansion shifted the reported config line number.${NC}"
+    cat "$TEST_ENV_DIR/glob_lineno.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
 
