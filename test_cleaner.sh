@@ -2534,7 +2534,7 @@ fi
 # Deliberately NOT exempt: User/History, whose entries.json records a resource path
 # and edit history per file -- an editor recovery feature, i.e. exactly the state
 # class this guard exists to protect.
-config_cache_names="CachedData logs"
+config_cache_names="|CachedData|logs|Cache|Code Cache|component_crx_cache|GPUPersistentCache|"
 config_offenders=""
 while IFS='|' read -r c_risk _ c_path _; do
   c_risk="${c_risk#"${c_risk%%[![:space:]]*}"}"
@@ -2543,8 +2543,8 @@ while IFS='|' read -r c_risk _ c_path _; do
     */.config/*)
       # Exempt only an allowlisted leaf name; every other .config path still fails.
       c_leaf="${c_path##*/}"
-      case " $config_cache_names " in
-        *" $c_leaf "*) ;;
+      case "$config_cache_names" in
+        *"|$c_leaf|"*) ;;
         *) config_offenders+=" $c_path" ;;
       esac
       ;;
@@ -2564,8 +2564,8 @@ for guard_probe in "\$HOME/.config/Cursor/User/History" \
                    "\$HOME/.config/Cursor/User/globalStorage" \
                    "\$HOME/.config/Cursor/CachedData"; do
   probe_leaf="${guard_probe##*/}"
-  case " $config_cache_names " in
-    *" $probe_leaf "*) ;;
+  case "$config_cache_names" in
+    *"|$probe_leaf|"*) ;;
     *) guard_probe_offenders+=" $guard_probe" ;;
   esac
 done
