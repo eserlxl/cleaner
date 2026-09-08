@@ -290,7 +290,34 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 .fi
 .PP
 The first five fields are required; the last two are optional. A malformed line is
-rejected with a line-numbered error. The default config is resolved from an explicit
+rejected with a line-numbered error.
+.PP
+.I PATH_EXPRESSION
+resolves the
+.BR $HOME ,
+.BR ~ ,
+and
+.B $USER
+placeholders, and may also contain
+.B *
+or
+.B ?
+wildcards. A wildcard line expands to one independent target per matching
+directory, each passing the same safety checks as a literal path. Matching is
+performed by
+.BR find (1)
+below the literal part of the pattern and at exactly the depth the pattern
+describes, never by shell globbing and never through
+.BR eval .
+A pattern matching nothing contributes no target and is not an error; a wildcard
+in the first path component is left unexpanded with a warning rather than
+scanning the whole filesystem. Use
+.B \-\-dry\-run
+or
+.B \-\-list\-targets
+to enumerate every expanded match before cleaning.
+.PP
+The default config is resolved from an explicit
 .BR \-c ,
 then the XDG user config, then
 .IR /etc/linux\-cleaner/cleaner.conf ,

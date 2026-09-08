@@ -34,6 +34,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 4 | Compromised `/etc/linux-cleaner/cleaner.conf` | File permissions + operator review | Operator mitigations (below) |
 | 5 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
 | 6 | Path escape via quarantine SESSION name | `validate_quarantine_session_name` | Restore Invalid Session / Purge Invalid Session |
+| 7 | Over-broad wildcard in PATH_EXPRESSION | Fixed-depth `find` below a literal root + per-match `check_path_safety` | Wildcard Path Expansion / Wildcard Root Refusal |
 
 ## Config Tampering and Injection
 
@@ -44,6 +45,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 3 | Arbitrary command injection via CUSTOM_ACTION | Low | Critical — only enumerated action:* |
 | 4 | Compromised /etc/linux-cleaner/cleaner.conf | Low | High |
 | 5 | Env-token abuse ($HOMEDATA vs $HOME) | Low | Medium |
+| 6 | Over-broad wildcard in PATH_EXPRESSION | Medium | High — one line becomes many targets |
 
 ### Controls mapping (config)
 
@@ -54,6 +56,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Unknown action | Enumerated whitelist | Predefined Action |
 | Compromised /etc/linux-cleaner/cleaner.conf | Root-owned config + dry-run before clean | Operator mitigations (below) |
 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
+| Over-broad wildcard | Expansion is amplification, not escape: a wildcard cannot reach a depth the pattern does not describe, cannot start at the filesystem root, and never runs through the shell or `eval`. Every match is then checked individually, so the root/system block, HOME boundary and symlink guard still apply. `--dry-run` and `--list-targets` enumerate every match before deletion; `--allow-outside-home` removes the HOME limit and widens the blast radius, so an anchored pattern is preferred there. | Wildcard Path Expansion / Wildcard Root Refusal / Wildcard Line Number Fidelity |
 
 ### Operator mitigations (/etc config)
 

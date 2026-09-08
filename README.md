@@ -29,7 +29,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 
 - **`RISK_LEVEL`**: The category of danger if cleaned: `safe`, `medium`, or `danger`.
 - **`NAME`**: A human-readable identifier for the target (e.g. `NPM Cache`).
-- **`PATH_EXPRESSION`**: The absolute or relative path to clean. Supports safe placeholder expansion for `$HOME`, `~`, and `$USER`.
+- **`PATH_EXPRESSION`**: The absolute or relative path to clean. Supports safe placeholder expansion for `$HOME`, `~`, and `$USER`. May also contain `*`/`?` wildcards, which expand to **one independent target per matching directory** — see [Wildcard paths](#wildcard-paths).
 - **`DESCRIPTION`**: A brief explanation of the files being cleaned.
 - **`MIN_AGE_DAYS`**: (Optional) Only delete files/symlinks older than N days. Set to `0` or leave empty to clean immediately.
 - **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped.
@@ -66,6 +66,26 @@ Error: /etc/linux-cleaner/cleaner.conf:12: expected 5-7 fields, found 4
 ```
 
 Fix it by restoring the missing `|` delimiter (or removing a stray one) on the cited line.
+
+### Wildcard paths
+
+A `PATH_EXPRESSION` may contain `*` or `?`. One such line expands to **one independent target per matching directory** — each is analyzed, sized, confirmed and cleaned on its own, and each passes the same root/system block, HOME boundary and symlink guard as a literal path.
+
+```text
+medium|Project Builds|$HOME/src/*/build*|Per-project build output|14||
+```
+
+Rules that keep expansion predictable:
+
+- **Fixed depth.** The literal part before the first wildcard is the search root, and matches must sit at exactly the depth the pattern describes. `$HOME/src/*/build*` matches `~/src/app/build` and `~/src/lib/build-asan`, but never `~/src/a/b/build`.
+- **Directories only.** Expansion matches directories, never individual files.
+- **No eval, no shell globbing.** Matching is done by `find`, so a pattern is never expanded by the shell against the working directory.
+- **A pattern matching nothing is not an error** — it simply contributes no target, and the run still exits `0`.
+- **A wildcard in the first component is refused.** `/*/build` would make the search walk the whole filesystem, so it is left unexpanded with a warning.
+- **Line numbers survive expansion.** A config error after a wildcard line still cites its real physical line.
+
+> [!WARNING]
+> One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. Combined with `--allow-outside-home` a wildcard reaches beyond `$HOME`, where the HOME boundary no longer limits the blast radius; prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.
 
 ### Example `cleaner.conf`
 ```text
@@ -235,7 +255,7 @@ Security threat model: [docs/threat-model.md](docs/threat-model.md).
 1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
 2. **HOME Boundary**: Targets outside the user's `$HOME` directory are blocked unless `--allow-outside-home` is active.
 3. **Symlink Guard**: If a target path is a symlink, the script refuses to delete it to prevent deletion bugs.
-4. **No Wildcard Eval**: Path expansion only resolves explicit placeholders (`$HOME`, `~`, and `$USER`) to avoid unintended wildcard expansion accidents.
+4. **No Eval, No Shell Globbing**: Path expansion resolves only the explicit placeholders (`$HOME`, `~`, and `$USER`), and never invokes `eval` or lets the shell expand a pattern. Wildcards are resolved by `find` at a fixed depth below a literal parent directory, and every match re-enters this same safety pipeline individually.
 5. **Physical Canonicalization**: Resolves target paths physically by resolving the closest existing parent directory. This prevents directory traversal or symlink-based boundary escapes.
 6. **Conflict Guard during Restore**: During quarantine restoration, if the original destination path already exists, the restoration is skipped for that file to prevent overwriting active data.
 
