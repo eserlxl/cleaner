@@ -84,6 +84,7 @@ Rules that keep expansion predictable:
 - **A pattern matching nothing is not an error** — it simply contributes no target, and the run still exits `0`.
 - **A wildcard in the first component is refused.** `/*/build` would make the search walk the whole filesystem, so it is left unexpanded with a warning.
 - **Line numbers survive expansion.** A config error after a wildcard line still cites its real physical line.
+- **`filter:cxx_build` selects by contents, not name.** Put it in the `CUSTOM_ACTION` field and an expanded match becomes a target only when it actually looks like a C/C++ build tree — it holds `CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json` or `.qmake.stash`, either directly or one level below (so a qmake `build/Desktop-Debug` layout qualifies). This is what separates real build output from a source directory that merely starts with "build", or a `build/` that holds documentation. The filter only ever narrows the match set, and a target may carry either a `filter:` or an `action:`, never both.
 
 > [!WARNING]
 > One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. Combined with `--allow-outside-home` a wildcard reaches beyond `$HOME`, where the HOME boundary no longer limits the blast radius; prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.

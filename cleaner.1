@@ -309,6 +309,17 @@ performed by
 below the literal part of the pattern and at exactly the depth the pattern
 describes, never by shell globbing and never through
 .BR eval .
+The
+.B CUSTOM_ACTION
+field also accepts
+.BR filter:cxx_build ,
+which keeps an expanded wildcard match only when the directory holds a build-system
+marker
+.RB ( CMakeCache.txt ", " CMakeFiles ", " build.ninja ", " meson-info ,
+.BR compile_commands.json ", or " .qmake.stash )
+directly or one level below, so a source directory whose name merely begins with
+"build" is excluded. A target carries either a filter or an action, never both.
+.PP
 A path component written as
 .B **
 matches one or more intervening directories, so one line covers a directory

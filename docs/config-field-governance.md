@@ -24,3 +24,23 @@ Rules for evolving the pipe-delimited config contract:
 ## SemVer classification
 
 Use [contract-semver-taxonomy.md](contract-semver-taxonomy.md) before merging.
+
+## CUSTOM_ACTION: actions and filters
+
+The seventh field holds one enumerated token, and there are two kinds:
+
+- `action:*` — runs a predefined command *instead of* deleting the path. Irreversible;
+  bypasses quarantine.
+- `filter:*` — constrains which expanded wildcard matches become targets. It only ever
+  narrows the match set, so it can never introduce a target the pattern alone would
+  not have produced, and it never replaces deletion.
+
+A target carries one or the other, never both. Both are validated against the same
+enumeration, so an unknown token of either kind is rejected with the same
+line-numbered error.
+
+`filter:cxx_build` keeps a match only when it holds a build-system marker
+(`CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json`,
+`.qmake.stash`) directly or one level below — the one-level allowance covers a qmake
+per-kit layout such as `build/Desktop-Debug`. Selecting by contents is what separates
+real build output from a source directory whose name merely begins with "build".

@@ -3522,6 +3522,86 @@ else
   exit 1
 fi
 
+# filter:cxx_build selects expanded matches by contents rather than by name, so a
+# source directory whose name merely starts with "build" is excluded while a real
+# build tree -- including a qmake layout whose marker sits one level down -- is kept.
+mkdir -p "$MOCK_HOME/src/cmakeproj/build" \
+         "$MOCK_HOME/src/qmakeproj/build/Desktop-Debug" \
+         "$MOCK_HOME/src/libproj/builder"
+# Non-empty on purpose: a target whose total size is 0 B is reported already clean
+# and never deleted, so empty markers would not exercise the cleanup path below.
+echo "CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3" > "$MOCK_HOME/src/cmakeproj/build/CMakeCache.txt"
+echo "QMAKE_STASH" > "$MOCK_HOME/src/qmakeproj/build/Desktop-Debug/.qmake.stash"
+echo "module.exports = {}" > "$MOCK_HOME/src/libproj/builder/index.js"
+cat > "$TEST_ENV_DIR/glob_filter.conf" <<'GLOBFILT'
+safe|Filtered Builds|$HOME/src/**/build*|Real build trees only|0||filter:cxx_build
+GLOBFILT
+cat > "$TEST_ENV_DIR/glob_nofilter.conf" <<'GLOBNOFILT'
+safe|Unfiltered Builds|$HOME/src/**/build*|Name matches only|0||
+GLOBNOFILT
+if run_test_case "Wildcard Build Marker Filter" 0 "glob_filter.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_filter.conf"; then
+  if grep -q "cmakeproj/build" "$TEST_ENV_DIR/glob_filter.log" \
+     && grep -q "qmakeproj/build" "$TEST_ENV_DIR/glob_filter.log" \
+     && ! grep -q "libproj/builder" "$TEST_ENV_DIR/glob_filter.log"; then
+    echo -e "${GREEN}PASS: filter:cxx_build kept both build trees and excluded the source directory.${NC}"
+  else
+    echo -e "${RED}FAIL: filter:cxx_build selected the wrong directories.${NC}"
+    cat "$TEST_ENV_DIR/glob_filter.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Without the token the behaviour must be unchanged, so the filter is opt-in only.
+if run_test_case "Wildcard Filter Is Opt In" 0 "glob_nofilter.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_nofilter.conf"; then
+  if grep -q "libproj/builder" "$TEST_ENV_DIR/glob_nofilter.log"; then
+    echo -e "${GREEN}PASS: the same pattern without the token still matches by name alone.${NC}"
+  else
+    echo -e "${RED}FAIL: name-only expansion changed when the filter token was absent.${NC}"
+    cat "$TEST_ENV_DIR/glob_nofilter.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# An unknown filter: token must be rejected exactly like an unknown action:.
+cat > "$TEST_ENV_DIR/glob_badfilter.conf" <<'GLOBBAD'
+safe|Bad Filter|$HOME/src/**/build*|Unknown filter token|0||filter:nosuchfilter
+GLOBBAD
+if run_test_case "Unknown Filter Token Rejected" 1 "glob_badfilter.log" \
+     --check-config --config "$TEST_ENV_DIR/glob_badfilter.conf"; then
+  if grep -q "Unknown action 'filter:nosuchfilter'" "$TEST_ENV_DIR/glob_badfilter.log"; then
+    echo -e "${GREEN}PASS: an unknown filter token is rejected with a line-numbered error.${NC}"
+  else
+    echo -e "${RED}FAIL: an unknown filter token was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/glob_badfilter.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A filter token must never be executed as an action during a real cleanup.
+if run_test_case "Filter Token Is Not An Action" 0 "glob_filter_clean.log" \
+     --clean --force --config "$TEST_ENV_DIR/glob_filter.conf"; then
+  if ! grep -q "Executing action" "$TEST_ENV_DIR/glob_filter_clean.log" \
+     && ! grep -q "Unknown action" "$TEST_ENV_DIR/glob_filter_clean.log" \
+     && [[ ! -f "$MOCK_HOME/src/cmakeproj/build/CMakeCache.txt" ]] \
+     && [[ -f "$MOCK_HOME/src/libproj/builder/index.js" ]]; then
+    echo -e "${GREEN}PASS: the filter token cleaned the build trees and never ran as an action.${NC}"
+  else
+    echo -e "${RED}FAIL: the filter token was treated as an action or cleaned the wrong directory.${NC}"
+    cat "$TEST_ENV_DIR/glob_filter_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # Line numbers must survive expansion: an error after a wildcard line still cites
 # its real physical line, not a position shifted by the expanded matches.
 cat > "$TEST_ENV_DIR/glob_lineno.conf" <<'GLOBLINENO'

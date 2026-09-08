@@ -555,6 +555,21 @@ expand_path_safe() {
 # arbitrarily deep tree. Documented in README.md and cleaner.1.
 GLOB_RECURSION_MAX_DEPTH=10
 
+# True when a directory looks like a C or C++ build tree. Checked by contents, not
+# by name: a directory called "builder" or "buildMatchFn" holds source, and one
+# called "build" may hold documentation, so only a build-system marker settles it.
+# maxdepth 2 covers the marker sitting in the directory itself and one level below,
+# which is where a qmake per-kit layout (build/Desktop-Debug) keeps it.
+is_cxx_build_dir() {
+  local dir="$1"
+  [[ -d "$dir" ]] || return 1
+  [[ -n $(find "$dir" -mindepth 1 -maxdepth 2 \
+            \( -name CMakeCache.txt -o -name CMakeFiles -o -name build.ninja \
+               -o -name meson-info -o -name compile_commands.json \
+               -o -name .qmake.stash \) \
+            -print -quit 2>/dev/null) ]]
+}
+
 # Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
 # one line per matching directory. Expansion runs through find, never a shell glob
 # and never eval, so the documented no-wildcard-eval contract still holds: only the
@@ -564,7 +579,7 @@ GLOB_RECURSION_MAX_DEPTH=10
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes leaf match
+  local prefix depth max_depth head tail_part slashes leaf match target_filter
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -627,8 +642,17 @@ expand_config_globs() {
     #
     # A pattern that matches nothing emits no target and is not an error, matching
     # the existing status of a configured path that does not exist.
+    # A filter: token in CUSTOM_ACTION (field 7) constrains which expanded matches
+    # become targets. It only ever narrows the set, so it can never introduce a
+    # target the pattern alone would not have produced.
+    target_filter=""
+    [[ "$fields" -eq 7 ]] && target_filter="${frest##*|}"
+
     while IFS= read -r match; do
       [[ -z "$match" ]] && continue
+      if [[ "$target_filter" == "filter:cxx_build" ]] && ! is_cxx_build_dir "$match"; then
+        continue
+      fi
       printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
     done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
                   -type d -name "$leaf" -path "$raw_path" -prune -print 2>/dev/null | sort)
@@ -837,7 +861,7 @@ validate_config_file() {
     fi
     if [[ -n "$custom_clean_cmd" ]]; then
       case "$custom_clean_cmd" in
-        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean)
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|filter:cxx_build)
           ;;
         *)
           echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -1791,7 +1815,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # Validate custom clean action if provided
   if [[ -n "$custom_clean_cmd" ]]; then
     case "$custom_clean_cmd" in
-      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean)
+      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|filter:cxx_build)
         ;;
       *)
         echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -2092,7 +2116,7 @@ for i in "${!parsed_names[@]}"; do
   use_sudo="${parsed_sudos[$i]:-false}"
   cleanup_bytes_before=$total_deleted_bytes
 
-  if [[ -n "$custom_clean_cmd" ]]; then
+  if [[ -n "$custom_clean_cmd" && "$custom_clean_cmd" != filter:* ]]; then
     # Safe degradation: skip an action whose actual binary is absent, before any
     # sudo call (e.g. paccache when pacman-contrib is not installed, or apt/dnf on
     # the wrong distro), so it is a clean skip rather than a failed sudo call.
