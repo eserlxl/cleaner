@@ -309,9 +309,13 @@ performed by
 below the literal part of the pattern and at exactly the depth the pattern
 describes, never by shell globbing and never through
 .BR eval .
-A pattern matching nothing contributes no target and is not an error; a wildcard
-in the first path component is left unexpanded with a warning rather than
-scanning the whole filesystem. Use
+A path component written as
+.B **
+matches one or more intervening directories, so one line covers a directory
+class that occurs at several depths; that recursion is bounded at 10 levels
+below the literal prefix. A pattern matching nothing contributes no target and
+is not an error; a wildcard in the first path component is left unexpanded with
+a warning rather than scanning the whole filesystem. Use
 .B \-\-dry\-run
 or
 .B \-\-list\-targets

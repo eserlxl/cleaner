@@ -550,6 +550,11 @@ expand_path_safe() {
   echo "$expanded"
 }
 
+# How many directory levels below the literal prefix a "**" pattern component may
+# span. Bounded on purpose: a mistyped recursive pattern must not walk an
+# arbitrarily deep tree. Documented in README.md and cleaner.1.
+GLOB_RECURSION_MAX_DEPTH=10
+
 # Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
 # one line per matching directory. Expansion runs through find, never a shell glob
 # and never eval, so the documented no-wildcard-eval contract still holds: only the
@@ -559,7 +564,7 @@ expand_path_safe() {
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
-  local prefix depth head tail_part slashes match
+  local prefix depth max_depth head tail_part slashes match
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -586,6 +591,18 @@ expand_config_globs() {
     tail_part="${raw_path#"$prefix"/}"
     slashes="${tail_part//[^\/]/}"
     depth=$(( ${#slashes} + 1 ))
+    max_depth="$depth"
+
+    # A "**" component matches one or more intervening directories, so the pattern
+    # spans a range of depths instead of one exact depth. GNU find's -path already
+    # lets * cross '/', so the pattern itself needs no rewriting -- only the search
+    # bounds widen. The ceiling is fixed rather than unbounded so a mistyped pattern
+    # cannot walk an arbitrarily deep tree; a "**" in the first component is still
+    # refused below, because the prefix is then empty.
+    if [[ "/$tail_part/" == *"/**/"* || "$tail_part" == "**" ]]; then
+      max_depth="$GLOB_RECURSION_MAX_DEPTH"
+      [[ "$depth" -gt "$max_depth" ]] && max_depth="$depth"
+    fi
 
     # A wildcard in the first component would make find walk the whole filesystem.
     # Refuse to expand it and pass the line through untouched: the literal pattern
@@ -603,7 +620,7 @@ expand_config_globs() {
     while IFS= read -r match; do
       [[ -z "$match" ]] && continue
       printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
-    done < <(find "$prefix" -mindepth "$depth" -maxdepth "$depth" -type d -path "$raw_path" 2>/dev/null | sort)
+    done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" -type d -path "$raw_path" 2>/dev/null | sort)
   done < "$CONFIG_FILE"
 }
 

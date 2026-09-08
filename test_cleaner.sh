@@ -3432,6 +3432,76 @@ else
   exit 1
 fi
 
+# A "**" component spans several nesting levels, so one line covers a build
+# directory class that occurs at more than one depth.
+mkdir -p "$MOCK_HOME/deep/one/build" \
+         "$MOCK_HOME/deep/one/two/build" \
+         "$MOCK_HOME/deep/one/two/three/build-asan"
+cat > "$TEST_ENV_DIR/glob_rec.conf" <<'GLOBREC'
+safe|Nested Builds|$HOME/deep/**/build*|Build output at any nesting level|0||
+GLOBREC
+if run_test_case "Wildcard Recursive Expansion" 0 "glob_rec.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_rec.conf"; then
+  if grep -q "deep/one/build" "$TEST_ENV_DIR/glob_rec.log" \
+     && grep -q "deep/one/two/build" "$TEST_ENV_DIR/glob_rec.log" \
+     && grep -q "deep/one/two/three/build-asan" "$TEST_ENV_DIR/glob_rec.log"; then
+    echo -e "${GREEN}PASS: one '**' pattern matched build directories at three different depths.${NC}"
+  else
+    echo -e "${RED}FAIL: '**' did not span nesting levels.${NC}"
+    cat "$TEST_ENV_DIR/glob_rec.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Without "**" the fixed-depth rule must still hold, so the two forms stay distinct.
+cat > "$TEST_ENV_DIR/glob_fixed.conf" <<'GLOBFIXED'
+safe|Shallow Builds|$HOME/deep/*/build*|Build output one level down|0||
+GLOBFIXED
+if run_test_case "Wildcard Fixed Depth Unchanged" 0 "glob_fixed.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_fixed.conf"; then
+  if grep -q "deep/one/build" "$TEST_ENV_DIR/glob_fixed.log" \
+     && ! grep -q "deep/one/two/build" "$TEST_ENV_DIR/glob_fixed.log"; then
+    echo -e "${GREEN}PASS: a pattern without '**' still matches exactly one depth.${NC}"
+  else
+    echo -e "${RED}FAIL: a non-recursive pattern crossed nesting levels.${NC}"
+    cat "$TEST_ENV_DIR/glob_fixed.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# The recursion ceiling must actually bound the search: a directory below the
+# documented limit is not matched, so a mistyped pattern cannot walk a deep tree.
+glob_ceiling=$(grep -m1 '^GLOB_RECURSION_MAX_DEPTH=' "$CLEANER_SH" | cut -d= -f2)
+if [[ ! "$glob_ceiling" =~ ^[0-9]+$ ]]; then
+  echo -e "${RED}FAIL: could not read GLOB_RECURSION_MAX_DEPTH from cleaner.sh.${NC}"
+  exit 1
+fi
+glob_too_deep="$MOCK_HOME/ceiling"
+for _ in $(seq 1 "$((glob_ceiling + 1))"); do
+  glob_too_deep="$glob_too_deep/d"
+done
+mkdir -p "$glob_too_deep/build" "$MOCK_HOME/ceiling/d/build"
+cat > "$TEST_ENV_DIR/glob_ceiling.conf" <<'GLOBCEIL'
+safe|Ceiling Builds|$HOME/ceiling/**/build|Build output under the recursion ceiling|0||
+GLOBCEIL
+if run_test_case "Wildcard Recursion Ceiling" 0 "glob_ceiling.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_ceiling.conf"; then
+  if grep -q "ceiling/d/build" "$TEST_ENV_DIR/glob_ceiling.log" \
+     && ! grep -q "$glob_too_deep/build" "$TEST_ENV_DIR/glob_ceiling.log"; then
+    echo -e "${GREEN}PASS: recursion stops at the documented ceiling of $glob_ceiling levels.${NC}"
+  else
+    echo -e "${RED}FAIL: recursion was not bounded by GLOB_RECURSION_MAX_DEPTH=$glob_ceiling.${NC}"
+    cat "$TEST_ENV_DIR/glob_ceiling.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # Line numbers must survive expansion: an error after a wildcard line still cites
 # its real physical line, not a position shifted by the expanded matches.
 cat > "$TEST_ENV_DIR/glob_lineno.conf" <<'GLOBLINENO'

@@ -77,7 +77,8 @@ medium|Project Builds|$HOME/src/*/build*|Per-project build output|14||
 
 Rules that keep expansion predictable:
 
-- **Fixed depth.** The literal part before the first wildcard is the search root, and matches must sit at exactly the depth the pattern describes. `$HOME/src/*/build*` matches `~/src/app/build` and `~/src/lib/build-asan`, but never `~/src/a/b/build`.
+- **Fixed depth by default.** The literal part before the first wildcard is the search root, and matches must sit at exactly the depth the pattern describes. `$HOME/src/*/build*` matches `~/src/app/build` and `~/src/lib/build-asan`, but never `~/src/a/b/build`.
+- **`**` spans nesting levels.** A path component written as `**` matches one or more intervening directories, so a single line covers a directory class that occurs at several depths: `$HOME/src/**/build*` matches `~/src/app/build` *and* `~/src/group/app/build`. Recursion is bounded at **10 levels** below the literal prefix, so a mistyped pattern cannot walk an arbitrarily deep tree — a directory deeper than that is simply not matched. Prefer the non-recursive form when one depth is enough: `**` scans the whole subtree up to the ceiling, which is slow against a large root such as `$HOME` itself.
 - **Directories only.** Expansion matches directories, never individual files.
 - **No eval, no shell globbing.** Matching is done by `find`, so a pattern is never expanded by the shell against the working directory.
 - **A pattern matching nothing is not an error** — it simply contributes no target, and the run still exits `0`.
