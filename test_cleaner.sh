@@ -3737,6 +3737,37 @@ else
   exit 1
 fi
 
+# Excluding a whole single-file target must prevent the move/delete, even when
+# another eligible target makes the total nonzero and enables the execution pass.
+for exclusion_mode in delete trash; do
+  setup_mock_env
+  printf 'preserve exactly\n' > "$MOCK_HOME/keep.log"
+  printf 'discard\n' > "$MOCK_HOME/discard.tmp"
+  cat > "$TEST_ENV_DIR/excluded_file.conf" <<'EXCLUDEFILE'
+safe|Excluded File|$HOME/keep.log|Must remain untouched|0||
+safe|Eligible File|$HOME/discard.tmp|Sibling enables cleanup|0||
+EXCLUDEFILE
+  exclusion_args=()
+  [[ "$exclusion_mode" == trash ]] && exclusion_args+=(--trash)
+  if run_test_case "Excluded Single File ($exclusion_mode)" 0 "excluded_file.log" \
+       --config "$TEST_ENV_DIR/excluded_file.conf" --force --exclude '*.log' "${exclusion_args[@]}" \
+     && grep -qx 'preserve exactly' "$MOCK_HOME/keep.log" \
+     && [[ ! -e "$MOCK_HOME/discard.tmp" ]]; then
+    if [[ "$exclusion_mode" == trash ]]; then
+      quarantine_meta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta)
+      if grep -qF '/keep.log|' "$quarantine_meta" \
+         || ! grep -qF '/discard.tmp|' "$quarantine_meta"; then
+        echo -e "${RED}FAIL: quarantine did not preserve the single-file exclusion.${NC}"
+        exit 1
+      fi
+    fi
+    echo -e "${GREEN}PASS: excluded single file stays intact during $exclusion_mode while its sibling is cleaned.${NC}"
+  else
+    echo -e "${RED}FAIL: excluded single file was moved or deleted during $exclusion_mode.${NC}"
+    cat "$TEST_ENV_DIR/excluded_file.log"
+    exit 1
+  fi
+done
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
-

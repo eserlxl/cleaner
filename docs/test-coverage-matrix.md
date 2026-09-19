@@ -24,6 +24,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-16 | action:zypper_clean | Cross-Distro Actions / Action Required Binary Mapping |
 | U-17 | human --list-targets description column | List Targets |
 | U-18 | action:zypper_clean absent skip | Zypper Safe Degradation |
+| U-19 | Excluded single-file targets remain untouched beside eligible siblings | Excluded Single File (delete) / Excluded Single File (trash) |
 
 ## Drift guards
 

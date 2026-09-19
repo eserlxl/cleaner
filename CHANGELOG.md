@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Fixed
+- Preserve excluded single-file targets during both permanent cleanup and
+  quarantine, including runs with other eligible targets.
+
 ### Added
 - `--list-sessions --json` — emit a machine-readable JSON inventory of
   quarantine sessions (`sessions` array of `timestamp`/`size_bytes`/

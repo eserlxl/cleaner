@@ -1992,7 +1992,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
             readable_size=$(format_bytes "$size_bytes")
             
             should_clean=false
-            if has_positive_age "$min_age"; then
+            if has_positive_age "$min_age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
               if has_matching_files "$path" "$min_age" "$use_sudo"; then
                 should_clean=true
               fi
