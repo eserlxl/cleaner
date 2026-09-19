@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Preserve wildcard path identity during discovery: warn and skip names that
+  would be split, trimmed, or expanded into another target by config parsing.
 - Validate raw config records before wildcard expansion, so unmatched patterns
   cannot hide malformed fields. `--check-config` counts definitions without
   traversing target directories (validation tightening; minor-release scope).

@@ -332,6 +332,11 @@ directly or one level below, so a source directory whose name merely begins with
 The same filter applies to literal paths without wildcards; surrounding whitespace
 in the field is ignored and never disables the filter.
 .PP
+Wildcard matches containing newlines, a pipe character, leading/trailing whitespace,
+or literal placeholders that would expand again are skipped with a warning. These
+names cannot be represented unchanged in the config record format; ordinary spaces
+inside directory names remain supported.
+.PP
 A path component written as
 .B **
 matches one or more intervening directories, so one line covers a directory

@@ -3861,5 +3861,48 @@ else
   exit 1
 fi
 
+# A discovered filename must not turn into a different config target. In
+# particular, build?* must never emit the unmatched sibling named just build.
+for transport_mode in delete trash; do
+  setup_mock_env
+  transport_names=($'build\nunrelated' 'build|field' 'build ' "build\$USER")
+  mkdir -p "$MOCK_HOME/transport/build" "$MOCK_HOME/transport/build-normal output"
+  printf 'preserve\n' > "$MOCK_HOME/transport/build/keep"
+  printf 'generated\n' > "$MOCK_HOME/transport/build-normal output/discard"
+  for transport_name in "${transport_names[@]}"; do
+    mkdir -p "$MOCK_HOME/transport/$transport_name"
+    printf 'preserve\n' > "$MOCK_HOME/transport/$transport_name/keep"
+  done
+  cat > "$TEST_ENV_DIR/transport.conf" <<'TRANSPORT'
+safe|Transport Target|$HOME/transport/build?*|Preserve directory identity|0||
+TRANSPORT
+  if ! run_test_case "Wildcard Path Identity Inventory ($transport_mode)" 0 "transport_list.log" \
+       --config "$TEST_ENV_DIR/transport.conf" --list-targets \
+     || [[ "$(grep -c '^Transport Target[[:space:]]' "$TEST_ENV_DIR/transport_list.log")" -ne 1 ]] \
+     || ! grep -q 'build-normal output' "$TEST_ENV_DIR/transport_list.log" \
+     || ! grep -q 'skipping wildcard match that cannot be represented safely' "$TEST_ENV_DIR/transport_list.log"; then
+    echo -e "${RED}FAIL: wildcard inventory changed a discovered directory name.${NC}"
+    cat "$TEST_ENV_DIR/transport_list.log"
+    exit 1
+  fi
+  transport_args=()
+  [[ "$transport_mode" == trash ]] && transport_args+=(--trash)
+  if ! run_test_case "Wildcard Path Identity Cleanup ($transport_mode)" 0 "transport_clean.log" \
+       --config "$TEST_ENV_DIR/transport.conf" --force "${transport_args[@]}" \
+     || ! grep -qx preserve "$MOCK_HOME/transport/build/keep" \
+     || [[ -e "$MOCK_HOME/transport/build-normal output" ]]; then
+    echo -e "${RED}FAIL: wildcard cleanup acted on the wrong directory.${NC}"
+    cat "$TEST_ENV_DIR/transport_clean.log"
+    exit 1
+  fi
+  for transport_name in "${transport_names[@]}"; do
+    if ! grep -qx preserve "$MOCK_HOME/transport/$transport_name/keep"; then
+      echo -e "${RED}FAIL: an unrepresentable wildcard match was cleaned.${NC}"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}PASS: wildcard $transport_mode preserves unmatched and unrepresentable paths; ordinary spaces still work.${NC}"
+done
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

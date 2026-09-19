@@ -655,14 +655,23 @@ expand_config_globs() {
     # A filter: token in CUSTOM_ACTION (field 7) constrains which expanded matches
     # become targets. It only ever narrows the set, so it can never introduce a
     # target the pattern alone would not have produced.
-    while IFS= read -r match; do
+    while IFS= read -r -d '' match; do
       [[ -z "$match" ]] && continue
+      # Config records are line/pipe-delimited and consumers trim and expand the
+      # path again. Refuse a match whose identity would change in that transport.
+      if [[ "$match" == *$'\n'* || "$match" == *'|'* \
+            || "$match" != "$(trim "$match")" \
+            || "$match" != "$(expand_path_safe "$match")" ]]; then
+        printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
+          "$CONFIG_FILE" "$lineno" "$match" >&2
+        continue
+      fi
       if [[ "$target_filter" == "filter:cxx_build" ]] && ! is_cxx_build_dir "$match"; then
         continue
       fi
       printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
     done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
-                  -type d -name "$leaf" -path "$raw_path" -prune -print 2>/dev/null | sort)
+                  -type d -name "$leaf" -path "$raw_path" -prune -print0 2>/dev/null | sort -z)
   done < "$CONFIG_FILE"
 }
 
