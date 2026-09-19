@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Apply `filter:cxx_build` consistently to literal and wildcard paths, including
+  tokens with surrounding whitespace, so source directories remain protected.
 - Preserve excluded single-file targets during both permanent cleanup and
   quarantine, including runs with other eligible targets.
 

@@ -31,7 +31,7 @@ The seventh field holds one enumerated token, and there are two kinds:
 
 - `action:*` — runs a predefined command *instead of* deleting the path. Irreversible;
   bypasses quarantine.
-- `filter:*` — constrains which expanded wildcard matches become targets. It only ever
+- `filter:*` — constrains which literal paths or expanded wildcard matches become targets. It only ever
   narrows the match set, so it can never introduce a target the pattern alone would
   not have produced, and it never replaces deletion.
 
@@ -44,6 +44,8 @@ line-numbered error.
 `.qmake.stash`) directly or one level below — the one-level allowance covers a qmake
 per-kit layout such as `build/Desktop-Debug`. Selecting by contents is what separates
 real build output from a source directory whose name merely begins with "build".
+Surrounding field whitespace is trimmed before applying the filter, for both
+wildcard and literal paths.
 
 ## CHECK_PROCESSES: name tokens and cmdline tokens
 

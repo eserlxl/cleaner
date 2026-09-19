@@ -89,6 +89,8 @@ Rules that keep expansion predictable:
 > [!WARNING]
 > One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. Combined with `--allow-outside-home` a wildcard reaches beyond `$HOME`, where the HOME boundary no longer limits the blast radius; prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.
 
+`filter:cxx_build` also checks literal paths without wildcards. Surrounding whitespace in the field is ignored, just as for other config fields; it never disables the filter.
+
 ### Example `cleaner.conf`
 ```text
 safe|NPM Cache|$HOME/.npm/_cacache|NPM dependency cache files|0|node,npm|

@@ -25,6 +25,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-17 | human --list-targets description column | List Targets |
 | U-18 | action:zypper_clean absent skip | Zypper Safe Degradation |
 | U-19 | Excluded single-file targets remain untouched beside eligible siblings | Excluded Single File (delete) / Excluded Single File (trash) |
+| U-20 | Padded build filters protect literal and wildcard targets | Build Filter Inventory (wildcard/literal human/json) / Build Filter Cleanup (wildcard/literal) |
 
 ## Drift guards
 

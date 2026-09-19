@@ -3769,5 +3769,43 @@ EXCLUDEFILE
   fi
 done
 
+# Whitespace is valid around config fields, and a literal path must obey its
+# filter just as a wildcard does. Exercise the shared inventory/cleanup stream.
+for filter_form in wildcard literal; do
+  setup_mock_env
+  mkdir -p "$MOCK_HOME/filter/build-source" "$MOCK_HOME/filter/build-real"
+  printf 'source\n' > "$MOCK_HOME/filter/build-source/keep.c"
+  printf 'generated\n' > "$MOCK_HOME/filter/build-real/CMakeCache.txt"
+  if [[ "$filter_form" == wildcard ]]; then
+    filter_paths=("\$HOME/filter/build-*")
+  else
+    filter_paths=("\$HOME/filter/build-source" "\$HOME/filter/build-real")
+  fi
+  printf 'safe|Filtered Build|%s|Only generated output|0|| filter:cxx_build \n' \
+    "${filter_paths[@]}" > "$TEST_ENV_DIR/padded_filter.conf"
+  for filter_output in human json; do
+    filter_args=()
+    [[ "$filter_output" == json ]] && filter_args+=(--json)
+    if ! run_test_case "Build Filter Inventory ($filter_form $filter_output)" 0 "padded_filter.log" \
+         --config "$TEST_ENV_DIR/padded_filter.conf" --list-targets "${filter_args[@]}" \
+       || grep -q 'build-source' "$TEST_ENV_DIR/padded_filter.log" \
+       || ! grep -q 'build-real' "$TEST_ENV_DIR/padded_filter.log"; then
+      echo -e "${RED}FAIL: $filter_form inventory bypassed a padded build filter.${NC}"
+      cat "$TEST_ENV_DIR/padded_filter.log"
+      exit 1
+    fi
+  done
+  if run_test_case "Build Filter Cleanup ($filter_form)" 0 "padded_filter_clean.log" \
+       --config "$TEST_ENV_DIR/padded_filter.conf" --force \
+     && grep -qx source "$MOCK_HOME/filter/build-source/keep.c" \
+     && [[ ! -e "$MOCK_HOME/filter/build-real" ]]; then
+    echo -e "${GREEN}PASS: $filter_form build filter preserves source and cleans generated output.${NC}"
+  else
+    echo -e "${RED}FAIL: $filter_form cleanup bypassed a padded build filter.${NC}"
+    cat "$TEST_ENV_DIR/padded_filter_clean.log"
+    exit 1
+  fi
+done
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

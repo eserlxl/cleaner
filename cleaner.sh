@@ -588,9 +588,19 @@ expand_config_globs() {
     IFS='|' read -r f1 f2 f3 frest <<< "$line"
     risk=$(trim "$f1")
     raw_path=$(trim "$f3")
-    # Comments, blanks, malformed lines (left for the existing field-count error)
-    # and wildcard-free targets pass through byte-identical.
-    if [[ -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$raw_path" != *[*?]* ]]; then
+    # Leave malformed lines intact for the field-count validator.
+    if [[ -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$fields" -gt 7 ]]; then
+      printf '%s\t%s\n' "$lineno" "$line"
+      continue
+    fi
+
+    target_filter=""
+    [[ "$fields" -eq 7 ]] && target_filter=$(trim "${frest##*|}")
+    if [[ "$raw_path" != *[*?]* ]]; then
+      if [[ "$target_filter" == "filter:cxx_build" ]] \
+         && ! is_cxx_build_dir "$(expand_path_safe "$raw_path")"; then
+        continue
+      fi
       printf '%s\t%s\n' "$lineno" "$line"
       continue
     fi
@@ -645,9 +655,6 @@ expand_config_globs() {
     # A filter: token in CUSTOM_ACTION (field 7) constrains which expanded matches
     # become targets. It only ever narrows the set, so it can never introduce a
     # target the pattern alone would not have produced.
-    target_filter=""
-    [[ "$fields" -eq 7 ]] && target_filter="${frest##*|}"
-
     while IFS= read -r match; do
       [[ -z "$match" ]] && continue
       if [[ "$target_filter" == "filter:cxx_build" ]] && ! is_cxx_build_dir "$match"; then

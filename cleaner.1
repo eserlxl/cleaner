@@ -329,6 +329,8 @@ marker
 .BR compile_commands.json ", or " .qmake.stash )
 directly or one level below, so a source directory whose name merely begins with
 "build" is excluded. A target carries either a filter or an action, never both.
+The same filter applies to literal paths without wildcards; surrounding whitespace
+in the field is ignored and never disables the filter.
 .PP
 A path component written as
 .B **
