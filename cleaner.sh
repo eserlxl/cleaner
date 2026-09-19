@@ -837,8 +837,7 @@ validate_config_file() {
   local target_count=0
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno="${config_line%%$'\t'*}"
-    config_line="${config_line#*$'\t'}"
+    config_lineno=$((config_lineno + 1))
     config_pipes="${config_line//[^|]/}"
     field_count=$(( ${#config_pipes} + 1 ))
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -889,7 +888,7 @@ validate_config_file() {
       exit 1
     fi
     target_count=$((target_count + 1))
-  done < <(expand_config_globs)
+  done < "$CONFIG_FILE"
 
   echo "OK: ${target_count} targets in ${CONFIG_FILE}"
 }
@@ -1754,6 +1753,12 @@ build_exclude_find_args
 if [[ "$LIST_SESSIONS" == true ]]; then
   list_quarantine_sessions
   exit 0
+fi
+
+# Validate physical records before an unmatched wildcard or a filter can remove
+# one from the stream. Session operations intentionally do not require a config.
+if [[ -z "$RESTORE_TARGET" && -z "$PURGE_TARGET" && "$CHECK_CONFIG" != true ]]; then
+  validate_config_file >/dev/null
 fi
 
 if [[ "$LIST_TARGETS" == true ]]; then

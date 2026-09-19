@@ -3807,5 +3807,59 @@ for filter_form in wildcard literal; do
   fi
 done
 
+# Invalid wildcard records must be rejected even if they currently match nothing,
+# before a valid sibling can be cleaned. All config consumers share this gate.
+setup_mock_env
+printf 'preserve\n' > "$MOCK_HOME/config-sentinel"
+for invalid_record in \
+  "safe|Absent|\$HOME/missing/*|Invalid age|nope||" \
+  "safe|Absent|\$HOME/missing/*|Invalid action|0||filter:unknown" \
+  "safe|Absent|\$HOME/missing/*|Extra field|0|||extra" \
+  "safe|Absent|\$HOME/missing/*|Empty command pattern|0|cmdline:|"; do
+  printf '%s\n' \
+    "safe|Sentinel|\$HOME/config-sentinel|Must not be touched|0||" \
+    '# Keep physical line numbering' "$invalid_record" > "$TEST_ENV_DIR/unmatched_invalid.conf"
+  for validation_mode in check inventory json clean; do
+    case "$validation_mode" in
+      check) validation_args=(--check-config) ;;
+      inventory) validation_args=(--list-targets) ;;
+      json) validation_args=(--list-targets --json) ;;
+      clean) validation_args=(--force) ;;
+    esac
+    if ! run_test_case "Unmatched Wildcard Validation ($validation_mode)" 1 "unmatched_invalid.log" \
+         --config "$TEST_ENV_DIR/unmatched_invalid.conf" "${validation_args[@]}" \
+       || ! grep -qF 'unmatched_invalid.conf:3:' "$TEST_ENV_DIR/unmatched_invalid.log" \
+       || ! grep -qx preserve "$MOCK_HOME/config-sentinel"; then
+      echo -e "${RED}FAIL: $validation_mode hid a malformed unmatched wildcard record.${NC}"
+      cat "$TEST_ENV_DIR/unmatched_invalid.log"
+      exit 1
+    fi
+  done
+done
+echo -e "${GREEN}PASS: all config consumers reject malformed unmatched wildcard records before mutation.${NC}"
+
+# --check-config validates definitions, never their current expansion or contents.
+mkdir -p "$MOCK_HOME/count/a" "$MOCK_HOME/count/b"
+printf '%s\n' \
+  "safe|Existing Pattern|\$HOME/count/*|Two matches but one definition|0||" \
+  "safe|Absent Pattern|\$HOME/absent/*|No matches but one definition|0||filter:cxx_build" \
+  > "$TEST_ENV_DIR/raw_count.conf"
+cat > "$TEST_ENV_DIR/bin/find" <<'NOFIND'
+#!/usr/bin/env bash
+printf 'called\n' >> "$TEST_ENV_DIR/check_config_find_called"
+exit 99
+NOFIND
+chmod +x "$TEST_ENV_DIR/bin/find"
+if run_test_case "Check Config Counts Definitions Without Traversal" 0 "raw_count.log" \
+     --config "$TEST_ENV_DIR/raw_count.conf" --check-config \
+   && grep -q '^OK: 2 targets in ' "$TEST_ENV_DIR/raw_count.log" \
+   && [[ ! -e "$TEST_ENV_DIR/check_config_find_called" ]]; then
+  echo -e "${GREEN}PASS: --check-config counts raw definitions and never invokes find.${NC}"
+else
+  echo -e "${RED}FAIL: --check-config traversed target paths or counted filesystem matches.${NC}"
+  cat "$TEST_ENV_DIR/raw_count.log"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

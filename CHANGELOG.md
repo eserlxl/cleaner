@@ -16,6 +16,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Validate raw config records before wildcard expansion, so unmatched patterns
+  cannot hide malformed fields. `--check-config` counts definitions without
+  traversing target directories (validation tightening; minor-release scope).
 - Apply `filter:cxx_build` consistently to literal and wildcard paths, including
   tokens with surrounding whitespace, so source directories remain protected.
 - Preserve excluded single-file targets during both permanent cleanup and
