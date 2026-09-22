@@ -1036,13 +1036,20 @@ purge_quarantine_sessions() {
     while IFS= read -r s; do
       [[ -n "$s" ]] && targets+=("$s")
     done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+    if ! wait "$!"; then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
     if [[ ${#targets[@]} -eq 0 ]]; then
       echo -e "${YELLOW}No quarantine sessions found.${NC}"
       return 0
     fi
   elif [[ "$target" == "latest" ]]; then
     local latest
-    latest=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)
+    if ! latest=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1); then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
     if [[ -z "$latest" ]]; then
       echo -e "${RED}Error: No quarantined sessions found in '$quarantine_base'.${NC}" >&2
       exit 1
@@ -1061,6 +1068,10 @@ purge_quarantine_sessions() {
     while IFS= read -r s; do
       [[ -n "$s" ]] && targets+=("$s")
     done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -mtime +"$days" 2>/dev/null | sort)
+    if ! wait "$!"; then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
     # Nothing old enough is a success for a cron wrapper, not an error.
     if [[ ${#targets[@]} -eq 0 ]]; then
       echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
@@ -1313,6 +1324,7 @@ restore_quarantine() {
             success=false
           fi
         done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+        wait "$!" || success=false
       else
         mkdir -p "$original_path"
         while IFS= read -r -d '' file; do
@@ -1334,6 +1346,7 @@ restore_quarantine() {
             success=false
           fi
         done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+        wait "$!" || success=false
       fi
     else
       echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
@@ -2351,6 +2364,7 @@ for i in "${!parsed_names[@]}"; do
               success=false
             fi
           done < <(sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
+          wait "$!" || success=false
           sudo chown -R "$(id -u):$(id -g)" "$q_target"
           sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
         else
@@ -2363,6 +2377,7 @@ for i in "${!parsed_names[@]}"; do
               success=false
             fi
           done < <(find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
+          wait "$!" || success=false
           find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
         fi
       else

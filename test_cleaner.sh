@@ -3937,5 +3937,80 @@ if ! PATH="$missing_action_bin" run_test_case "Absent Action JSON Without Sudo" 
 fi
 echo -e "${GREEN}PASS: absent actions skip before sudo and ordinary sibling cleanup succeeds.${NC}"
 
+# Process-substitution discovery must propagate a partial find failure. Exercise
+# both ownership branches without using real sudo or host permission assumptions.
+for traversal_sudo in false true; do
+  setup_mock_env
+  cat > "$TEST_ENV_DIR/bin/find" <<'PARTIAL_FIND'
+#!/usr/bin/env bash
+if [[ "$1" == "${MOCK_FIND_FAIL_ROOT:-}" && " $* " == *' -print0 '* ]]; then
+  printf '%s\0' "$1/first"
+  exit 1
+fi
+real_find=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v find)
+exec "$real_find" "$@"
+PARTIAL_FIND
+  chmod +x "$TEST_ENV_DIR/bin/find"
+  traversal_target="$MOCK_HOME/.cache/traversal"
+  mkdir -p "$traversal_target"
+  printf 'first\n' > "$traversal_target/first"
+  printf 'second\n' > "$traversal_target/second"
+  touch -d '10 days ago' "$traversal_target/first" "$traversal_target/second"
+  printf 'safe|Traversal|%s|Partial traversal|7||\n' "$traversal_target" > "$TEST_ENV_DIR/traversal.conf"
+  [[ "$traversal_sudo" == true ]] && chmod u-r "$traversal_target"
+  if ! MOCK_SUDO_UNLOCK_PATH="$traversal_target" MOCK_FIND_FAIL_ROOT="$traversal_target" \
+       run_test_case "Trash Traversal Failure ($traversal_sudo)" 1 "traversal_trash.log" \
+       --config "$TEST_ENV_DIR/traversal.conf" --trash --force; then
+    chmod u+r "$traversal_target"
+    exit 1
+  fi
+  chmod u+r "$traversal_target"
+  traversal_meta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit)
+  traversal_session=$(dirname "$traversal_meta")
+  [[ -f "$traversal_session/0_Traversal/first" && -f "$traversal_target/second" ]] \
+    && grep -q "Failed to move some files" "$TEST_ENV_DIR/traversal_trash.log" || exit 1
+
+  # Simulate a complete aged payload and an unmatched sibling for selective retry.
+  mv "$traversal_target/second" "$traversal_session/0_Traversal/second"
+  printf 'sibling\n' > "$traversal_session/1_Sibling"
+  printf 'full|1_Sibling|%s|false|%s|%s\n' \
+    "$MOCK_HOME/.cache/unmatched_sibling" "$(id -u)" "$(id -g)" >> "$traversal_meta"
+  cp "$traversal_meta" "$TEST_ENV_DIR/traversal.meta.before"
+  if ! MOCK_FIND_FAIL_ROOT="$traversal_session/0_Traversal" run_test_case "Selective Restore Traversal Failure ($traversal_sudo)" 1 "traversal_restore.log" \
+       --restore latest --only /.cache/traversal \
+     || ! cmp -s "$traversal_meta" "$TEST_ENV_DIR/traversal.meta.before" \
+     || [[ ! -f "$traversal_session/0_Traversal/second" || ! -f "$traversal_target/first" ]]; then
+    echo -e "${RED}FAIL: failed traversal discarded payload or recovery metadata.${NC}"
+    exit 1
+  fi
+  if ! run_test_case "Restore Traversal Failure Retry ($traversal_sudo)" 0 "traversal_retry.log" --restore latest \
+     || [[ ! -f "$traversal_target/second" || -d "$traversal_session" ]]; then
+    echo -e "${RED}FAIL: retry after a traversal failure did not recover the session.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: partial trash/restore traversal fails and preserves retryable state ($traversal_sudo).${NC}"
+done
+
+setup_mock_env
+purge_failure_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+mkdir -p "$purge_failure_base/2000-01-01_00-00-00"
+printf 'preserve\n' > "$purge_failure_base/2000-01-01_00-00-00/payload"
+cat > "$TEST_ENV_DIR/bin/find" <<'PURGE_FIND'
+#!/usr/bin/env bash
+printf '%s/2000-01-01_00-00-00\n' "$1"
+exit 1
+PURGE_FIND
+chmod +x "$TEST_ENV_DIR/bin/find"
+for purge_selector in all latest older-than:30; do
+  if ! run_test_case "Purge Enumeration Failure ($purge_selector)" 1 "purge_find_failure.log" \
+       --purge-sessions "$purge_selector" --force \
+     || ! grep -q 'Failed to enumerate' "$TEST_ENV_DIR/purge_find_failure.log" \
+     || ! grep -qx preserve "$purge_failure_base/2000-01-01_00-00-00/payload"; then
+    echo -e "${RED}FAIL: purge deleted a partial enumeration or reported success.${NC}"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: all purge selectors refuse failed session enumeration without deletion.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

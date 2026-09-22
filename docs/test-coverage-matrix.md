@@ -29,6 +29,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-21 | Validate raw wildcard definitions independently of filesystem matches | Unmatched Wildcard Validation (check/inventory/json/clean) / Check Config Counts Definitions Without Traversal |
 | U-22 | Wildcard discovery cannot redirect cleanup through unusual filenames | Wildcard Path Identity Inventory (delete/trash) / Wildcard Path Identity Cleanup (delete/trash) |
 | U-23 | Absent package managers skip without sudo and preserve ordinary cleanup | Absent Action JSON Without Sudo / Absent Action Cleanup Without Sudo |
+| U-24 | Failed quarantine traversal preserves retryable payload and metadata | Trash Traversal Failure / Selective Restore Traversal Failure / Restore Traversal Failure Retry / Purge Enumeration Failure |
 
 ## Drift guards
 

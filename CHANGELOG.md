@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Report partial filesystem traversal failures during quarantine and restore,
+  retain recovery metadata for retries, and refuse purge on incomplete enumeration.
 - Skip unavailable package-manager actions before sudo authentication and sizing,
   so portable configs do not block ordinary cleanup or inflate JSON previews.
 - Preserve wildcard path identity during discovery: warn and skip names that
