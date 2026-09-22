@@ -17,6 +17,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 |----------|------------------|
 | Config file author | Operator controls config path |
 | `/etc/linux-cleaner/cleaner.conf` | System admin |
+| Quarantine tree and `quarantine.meta` | Trusted local state; restore consumes recorded paths, privilege use, and ownership |
 
 ## Threat Actors
 
@@ -81,7 +82,7 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 
 | Scenario | Control |
 |----------|---------|
-| Metadata tampering | quarantine.meta validation |
+| Metadata tampering | Residual risk: restore trusts recorded paths and ownership; protect the quarantine tree from untrusted edits |
 | Restore conflicts | Restore with Conflict test (collision detection) |
 | Action vs trash confusion | irreversible action:* WARNING |
 | Path escape via SESSION name | `validate_quarantine_session_name` rejects `/`, `.`, `..` (Restore/Purge Invalid Session) |
@@ -105,6 +106,7 @@ Primary threats: misconfiguration, config tampering, path escape, irreversible a
 |------|--------|
 | Live /etc config tampering | residual |
 | TOCTOU | residual |
+| Quarantine metadata tampering | residual; restore only trusted sessions |
 
 ## Periodic refresh policy
 

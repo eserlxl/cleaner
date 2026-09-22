@@ -4,6 +4,8 @@
 
 Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine.meta` recording original paths and ownership.
 
+Restore trusts this metadata for source and destination paths, privilege use, and ownership. Keep the quarantine tree private and restore only sessions you trust; metadata is not authenticated or comprehensively validated against tampering.
+
 ## Session inventory workflow
 
 `cleaner --list-sessions` lists timestamp, size, and per-target paths (tests: `List Sessions`, `List Sessions Empty`, `List Sessions Shows Contents`).
@@ -57,6 +59,8 @@ Selective restore: `--restore latest --only PATTERN` (`Restore Only One Target`,
 
 If destination exists, restore skips (`Restore with Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry.
 
+If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; the inventory lists recorded targets only.
+
 ### Restore exit / flag matrix
 
 | Case | Test |
@@ -64,9 +68,11 @@ If destination exists, restore skips (`Restore with Conflict`). Partial failures
 | Only Target With Restore Rejected | rejected |
 | Only Without Restore Rejected | rejected |
 
+Restore and purge have no dry-run mode. An active explicit `--dry-run` with either is rejected before mutation (`Dry Run With Restore Rejected`, `Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`.
+
 ## Purge reference
 
-> **WARNING:** Targets with `action:custom` or other irreversible `action:*` handlers bypass quarantine and delete in place. Review `cleaner.conf` before any automated `--force` run.
+> **WARNING:** Supported predefined `action:*` handlers (for example, `action:apt_clean`) bypass quarantine and delete in place. There is no generic `action:custom`; unknown actions are rejected. Review `cleaner.conf` before any automated `--force` run.
 
 Selectors: `latest`, `all`, timestamp, `older-than:DAYS`. A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
 
