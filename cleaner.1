@@ -25,7 +25,7 @@ Calculate and display potential space savings without deleting anything (default
 Perform cleanup with a summary confirmation prompt.
 .TP
 .BR \-i ", " \-\-interactive
-Prompt for confirmation before cleaning each target.
+Enable cleanup and prompt for confirmation before cleaning each target.
 .TP
 .BR \-f ", " \-\-force
 Clean immediately without confirmation prompts (except danger level).
@@ -34,7 +34,8 @@ Clean immediately without confirmation prompts (except danger level).
 Bypass the manual confirmation prompt for danger-risk targets.
 .TP
 .BR \-t ", " \-\-trash
-Move files to quarantine instead of permanent deletion.
+Select quarantine instead of permanent deletion. This flag alone keeps the
+default preview mode.
 .TP
 .BR \-r ", " \-\-risk " " \fILEVEL\fR
 Maximum risk level to clean: safe, medium, or danger (default: safe).
@@ -155,6 +156,8 @@ or
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
+Each target records one UID/GID pair, applied on a best-effort basis during
+restore. Distinct ownership within a mixed-owner tree is not preserved.
 A named session must be an immediate child of the quarantine directory;
 path separators and
 .BR . / ..

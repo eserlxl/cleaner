@@ -13,7 +13,7 @@ A safe, configuration-driven Bash utility designed to estimate and reclaim disk 
 - **Age Filter**: Targets can specify a minimum age in days (using `find -mtime`). Only files/symlinks older than the limit are cleaned.
 - **Running-Process Checks**: Skip targets if their associated applications/processes are running (e.g., skip chromium cache if Chrome is open).
 - **Trash Quarantine**: Move deleted files to a quarantine folder (`~/.cache/linux-cleaner/quarantine/`) with collision prevention and path sanitization instead of deleting permanently.
-- **Quarantine Restoration**: Restore files from any previous quarantine session back to their original paths, preserving original ownership (`UID` and `GID`).
+- **Quarantine Restoration**: Restore files from a previous quarantine session to their original paths. Each target records one `UID`/`GID` pair, applied on a best-effort basis during restore; distinct ownership within a mixed-owner tree is not preserved.
 - **Quarantine Purge & Retention**: Permanently delete quarantine sessions (`latest`, `all`, `older-than:DAYS`, or a specific timestamp) to reclaim the space trash mode holds, with a confirmation prompt naming every target before any irreversible deletion. The `older-than:DAYS` selector is what makes trash mode viable unattended — pair a `--trash` cron job with a periodic retention purge and quarantine stays bounded.
 - **Predefined Custom Actions**: Execute specific system commands (like package cache cleaners) instead of path deletion.
 
@@ -21,7 +21,7 @@ A safe, configuration-driven Bash utility designed to estimate and reclaim disk 
 
 ## Configuration
 
-By default, the script reads target definitions from `./cleaner.conf`. The format is a plain text file where each line defines a target with fields separated by pipe `|` characters:
+The script searches for target definitions in `${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf`, then `/etc/linux-cleaner/cleaner.conf`, then `cleaner.conf` beside the script. `LINUX_CLEANER_CONFIG` overrides this search, and `-c/--config` overrides the environment value. The format is a plain text file where each line defines a target with fields separated by pipe `|` characters:
 
 ```text
 RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_ACTION
@@ -115,13 +115,13 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
 
 ### Options
 
-- **`--clean`**: Execute the cleanup. Without this flag, the script runs in dry-run mode.
-- **`-c, --config FILE`**: Use a custom configuration file instead of `./cleaner.conf`.
+- **`--clean`**: Enable cleanup with a summary confirmation prompt. Cleanup is also enabled by `--force`, `--interactive`, or a truthy `LINUX_CLEANER_FORCE`.
+- **`-c, --config FILE`**: Use a custom configuration file instead of the resolved default.
 - **`-d, --dry-run`**: Run in preview/dry-run mode (default).
-- **`-i, --interactive`**: Prompt for confirmation before deleting each target individually.
-- **`-f, --force`**: Skip all normal confirmation prompts (except danger level).
+- **`-i, --interactive`**: Enable cleanup and prompt for confirmation before deleting each target individually.
+- **`-f, --force`**: Enable cleanup and skip normal confirmation prompts (except danger level).
 - **`--yes-danger`**: Bypass manual confirmation prompt for danger risk targets.
-- **`-t, --trash`**: Move files to quarantine instead of permanent deletion.
+- **`-t, --trash`**: Select quarantine instead of permanent deletion; this flag alone keeps the default preview mode.
 - **`-r, --risk LEVEL`**: Max risk level to clean: `safe`, `medium`, or `danger` (default: `safe`).
 - **`-e, --exclude PATTERNS`**: Comma-separated list of glob patterns to exclude from cleanup (e.g. `.git,*.log`).
   > [!WARNING]
@@ -174,6 +174,8 @@ Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessi
 - **`--json`**: With `--dry-run`, emit a machine-readable JSON summary (`config`, `total_reclaimable_bytes`, `total_reclaimable_human`, per-target `name`/`path`/`risk`/`bytes`/`size_human`/`status`) instead of human-formatted output. With `--list-targets`, emit a JSON inventory (`config`, per-target `name`/`risk`/`path`/`description`/`min_age_days`/`check_processes`/`custom_action`). With `--list-sessions`, emit a JSON inventory (`sessions` array of `timestamp`/`size_bytes`/`size_human`/`date`/`targets`). Implies `--quiet`.
 - **`-h, --help`**: Display usage details.
 - **`-V, --version`**: Print the tool version and exit.
+
+For cleanup, the last of `--dry-run`, `--clean`, `--force`, or `--interactive` determines preview versus execution. CLI flags take precedence over environment defaults. An active explicit `--dry-run` is rejected with `--restore` or `--purge-sessions`, which have no preview mode.
 
 ### Exit status
 

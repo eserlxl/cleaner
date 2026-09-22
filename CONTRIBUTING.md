@@ -25,16 +25,19 @@ A change to `cleaner.sh` must preserve all of these:
 1. **Every deletion routes through `check_path_safety`.** No path is removed,
    trashed, or acted on without first being classified by that function (defined
    in `cleaner.sh`). Do not add a deletion path that bypasses it.
-2. **No `eval`, no wildcard evaluation.** Path expansion resolves only the
-   explicit `$HOME`, `~`, and `$USER` placeholders. Never introduce `eval` or
-   unquoted glob expansion of config-supplied strings.
+2. **No `eval` or shell glob expansion.** Placeholder expansion resolves only
+   `$HOME`, `~`, and `$USER`; bounded wildcard discovery uses `find`. Never
+   introduce `eval` or unquoted glob expansion of config-supplied strings.
 3. **Privileged actions only via the whitelisted registry.** Predefined
    `action:*` commands run from a fixed, enumerated whitelist — never a
    config-supplied command string. Extend the whitelist by adding a new
    enumerated arm; never open a general command channel.
-4. **Dry-run stays the default.** The tool must never delete unless the user
-   explicitly passes `--clean` (or `--trash`); `danger` targets require
-   confirmation even under `--force`.
+4. **Dry-run stays the cleanup default.** Cleanup executes only when enabled by
+   `--clean`, `--force`, `--interactive`, or a truthy `LINUX_CLEANER_FORCE`;
+   the last CLI execution/preview flag wins. `--trash` only selects quarantine.
+   `danger` targets still require confirmation unless `--yes-danger` is set.
+   Restore and purge are separate explicit operations and reject active
+   explicit `--dry-run`.
 
 
 Threat model: [docs/threat-model.md](docs/threat-model.md) (maps invariants to scenarios).

@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Correct operator guidance for execution flags, config lookup, systemd
+  environment overrides, config compatibility, and quarantine ownership/trust.
 - Discover valid nested C/C++ build trees beneath rejected wildcard parents,
   while keeping accepted parent and child targets from overlapping.
 - Report partial filesystem traversal failures during quarantine and restore,

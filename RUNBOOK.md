@@ -59,7 +59,7 @@ Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) additionally n
 
 ## systemd user timers
 
-Copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) so both service units load the safe-tier defaults.
+Copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. Only `linux-cleaner-clean.service` loads this file. The monitor and retention services use their own unit settings; cleanup filters and JSON flags in this file do not affect them. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
 
 Enable the paired timers:
 
