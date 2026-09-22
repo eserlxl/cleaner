@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Discover valid nested C/C++ build trees beneath rejected wildcard parents,
+  while keeping accepted parent and child targets from overlapping.
 - Report partial filesystem traversal failures during quarantine and restore,
   retain recovery metadata for retries, and refuse purge on incomplete enumeration.
 - Skip unavailable package-manager actions before sudo authentication and sizing,

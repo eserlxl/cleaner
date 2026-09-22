@@ -4012,5 +4012,42 @@ for purge_selector in all latest older-than:30; do
 done
 echo -e "${GREEN}PASS: all purge selectors refuse failed session enumeration without deletion.${NC}"
 
+# A rejected build* source parent must not hide a valid nested build directory;
+# accepted parents must still suppress descendant targets, even across siblings.
+for filtered_mode in delete trash; do
+  setup_mock_env
+  filtered_root="$MOCK_HOME/filtered-projects"
+  mkdir -p "$filtered_root/app/builder/source/build" \
+    "$filtered_root/lib/build/build-inner" "$filtered_root/lib/build-other"
+  printf 'source\n' > "$filtered_root/app/builder/source/keep.cpp"
+  for build_dir in app/builder/source/build lib/build lib/build/build-inner lib/build-other; do
+    printf 'generated\n' > "$filtered_root/$build_dir/CMakeCache.txt"
+  done
+  cat > "$TEST_ENV_DIR/filtered_nested.conf" <<'FILTERED_NESTED'
+safe|Filtered Nested Build|$HOME/filtered-projects/**/build*|Generated build trees only|0||filter:cxx_build
+FILTERED_NESTED
+  if ! run_test_case "Filtered Nested Build Inventory ($filtered_mode)" 0 "filtered_nested_list.log" \
+       --config "$TEST_ENV_DIR/filtered_nested.conf" --list-targets \
+     || [[ "$(grep -c '^Filtered Nested Build[[:space:]]' "$TEST_ENV_DIR/filtered_nested_list.log")" -ne 3 ]] \
+     || ! grep -qF "$filtered_root/app/builder/source/build" "$TEST_ENV_DIR/filtered_nested_list.log" \
+     || grep -qF 'build-inner' "$TEST_ENV_DIR/filtered_nested_list.log"; then
+    echo -e "${RED}FAIL: filtered discovery hid a nested build or emitted overlapping targets.${NC}"
+    cat "$TEST_ENV_DIR/filtered_nested_list.log"
+    exit 1
+  fi
+  filtered_args=()
+  [[ "$filtered_mode" == trash ]] && filtered_args+=(--trash)
+  if ! run_test_case "Filtered Nested Build Cleanup ($filtered_mode)" 0 "filtered_nested_clean.log" \
+       --config "$TEST_ENV_DIR/filtered_nested.conf" --force "${filtered_args[@]}" \
+     || ! grep -qx source "$filtered_root/app/builder/source/keep.cpp" \
+     || [[ -e "$filtered_root/app/builder/source/build" || -e "$filtered_root/lib/build" \
+           || -e "$filtered_root/lib/build-other" ]]; then
+    echo -e "${RED}FAIL: filtered cleanup missed generated output or removed source files.${NC}"
+    cat "$TEST_ENV_DIR/filtered_nested_clean.log"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: filtered recursive $filtered_mode discovers nested builds without overlap or source loss.${NC}"
+done
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

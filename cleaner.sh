@@ -579,7 +579,9 @@ is_cxx_build_dir() {
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes leaf match target_filter
+  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor
+  local -a prune_args
+  local -A accepted_matches
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -646,15 +648,16 @@ expand_config_globs() {
     # "build/CMakeFiles" and every path below it.
     leaf="${raw_path##*/}"
 
-    # -prune stops the walk at a match, so a directory nested inside an already
-    # matched one is not emitted as a second target. Without it, cleaning the parent
-    # would delete the child a later target still refers to.
+    # Stop at unfiltered matches. Filtered discovery must walk through rejected
+    # parents; suppress descendants only after a parent passes the filter.
     #
     # A pattern that matches nothing emits no target and is not an error, matching
     # the existing status of a configured path that does not exist.
     # A filter: token in CUSTOM_ACTION (field 7) constrains which expanded matches
-    # become targets. It only ever narrows the set, so it can never introduce a
-    # target the pattern alone would not have produced.
+    # become targets. Every accepted directory must still match the path pattern.
+    prune_args=(-prune)
+    [[ "$target_filter" == "filter:cxx_build" ]] && prune_args=()
+    accepted_matches=()
     while IFS= read -r -d '' match; do
       [[ -z "$match" ]] && continue
       # Config records are line/pipe-delimited and consumers trim and expand the
@@ -666,12 +669,18 @@ expand_config_globs() {
           "$CONFIG_FILE" "$lineno" "$match" >&2
         continue
       fi
-      if [[ "$target_filter" == "filter:cxx_build" ]] && ! is_cxx_build_dir "$match"; then
-        continue
+      if [[ "$target_filter" == "filter:cxx_build" ]]; then
+        ancestor="${match%/*}"
+        while [[ "$ancestor" == "$prefix"/* ]]; do
+          [[ -n "${accepted_matches[$ancestor]:-}" ]] && continue 2
+          ancestor="${ancestor%/*}"
+        done
+        is_cxx_build_dir "$match" || continue
+        accepted_matches["$match"]=1
       fi
       printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
     done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
-                  -type d -name "$leaf" -path "$raw_path" -prune -print0 2>/dev/null | sort -z)
+                  -type d -name "$leaf" -path "$raw_path" "${prune_args[@]}" -print0 2>/dev/null | sort -z)
   done < "$CONFIG_FILE"
 }
 
