@@ -5,13 +5,13 @@ Rules for evolving the pipe-delimited config contract:
 
 ## Field evolution rules
 
-1. **Optional trailing additions (MINOR)** — New optional fields may only be appended after existing fields. Old parsers ignore unknown trailing columns until upgraded.
+1. **Optional trailing additions (MINOR)** — New optional fields may only be appended after existing fields, and the new parser must still accept existing configs. Current parsers reject more than seven fields; configs using a new column require a parser version that supports it. Older parsers do not ignore unknown trailing columns.
 
 2. **Required field count or semantics change (MAJOR)** — Changing which fields are required, reordering fields, or altering the meaning of an existing required field is a breaking change.
 
 3. **Tightening validation (MINOR)** — Rejecting values previously accepted (e.g. non-numeric `MIN_AGE_DAYS`, empty `NAME`) is a safety-guard tightening and warrants a **minor** bump per CHANGELOG policy.
 
-4. **Line-numbered error format (preserved)** — All validation errors must keep the form `Error: <config-file>:<lineno>: ...`. Changing this format is **MAJOR**.
+4. **Line-numbered error format (preserved)** — Config validation errors include the file and line. Field-count and field-value errors use `Error: <config-file>:<lineno>: ...`; unknown-action and unknown-risk errors use `<config-file>:<lineno>: Error: ...`. Preserve these existing layouts; changing them is **MAJOR**.
 
 5. **Shipped `cleaner.conf` updates** — Update the shipped default config only when adding new **shipped** targets or documenting new optional fields for end users. Experimental fields stay in contributor docs only.
 

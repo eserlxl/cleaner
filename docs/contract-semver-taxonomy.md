@@ -17,7 +17,7 @@ Does the change break an existing consumer that followed documented contracts?
 | # | Change | Bump | Rationale |
 |---|--------|------|-----------|
 | 1 | Rename CLI flag `--foo` → `--bar` | **MAJOR** | Scripts parsing `--foo` break |
-| 2 | Add optional config field `TAG` at end of line | **MINOR** | Old configs still parse; new field ignored by old versions |
+| 2 | Add optional config field `TAG` at end of line | **MINOR** | New parser still accepts old configs; configs using the new column require an upgraded parser because current versions reject more than seven fields |
 | 3 | Tighten validation to reject previously accepted malformed lines | **MINOR** | Safety-guard tightening per CHANGELOG policy; may break invalid configs |
 | 4 | Add new `action:zypper_clean` token | **MINOR** | Additive registry entry; old configs unaffected |
 | 5 | Rename JSON key `bytes` → `reclaimable_bytes` | **MAJOR** | Monitoring parsers break |
