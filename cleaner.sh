@@ -1960,6 +1960,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       target_status=rejected
       status_echo "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
       safety_status=1 # Skipped
+    elif [[ "$custom_clean_cmd" == action:* ]] \
+         && required_bin=$(action_required_binary "$custom_clean_cmd") \
+         && ! command -v "$required_bin" >/dev/null 2>&1; then
+      target_status=skipped
+      status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
     else
       # Check if running processes block this target
       running_proc=$(is_process_running "$check_procs" || true)

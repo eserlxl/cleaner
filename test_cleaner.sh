@@ -3904,5 +3904,38 @@ TRANSPORT
   echo -e "${GREEN}PASS: wildcard $transport_mode preserves unmatched and unrepresentable paths; ordinary spaces still work.${NC}"
 done
 
+# An absent package manager must not ask for sudo or block an ordinary sibling.
+# A restricted PATH makes absence deterministic even when the host has dnf.
+setup_mock_env
+missing_action_bin="$TEST_ENV_DIR/missing_action_bin"
+mkdir -p "$missing_action_bin"
+for tool in bash basename cat dirname realpath sed du awk tr id sort find stat date rm mktemp; do
+  ln -s "$(command -v "$tool")" "$missing_action_bin/$tool"
+done
+rm "$TEST_ENV_DIR/bin/dnf"
+cat > "$TEST_ENV_DIR/bin/sudo" <<'NOAUTH'
+#!/usr/bin/env bash
+printf 'called\n' >> "$TEST_ENV_DIR/unexpected_sudo"
+exit 1
+NOAUTH
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+cat > "$TEST_ENV_DIR/missing_action.conf" <<'MISSING_ACTION'
+safe|Absent Manager|$HOME/.cache/aurman|Unavailable manager|0||action:dnf_clean
+safe|Ordinary Cache|$HOME/.npm/_cacache|No privileges needed|0||
+MISSING_ACTION
+if ! PATH="$missing_action_bin" run_test_case "Absent Action JSON Without Sudo" 0 "missing_action_json.log" \
+     --config "$TEST_ENV_DIR/missing_action.conf" --dry-run --json \
+   || ! grep -q '"bytes":0,"size_human":"0 B","status":"skipped"' "$TEST_ENV_DIR/missing_action_json.log" \
+   || ! PATH="$missing_action_bin" run_test_case "Absent Action Cleanup Without Sudo" 0 "missing_action.log" \
+     --config "$TEST_ENV_DIR/missing_action.conf" --force \
+   || [[ -e "$TEST_ENV_DIR/unexpected_sudo" || -e "$MOCK_HOME/.npm/_cacache" ]] \
+   || [[ ! -f "$MOCK_HOME/.cache/aurman/pkg1.tar.zst" ]] \
+   || ! grep -q "'dnf' not available" "$TEST_ENV_DIR/missing_action.log"; then
+  echo -e "${RED}FAIL: an absent action requested sudo, broke preview, or blocked ordinary cleanup.${NC}"
+  cat "$TEST_ENV_DIR"/missing_action*.log
+  exit 1
+fi
+echo -e "${GREEN}PASS: absent actions skip before sudo and ordinary sibling cleanup succeeds.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

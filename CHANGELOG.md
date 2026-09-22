@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Skip unavailable package-manager actions before sudo authentication and sizing,
+  so portable configs do not block ordinary cleanup or inflate JSON previews.
 - Preserve wildcard path identity during discovery: warn and skip names that
   would be split, trimmed, or expanded into another target by config parsing.
 - Validate raw config records before wildcard expansion, so unmatched patterns
