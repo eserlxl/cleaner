@@ -14,7 +14,7 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | `LINUX_CLEANER_TRASH` | `-t`, `--trash` | `1`, `true`, `yes` | Quarantine mode; CLI overrides | aligned |
 | `LINUX_CLEANER_EXCLUDE` | `-e`, `--exclude PATTERNS` | non-empty list | Comma-separated globs; CLI overrides | aligned |
 | `LINUX_CLEANER_FORCE` | `-f`, `--force` | `1`, `true`, `yes` | Enables real cleanup and skips normal prompts; danger still needs confirmation or `--yes-danger`. Explicit CLI `--dry-run` restores preview mode unless a later execution flag overrides it | aligned |
-| `LINUX_CLEANER_YES_DANGER` | `--yes-danger` | `1`, `true`, `yes` | Only meaningful with `--force` and `--risk danger` | aligned |
+| `LINUX_CLEANER_YES_DANGER` | `--yes-danger` | `1`, `true`, `yes` | Bypasses the danger-specific prompt whenever danger targets are selected for cleanup; does not require `--force`, enable cleanup, or suppress ordinary confirmation | aligned |
 | `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | `--allow-outside-home` | `1`, `true`, `yes` | High-risk; permits targets outside `$HOME`; CLI overrides | aligned |
 | `NO_COLOR` | (none) | any non-empty | Disables ANSI per no-color.org; not a `LINUX_CLEANER_*` mirror | aligned (README prose below env table; man ENVIRONMENT) |
 
