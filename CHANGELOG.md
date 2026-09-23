@@ -18,6 +18,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ### Fixed
 - Correct operator guidance for execution flags, config lookup, systemd
   environment overrides, config compatibility, and quarantine ownership/trust.
+- State in the example environment file that its outside-HOME opt-in also needs
+  LINUX_CLEANER_RISK=medium: the shipped package-cache targets are medium risk
+  and are skipped under the example's RISK=safe.
 - Discover valid nested C/C++ build trees beneath rejected wildcard parents,
   while keeping accepted parent and child targets from overlapping.
 - Report partial filesystem traversal failures during quarantine and restore,
