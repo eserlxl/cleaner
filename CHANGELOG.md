@@ -42,6 +42,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   a running process.
 - Run the runbook example validator without ripgrep, and fail instead of
   passing when its search tool is missing.
+- `--restore` of a root-owned quarantine record authenticates sudo (with the
+  tool's explanation) before checking the restore destination, instead of
+  letting the conflict probe raise a bare sudo prompt.
 
 ### Changed
 - `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are now
