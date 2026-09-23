@@ -1111,6 +1111,28 @@ purge_quarantine_sessions() {
   echo -e "${BOLD}Purged ${purged} session(s).${NC}"
 }
 
+# Run CMD directly, or through sudo when USE_SUDO (arg 1) is true. Every
+# privileged operation goes through here so it is written once, not twice.
+with_sudo() {
+  local use_sudo="$1"
+  shift
+  if [[ "$use_sudo" = true ]]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+# True when PATH exists, including a dangling symlink.
+path_present() {
+  with_sudo "$1" test -e "$2" || with_sudo "$1" test -L "$2"
+}
+
+# True when PATH is a directory and not a symlink to one.
+path_is_real_dir() {
+  with_sudo "$1" test -d "$2" && ! with_sudo "$1" test -L "$2"
+}
+
 # Move a whole target into quarantine and record it in quarantine.meta. The
 # record is written ONLY after the move actually succeeded: a record for a file
 # that never moved makes every later --restore of the session fail on a missing
@@ -1120,19 +1142,13 @@ quarantine_move_full() {
   local src="$1" dest="$2" rel="$3" use_sudo="$4" owner_info="$5"
   local moved=false ok=true
 
-  if [[ "$use_sudo" = true ]]; then
-    if sudo mv "$src" "$dest"; then
-      moved=true
+  if with_sudo "$use_sudo" mv "$src" "$dest"; then
+    moved=true
+    if [[ "$use_sudo" = true ]]; then
       sudo chown -R "$(id -u):$(id -g)" "$dest" || ok=false
-    else
-      ok=false
     fi
   else
-    if mv "$src" "$dest"; then
-      moved=true
-    else
-      ok=false
-    fi
+    ok=false
   fi
 
   if [[ "$moved" = true ]]; then
@@ -1146,22 +1162,15 @@ quarantine_move_full() {
 # contract. Adds the target's size to the running total only when the delete worked.
 delete_path_full() {
   local target="$1" label="$2" use_sudo="$3" bytes="$4"
+  local via=""
+  [[ "$use_sudo" = true ]] && via=" with sudo"
 
-  if [[ "$use_sudo" = true ]]; then
-    echo -e "  Cleaning ${YELLOW}$label${NC} at '$target' with sudo..."
-    if sudo rm -rf "$target"; then
-      total_deleted_bytes=$((total_deleted_bytes + bytes))
-      return 0
-    fi
-    echo -e "  ${RED}Error: Failed to delete '$target' with sudo${NC}" >&2
-  else
-    echo -e "  Cleaning ${YELLOW}$label${NC} at '$target'..."
-    if rm -rf "$target"; then
-      total_deleted_bytes=$((total_deleted_bytes + bytes))
-      return 0
-    fi
-    echo -e "  ${RED}Error: Failed to delete '$target'${NC}" >&2
+  echo -e "  Cleaning ${YELLOW}$label${NC} at '$target'${via}..."
+  if with_sudo "$use_sudo" rm -rf "$target"; then
+    total_deleted_bytes=$((total_deleted_bytes + bytes))
+    return 0
   fi
+  echo -e "  ${RED}Error: Failed to delete '$target'${via}${NC}" >&2
   OPERATION_FAILED=true
 }
 
@@ -1256,88 +1265,43 @@ restore_quarantine() {
     echo -e "Restoring ${YELLOW}$original_path${NC}..."
     
     local success=true
+    # Authenticate before the first privileged probe, so sudo never prompts
+    # without the tool's explanation.
+    if [[ "$use_sudo" = true ]]; then
+      ensure_sudo
+    fi
     if [[ "$type" == "full" ]]; then
-      local conflict=false
-      if [[ "$use_sudo" = true ]]; then
-        if sudo test -e "$original_path" || sudo test -L "$original_path"; then
-          conflict=true
-        fi
-      else
-        if [[ -e "$original_path" || -L "$original_path" ]]; then
-          conflict=true
-        fi
-      fi
-
-      if [[ "$conflict" = true ]]; then
+      if path_present "$use_sudo" "$original_path"; then
         echo -e "${RED}Error: Restore destination '$original_path' already exists. Conflict detected, skipping.${NC}" >&2
         overall_success=false
         log_restore_outcome "$restore_dir" "$original_path" conflict
         continue
       fi
 
-      if [[ "$use_sudo" = true ]]; then
-        ensure_sudo
-        sudo mkdir -p "$(dirname "$original_path")"
-        if sudo mv "$src_path" "$original_path"; then
-          sudo chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
-        else
-          success=false
-        fi
+      with_sudo "$use_sudo" mkdir -p "$(dirname "$original_path")"
+      if with_sudo "$use_sudo" mv "$src_path" "$original_path"; then
+        with_sudo "$use_sudo" chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
       else
-        mkdir -p "$(dirname "$original_path")"
-        if mv "$src_path" "$original_path"; then
-          chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
-        else
-          success=false
-        fi
+        success=false
       fi
     elif [[ "$type" == "aged" ]]; then
-      if [[ "$use_sudo" = true ]]; then
-        ensure_sudo
-        sudo mkdir -p "$original_path"
-        while IFS= read -r -d '' file; do
-          local file_rel="${file#"$src_path"/}"
-          local dest_file="$original_path/$file_rel"
-          local file_conflict=false
-          if sudo test -e "$dest_file" || sudo test -L "$dest_file"; then
-            file_conflict=true
-          fi
-          if [[ "$file_conflict" = true ]]; then
-            echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
-            success=false
-            continue
-          fi
-          sudo mkdir -p "$(dirname "$dest_file")"
-          if sudo mv "$file" "$dest_file"; then
-            sudo chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
-          else
-            success=false
-          fi
-        done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-        wait "$!" || success=false
-      else
-        mkdir -p "$original_path"
-        while IFS= read -r -d '' file; do
-          local file_rel="${file#"$src_path"/}"
-          local dest_file="$original_path/$file_rel"
-          local file_conflict=false
-          if [[ -e "$dest_file" || -L "$dest_file" ]]; then
-            file_conflict=true
-          fi
-          if [[ "$file_conflict" = true ]]; then
-            echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
-            success=false
-            continue
-          fi
-          mkdir -p "$(dirname "$dest_file")"
-          if mv "$file" "$dest_file"; then
-            chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
-          else
-            success=false
-          fi
-        done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-        wait "$!" || success=false
-      fi
+      with_sudo "$use_sudo" mkdir -p "$original_path"
+      while IFS= read -r -d '' file; do
+        local file_rel="${file#"$src_path"/}"
+        local dest_file="$original_path/$file_rel"
+        if path_present "$use_sudo" "$dest_file"; then
+          echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
+          success=false
+          continue
+        fi
+        with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"
+        if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
+          with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
+        else
+          success=false
+        fi
+      done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+      wait "$!" || success=false
     else
       echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
       overall_success=false
@@ -1503,39 +1467,26 @@ has_matching_files() {
   local target_path="$1"
   local age_days="$2"
   local use_sudo="${3:-false}"
-  
-  local cmd_prefix=""
-  if [[ "$use_sudo" = true ]]; then
-    cmd_prefix="sudo "
-  fi
 
   # Check if the target itself is excluded
   if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
-    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
+    if [[ -z $(with_sudo "$use_sudo" find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       return 1
     fi
   fi
 
   if ! has_positive_age "$age_days"; then
-    if [[ "$use_sudo" = true ]]; then
-      if sudo test -e "$target_path" || sudo test -L "$target_path"; then
-        return 0
-      fi
-    else
-      if [[ -e "$target_path" || -L "$target_path" ]]; then
-        return 0
-      fi
-    fi
-    return 1
+    path_present "$use_sudo" "$target_path"
+    return
   fi
   
-  if [[ -d "$target_path" && ! -L "$target_path" ]]; then
+  if path_is_real_dir "$use_sudo" "$target_path"; then
     # Check if there is any file or symlink inside older than age_days
     # find -print -quit exits 0 if a match is found
-    [[ -n $($cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
+    [[ -n $(with_sudo "$use_sudo" find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
   else
     # Single file or symlink
-    [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
+    [[ -n $(with_sudo "$use_sudo" find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
   fi
   return 1
 }
@@ -1545,49 +1496,21 @@ get_size_bytes() {
   local target_path="$1"
   local age_days="${2:-0}"
   local use_sudo="${3:-false}"
-  
-  local cmd_prefix=""
-  if [[ "$use_sudo" = true ]]; then
-    cmd_prefix="sudo "
-  fi
 
-  # Check existence. If sudo is required, check via sudo test
-  local exists=false
-  if [[ "$use_sudo" = true ]]; then
-    if sudo test -e "$target_path" || sudo test -L "$target_path"; then
-      exists=true
-    fi
-  else
-    if [[ -e "$target_path" || -L "$target_path" ]]; then
-      exists=true
-    fi
-  fi
-
-  if [[ "$exists" = false ]]; then
+  if ! path_present "$use_sudo" "$target_path"; then
     echo 0
     return
   fi
   
   # Check if the target itself is excluded
   if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
-    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
+    if [[ -z $(with_sudo "$use_sudo" find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       echo 0
       return
     fi
   fi
-  
-  # Check if directory and if symlink
-  local is_dir=false
-  local is_link=false
-  if [[ "$use_sudo" = true ]]; then
-    if sudo test -d "$target_path" && ! sudo test -L "$target_path"; then is_dir=true; fi
-    if sudo test -L "$target_path"; then is_link=true; fi
-  else
-    if [[ -d "$target_path" && ! -L "$target_path" ]]; then is_dir=true; fi
-    if [[ -L "$target_path" ]]; then is_link=true; fi
-  fi
 
-  if [[ "$is_dir" = true && "$is_link" = false ]]; then
+  if path_is_real_dir "$use_sudo" "$target_path"; then
     # Sum size of files/symlinks older than age_days within the directory
     # If EXCLUDE_PATTERNS is set, we must use find even if age_days is 0!
     if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
@@ -1595,24 +1518,24 @@ get_size_bytes() {
       if has_positive_age "$age_days"; then
         find_mtime_args+=("-mtime" "+$age_days")
       fi
-      { $cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -exec du -sb {} + 2>/dev/null || true; } | awk '{sum+=$1} END {print sum+0}'
+      { with_sudo "$use_sudo" find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -exec du -sb {} + 2>/dev/null || true; } | awk '{sum+=$1} END {print sum+0}'
     else
       if has_positive_age "$age_days"; then
-        { $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null || true; } | awk '{sum+=$1} END {print sum+0}'
+        { with_sudo "$use_sudo" find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null || true; } | awk '{sum+=$1} END {print sum+0}'
       else
-        { $cmd_prefix du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
+        { with_sudo "$use_sudo" du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
       fi
     fi
   else
     # If target is a file or symlink, check if it's older than age_days
     if has_positive_age "$age_days"; then
-      if [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]]; then
-        { $cmd_prefix du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
+      if [[ -n $(with_sudo "$use_sudo" find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]]; then
+        { with_sudo "$use_sudo" du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
       else
         echo 0
       fi
     else
-      { $cmd_prefix du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
+      { with_sudo "$use_sudo" du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
     fi
   fi
 }
@@ -1961,18 +1884,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           fi
           exists=true
         else
-          path_exists=false
-          if [[ "$use_sudo" = true ]]; then
-            if sudo test -e "$path" || sudo test -L "$path"; then
-              path_exists=true
-            fi
-          else
-            if [[ -e "$path" || -L "$path" ]]; then
-              path_exists=true
-            fi
-          fi
-
-          if [[ "$path_exists" = true ]]; then
+          if path_present "$use_sudo" "$path"; then
             size_bytes=$(get_size_bytes "$path" "$min_age" "$use_sudo")
             readable_size=$(format_bytes "$size_bytes")
             
@@ -1982,16 +1894,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
                 should_clean=true
               fi
             else
-              if [[ "$use_sudo" = true ]]; then
-                is_dir=false
-                if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
-                if [[ "$is_dir" = false ]] || [[ "$size_bytes" -gt 0 ]]; then
-                  should_clean=true
-                fi
-              else
-                if [[ ! -d "$path" ]] || [[ "$size_bytes" -gt 0 ]]; then
-                  should_clean=true
-                fi
+              if ! path_is_real_dir "$use_sudo" "$path" || [[ "$size_bytes" -gt 0 ]]; then
+                should_clean=true
               fi
             fi
             
@@ -2264,34 +2168,17 @@ for i in "${!parsed_names[@]}"; do
     safe_name=$(printf '%s' "$name" | tr '/[:space:]' '__')
     q_target="$QUARANTINE_DIR/${i}_${safe_name}"
     
-    if [[ "$use_sudo" = true ]]; then
-      sudo mkdir -p "$(dirname "$q_target")"
-    else
-      mkdir -p "$(dirname "$q_target")"
-    fi
-    
-    # Determine if target is a directory and if symlink
-    is_dir=false
-    is_link=false
-    if [[ "$use_sudo" = true ]]; then
-      if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
-      if sudo test -L "$path"; then is_link=true; fi
-    else
-      if [[ -d "$path" && ! -L "$path" ]]; then is_dir=true; fi
-      if [[ -L "$path" ]]; then is_link=true; fi
-    fi
+    with_sudo "$use_sudo" mkdir -p "$(dirname "$q_target")"
 
     success=true
-    owner_info=""
-    if [[ "$use_sudo" = true ]]; then
-      owner_info=$(sudo stat -c '%u|%g' "$path" 2>/dev/null || echo "0|0")
-    else
-      owner_info=$(stat -c '%u|%g' "$path" 2>/dev/null || echo "$(id -u)|$(id -g)")
-    fi
+    # Unknown ownership falls back to root for a privileged target, else to us.
+    owner_fallback="$(id -u)|$(id -g)"
+    [[ "$use_sudo" = true ]] && owner_fallback="0|0"
+    owner_info=$(with_sudo "$use_sudo" stat -c '%u|%g' "$path" 2>/dev/null || echo "$owner_fallback")
 
     if has_positive_age "$age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
       # File-by-file quarantine
-      if [[ "$is_dir" = true && "$is_link" = false ]]; then
+      if path_is_real_dir "$use_sudo" "$path"; then
         # Record aged quarantine metadata
         echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
         
@@ -2300,32 +2187,20 @@ for i in "${!parsed_names[@]}"; do
           find_mtime_args+=("-mtime" "+$age")
         fi
         
+        with_sudo "$use_sudo" mkdir -p "$q_target"
+        while IFS= read -r -d '' file; do
+          rel_path="${file#"$path"/}"
+          dest_file="$q_target/$rel_path"
+          with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"
+          if ! with_sudo "$use_sudo" mv "$file" "$dest_file"; then
+            success=false
+          fi
+        done < <(with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
+        wait "$!" || success=false
         if [[ "$use_sudo" = true ]]; then
-          sudo mkdir -p "$q_target"
-          while IFS= read -r -d '' file; do
-            rel_path="${file#"$path"/}"
-            dest_file="$q_target/$rel_path"
-            sudo mkdir -p "$(dirname "$dest_file")"
-            if ! sudo mv "$file" "$dest_file"; then
-              success=false
-            fi
-          done < <(sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
-          wait "$!" || success=false
           sudo chown -R "$(id -u):$(id -g)" "$q_target"
-          sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
-        else
-          mkdir -p "$q_target"
-          while IFS= read -r -d '' file; do
-            rel_path="${file#"$path"/}"
-            dest_file="$q_target/$rel_path"
-            mkdir -p "$(dirname "$dest_file")"
-            if ! mv "$file" "$dest_file"; then
-              success=false
-            fi
-          done < <(find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
-          wait "$!" || success=false
-          find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
         fi
+        with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
       else
         # Single file or symlink
         if ! quarantine_move_full "$path" "$q_target" "${i}_${safe_name}" "$use_sudo" "$owner_info"; then
@@ -2348,42 +2223,22 @@ for i in "${!parsed_names[@]}"; do
     
   else
     # Permanent Deletion Mode
-    # Determine if target is a directory and if symlink
-    is_dir=false
-    is_link=false
-    if [[ "$use_sudo" = true ]]; then
-      if sudo test -d "$path" && ! sudo test -L "$path"; then is_dir=true; fi
-      if sudo test -L "$path"; then is_link=true; fi
-    else
-      if [[ -d "$path" && ! -L "$path" ]]; then is_dir=true; fi
-      if [[ -L "$path" ]]; then is_link=true; fi
-    fi
-
     if has_positive_age "$age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
-      if [[ "$is_dir" = true && "$is_link" = false ]]; then
+      if path_is_real_dir "$use_sudo" "$path"; then
         find_mtime_args=()
         if has_positive_age "$age"; then
           find_mtime_args+=("-mtime" "+$age")
         fi
-        
-        if [[ "$use_sudo" = true ]]; then
-          status_echo "  Cleaning filtered files in ${YELLOW}$name${NC} with sudo..."
-          if sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
-             sudo find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null; then
-            total_deleted_bytes=$((total_deleted_bytes + size))
-          else
-            echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path' with sudo${NC}" >&2
-            OPERATION_FAILED=true
-          fi
+        via=""
+        [[ "$use_sudo" = true ]] && via=" with sudo"
+
+        status_echo "  Cleaning filtered files in ${YELLOW}$name${NC}${via}..."
+        if with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
+           with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null; then
+          total_deleted_bytes=$((total_deleted_bytes + size))
         else
-          status_echo "  Cleaning filtered files in ${YELLOW}$name${NC}..."
-          if find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
-             find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null; then
-            total_deleted_bytes=$((total_deleted_bytes + size))
-          else
-            echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${NC}" >&2
-            OPERATION_FAILED=true
-          fi
+          echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${via}${NC}" >&2
+          OPERATION_FAILED=true
         fi
       else
         # Single file or symlink deletion
