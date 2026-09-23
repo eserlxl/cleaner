@@ -1489,6 +1489,12 @@ check_path_safety() {
      [[ "$normalized" == "/dev" ]] || \
      [[ "$normalized" == "/bin" ]] || \
      [[ "$normalized" == "/sbin" ]] || \
+     [[ "$normalized" == "/opt" ]] || \
+     [[ "$normalized" == "/srv" ]] || \
+     [[ "$normalized" == "/tmp" ]] || \
+     [[ "$normalized" == "/run" ]] || \
+     [[ "$normalized" == "/mnt" ]] || \
+     [[ "$normalized" == "/media" ]] || \
      [[ "$normalized" =~ ^/lib ]]; then
     return 1
   fi

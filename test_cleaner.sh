@@ -4141,5 +4141,23 @@ if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 ]] \
 fi
 echo -e "${GREEN}PASS: runbook validator runs without ripgrep and rejects an undocumented flag.${NC}"
 
+# Top-level system directories outside the original list stay UNSAFE even with
+# --allow-outside-home. Dry-run only: a regression here must never delete a real
+# system directory.
+setup_mock_env
+cat > "$TEST_ENV_DIR/system_dirs.conf" <<'SYSTEM_DIRS'
+safe|Top Opt|/opt|top-level system directory|0||
+safe|Top Tmp|/tmp/|top-level system directory|0||
+safe|Top Mnt|$HOME/../../../../../../../../mnt|dot-dot alias of a system directory|0||
+SYSTEM_DIRS
+if ! run_test_case "Top-Level System Directories" 0 "system_dirs.log" \
+       --config "$TEST_ENV_DIR/system_dirs.conf" --dry-run --allow-outside-home \
+   || [[ "$(grep -c 'UNSAFE' "$TEST_ENV_DIR/system_dirs.log")" -ne 3 ]]; then
+  echo -e "${RED}FAIL: a top-level system directory was not blocked.${NC}"
+  cat "$TEST_ENV_DIR/system_dirs.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: top-level system directories are UNSAFE even with --allow-outside-home.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

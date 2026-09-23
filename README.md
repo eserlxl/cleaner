@@ -259,7 +259,7 @@ Security threat model: [docs/threat-model.md](docs/threat-model.md).
 
 ## Safety Features
 
-1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
+1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
 2. **HOME Boundary**: Targets outside the user's `$HOME` directory are blocked unless `--allow-outside-home` is active.
 3. **Symlink Guard**: If a target path is a symlink, the script refuses to delete it to prevent deletion bugs.
 4. **No Eval, No Shell Globbing**: Path expansion resolves only the explicit placeholders (`$HOME`, `~`, and `$USER`), and never invokes `eval` or lets the shell expand a pattern. Wildcards are resolved by `find` at a fixed depth below a literal parent directory, and every match re-enters this same safety pipeline individually.
