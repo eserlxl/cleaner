@@ -2,7 +2,7 @@
 
 ## Hermetic test boundaries
 
-The hermetic suite stubs `sudo`, `pgrep`, `paccache`, and `pacman` under mock `$HOME`. It does not cover live `/etc/linux-cleaner/cleaner.conf` resolution, real sudo prompts, or race-sensitive TOCTOU.
+The hermetic suite stubs `sudo`, `pgrep`, `paccache`, `pacman`, `apt-get`, `dnf`, and `zypper` under mock `$HOME`; absent-manager skips are covered there by the Cross-Distro Safe Degradation tests. It does not cover live `/etc/linux-cleaner/cleaner.conf` resolution, real sudo prompts, real package managers, or race-sensitive TOCTOU.
 
 ## /etc config resolution (maintainer)
 
