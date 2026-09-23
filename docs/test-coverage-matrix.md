@@ -39,6 +39,8 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-31 | Restore mkdir failure keeps metadata aligned | Restore Mkdir Failure |
 | U-32 | Aged quarantine chown failure is recorded and later targets run | Aged Quarantine Chown Failure |
 | U-33 | check-aur-ready rejects a SKIP checksum | check-aur-ready rejects a SKIP checksum |
+| U-34 | Failed sudo authentication during restore keeps metadata aligned | Restore Sudo Auth Failure |
+| U-35 | Plain CHECK_PROCESSES names longer than 15 characters match the kernel process name | Dry Run Mode (Default) / Bare Token Still Matches Comm |
 
 ## Drift guards
 
