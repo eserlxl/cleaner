@@ -48,7 +48,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | Man Page Env Var Parity | env vars in man | cleaner.sh, cleaner.1, README.md |
 | Stranded [Unreleased] Entries Are Detected | no stranded changelog | CHANGELOG.md, test_cleaner.sh |
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
-| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, CHANGELOG.md |
+| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, .SRCINFO, CHANGELOG.md |
 | ShellCheck Invocation Parity | lint parity | ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, Makefile |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.
