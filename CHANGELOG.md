@@ -101,6 +101,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   (non-interactive clean). CLI flags override this variable.
 - `LINUX_CLEANER_YES_DANGER` — when set to `1`, `true`, or `yes`, enables
   `--yes-danger` (bypass danger confirmation). CLI flags override this variable.
+- Operator runbook `docs/QUARANTINE-OPS.md` for quarantine inventory, retention, restore, and purge.
 
 ## [1.2.0] - 2026-07-15
 
@@ -209,14 +210,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.3.0
 [1.2.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.2.0
 [1.1.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.1.0
 [1.0.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.0.0
-
-<!-- Release planning: eight [Unreleased] env/CLI items warrant minor 1.3.0 per versioning policy. -->
-
-<!-- Release planning: eight [Unreleased] env/CLI items warrant minor 1.3.0 per versioning policy. -->
-
-### Added
-- Operator runbook `docs/QUARANTINE-OPS.md` for quarantine inventory, retention, restore, and purge.
