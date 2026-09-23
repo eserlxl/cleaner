@@ -3357,15 +3357,22 @@ echo -e "\n${BOLD}Test Case: ShellCheck Invocation Parity${NC}"
 ci_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$SCRIPT_DIR/.github/workflows/ci.yml" \
   | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
 sc_drift=""
-for f in ".github/workflows/release.yml" "README.md" "RELEASING.md" "CONTRIBUTING.md"; do
+for f in ".github/workflows/release.yml" "README.md" "RELEASING.md" "CONTRIBUTING.md" "Makefile"; do
   site_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$SCRIPT_DIR/$f" \
     | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
   if [[ "$site_files" != "$ci_files" ]]; then
     sc_drift+=" $f(=$site_files)"
   fi
 done
+# Prove the Makefile site is really read: a recipe that drops one file must differ.
+sed 's/ release-notes\.sh//' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
+drift_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$TEST_ENV_DIR/Makefile.drift" \
+  | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
+if [[ "$drift_files" == "$ci_files" ]]; then
+  sc_drift+=" Makefile-fixture(drift not detected)"
+fi
 if [[ -z "$sc_drift" && -n "$ci_files" ]]; then
-  echo -e "${GREEN}PASS: all five shellcheck invocations lint the same files (${ci_files% }).${NC}"
+  echo -e "${GREEN}PASS: all six shellcheck invocations lint the same files (${ci_files% }).${NC}"
 else
   echo -e "${RED}FAIL: shellcheck invocation drift — CI lints '${ci_files% }' but:$sc_drift${NC}"
   exit 1
