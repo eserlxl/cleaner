@@ -446,36 +446,22 @@ emit_dry_run_json() {
 
 emit_list_targets_json() {
   local -a lt_names=() lt_risks=() lt_paths=() lt_descs=() lt_min_ages=() lt_procs=() lt_actions=()
-  local config_line config_lineno=0 config_pipes field_count
+  local config_line
   local risk name raw_path desc min_age check_procs custom_clean_cmd
   local i first=true
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno="${config_line%%$'\t'*}"
     config_line="${config_line#*$'\t'}"
-    config_pipes="${config_line//[^|]/}"
-    field_count=$(( ${#config_pipes} + 1 ))
+    # validate_config_file already rejected malformed records before this runs.
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
     risk=$(trim "$risk")
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-    if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
-      exit 1
-    fi
     name=$(trim "$name")
     raw_path=$(trim "$raw_path")
     desc=$(trim "$desc")
     min_age=$(trim "$min_age")
     check_procs=$(trim "${check_procs:-}")
     custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
-    if [[ -z "$name" ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
-      exit 1
-    fi
-    if [[ -z "$raw_path" ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
-      exit 1
-    fi
     lt_names+=("$name")
     lt_risks+=("$risk")
     lt_paths+=("$raw_path")
@@ -807,7 +793,7 @@ log_operation() {
 # Print configured cleanup targets (strictly read-only): NAME, risk, path, and
 # description for every active config line. No disk analysis or mutation.
 list_config_targets() {
-  local config_line config_lineno=0 config_pipes field_count
+  local config_line
   local risk name raw_path desc min_age check_procs custom_clean_cmd
 
   if [[ "$JSON_OUTPUT" == true ]]; then
@@ -820,28 +806,14 @@ list_config_targets() {
   echo
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno="${config_line%%$'\t'*}"
     config_line="${config_line#*$'\t'}"
-    config_pipes="${config_line//[^|]/}"
-    field_count=$(( ${#config_pipes} + 1 ))
+    # validate_config_file already rejected malformed records before this runs.
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
     risk=$(trim "$risk")
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-    if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
-      exit 1
-    fi
     name=$(trim "$name")
     raw_path=$(trim "$raw_path")
     desc=$(trim "$desc")
-    if [[ -z "$name" ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
-      exit 1
-    fi
-    if [[ -z "$raw_path" ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
-      exit 1
-    fi
     printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
   done < <(expand_config_globs)
 }
@@ -1878,23 +1850,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # reports errors against the real config line.
   config_lineno="${config_line%%$'\t'*}"
   config_line="${config_line#*$'\t'}"
-  # Expose the true (nominal) field count: fields are pipe-delimited, so the
-  # count is the number of '|' delimiters plus one. Counting delimiters stays
-  # correct even when trailing optional fields are empty (unlike an array length).
-  config_pipes="${config_line//[^|]/}"
-  field_count=$(( ${#config_pipes} + 1 ))
-  # Split into the named fields (fields beyond the 7th collapse into the last).
+  # validate_config_file already rejected malformed records (field count, empty
+  # NAME/PATH, CHECK_PROCESSES, CUSTOM_ACTION, risk, MIN_AGE_DAYS) before this runs.
   IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-  # Trim and check empty/comment
   risk=$(trim "$risk")
   [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-  
-  # Enforce the field-count contract (5-7 fields): RISK, NAME, PATH, DESCRIPTION,
-  # and MIN_AGE_DAYS are required; CHECK_PROCESSES and CUSTOM_ACTION are optional.
-  if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
-    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
-    exit 1
-  fi
 
   name=$(trim "$name")
   raw_path=$(trim "$raw_path")
@@ -1902,16 +1862,6 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   min_age=$(trim "$min_age")
   check_procs=$(trim "${check_procs:-}")
   custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
-  
-  # Reject empty required fields (a strong field-shift signal) before use.
-  if [[ -z "$name" ]]; then
-    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
-    exit 1
-  fi
-  if [[ -z "$raw_path" ]]; then
-    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
-    exit 1
-  fi
 
   if [[ -n "$ONLY_TARGET" ]]; then
     if [[ "$name" != *"$ONLY_TARGET"* ]]; then
@@ -1926,30 +1876,6 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   fi
   name_filter_kept=true
 
-  # Minimal CHECK_PROCESSES shape check: reject empty/whitespace-only tokens or
-  # stray commas (a field-shift signal); normal comma-separated names are fine.
-  if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
-    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
-    exit 1
-  fi
-  # A cmdline: token with nothing after the prefix would match every process.
-  if [[ "$check_procs" =~ (^|,)[[:space:]]*cmdline:[[:space:]]*(,|$) ]]; then
-    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty pattern after 'cmdline:')${NC}" >&2
-    exit 1
-  fi
-
-  # Validate custom clean action if provided
-  if [[ -n "$custom_clean_cmd" ]]; then
-    case "$custom_clean_cmd" in
-      action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|filter:cxx_build)
-        ;;
-      *)
-        echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
-        exit 1
-        ;;
-    esac
-  fi
-  
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: ") || exit 1
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
@@ -1957,14 +1883,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     continue
   fi
   
-  # Validate age number: empty stays effective 0 (documented whole-directory
-  # case); a non-empty non-numeric value is a hard error (likely a field shift).
-  if [[ -z "$min_age" ]]; then
-    min_age=0
-  elif [[ ! "$min_age" =~ ^[0-9]+$ ]]; then
-    echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'${NC}" >&2
-    exit 1
-  fi
+  # An empty age means the whole directory (effective 0).
+  [[ -z "$min_age" ]] && min_age=0
   
   # Safe path expansions & cleanup trailing slashes
   expanded_path=$(expand_path_safe "$raw_path")
