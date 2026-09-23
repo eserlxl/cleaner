@@ -217,7 +217,7 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-quiet
-(suppress per-target status lines). CLI flags override this variable.
+(suppress per-target status lines). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to
@@ -228,7 +228,7 @@ Valid with dry-run,
 .BR \-\-list\-targets ,
 or
 .BR \-\-list\-sessions ;
-CLI flags override this variable.
+No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_ONLY_TARGET
 When set to a non-empty pattern, enables
@@ -256,7 +256,7 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-trash
-(quarantine mode). CLI flags override this variable.
+(quarantine mode). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_EXCLUDE
 When set to a non-empty comma-separated glob list, enables
@@ -268,14 +268,14 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-force
-(non-interactive clean). CLI flags override this variable.
+(non-interactive clean). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_YES_DANGER
 When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-yes\-danger
-(bypass danger confirmation). CLI flags override this variable.
+(bypass danger confirmation). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_ALLOW_OUTSIDE_HOME
 When set to
@@ -284,7 +284,7 @@ enables
 .BR \-\-allow\-outside\-home
 (permit cleaning targets outside
 .BR $HOME ).
-CLI flags override this variable.
+No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B NO_COLOR
 When set to any non-empty value, disables ANSI color codes in output (see

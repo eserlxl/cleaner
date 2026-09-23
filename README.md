@@ -307,7 +307,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-CLI flags always override these environment toggles when both are present.
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are overridden by their CLI flag. On/off variables (`QUIET`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`, `ALLOW_OUTSIDE_HOME`) can only be switched on from the CLI: no flag switches them off, so set one to `0` or unset it to disable it for a run (an explicit `--dry-run` still previews when `LINUX_CLEANER_FORCE` is set).
 
 ---
 

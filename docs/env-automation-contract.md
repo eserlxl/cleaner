@@ -20,4 +20,4 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 
 **Override rule:** `cleaner.sh` reads the environment before parsing CLI flags. Value mirrors (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are replaced by their CLI flag. On/off mirrors (`QUIET`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`, `ALLOW_OUTSIDE_HOME`) can only be switched on from the CLI — no flag switches them off — so disable one for a single run by setting it to a non-truthy value (for example `LINUX_CLEANER_TRASH=0 cleaner --clean`) or unsetting it. For `FORCE`, an explicit `--dry-run` still restores preview mode.
 
-**Flagged divergence rows:** truthy lists and the JSON dry-run requirement match across README and `cleaner.1`; both still state that CLI flags override every toggle, which holds only for the value mirrors above.
+**Flagged divergence rows:** none — truthy lists, the JSON dry-run requirement, and the value/on-off override split match across README and `cleaner.1`.
