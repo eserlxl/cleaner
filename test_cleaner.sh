@@ -91,6 +91,11 @@ if [[ -n "${MOCK_SUDO_UNLOCK_PATH:-}" && "${1:-}" == "find" ]]; then
   chmod u+rwx "$MOCK_SUDO_UNLOCK_PATH"
 fi
 
+# Optional call log, so a test can prove a command was routed through sudo.
+if [[ -n "${MOCK_SUDO_LOG:-}" ]]; then
+  printf '%s\n' "$*" >> "$MOCK_SUDO_LOG"
+fi
+
 exec "$@"
 EOF
   chmod +x "$TEST_ENV_DIR/bin/sudo"
@@ -4202,6 +4207,34 @@ if ! run_test_case "Unlogged Trash" 0 "log_trash3.log" --config "$TEST_ENV_DIR/l
   exit 1
 fi
 echo -e "${GREEN}PASS: purge and restore outcomes are logged only when logging is enabled.${NC}"
+
+# A sudo-owned aged record restores file by file through sudo, restores what it
+# can, and leaves a conflicting file (and its record) in quarantine.
+setup_mock_env
+aged_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-02-02_00-00-00"
+aged_dest="$MOCK_HOME/.cache/aged-root-dest"
+mkdir -p "$aged_session/0_Aged/sub" "$aged_dest"
+printf 'new\n' > "$aged_session/0_Aged/sub/new.txt"
+printf 'quarantined\n' > "$aged_session/0_Aged/clash.txt"
+printf 'existing\n' > "$aged_dest/clash.txt"
+printf 'aged|0_Aged|%s|true|%s|%s\n' "$aged_dest" "$(id -u)" "$(id -g)" > "$aged_session/quarantine.meta"
+export MOCK_SUDO_LOG="$TEST_ENV_DIR/sudo_calls.log"
+: > "$MOCK_SUDO_LOG"
+aged_restore_ok=true
+run_test_case "Sudo Aged Restore" 1 "sudo_aged_restore.log" --restore 2020-02-02_00-00-00 || aged_restore_ok=false
+unset MOCK_SUDO_LOG
+if [[ "$aged_restore_ok" != true ]] \
+   || ! grep -qx 'new' "$aged_dest/sub/new.txt" \
+   || ! grep -qx 'existing' "$aged_dest/clash.txt" \
+   || ! grep -qx 'quarantined' "$aged_session/0_Aged/clash.txt" \
+   || ! grep -q '^aged|0_Aged|' "$aged_session/quarantine.meta" \
+   || ! grep -q '^mv .*new\.txt' "$TEST_ENV_DIR/sudo_calls.log" \
+   || ! grep -q 'Conflict detected' "$TEST_ENV_DIR/sudo_aged_restore.log"; then
+  echo -e "${RED}FAIL: sudo-owned aged restore did not route through sudo or mishandled a conflict.${NC}"
+  cat "$TEST_ENV_DIR/sudo_aged_restore.log" "$TEST_ENV_DIR/sudo_calls.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: sudo-owned aged restore moves files through sudo and keeps conflicts quarantined.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
