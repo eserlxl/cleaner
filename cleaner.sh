@@ -1266,9 +1266,13 @@ restore_quarantine() {
     
     local success=true
     # Authenticate before the first privileged probe, so sudo never prompts
-    # without the tool's explanation.
-    if [[ "$use_sudo" = true ]]; then
-      ensure_sudo
+    # without the tool's explanation. A failed authentication fails this record
+    # only: exiting here would skip the metadata reconciliation below.
+    if [[ "$use_sudo" = true ]] && ! ensure_sudo; then
+      echo -e "${RED}Error: sudo authentication failed; '$original_path' was not restored.${NC}" >&2
+      overall_success=false
+      log_restore_outcome "$restore_dir" "$original_path" failed
+      continue
     fi
     if [[ "$type" == "full" ]]; then
       if path_present "$use_sudo" "$original_path"; then
@@ -1397,11 +1401,12 @@ restore_quarantine() {
 
 
 
-# Ensure sudo is authenticated
+# Ensure sudo is authenticated; returns non-zero when authentication fails, so a
+# caller that must reconcile state first (restore) can do so before giving up.
 ensure_sudo() {
   if ! sudo -n true 2>/dev/null; then
     echo -e "${YELLOW}Target(s) require root privileges. Please authenticate for sudo:${NC}"
-    sudo -v || exit 1
+    sudo -v || return 1
   fi
 }
 
@@ -1870,7 +1875,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           requires_sudo=true
           use_sudo=true
           if [[ "$DRY_RUN" = false ]]; then
-            ensure_sudo
+            ensure_sudo || exit 1
           else
             if ! sudo -n true 2>/dev/null; then
               use_sudo=false

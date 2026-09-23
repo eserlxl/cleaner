@@ -4257,6 +4257,29 @@ if ! run_test_case "Restore Mkdir Failure" 1 "restore_mkdir.log" --restore 2020-
 fi
 echo -e "${GREEN}PASS: restore mkdir failure keeps metadata aligned and reports the error.${NC}"
 
+# A failed sudo authentication for the second record must fail that record only:
+# the first record was already restored, so it has to leave the metadata too.
+setup_mock_env
+auth_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-04-04_00-00-00"
+mkdir -p "$auth_session/0_first" "$auth_session/1_second"
+printf 'first\n' > "$auth_session/0_first/f"
+printf 'second\n' > "$auth_session/1_second/f"
+printf 'full|0_first|%s/.cache/auth_first|false|%s|%s\nfull|1_second|%s/.cache/auth_second|true|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$auth_session/quarantine.meta"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/sudo"
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+if ! run_test_case "Restore Sudo Auth Failure" 1 "restore_auth.log" --restore 2020-04-04_00-00-00 \
+   || ! grep -qx first "$MOCK_HOME/.cache/auth_first/f" \
+   || grep -q '0_first' "$auth_session/quarantine.meta" \
+   || ! grep -q '1_second' "$auth_session/quarantine.meta" \
+   || [[ ! -f "$auth_session/1_second/f" ]] \
+   || ! grep -q 'Restoration completed with some errors' "$TEST_ENV_DIR/restore_auth.log"; then
+  echo -e "${RED}FAIL: a failed sudo authentication aborted restore before metadata reconciliation.${NC}"
+  cat "$TEST_ENV_DIR/restore_auth.log" "$auth_session/quarantine.meta"
+  exit 1
+fi
+echo -e "${GREEN}PASS: a failed sudo authentication fails only its record and keeps metadata aligned.${NC}"
+
 # A failing chown after a privileged aged quarantine is recorded for that target,
 # and the run still processes the next target.
 setup_mock_env

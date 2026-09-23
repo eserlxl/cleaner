@@ -16,6 +16,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Keep restore metadata aligned when sudo authentication fails partway through a
+  session: the unauthenticated record fails alone, instead of the run exiting
+  with already-restored records still listed and failing every retry.
 - Correct operator guidance for execution flags, config lookup, systemd
   environment overrides, config compatibility, and quarantine ownership/trust.
 - State in the example environment file that its outside-HOME opt-in also needs
