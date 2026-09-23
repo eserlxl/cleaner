@@ -47,15 +47,15 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 
 ### Action cross-walk
 
-| `action:*` | `cleaner.sh` command | README | `cleaner.conf` example | `cleaner.1` |
+| `action:*` | `cleaner.sh` command | README | `cleaner.conf` target | `cleaner.1` |
 |------------|---------------------|--------|------------------------|-------------|
-| `action:paccache_keep1` | `sudo paccache -rk1` | CUSTOM_ACTION list | line 43 | CONFIGURATION |
+| `action:paccache_keep1` | `sudo paccache -rk1` | CUSTOM_ACTION list | `Pacman Cache (Keep 1)` | CONFIGURATION |
 | `action:paccache_keep2` | `sudo paccache -rk2` | CUSTOM_ACTION list | (same pattern) | CONFIGURATION |
-| `action:paccache_keep3` | `sudo paccache -rk3` | CUSTOM_ACTION list | example line 61 | CONFIGURATION |
-| `action:pacman_clean` | `sudo pacman -Sc --noconfirm` | CUSTOM_ACTION list | commented line 46 | CONFIGURATION |
-| `action:apt_clean` | `sudo apt-get clean` | CUSTOM_ACTION list | commented line 51 | CONFIGURATION |
-| `action:dnf_clean` | `sudo dnf clean all` | CUSTOM_ACTION list | commented line 52 | CONFIGURATION |
-| `action:zypper_clean` | `sudo zypper clean -a` | CUSTOM_ACTION list | commented line 53 | CONFIGURATION |
+| `action:paccache_keep3` | `sudo paccache -rk3` | CUSTOM_ACTION list | header comment example | CONFIGURATION |
+| `action:pacman_clean` | `sudo pacman -Sc --noconfirm` | CUSTOM_ACTION list | `Pacman Cache (Purge All)` (commented) | CONFIGURATION |
+| `action:apt_clean` | `sudo apt-get clean` | CUSTOM_ACTION list | `APT Cache Clean` (commented) | CONFIGURATION |
+| `action:dnf_clean` | `sudo dnf clean all` | CUSTOM_ACTION list | `DNF Cache Clean` (commented) | CONFIGURATION |
+| `action:zypper_clean` | `sudo zypper clean -a` | CUSTOM_ACTION list | `Zypper Cache Clean` (commented) | CONFIGURATION |
 
 ### Validation
 
