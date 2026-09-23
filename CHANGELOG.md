@@ -49,6 +49,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   the existing outside-HOME rules.
 
 ### Added
+- With `--log`/`LINUX_CLEANER_LOG`, `--restore` writes one `mode=restore`
+  operation-log line per target (`success`, `failed`, `conflict`, or
+  `missing`) and `--purge-sessions` one `mode=purge` line per session, so
+  irreversible purges leave an audit trail.
 - `--list-sessions --json` — emit a machine-readable JSON inventory of
   quarantine sessions (`sessions` array of `timestamp`/`size_bytes`/
   `size_human`/`date`/`targets` with per-target `type`/`path`).

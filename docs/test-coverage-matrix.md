@@ -35,6 +35,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-27 | CHECK_PROCESSES tokens are not glob-expanded against the working directory | Glob Process Token |
 | U-28 | Runbook validator runs without ripgrep and rejects undocumented flags | runbook validator ripgrep-free check |
 | U-29 | Top-level /opt, /srv, /tmp, /run, /mnt, /media are UNSAFE | Top-Level System Directories |
+| U-30 | --restore and --purge-sessions outcomes in the opt-in operation log | Log Restore / Log Purge / Unlogged Purge |
 
 ## Drift guards
 
