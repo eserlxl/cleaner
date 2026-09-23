@@ -1278,30 +1278,38 @@ restore_quarantine() {
         continue
       fi
 
-      with_sudo "$use_sudo" mkdir -p "$(dirname "$original_path")"
-      if with_sudo "$use_sudo" mv "$src_path" "$original_path"; then
+      # A failed mkdir must reach the reconciliation below, not abort under set -e.
+      if ! with_sudo "$use_sudo" mkdir -p "$(dirname "$original_path")"; then
+        success=false
+      elif with_sudo "$use_sudo" mv "$src_path" "$original_path"; then
         with_sudo "$use_sudo" chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
       else
         success=false
       fi
     elif [[ "$type" == "aged" ]]; then
-      with_sudo "$use_sudo" mkdir -p "$original_path"
-      while IFS= read -r -d '' file; do
-        local file_rel="${file#"$src_path"/}"
-        local dest_file="$original_path/$file_rel"
-        if path_present "$use_sudo" "$dest_file"; then
-          echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
-          success=false
-          continue
-        fi
-        with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"
-        if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
-          with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
-        else
-          success=false
-        fi
-      done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-      wait "$!" || success=false
+      if ! with_sudo "$use_sudo" mkdir -p "$original_path"; then
+        success=false
+      else
+        while IFS= read -r -d '' file; do
+          local file_rel="${file#"$src_path"/}"
+          local dest_file="$original_path/$file_rel"
+          if path_present "$use_sudo" "$dest_file"; then
+            echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
+            success=false
+            continue
+          fi
+          if ! with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"; then
+            success=false
+            continue
+          fi
+          if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
+            with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
+          else
+            success=false
+          fi
+        done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+        wait "$!" || success=false
+      fi
     else
       echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
       overall_success=false
@@ -2168,9 +2176,10 @@ for i in "${!parsed_names[@]}"; do
     safe_name=$(printf '%s' "$name" | tr '/[:space:]' '__')
     q_target="$QUARANTINE_DIR/${i}_${safe_name}"
     
-    with_sudo "$use_sudo" mkdir -p "$(dirname "$q_target")"
-
     success=true
+    # Failures below are recorded per target; under set -e a bare failing
+    # command would otherwise end the whole run and skip every later target.
+    with_sudo "$use_sudo" mkdir -p "$(dirname "$q_target")" || success=false
     # Unknown ownership falls back to root for a privileged target, else to us.
     owner_fallback="$(id -u)|$(id -g)"
     [[ "$use_sudo" = true ]] && owner_fallback="0|0"
@@ -2187,18 +2196,21 @@ for i in "${!parsed_names[@]}"; do
           find_mtime_args+=("-mtime" "+$age")
         fi
         
-        with_sudo "$use_sudo" mkdir -p "$q_target"
+        with_sudo "$use_sudo" mkdir -p "$q_target" || success=false
         while IFS= read -r -d '' file; do
           rel_path="${file#"$path"/}"
           dest_file="$q_target/$rel_path"
-          with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"
+          if ! with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"; then
+            success=false
+            continue
+          fi
           if ! with_sudo "$use_sudo" mv "$file" "$dest_file"; then
             success=false
           fi
         done < <(with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
         wait "$!" || success=false
         if [[ "$use_sudo" = true ]]; then
-          sudo chown -R "$(id -u):$(id -g)" "$q_target"
+          sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
         fi
         with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
       else

@@ -4236,5 +4236,56 @@ if [[ "$aged_restore_ok" != true ]] \
 fi
 echo -e "${GREEN}PASS: sudo-owned aged restore moves files through sudo and keeps conflicts quarantined.${NC}"
 
+# A restore whose second record cannot create its destination parent must report
+# the failure, keep that record, and drop the record it already restored.
+setup_mock_env
+mkdir_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-03-03_00-00-00"
+mkdir -p "$mkdir_session/0_first" "$mkdir_session/1_second"
+printf 'first\n' > "$mkdir_session/0_first/f"
+printf 'second\n' > "$mkdir_session/1_second/f"
+: > "$MOCK_HOME/.cache/blocker"
+printf 'full|0_first|%s/.cache/restored_first|false|%s|%s\nfull|1_second|%s/.cache/blocker/restored_second|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$mkdir_session/quarantine.meta"
+if ! run_test_case "Restore Mkdir Failure" 1 "restore_mkdir.log" --restore 2020-03-03_00-00-00 \
+   || ! grep -qx first "$MOCK_HOME/.cache/restored_first/f" \
+   || grep -q '0_first' "$mkdir_session/quarantine.meta" \
+   || ! grep -q '1_second' "$mkdir_session/quarantine.meta" \
+   || ! grep -q 'Restoration completed with some errors' "$TEST_ENV_DIR/restore_mkdir.log"; then
+  echo -e "${RED}FAIL: a restore mkdir failure aborted before metadata reconciliation.${NC}"
+  cat "$TEST_ENV_DIR/restore_mkdir.log" "$mkdir_session/quarantine.meta"
+  exit 1
+fi
+echo -e "${GREEN}PASS: restore mkdir failure keeps metadata aligned and reports the error.${NC}"
+
+# A failing chown after a privileged aged quarantine is recorded for that target,
+# and the run still processes the next target.
+setup_mock_env
+chown_target="$MOCK_HOME/.cache/aged-root"
+mkdir -p "$chown_target/sub" "$MOCK_HOME/.cache/after-chown"
+printf 'old\n' > "$chown_target/sub/old.bin"
+touch -d '10 days ago' "$chown_target/sub/old.bin"
+printf 'next\n' > "$MOCK_HOME/.cache/after-chown/next.bin"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/chown"
+chmod +x "$TEST_ENV_DIR/bin/chown"
+chmod 000 "$chown_target"
+export MOCK_SUDO_UNLOCK_PATH="$chown_target"
+cat > "$TEST_ENV_DIR/chown_fail.conf" <<'CHOWN_FAIL'
+safe|Aged Root|$HOME/.cache/aged-root|privileged aged target|5||
+safe|After Chown|$HOME/.cache/after-chown|next target|0||
+CHOWN_FAIL
+chown_ok=true
+run_test_case "Aged Quarantine Chown Failure" 1 "chown_fail.log" \
+  --config "$TEST_ENV_DIR/chown_fail.conf" --clean --trash --force || chown_ok=false
+unset MOCK_SUDO_UNLOCK_PATH
+chmod u+rwx "$chown_target" 2>/dev/null || true
+if [[ "$chown_ok" != true ]] \
+   || ! grep -q "Failed to move some files for 'Aged Root'" "$TEST_ENV_DIR/chown_fail.log" \
+   || [[ -e "$MOCK_HOME/.cache/after-chown" ]]; then
+  echo -e "${RED}FAIL: a failing chown aborted the run or went unreported.${NC}"
+  cat "$TEST_ENV_DIR/chown_fail.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: aged quarantine chown failure is recorded and later targets still run.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
