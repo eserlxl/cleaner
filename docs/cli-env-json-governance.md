@@ -13,7 +13,7 @@
 
 - Mirrors use `LINUX_CLEANER_*` prefix (see `docs/env-automation-contract.md`).
 - Truthy values: `1`, `true`, `yes` (documented per variable).
-- **CLI overrides env** when both are set.
+- **CLI overrides value mirrors** (config, log, risk, exclude, target filters) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
 - High-risk mirrors (`LINUX_CLEANER_ALLOW_OUTSIDE_HOME`, `LINUX_CLEANER_YES_DANGER`) stay off in default examples.
 
 ## 3. JSON additive vs breaking changes
