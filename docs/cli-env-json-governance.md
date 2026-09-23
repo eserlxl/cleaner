@@ -32,6 +32,9 @@ Documented mutual exclusions (enforced in code):
 - `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, or `--list-sessions`
 - `--only` requires `--restore`
+- `--only-target` and `--exclude-target` vs `--check-config`
+- `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`
+- `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`
 
 See `test_cleaner.sh` mutex rejection cases.
 

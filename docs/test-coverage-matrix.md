@@ -33,7 +33,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-25 | Filtered recursive discovery traverses rejected parents without overlapping accepted targets | Filtered Nested Build Inventory / Filtered Nested Build Cleanup |
 | U-26 | Targets and sessions with unreadable subdirectories are measured without aborting | Partly Unreadable Dry Run / JSON / Aged Dry Run / Session List / Session JSON |
 | U-27 | CHECK_PROCESSES tokens are not glob-expanded against the working directory | Glob Process Token |
-| U-28 | Runbook validator runs without ripgrep and rejects undocumented flags | runbook validator ripgrep-free check |
+| U-28 | Runbook validator runs without ripgrep and rejects undocumented flags | runbook validator runs without ripgrep |
 | U-29 | Top-level /opt, /srv, /tmp, /run, /mnt, /media are UNSAFE | Top-Level System Directories |
 | U-30 | --restore and --purge-sessions outcomes in the opt-in operation log | Log Restore / Log Purge / Unlogged Purge |
 
@@ -46,6 +46,6 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | Stranded [Unreleased] Entries Are Detected | no stranded changelog | CHANGELOG.md, test_cleaner.sh |
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
 | Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, CHANGELOG.md |
-| ShellCheck Invocation Parity | lint parity | Makefile, ci.yml, test_cleaner.sh |
+| ShellCheck Invocation Parity | lint parity | ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, Makefile |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.

@@ -35,7 +35,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 4 | Compromised `/etc/linux-cleaner/cleaner.conf` | File permissions + operator review | Operator mitigations (below) |
 | 5 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
 | 6 | Path escape via quarantine SESSION name | `validate_quarantine_session_name` | Restore Invalid Session / Purge Invalid Session |
-| 7 | Over-broad wildcard in PATH_EXPRESSION | Fixed-depth `find` below a literal root + per-match `check_path_safety` | Wildcard Path Expansion / Wildcard Root Refusal |
+| 7 | Over-broad wildcard in PATH_EXPRESSION | Fixed-depth `find` below a literal root + per-match `check_path_safety` | Wildcard Path Expansion / Wildcard Root Refusal / Wildcard Line Number Fidelity |
 
 ## Config Tampering and Injection
 
