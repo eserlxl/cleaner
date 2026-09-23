@@ -33,6 +33,20 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   tokens with surrounding whitespace, so source directories remain protected.
 - Preserve excluded single-file targets during both permanent cleanup and
   quarantine, including runs with other eligible targets.
+- Measure targets that contain an unreadable subdirectory as one readable
+  total: dry-run no longer reports them as 0 B, `--json` stays valid, aged
+  targets no longer abort the run, and `--list-sessions` and purge previews
+  complete for sessions holding unreadable content.
+- Pass `CHECK_PROCESSES` tokens to `pgrep` verbatim, so a pattern such as
+  `app*` cannot be pathname-expanded against the working directory and miss
+  a running process.
+- Run the runbook example validator without ripgrep, and fail instead of
+  passing when its search tool is missing.
+
+### Changed
+- `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are now
+  `UNSAFE` targets, even with `--allow-outside-home`; their descendants keep
+  the existing outside-HOME rules.
 
 ### Added
 - `--list-sessions --json` — emit a machine-readable JSON inventory of
