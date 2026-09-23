@@ -7,6 +7,3 @@ Type=oneshot
 # Quarantine-disk companion (human or cron): cleaner --list-sessions --json
 ExecStart=/usr/bin/env cleaner --quiet --dry-run
 Environment=LINUX_CLEANER_JSON=1
-
-[Install]
-WantedBy=default.target
