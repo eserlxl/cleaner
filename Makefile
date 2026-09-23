@@ -58,4 +58,4 @@ pre-release:
 	bash test_cleaner.sh
 
 check-aur-ready:
-	@test "$${AUR_PREP:-0}" != 1 || grep -vq "SKIP" PKGBUILD
+	@test "$${AUR_PREP:-0}" != 1 || ! grep -Eq "^[[:space:]]*sha256sums=.*'SKIP'" PKGBUILD

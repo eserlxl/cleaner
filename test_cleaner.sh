@@ -4287,5 +4287,23 @@ if [[ "$chown_ok" != true ]] \
 fi
 echo -e "${GREEN}PASS: aged quarantine chown failure is recorded and later targets still run.${NC}"
 
+# check-aur-ready must block a PKGBUILD whose checksum is still SKIP, pass a
+# pinned one, and stay a no-op without AUR_PREP.
+setup_mock_env
+for aur_case in skip pinned; do
+  mkdir -p "$TEST_ENV_DIR/aur-$aur_case"
+  cp "$SCRIPT_DIR/Makefile" "$TEST_ENV_DIR/aur-$aur_case/"
+done
+sed "s/^sha256sums=.*/sha256sums=('SKIP')/" "$SCRIPT_DIR/PKGBUILD" > "$TEST_ENV_DIR/aur-skip/PKGBUILD"
+sed "s/^sha256sums=.*/sha256sums=('$(printf '%064d' 0)')/" "$SCRIPT_DIR/PKGBUILD" > "$TEST_ENV_DIR/aur-pinned/PKGBUILD"
+aur_skip_rc=0; AUR_PREP=1 make -s -C "$TEST_ENV_DIR/aur-skip" check-aur-ready >/dev/null 2>&1 || aur_skip_rc=$?
+aur_pinned_rc=0; AUR_PREP=1 make -s -C "$TEST_ENV_DIR/aur-pinned" check-aur-ready >/dev/null 2>&1 || aur_pinned_rc=$?
+aur_noprep_rc=0; make -s -C "$TEST_ENV_DIR/aur-skip" check-aur-ready >/dev/null 2>&1 || aur_noprep_rc=$?
+if [[ "$aur_skip_rc" -eq 0 || "$aur_pinned_rc" -ne 0 || "$aur_noprep_rc" -ne 0 ]]; then
+  echo -e "${RED}FAIL: check-aur-ready skip=$aur_skip_rc pinned=$aur_pinned_rc noprep=$aur_noprep_rc (want nonzero/0/0).${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: check-aur-ready rejects a SKIP checksum and accepts a pinned one.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
