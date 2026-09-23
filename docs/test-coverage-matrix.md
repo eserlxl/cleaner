@@ -36,6 +36,9 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-28 | Runbook validator runs without ripgrep and rejects undocumented flags | runbook validator runs without ripgrep |
 | U-29 | Top-level /opt, /srv, /tmp, /run, /mnt, /media are UNSAFE | Top-Level System Directories |
 | U-30 | --restore and --purge-sessions outcomes in the opt-in operation log | Log Restore / Log Purge / Unlogged Purge |
+| U-31 | Restore mkdir failure keeps metadata aligned | Restore Mkdir Failure |
+| U-32 | Aged quarantine chown failure is recorded and later targets run | Aged Quarantine Chown Failure |
+| U-33 | check-aur-ready rejects a SKIP checksum | check-aur-ready rejects a SKIP checksum |
 
 ## Drift guards
 

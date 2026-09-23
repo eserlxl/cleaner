@@ -45,6 +45,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `--restore` of a root-owned quarantine record authenticates sudo (with the
   tool's explanation) before checking the restore destination, instead of
   letting the conflict probe raise a bare sudo prompt.
+- A failing `mkdir` during `--restore`, or a failing `mkdir`/`chown` during
+  trash-mode aged quarantine, is now reported for that target with exit 1
+  instead of silently ending the run; restore metadata stays aligned with the
+  quarantined files and later targets still run.
+- `make check-aur-ready` now fails while `PKGBUILD` still pins
+  `sha256sums=('SKIP')`; it previously passed on any PKGBUILD.
 
 ### Changed
 - `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are now
