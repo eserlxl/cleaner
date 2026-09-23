@@ -1647,9 +1647,16 @@ is_process_running() {
         echo "$proc"
         return 0
       fi
-    elif pgrep -x "$proc" >/dev/null; then
-      echo "$proc"
-      return 0
+    else
+      # The kernel keeps only the first 15 characters of a process name, and
+      # pgrep -x refuses a longer plain name outright, so compare such a name on
+      # its first 15. Regex-bearing tokens are the user's own and pass unchanged.
+      local comm="$proc"
+      [[ ${#comm} -gt 15 && "$comm" =~ ^[A-Za-z0-9_-]+$ ]] && comm="${comm:0:15}"
+      if pgrep -x "$comm" >/dev/null; then
+        echo "$proc"
+        return 0
+      fi
     fi
   done
   return 1

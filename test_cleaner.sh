@@ -49,7 +49,13 @@ setup_mock_env() {
 #!/usr/bin/env bash
 # Mock pgrep command
 # -x matches the whole process name as a regular expression, like the real pgrep.
-if [[ "$1" == "-x" && "mock_running_proc" =~ ^($2)$ ]]; then
+# The mocked binary is "mock_running_proc", but the kernel stores only its first 15
+# characters, and real pgrep refuses a plain -x pattern longer than that.
+if [[ "$1" == "-x" && ${#2} -gt 15 && "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "pgrep: pattern that searches for process name longer than 15 characters will result in zero matches" >&2
+  exit 1
+fi
+if [[ "$1" == "-x" && "mock_running_pr" =~ ^($2)$ ]]; then
   exit 0
 fi
 # -f matches the full command line. Answer with the PID of a real process the suite
@@ -4113,14 +4119,14 @@ echo -e "${GREEN}PASS: partly unreadable targets and sessions are measured witho
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/glob-guarded" "$TEST_ENV_DIR/glob-cwd"
 printf 'data\n' > "$MOCK_HOME/.cache/glob-guarded/cache.bin"
-: > "$TEST_ENV_DIR/glob-cwd/mock_running_pro.decoy"
+: > "$TEST_ENV_DIR/glob-cwd/mock_running_p.decoy"
 cat > "$TEST_ENV_DIR/glob_guard.conf" <<'GLOB_GUARD'
-safe|Glob Guarded|$HOME/.cache/glob-guarded|glob-bearing process token|0|mock_running_pro.*|
+safe|Glob Guarded|$HOME/.cache/glob-guarded|glob-bearing process token|0|mock_running_p.*|
 GLOB_GUARD
 if ! (cd "$TEST_ENV_DIR/glob-cwd" && run_test_case "Glob Process Token" 0 "glob_guard.log" \
         --config "$TEST_ENV_DIR/glob_guard.conf") \
    || ! grep -qF "BLOCKED" "$TEST_ENV_DIR/glob_guard.log" \
-   || ! grep -qF "'mock_running_pro.*'" "$TEST_ENV_DIR/glob_guard.log"; then
+   || ! grep -qF "'mock_running_p.*'" "$TEST_ENV_DIR/glob_guard.log"; then
   echo -e "${RED}FAIL: a glob-bearing CHECK_PROCESSES token was expanded against the working directory.${NC}"
   cat "$TEST_ENV_DIR/glob_guard.log"
   exit 1

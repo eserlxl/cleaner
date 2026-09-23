@@ -16,6 +16,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Match a CHECK_PROCESSES name longer than 15 characters on its first 15, as the
+  kernel stores it; previously such a guard never matched and the target was
+  cleaned while the program ran.
 - Keep restore metadata aligned when sudo authentication fails partway through a
   session: the unauthenticated record fails alone, instead of the run exiting
   with already-restored records still listed and failing every retry.

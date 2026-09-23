@@ -49,8 +49,9 @@ wildcard and literal paths.
 
 ## CHECK_PROCESSES: name tokens and cmdline tokens
 
-A bare token matches the kernel `comm` field exactly (`pgrep -x`). That works only when
-the tool runs under its own name. It does not for a tool launched through a shared
+A bare token matches the kernel `comm` field exactly (`pgrep -x`). The kernel keeps only
+the first 15 characters of that name, so a plain name longer than 15 characters is
+compared on its first 15. That works only when the tool runs under its own name. It does not for a tool launched through a shared
 runtime: `/usr/bin/cursor` execs `/usr/lib/electron42/electron`, and `cursor-agent` runs
 `exec -a "$0" node index.js` — measured to leave `comm` as `node-MainThread`, which
 matches neither `cursor-agent` nor `node`. An exact-name guard there fails **silently**,
