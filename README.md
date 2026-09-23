@@ -278,10 +278,11 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 ```
 
 - The log lives **under `$HOME`** (default `~/.cache/linux-cleaner/operations.log`); a path that resolves outside `$HOME` is refused and logging is disabled.
-- Each entry is one line recording the timestamp, mode (`delete`/`quarantine`/`action`), risk level, target name, path, and outcome — for example:
+- Each cleanup entry is one line recording the timestamp, mode (`delete`/`quarantine`/`action`), risk level, target name, path, and outcome. Quarantine maintenance is logged too: `--restore` writes one `mode=restore` line per target (session, original path, and `success`/`failed`/`conflict`/`missing`), and `--purge-sessions` one `mode=purge` line per session — for example:
 
 ```text
 2026-01-01T12:00:00 mode=delete risk=safe target='NPM Cache' path='/home/you/.npm/_cacache' outcome=success
+2026-01-08T09:00:00 mode=purge session='2026-01-01_12-00-00' outcome=success
 ```
 
 - The log **records no secrets**: only the path and metadata the tool already prints — never file contents, environment values, or credentials.

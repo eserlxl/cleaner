@@ -50,6 +50,11 @@ Explicitly allow cleaning targets outside the user's
 .B \-\-log \fR[\fIFILE\fR]
 Append an operation log (opt-in, off by default; kept under
 .BR $HOME ).
+Records cleanup outcomes and, for
+.B \-\-restore
+and
+.BR \-\-purge\-sessions ,
+one line per restored target or purged session.
 .TP
 .BR \-q ", " \-\-quiet
 Suppress per-target status lines and the decorative header; errors, total

@@ -1125,9 +1125,11 @@ purge_quarantine_sessions() {
     if rm -rf "$d"; then
       echo -e "${GREEN}Purged $(basename "$d")${NC}"
       purged=$((purged + 1))
+      log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=purge session='$(basename "$d")' outcome=success"
     else
       echo -e "${RED}Error: Failed to purge '$d'.${NC}" >&2
       OPERATION_FAILED=true
+      log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=purge session='$(basename "$d")' outcome=failed"
     fi
   done
 
@@ -1189,6 +1191,11 @@ delete_path_full() {
     echo -e "  ${RED}Error: Failed to delete '$target'${NC}" >&2
   fi
   OPERATION_FAILED=true
+}
+
+# Log one restored (or skipped) quarantine record; a no-op unless logging is on.
+log_restore_outcome() {
+  log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=restore session='$(basename "$1")' path='$2' outcome=$3"
 }
 
 # Restore files and folders from a quarantine session
@@ -1270,6 +1277,7 @@ restore_quarantine() {
     if [[ ! -e "$src_path" ]]; then
       echo -e "${YELLOW}Warning: Quarantined source path '$src_path' not found. Skipping.${NC}"
       overall_success=false
+      log_restore_outcome "$restore_dir" "$original_path" missing
       continue
     fi
     
@@ -1291,6 +1299,7 @@ restore_quarantine() {
       if [[ "$conflict" = true ]]; then
         echo -e "${RED}Error: Restore destination '$original_path' already exists. Conflict detected, skipping.${NC}" >&2
         overall_success=false
+        log_restore_outcome "$restore_dir" "$original_path" conflict
         continue
       fi
 
@@ -1360,14 +1369,17 @@ restore_quarantine() {
     else
       echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
       overall_success=false
+      log_restore_outcome "$restore_dir" "$original_path" failed
       continue
     fi
     
     if [[ "$success" = false ]]; then
       echo -e "${RED}Error: Failed to restore '$original_path'.${NC}" >&2
       overall_success=false
+      log_restore_outcome "$restore_dir" "$original_path" failed
     else
       restored_rels+=("$rel_path")
+      log_restore_outcome "$restore_dir" "$original_path" success
       if [[ "$type" == "aged" ]]; then
         find "$src_path" -depth -type d -empty -delete 2>/dev/null || true
       fi

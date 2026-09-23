@@ -4166,5 +4166,42 @@ if ! run_test_case "Top-Level System Directories" 0 "system_dirs.log" \
 fi
 echo -e "${GREEN}PASS: top-level system directories are UNSAFE even with --allow-outside-home.${NC}"
 
+# Restore and purge outcomes reach the opt-in operation log; without --log no
+# log file is created.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/logged-target"
+printf 'cached\n' > "$MOCK_HOME/.cache/logged-target/item.bin"
+cat > "$TEST_ENV_DIR/logged.conf" <<'LOGGED'
+safe|Logged Target|$HOME/.cache/logged-target|log coverage target|0||
+LOGGED
+ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$ops_log"
+log_ok=true
+if ! run_test_case "Log Trash For Restore" 0 "log_trash1.log" --config "$TEST_ENV_DIR/logged.conf" --clean --trash --force \
+   || ! run_test_case "Log Restore" 0 "log_restore.log" --restore latest --log \
+   || [[ ! -f "$MOCK_HOME/.cache/logged-target/item.bin" ]] \
+   || ! run_test_case "Log Trash For Purge" 0 "log_trash2.log" --config "$TEST_ENV_DIR/logged.conf" --clean --trash --force \
+   || ! run_test_case "Log Purge" 0 "log_purge.log" --purge-sessions latest --force --log; then
+  log_ok=false
+fi
+if [[ "$log_ok" != true ]] \
+   || [[ "$(grep -c "mode=restore .*path='$MOCK_HOME/.cache/logged-target' outcome=success" "$ops_log" 2>/dev/null)" -ne 1 ]] \
+   || [[ "$(grep -c "mode=purge session='.*' outcome=success" "$ops_log" 2>/dev/null)" -ne 1 ]] \
+   || [[ "$(wc -l < "$ops_log")" -ne 2 ]]; then
+  echo -e "${RED}FAIL: purge/restore outcomes were not logged exactly once each.${NC}"
+  cat "$ops_log" "$TEST_ENV_DIR"/log_*.log 2>/dev/null
+  exit 1
+fi
+rm -f "$ops_log"
+mkdir -p "$MOCK_HOME/.cache/logged-target"
+printf 'cached\n' > "$MOCK_HOME/.cache/logged-target/item.bin"
+if ! run_test_case "Unlogged Trash" 0 "log_trash3.log" --config "$TEST_ENV_DIR/logged.conf" --clean --trash --force \
+   || ! run_test_case "Unlogged Purge" 0 "log_purge2.log" --purge-sessions latest --force \
+   || [[ -e "$ops_log" ]]; then
+  echo -e "${RED}FAIL: a purge without --log wrote an operation log.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: purge and restore outcomes are logged only when logging is enabled.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
