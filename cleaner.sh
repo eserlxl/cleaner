@@ -1539,7 +1539,7 @@ has_matching_files() {
 
   # Check if the target itself is excluded
   if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
-    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print 2>/dev/null) ]]; then
+    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       return 1
     fi
   fi
@@ -1598,7 +1598,7 @@ get_size_bytes() {
   
   # Check if the target itself is excluded
   if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
-    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print 2>/dev/null) ]]; then
+    if [[ -z $($cmd_prefix find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       echo 0
       return
     fi
