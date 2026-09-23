@@ -4115,5 +4115,31 @@ if ! (cd "$TEST_ENV_DIR/glob-cwd" && run_test_case "Glob Process Token" 0 "glob_
 fi
 echo -e "${GREEN}PASS: process guard token is not glob-expanded against the working directory.${NC}"
 
+# The runbook validator must not depend on ripgrep, and must fail (not pass
+# vacuously) when an example names a flag that --help does not document.
+setup_mock_env
+validator_bin="$TEST_ENV_DIR/validator-bin"
+validator_copy="$TEST_ENV_DIR/validator-copy"
+mkdir -p "$validator_bin" "$validator_copy/scripts"
+for tool in bash dirname basename cat grep sort; do
+  ln -s "$(type -P "$tool")" "$validator_bin/$tool"
+done
+cp -r "$SCRIPT_DIR/cleaner.sh" "$SCRIPT_DIR/cleaner.1" "$SCRIPT_DIR/RUNBOOK.md" "$SCRIPT_DIR/examples" "$validator_copy/"
+cp "$SCRIPT_DIR/scripts/validate-runbook-examples.sh" "$validator_copy/scripts/"
+validator_rc=0
+env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$SCRIPT_DIR/scripts/validate-runbook-examples.sh" \
+  > "$TEST_ENV_DIR/validator_ok.log" 2>&1 || validator_rc=$?
+printf '\n    cleaner --no-such-flag\n' >> "$validator_copy/RUNBOOK.md"
+validator_bad_rc=0
+env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
+  > "$TEST_ENV_DIR/validator_bad.log" 2>&1 || validator_bad_rc=$?
+if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 ]] \
+   || ! grep -qF 'missing in help: --no-such-flag' "$TEST_ENV_DIR/validator_bad.log"; then
+  echo -e "${RED}FAIL: runbook validator needs ripgrep or passed an undocumented flag.${NC}"
+  cat "$TEST_ENV_DIR/validator_ok.log" "$TEST_ENV_DIR/validator_bad.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: runbook validator runs without ripgrep and rejects an undocumented flag.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
