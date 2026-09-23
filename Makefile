@@ -17,7 +17,7 @@ PKGNAME    ?= linux-cleaner
 all: help
 
 help:
-	@echo "Targets: install, uninstall, install-man, check, clean"
+	@echo "Targets: install, uninstall, install-man, check, clean, pre-release, check-aur-ready, check-runbook-examples"
 	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR"
 
 install: install-man
