@@ -63,10 +63,12 @@ If restore reports `Unrecorded quarantine payload`, the session contains data no
 
 ### Restore exit / flag matrix
 
-| Case | Test |
-|------|------|
-| Only Target With Restore Rejected | rejected |
-| Only Without Restore Rejected | rejected |
+| Flag combination | Exit | Test |
+|------------------|------|------|
+| `--restore SESSION --only-target PATTERN` | 1 | Only Target With Restore Rejected |
+| `--only PATTERN` without `--restore` | 1 | Only Without Restore Rejected |
+| `--restore SESSION --dry-run` | 1 | Dry Run With Restore Rejected |
+| `--restore SESSION --json` | 1 | JSON With Restore Rejected |
 
 Restore and purge have no dry-run mode. An active explicit `--dry-run` with either is rejected before mutation (`Dry Run With Restore Rejected`, `Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`.
 
