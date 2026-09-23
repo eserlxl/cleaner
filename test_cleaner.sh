@@ -48,7 +48,8 @@ setup_mock_env() {
   cat << 'EOF' > "$TEST_ENV_DIR/bin/pgrep"
 #!/usr/bin/env bash
 # Mock pgrep command
-if [[ "$1" == "-x" && "$2" == "mock_running_proc" ]]; then
+# -x matches the whole process name as a regular expression, like the real pgrep.
+if [[ "$1" == "-x" && "mock_running_proc" =~ ^($2)$ ]]; then
   exit 0
 fi
 # -f matches the full command line. Answer with the PID of a real process the suite
@@ -4094,6 +4095,25 @@ if [[ "$unreadable_ok" != true ]]; then
   exit 1
 fi
 echo -e "${GREEN}PASS: partly unreadable targets and sessions are measured without aborting.${NC}"
+
+# A CHECK_PROCESSES token carrying glob characters must reach pgrep verbatim,
+# whatever files exist in the directory the cleaner is started from.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/glob-guarded" "$TEST_ENV_DIR/glob-cwd"
+printf 'data\n' > "$MOCK_HOME/.cache/glob-guarded/cache.bin"
+: > "$TEST_ENV_DIR/glob-cwd/mock_running_pro.decoy"
+cat > "$TEST_ENV_DIR/glob_guard.conf" <<'GLOB_GUARD'
+safe|Glob Guarded|$HOME/.cache/glob-guarded|glob-bearing process token|0|mock_running_pro.*|
+GLOB_GUARD
+if ! (cd "$TEST_ENV_DIR/glob-cwd" && run_test_case "Glob Process Token" 0 "glob_guard.log" \
+        --config "$TEST_ENV_DIR/glob_guard.conf") \
+   || ! grep -qF "BLOCKED" "$TEST_ENV_DIR/glob_guard.log" \
+   || ! grep -qF "'mock_running_pro.*'" "$TEST_ENV_DIR/glob_guard.log"; then
+  echo -e "${RED}FAIL: a glob-bearing CHECK_PROCESSES token was expanded against the working directory.${NC}"
+  cat "$TEST_ENV_DIR/glob_guard.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: process guard token is not glob-expanded against the working directory.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

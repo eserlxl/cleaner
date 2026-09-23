@@ -1702,12 +1702,13 @@ is_process_running() {
     return 1
   fi
   
-  # Disable IFS split warning by splitting explicitly
+  # Split with read, not an unquoted expansion: word splitting would also
+  # pathname-expand each token against the current directory, so a pattern such
+  # as "app*" could turn into a stray file name and silently miss the process.
   local proc
-  local saved_ifs="$IFS"
-  IFS=','
-  for proc in $procs; do
-    IFS="$saved_ifs"
+  local -a proc_list
+  IFS=',' read -r -a proc_list <<< "$procs"
+  for proc in "${proc_list[@]}"; do
     proc=$(trim "$proc")
     if [[ "$proc" == cmdline:* ]]; then
       # A tool launched through a shared runtime (Electron, node) has a comm that is
@@ -1724,9 +1725,7 @@ is_process_running() {
       echo "$proc"
       return 0
     fi
-    IFS=','
   done
-  IFS="$saved_ifs"
   return 1
 }
 
