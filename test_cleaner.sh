@@ -4049,5 +4049,51 @@ FILTERED_NESTED
   echo -e "${GREEN}PASS: filtered recursive $filtered_mode discovers nested builds without overlap or source loss.${NC}"
 done
 
+# A readable target holding an unreadable subdirectory must still be measured as
+# one integer (du/find exit non-zero there under pipefail), and session listing
+# must survive the same layout inside quarantine.
+setup_mock_env
+unreadable_root="$MOCK_HOME/.cache/partly-unreadable"
+unreadable_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-01-01_00-00-00"
+mkdir -p "$unreadable_root/locked" "$unreadable_session/0_x/locked"
+printf 'readable\n' > "$unreadable_root/readable.txt"
+printf 'hidden\n' > "$unreadable_root/locked/hidden.txt"
+touch -d '10 days ago' "$unreadable_root/readable.txt"
+printf 'full|0_x|%s/gone|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$unreadable_session/quarantine.meta"
+chmod 000 "$unreadable_root/locked" "$unreadable_session/0_x/locked"
+cat > "$TEST_ENV_DIR/unreadable.conf" <<'UNREADABLE'
+safe|Partly Unreadable|$HOME/.cache/partly-unreadable|partly unreadable cache|0||
+UNREADABLE
+cat > "$TEST_ENV_DIR/unreadable_aged.conf" <<'UNREADABLE'
+safe|Partly Unreadable Aged|$HOME/.cache/partly-unreadable|partly unreadable cache|5||
+UNREADABLE
+unreadable_ok=true
+if ! run_test_case "Partly Unreadable Dry Run" 0 "unreadable_dry.log" --config "$TEST_ENV_DIR/unreadable.conf" \
+   || grep -q 'syntax error' "$TEST_ENV_DIR/unreadable_dry.log" \
+   || ! grep -q 'FOUND.*Partly Unreadable ([1-9]' "$TEST_ENV_DIR/unreadable_dry.log"; then
+  unreadable_ok=false
+fi
+if ! run_test_case "Partly Unreadable JSON" 0 "unreadable_json.log" --config "$TEST_ENV_DIR/unreadable.conf" --dry-run --json \
+   || ! python3 -m json.tool "$TEST_ENV_DIR/unreadable_json.log" > /dev/null 2>&1; then
+  unreadable_ok=false
+fi
+if ! run_test_case "Partly Unreadable Aged Dry Run" 0 "unreadable_aged.log" --config "$TEST_ENV_DIR/unreadable_aged.conf" \
+   || ! grep -q 'FOUND.*Partly Unreadable Aged' "$TEST_ENV_DIR/unreadable_aged.log"; then
+  unreadable_ok=false
+fi
+if ! run_test_case "Partly Unreadable Session List" 0 "unreadable_sessions.log" --list-sessions \
+   || ! grep -q '2026-01-01_00-00-00' "$TEST_ENV_DIR/unreadable_sessions.log" \
+   || ! run_test_case "Partly Unreadable Session JSON" 0 "unreadable_sessions_json.log" --list-sessions --json \
+   || ! python3 -m json.tool "$TEST_ENV_DIR/unreadable_sessions_json.log" > /dev/null 2>&1; then
+  unreadable_ok=false
+fi
+chmod u+rwx "$unreadable_root/locked" "$unreadable_session/0_x/locked"
+if [[ "$unreadable_ok" != true ]]; then
+  echo -e "${RED}FAIL: a partly unreadable target or session broke size reporting.${NC}"
+  cat "$TEST_ENV_DIR"/unreadable_*.log
+  exit 1
+fi
+echo -e "${GREEN}PASS: partly unreadable targets and sessions are measured without aborting.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

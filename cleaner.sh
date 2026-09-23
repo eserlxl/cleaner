@@ -968,7 +968,7 @@ emit_list_sessions_json() {
       printf ','
     fi
     ts=$(basename "$session")
-    size_bytes=$(du -sb "$session" 2>/dev/null | awk '{print $1+0}')
+    size_bytes=$({ du -sb "$session" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}')
     [[ -z "$size_bytes" ]] && size_bytes=0
     size_human=$(format_bytes "$size_bytes")
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
@@ -1018,7 +1018,7 @@ list_quarantine_sessions() {
   local session ts size mdate
   for session in "${sessions[@]}"; do
     ts=$(basename "$session")
-    size=$(du -sh "$session" 2>/dev/null | awk '{print $1}')
+    size=$({ du -sh "$session" 2>/dev/null || true; } | awk '{print $1}')
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
     print_session_contents "$session"
@@ -1104,7 +1104,7 @@ purge_quarantine_sessions() {
   local d ts size
   for d in "${targets[@]}"; do
     ts=$(basename "$d")
-    size=$(du -sh "$d" 2>/dev/null | awk '{print $1}')
+    size=$({ du -sh "$d" 2>/dev/null || true; } | awk '{print $1}')
     echo -e "  ${ts}  size=${size:-?}"
     print_session_contents "$d"
   done
@@ -1605,24 +1605,24 @@ get_size_bytes() {
       if has_positive_age "$age_days"; then
         find_mtime_args+=("-mtime" "+$age_days")
       fi
-      $cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
+      { $cmd_prefix find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -exec du -sb {} + 2>/dev/null || true; } | awk '{sum+=$1} END {print sum+0}'
     else
       if has_positive_age "$age_days"; then
-        $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null | awk '{sum+=$1} END {print sum+0}'
+        { $cmd_prefix find "$target_path" -mindepth 1 \( -type f -o -type l \) -mtime +"$age_days" -exec du -sb {} + 2>/dev/null || true; } | awk '{sum+=$1} END {print sum+0}'
       else
-        $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
+        { $cmd_prefix du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
       fi
     fi
   else
     # If target is a file or symlink, check if it's older than age_days
     if has_positive_age "$age_days"; then
       if [[ -n $($cmd_prefix find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]]; then
-        $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
+        { $cmd_prefix du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
       else
         echo 0
       fi
     else
-      $cmd_prefix du -sb "$target_path" 2>/dev/null | awk '{print $1}' || echo 0
+      { $cmd_prefix du -sb "$target_path" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}'
     fi
   fi
 }
