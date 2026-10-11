@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Lint with ShellCheck
         run: shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
