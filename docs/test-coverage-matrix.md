@@ -41,6 +41,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-33 | check-aur-ready rejects a SKIP checksum | check-aur-ready rejects a SKIP checksum |
 | U-34 | Failed sudo authentication during restore keeps metadata aligned | Restore Sudo Auth Failure |
 | U-35 | Plain CHECK_PROCESSES names longer than 15 characters match the kernel process name | Dry Run Mode (Default) / Bare Token Still Matches Comm |
+| U-36 | action:apk_clean | Cross-Distro Actions / Action Required Binary Mapping / Apk Safe Degradation |
 
 ## Drift guards
 

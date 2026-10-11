@@ -122,9 +122,9 @@ exit 0
 EOF
   chmod +x "$TEST_ENV_DIR/bin/pacman"
 
-  # Cross-distro package-manager mocks (apt/apt-get/dnf/zypper), same template as above.
+  # Cross-distro package-manager mocks (apt/apt-get/dnf/zypper/apk), same template as above.
   local _mgr
-  for _mgr in apt apt-get dnf zypper; do
+  for _mgr in apt apt-get dnf zypper apk; do
     cat > "$TEST_ENV_DIR/bin/$_mgr" << EOF
 #!/usr/bin/env bash
 # Mock $_mgr command
@@ -1842,16 +1842,18 @@ cat << EOF > "$TEST_ENV_DIR/aptdnf_config.conf"
 medium|APT Clean|$OUTSIDE_DIR|Mock APT cache|0||action:apt_clean
 medium|DNF Clean|$OUTSIDE_DIR|Mock DNF cache|0||action:dnf_clean
 medium|Zypper Clean|$OUTSIDE_DIR|Mock Zypper cache|0||action:zypper_clean
+medium|APK Clean|$OUTSIDE_DIR|Mock APK cache|0||action:apk_clean
 EOF
 if run_test_case "Cross-Distro Actions" 0 "aptdnf.log" --config "$TEST_ENV_DIR/aptdnf_config.conf" --clean --force --allow-outside-home --risk medium; then
   if grep -q "Mock apt-get called with: clean" "$TEST_ENV_DIR/aptdnf.log" && \
      grep -q "Mock dnf called with: clean all" "$TEST_ENV_DIR/aptdnf.log" && \
      grep -q "Mock zypper called with: clean -a" "$TEST_ENV_DIR/aptdnf.log" && \
+     grep -q "Mock apk called with: cache clean" "$TEST_ENV_DIR/aptdnf.log" && \
      ! grep -q "Mock pacman called" "$TEST_ENV_DIR/aptdnf.log" && \
      ! grep -q "Mock paccache called" "$TEST_ENV_DIR/aptdnf.log"; then
-    echo -e "${GREEN}PASS: apt/dnf/zypper actions ran their exact commands; no other manager was called.${NC}"
+    echo -e "${GREEN}PASS: apt/dnf/zypper/apk actions ran their exact commands; no other manager was called.${NC}"
   else
-    echo -e "${RED}FAIL: apt/dnf/zypper actions did not invoke their exact commands.${NC}"
+    echo -e "${RED}FAIL: apt/dnf/zypper/apk actions did not invoke their exact commands.${NC}"
     cat "$TEST_ENV_DIR/aptdnf.log"
     exit 1
   fi
@@ -1902,6 +1904,31 @@ EOF
     else
       echo -e "${RED}FAIL: zypper action did not degrade safely when zypper is absent.${NC}"
       cat "$TEST_ENV_DIR/zypper_degrade.log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+fi
+
+# Parallel absent-apk degradation for action:apk_clean.
+setup_mock_env
+rm -f "$TEST_ENV_DIR/bin/apk"
+echo -e "\n${BOLD}Test Case: Apk Safe Degradation${NC}"
+if command -v apk >/dev/null 2>&1; then
+  echo -e "${GREEN}PASS (skipped): a real apk is installed on this host; cannot simulate its absence.${NC}"
+else
+  cat << EOF > "$TEST_ENV_DIR/apk_degrade.conf"
+medium|APK Clean|$OUTSIDE_DIR|Mock APK cache|0||action:apk_clean
+EOF
+  if run_test_case "Apk Degradation" 0 "apk_degrade.log" --config "$TEST_ENV_DIR/apk_degrade.conf" --clean --force --allow-outside-home --risk medium; then
+    if grep -qi "not available on this platform" "$TEST_ENV_DIR/apk_degrade.log" && \
+       ! grep -q "command not found" "$TEST_ENV_DIR/apk_degrade.log" && \
+       ! grep -q "Mock apk called" "$TEST_ENV_DIR/apk_degrade.log"; then
+      echo -e "${GREEN}PASS: apk action skipped cleanly when apk is absent (non-fatal, no command-not-found).${NC}"
+    else
+      echo -e "${RED}FAIL: apk action did not degrade safely when apk is absent.${NC}"
+      cat "$TEST_ENV_DIR/apk_degrade.log"
       exit 1
     fi
   else
@@ -2040,9 +2067,10 @@ arb_ok=true
 [[ "$(arb action:apt_clean)" == "apt-get" ]] || arb_ok=false
 [[ "$(arb action:dnf_clean)" == "dnf" ]] || arb_ok=false
 [[ "$(arb action:zypper_clean)" == "zypper" ]] || arb_ok=false
+[[ "$(arb action:apk_clean)" == "apk" ]] || arb_ok=false
 [[ -z "$(arb action:bogus)" ]] || arb_ok=false
 if [[ "$arb_ok" == true ]]; then
-  echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf/zypper map to their real binaries.${NC}"
+  echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf/zypper/apk map to their real binaries.${NC}"
 else
   echo -e "${RED}FAIL: action_required_binary returned an unexpected binary.${NC}"
   exit 1

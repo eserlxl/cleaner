@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+- Add `action:apk_clean` custom action to clear the Alpine Linux package cache
+  (`sudo apk cache clean`) when apk is available.
+
 ### Fixed
 - Match a CHECK_PROCESSES name longer than 15 characters on its first 15, as the
   kernel stores it; previously such a guard never matched and the target was

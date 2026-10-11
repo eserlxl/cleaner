@@ -41,8 +41,9 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   - `action:apt_clean`: Runs `sudo apt-get clean` (clears the downloaded APT package archive cache). Skipped if apt is not present.
   - `action:dnf_clean`: Runs `sudo dnf clean all` (clears all DNF caches). Skipped if dnf is not present.
   - `action:zypper_clean`: Runs `sudo zypper clean -a` (clears all zypper caches). Skipped if zypper is not present.
+  - `action:apk_clean`: Runs `sudo apk cache clean` (clears Alpine Linux apk package cache). Skipped if apk is not present.
   > [!WARNING]
-  > Custom clean actions — the pacman, apt, dnf, and zypper package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion. See [action-registry-governance.md](docs/action-registry-governance.md) for adding new actions.
+  > Custom clean actions — the pacman, apt, dnf, zypper, and apk package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion. See [action-registry-governance.md](docs/action-registry-governance.md) for adding new actions.
 
 
 ### Action cross-walk
@@ -56,6 +57,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 | `action:apt_clean` | `sudo apt-get clean` | CUSTOM_ACTION list | `APT Cache Clean` (commented) | CONFIGURATION |
 | `action:dnf_clean` | `sudo dnf clean all` | CUSTOM_ACTION list | `DNF Cache Clean` (commented) | CONFIGURATION |
 | `action:zypper_clean` | `sudo zypper clean -a` | CUSTOM_ACTION list | `Zypper Cache Clean` (commented) | CONFIGURATION |
+| `action:apk_clean` | `sudo apk cache clean` | CUSTOM_ACTION list | `APK Cache Clean` (commented) | CONFIGURATION |
 
 ### Validation
 

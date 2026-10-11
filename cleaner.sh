@@ -862,7 +862,7 @@ validate_config_file() {
     fi
     if [[ -n "$custom_clean_cmd" ]]; then
       case "$custom_clean_cmd" in
-        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|filter:cxx_build)
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|filter:cxx_build)
           ;;
         *)
           echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -1687,6 +1687,7 @@ action_required_binary() {
     apt_clean) echo "apt-get" ;;
     dnf_clean) echo "dnf" ;;
     zypper_clean) echo "zypper" ;;
+    apk_clean) echo "apk" ;;
     *) echo "" ;;
   esac
 }
@@ -2139,6 +2140,11 @@ for i in "${!parsed_names[@]}"; do
         ;;
       action:zypper_clean)
         if sudo zypper clean -a; then
+          action_success=true
+        fi
+        ;;
+      action:apk_clean)
+        if sudo apk cache clean; then
           action_success=true
         fi
         ;;
