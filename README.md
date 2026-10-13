@@ -151,13 +151,13 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   cleaner --list-sessions                       # see exactly what a session holds
   cleaner --restore latest --only /.cache/yarn  # take back just that one target
   ```
-- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--list-targets`.
+- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
 
   ```sh
   cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
   cleaner --only-target "NPM" --config cleaner.conf --force     # clean only that target
   ```
-- **`--exclude-target PATTERN`**: With cleanup, skip config targets whose `NAME` contains `PATTERN` (substring match). Combined with `--only-target`, both filters apply. Exits 1 if the filters leave no targets to process. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--list-targets`.
+- **`--exclude-target PATTERN`**: With cleanup, skip config targets whose `NAME` contains `PATTERN` (substring match). Combined with `--only-target`, both filters apply. Exits 1 if the filters leave no targets to process. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
 
   ```sh
   cleaner --exclude-target "Chromium" --config cleaner.conf --dry-run   # skip Chromium-named targets
@@ -239,17 +239,18 @@ The tool targets Linux with a **GNU userland**. It relies on GNU coreutils/findu
 | `pacman-contrib` | `PKGBUILD optdepends` | Required for `paccache_keep*` actions (`paccache` binary) |
 | `sudo` | runtime | Required for predefined `action:*` package-cache commands |
 
-Predefined package-cache actions are supported for four package managers:
+Predefined package-cache actions are supported for five package managers:
 
 - **pacman** — `action:paccache_keep1/2/3`, `action:pacman_clean`
 - **apt** — `action:apt_clean`
 - **dnf** — `action:dnf_clean`
 - **zypper** — `action:zypper_clean`
+- **apk** — `action:apk_clean`
 
 
 ### Portable cross-distro config
 
-The same `cleaner.conf` may list pacman, apt, dnf, and zypper package-cache sections together.
+The same `cleaner.conf` may list pacman, apt, dnf, zypper, and apk package-cache sections together.
 Actions whose package manager is **not installed** are **skipped** with a clear message
 (hermetic test: `Cross-Distro Safe Degradation`) rather than failing the run.
 
@@ -317,7 +318,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are overridden by their CLI flag. On/off variables (`QUIET`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`, `ALLOW_OUTSIDE_HOME`) can only be switched on from the CLI: no flag switches them off, so set one to `0` or unset it to disable it for a run (an explicit `--dry-run` still previews when `LINUX_CLEANER_FORCE` is set).
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are overridden by their CLI flag. On/off variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`, `ALLOW_OUTSIDE_HOME`) can only be switched on from the CLI: no flag switches them off, so set one to `0` or unset it to disable it for a run (an explicit `--dry-run` still previews when `LINUX_CLEANER_FORCE` is set).
 
 ---
 
@@ -334,7 +335,7 @@ shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static ana
 make check                            # runbook example validation + full safety suite (test_cleaner.sh)
 ```
 
-The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, and `pacman` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. **Drift guards** (man-page parity, version consistency, env mirrors, and similar) run **after** mock `$HOME` setup and stub installation — guards must not require root or network. See the [guard catalog](docs/hermetic-test-guards.md) and [test coverage matrix](docs/test-coverage-matrix.md). Runner dependencies are:
+The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, `pacman`, `apt-get`, `dnf`, `zypper`, and `apk` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. **Drift guards** (man-page parity, version consistency, env mirrors, and similar) run **after** mock `$HOME` setup and stub installation — guards must not require root or network. See the [guard catalog](docs/hermetic-test-guards.md) and [test coverage matrix](docs/test-coverage-matrix.md). Runner dependencies are:
 
 - `bash`
 - `coreutils`

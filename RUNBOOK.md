@@ -104,12 +104,12 @@ cleaner --list-sessions --json
 ## Env recipe: outside-HOME package caches
 
 ```sh
-# High-risk: only when cleaning paths outside $HOME (e.g. pacman/apt/dnf/zypper caches).
+# High-risk: only when cleaning paths outside $HOME (e.g. pacman/apt/dnf/zypper/apk caches).
 export LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1
 cleaner --clean --force --risk medium
 ```
 
-Package-cache `action:*` tokens include `action:apt_clean`, `action:dnf_clean`, and `action:zypper_clean` (each skipped when the manager binary is absent).
+Package-cache `action:*` tokens include `action:apt_clean`, `action:dnf_clean`, `action:zypper_clean`, and `action:apk_clean` (each skipped when the manager binary is absent).
 
 ## Env recipe: selective targets
 

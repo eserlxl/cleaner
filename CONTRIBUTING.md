@@ -16,7 +16,8 @@ make check                            # runbook example validation + full safety
 ```
 
 The suite is hermetic: it builds a mock `$HOME` and stubs `sudo`, `pgrep`,
-`paccache`, and `pacman`, so it needs no root, network, or Arch tooling.
+`paccache`, `pacman`, `apt-get`, `dnf`, `zypper`, and `apk`, so it needs no
+root, network, or Arch tooling.
 
 ## Safety invariants (do not break)
 
