@@ -97,8 +97,6 @@ See `docs/release-workflow-audit.md` for the step-by-step cross-walk.
 8. Commit `PKGBUILD` and `.SRCINFO`.
 9. Human AUR push (never automated).
 
-9. Human AUR push (never automated).
-
 - Documentation review: walk `docs/DOC_REVIEW_CHECKLIST.md` before tagging.
 
 ## Post-tag local verification

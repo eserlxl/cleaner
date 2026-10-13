@@ -469,18 +469,11 @@ Enable quiet mode via environment (same as
 Show clean targets via environment (same as
 .BR \-\-debug ):
 .B LINUX_CLEANER_DEBUG=1 cleaner \-\-dry\-run
+.TP
+Bounded unattended retention (daily trash, weekly expire):
+.B cleaner \-\-clean \-\-trash \-\-force
+.br
+.B cleaner \-\-purge\-sessions older\-than:30 \-\-force
 .SH SEE ALSO
 .BR paccache (8),
 .BR find (1)
-
-.TP
-Bounded unattended retention (daily trash, weekly expire):
-.B cleaner \-\-clean \-\-trash \-\-force
-.br
-.B cleaner \-\-purge\-sessions older\-than:30 \-\-force
-
-.TP
-Bounded unattended retention (daily trash, weekly expire):
-.B cleaner \-\-clean \-\-trash \-\-force
-.br
-.B cleaner \-\-purge\-sessions older\-than:30 \-\-force
