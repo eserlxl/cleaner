@@ -15,6 +15,47 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+- Per-target exclusions: CUSTOM_ACTION may be `exclude:NAME[,NAME...]`, using the
+  `--exclude` pattern syntax for that row only, e.g. `exclude:notes` to keep a
+  `notes/` directory inside a session-log tree.
+- `--debug` (env `LINUX_CLEANER_DEBUG`) shows the per-target `[CLEAN]` lines (nothing
+  to clean, size 0, path missing); they are hidden by default so wildcard rows that
+  expand to many targets do not flood the output.
+- A target inside a git work tree that holds any git-tracked file is skipped as a
+  whole (`[SKIP] ... contains N git-tracked file(s)`), so a cleanup row can never
+  remove committed project content.
+- Add `action:apk_clean` custom action to clear the Alpine Linux package cache
+  (`sudo apk cache clean`) when apk is available.
+- With `--log`/`LINUX_CLEANER_LOG`, `--restore` writes one `mode=restore`
+  operation-log line per target (`success`, `failed`, `conflict`, or
+  `missing`) and `--purge-sessions` one `mode=purge` line per session, so
+  irreversible purges leave an audit trail.
+- `--list-sessions --json` — emit a machine-readable JSON inventory of
+  quarantine sessions (`sessions` array of `timestamp`/`size_bytes`/
+  `size_human`/`date`/`targets` with per-target `type`/`path`).
+- Dry-run `--json` also emits `total_reclaimable_human` and per-target
+  `size_human` alongside the existing byte fields.
+- `--list-targets --json` also emits per-target `description` and
+  `min_age_days` alongside the existing `name`/`risk`/`path` fields.
+- `--list-targets --json` also emits per-target `check_processes` and
+  `custom_action` when those optional config fields are present.
+- `--exclude-target PATTERN` — with cleanup, skip config targets whose
+  `NAME` contains `PATTERN` (substring match). Combined with
+  `--only-target`, both filters apply. Exits 1 if nothing remains.
+  `LINUX_CLEANER_EXCLUDE_TARGET` mirrors the flag for automation.
+- `LINUX_CLEANER_CONFIG` — when set to a non-empty path, selects the
+  configuration file (same as `--config`). Explicit `-c/--config` overrides.
+- `--check-config` — validate the configuration file with the same
+  structural checks as a cleanup run and exit without disk analysis.
+- `action:zypper_clean` — predefined action running `sudo zypper clean -a`
+  (skipped when zypper is absent), matching the apt/dnf package-cache pattern.
+- Human `--list-targets` also prints each target's `DESCRIPTION` column.
+- RUNBOOK documents `--check-config`, `LINUX_CLEANER_CONFIG`,
+  `--exclude-target` / `LINUX_CLEANER_EXCLUDE_TARGET`, and `action:zypper_clean`.
+- `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
+  enables `--allow-outside-home`. No CLI flag disables it; set it to `0` or unset it.
+
 ### Changed
 - Codex Sessions, Codex Generated Images, Cursor Chats, Claude Desktop Logs and
   Hermes Logs now prune files older than 7 days (was 30) and no longer skip while
@@ -25,31 +66,19 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `.gemini/model_debug_logs` and `.codex/logs`, and `.remember/logs` after one year.
   The rest of those tool directories (settings, rules, skills, plans, memory) is
   left alone.
-
-### Added
-- Per-target exclusions: CUSTOM_ACTION may be `exclude:NAME[,NAME...]`, using the
-  `--exclude` pattern syntax for that row only, e.g. `exclude:notes` to keep a
-  `notes/` directory inside a session-log tree.
-
-### Removed
-- The Claude Projects row (`$HOME/.claude/projects`). Claude Code prunes its own
-  transcripts per session (`cleanupPeriodDays`); a file-age filter would delete the
-  old sidecar files of a session that is still open.
-- `--debug` (env `LINUX_CLEANER_DEBUG`) shows the per-target `[CLEAN]` lines (nothing
-  to clean, size 0, path missing); they are hidden by default so wildcard rows that
-  expand to many targets do not flood the output.
-- A target inside a git work tree that holds any git-tracked file is skipped as a
-  whole (`[SKIP] ... contains N git-tracked file(s)`), so a cleanup row can never
-  remove committed project content.
-
-### Changed (output and prompts)
 - With `--allow-outside-home`, an outside-HOME target is listed as a normal `FOUND`
   line (description and age filter included) tagged `(outside HOME)` instead of a
   `WARNING` line.
 - Default-mode cleanup asks once per run whether to clean the outside-HOME targets,
   instead of once per target; answering no skips them and still cleans the rest.
-- Add `action:apk_clean` custom action to clear the Alpine Linux package cache
-  (`sudo apk cache clean`) when apk is available.
+- `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are now
+  `UNSAFE` targets, even with `--allow-outside-home`; their descendants keep
+  the existing outside-HOME rules.
+
+### Removed
+- The Claude Projects row (`$HOME/.claude/projects`). Claude Code prunes its own
+  transcripts per session (`cleanupPeriodDays`); a file-age filter would delete the
+  old sidecar files of a session that is still open.
 
 ### Fixed
 - Defer `aged` quarantine metadata records until at least one file moves and
@@ -100,41 +129,6 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   quarantined files and later targets still run.
 - `make check-aur-ready` now fails while `PKGBUILD` still pins
   `sha256sums=('SKIP')`; it previously passed on any PKGBUILD.
-
-### Changed
-- `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are now
-  `UNSAFE` targets, even with `--allow-outside-home`; their descendants keep
-  the existing outside-HOME rules.
-
-### Added
-- With `--log`/`LINUX_CLEANER_LOG`, `--restore` writes one `mode=restore`
-  operation-log line per target (`success`, `failed`, `conflict`, or
-  `missing`) and `--purge-sessions` one `mode=purge` line per session, so
-  irreversible purges leave an audit trail.
-- `--list-sessions --json` — emit a machine-readable JSON inventory of
-  quarantine sessions (`sessions` array of `timestamp`/`size_bytes`/
-  `size_human`/`date`/`targets` with per-target `type`/`path`).
-- Dry-run `--json` also emits `total_reclaimable_human` and per-target
-  `size_human` alongside the existing byte fields.
-- `--list-targets --json` also emits per-target `description` and
-  `min_age_days` alongside the existing `name`/`risk`/`path` fields.
-- `--list-targets --json` also emits per-target `check_processes` and
-  `custom_action` when those optional config fields are present.
-- `--exclude-target PATTERN` — with cleanup, skip config targets whose
-  `NAME` contains `PATTERN` (substring match). Combined with
-  `--only-target`, both filters apply. Exits 1 if nothing remains.
-  `LINUX_CLEANER_EXCLUDE_TARGET` mirrors the flag for automation.
-- `LINUX_CLEANER_CONFIG` — when set to a non-empty path, selects the
-  configuration file (same as `--config`). Explicit `-c/--config` overrides.
-- `--check-config` — validate the configuration file with the same
-  structural checks as a cleanup run and exit without disk analysis.
-- `action:zypper_clean` — predefined action running `sudo zypper clean -a`
-  (skipped when zypper is absent), matching the apt/dnf package-cache pattern.
-- Human `--list-targets` also prints each target's `DESCRIPTION` column.
-- RUNBOOK documents `--check-config`, `LINUX_CLEANER_CONFIG`,
-  `--exclude-target` / `LINUX_CLEANER_EXCLUDE_TARGET`, and `action:zypper_clean`.
-- `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
-  enables `--allow-outside-home`. CLI flags override this variable.
 
 ## [1.3.0] - 2026-07-15
 
