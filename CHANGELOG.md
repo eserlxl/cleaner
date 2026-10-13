@@ -36,6 +36,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `size_human`/`date`/`targets` with per-target `type`/`path`).
 - Dry-run `--json` also emits `total_reclaimable_human` and per-target
   `size_human` alongside the existing byte fields.
+- Dry-run `--json` also emits per-target `description` and `min_age_days`
+  alongside the existing target summary fields.
 - `--list-targets --json` also emits per-target `description` and
   `min_age_days` alongside the existing `name`/`risk`/`path` fields.
 - `--list-targets --json` also emits per-target `check_processes` and

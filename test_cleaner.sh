@@ -3208,6 +3208,8 @@ if run_test_case "JSON Dry Run" 0 "json_dry.log" \
     if grep -q '"total_reclaimable_bytes"' "$TEST_ENV_DIR/json_parsed.out" \
        && grep -q '"total_reclaimable_human"' "$TEST_ENV_DIR/json_parsed.out" \
        && grep -q '"size_human"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"description": "Mock NPM cache"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"min_age_days": "0"' "$TEST_ENV_DIR/json_parsed.out" \
        && grep -q '"NPM Cache"' "$TEST_ENV_DIR/json_parsed.out" \
        && grep -q '"status": "found"' "$TEST_ENV_DIR/json_parsed.out" \
        && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/json_dry.log"; then

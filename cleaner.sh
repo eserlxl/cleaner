@@ -448,13 +448,15 @@ emit_dry_run_json() {
     else
       printf ','
     fi
-    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s"}' \
+    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s","description":"%s","min_age_days":"%s"}' \
       "$(json_escape "${json_names[$i]}")" \
       "$(json_escape "${json_paths[$i]}")" \
       "$(json_escape "${json_risks[$i]}")" \
       "${json_bytes[$i]}" \
       "$(json_escape "$(format_bytes "${json_bytes[$i]}")")" \
-      "$(json_escape "${json_statuses[$i]}")"
+      "$(json_escape "${json_statuses[$i]}")" \
+      "$(json_escape "${json_descs[$i]}")" \
+      "$(json_escape "${json_ages[$i]}")"
   done
   printf ']}'
   printf '\n'
@@ -1833,6 +1835,8 @@ json_paths=()
 json_risks=()
 json_bytes=()
 json_statuses=()
+json_descs=()
+json_ages=()
 
 total_reclaimable_bytes=0
 only_target_matched=false
@@ -2018,6 +2022,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     json_risks+=("$risk")
     json_bytes+=("$size_bytes")
     json_statuses+=("${target_status:-skipped}")
+    json_descs+=("$desc")
+    json_ages+=("$min_age")
   fi
 
   # Keep track of valid targets for execution
