@@ -52,6 +52,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   (`sudo apk cache clean`) when apk is available.
 
 ### Fixed
+- Defer `aged` quarantine metadata records until at least one file moves and
+  prune empty staging directories under the session target, so a failed aged or
+  filtered move never leaves phantom metadata or empty directories that block
+  `--restore latest`.
 - Match a CHECK_PROCESSES name longer than 15 characters on its first 15, as the
   kernel stores it; previously such a guard never matched and the target was
   cleaned while the program ran.

@@ -2276,14 +2276,12 @@ for i in "${!parsed_names[@]}"; do
     if has_positive_age "$age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
       # File-by-file quarantine
       if path_is_real_dir "$use_sudo" "$path"; then
-        # Record aged quarantine metadata
-        echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta"
-        
         find_mtime_args=()
         if has_positive_age "$age"; then
           find_mtime_args+=("-mtime" "+$age")
         fi
         
+        aged_moved=false
         with_sudo "$use_sudo" mkdir -p "$q_target" || success=false
         while IFS= read -r -d '' file; do
           rel_path="${file#"$path"/}"
@@ -2292,13 +2290,19 @@ for i in "${!parsed_names[@]}"; do
             success=false
             continue
           fi
-          if ! with_sudo "$use_sudo" mv "$file" "$dest_file"; then
+          if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
+            aged_moved=true
+          else
             success=false
           fi
         done < <(with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
         wait "$!" || success=false
-        if [[ "$use_sudo" = true ]]; then
-          sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
+        with_sudo "$use_sudo" find "$q_target" -depth -type d -empty -delete 2>/dev/null || true
+        if [[ "$aged_moved" = true ]]; then
+          if [[ "$use_sudo" = true ]]; then
+            sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
+          fi
+          echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta" || success=false
         fi
         with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
       else

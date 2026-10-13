@@ -2426,18 +2426,21 @@ fi
 # (a record for a file that never moved made every later --restore of that
 # session exit 1 on a missing source, and kept the session forever).
 setup_mock_env
-mkdir -p "$MOCK_HOME/.cache/qfail_test" "$MOCK_HOME/.cache/qok_test"
+mkdir -p "$MOCK_HOME/.cache/qfail_test" "$MOCK_HOME/.cache/qfail_aged/sub" "$MOCK_HOME/.cache/qok_test"
 echo "unmovable" > "$MOCK_HOME/.cache/qfail_test/data.txt"
+echo "unmovable aged" > "$MOCK_HOME/.cache/qfail_aged/sub/data.txt"
+touch -d "10 days ago" "$MOCK_HOME/.cache/qfail_aged/sub/data.txt"
 echo "movable" > "$MOCK_HOME/.cache/qok_test/data.txt"
 cat << 'EOF' > "$TEST_ENV_DIR/qfail.conf"
 safe|Qfail Target|$HOME/.cache/qfail_test|Target whose quarantine move fails|0||
+safe|Qfail Aged|$HOME/.cache/qfail_aged|Aged target whose quarantine move fails|5||
 safe|Qok Target|$HOME/.cache/qok_test|Target that quarantines cleanly|0||
 EOF
-# Stub mv so only the qfail_test move fails; every other mv passes through.
+# Stub mv so only the qfail_test and qfail_aged moves fail; every other mv passes through.
 cat << 'EOF' > "$TEST_ENV_DIR/bin/mv"
 #!/usr/bin/env bash
 case "$1" in
-  *qfail_test*) exit 1 ;;
+  *qfail_test*|*qfail_aged*) exit 1 ;;
 esac
 real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
 exec "$real_mv" "$@"
@@ -2450,9 +2453,11 @@ if run_test_case "Failed Quarantine Move Not Recorded" 1 "qfail.log" \
   qmeta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
   if [[ -f "$qmeta" ]] \
      && ! grep -q "qfail_test" "$qmeta" \
+     && ! grep -q "qfail_aged" "$qmeta" \
      && grep -q "qok_test" "$qmeta" \
-     && [[ -f "$MOCK_HOME/.cache/qfail_test/data.txt" ]]; then
-    echo -e "${GREEN}PASS: the failed move left no quarantine.meta record and the file stayed in place.${NC}"
+     && [[ -f "$MOCK_HOME/.cache/qfail_test/data.txt" ]] \
+     && [[ -f "$MOCK_HOME/.cache/qfail_aged/sub/data.txt" ]]; then
+    echo -e "${GREEN}PASS: the failed full and aged moves left no quarantine.meta records and the files stayed in place.${NC}"
   else
     echo -e "${RED}FAIL: a failed quarantine move was still recorded in quarantine.meta.${NC}"
     cat "$qmeta" 2>/dev/null
@@ -2461,7 +2466,7 @@ if run_test_case "Failed Quarantine Move Not Recorded" 1 "qfail.log" \
   fi
   if run_test_case "Restore After a Failed Quarantine Move" 0 "qfail_restore.log" --restore latest; then
     if [[ -f "$MOCK_HOME/.cache/qok_test/data.txt" ]]; then
-      echo -e "${GREEN}PASS: restore succeeded and returned the file that did reach quarantine.${NC}"
+      echo -e "${GREEN}PASS: restore succeeded, retired the session, and returned the file that did reach quarantine.${NC}"
     else
       echo -e "${RED}FAIL: restore did not return the quarantined file.${NC}"
       cat "$TEST_ENV_DIR/qfail_restore.log"
