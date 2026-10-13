@@ -87,6 +87,7 @@ export LINUX_CLEANER_FORCE=1
 export LINUX_CLEANER_TRASH=1
 export LINUX_CLEANER_RISK=safe
 # optional: LINUX_CLEANER_QUIET=1 LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log
+# debug:    LINUX_CLEANER_DEBUG=1 (same as --debug)
 cleaner --clean --trash --force
 ```
 

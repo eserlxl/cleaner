@@ -33,7 +33,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 - **`DESCRIPTION`**: A brief explanation of the files being cleaned.
 - **`MIN_AGE_DAYS`**: (Optional) Only delete files/symlinks older than N days. Set to `0` or leave empty to clean immediately.
 - **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped. A token written as `cmdline:<pattern>` matches the **full command line** rather than the process name, which is what guards a tool launched through a shared runtime — `/usr/bin/cursor` execs `electron` and `cursor-agent` execs `node`, so neither runs under its own name and an exact-name guard would silently never fire. Prefer an install path (`cmdline:/usr/share/cursor`) over a bare word, so the pattern cannot collide with an unrelated process. The cleaner never matches its own invocation: its whole process ancestry, its descendants, and any already-exited PID are excluded.
-- **`CUSTOM_ACTION`**: (Optional) Predefined clean command to run instead of direct path deletion:
+- **`CUSTOM_ACTION`**: (Optional) One predefined action, filter, or exclusion token:
   - `action:paccache_keep1`: Runs `sudo paccache -rk1` (retains latest 1 version of package cache).
   - `action:paccache_keep2`: Runs `sudo paccache -rk2` (retains latest 2 versions of package cache).
   - `action:paccache_keep3`: Runs `sudo paccache -rk3` (retains latest 3 versions of package cache).
@@ -87,7 +87,12 @@ Rules that keep expansion predictable:
 - **A pattern matching nothing is not an error** — it simply contributes no target, and the run still exits `0`.
 - **A wildcard in the first component is refused.** `/*/build` would make the search walk the whole filesystem, so it is left unexpanded with a warning.
 - **Line numbers survive expansion.** A config error after a wildcard line still cites its real physical line.
-- **`filter:cxx_build` selects by contents, not name.** Put it in the `CUSTOM_ACTION` field and an expanded match becomes a target only when it actually looks like a C/C++ build tree — it holds `CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json` or `.qmake.stash`, either directly or one level below (so a qmake `build/Desktop-Debug` layout qualifies). This is what separates real build output from a source directory that merely starts with "build", or a `build/` that holds documentation. The filter only ever narrows the match set, and a target may carry either a `filter:` or an `action:`, never both.
+- **`filter:cxx_build` selects by contents, not name.** Put it in the `CUSTOM_ACTION` field and an expanded match becomes a target only when it actually looks like a C/C++ build tree — it holds `CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json` or `.qmake.stash`, either directly or one level below (so a qmake `build/Desktop-Debug` layout qualifies). This is what separates real build output from a source directory that merely starts with "build", or a `build/` that holds documentation. The filter only ever narrows the match set.
+- **`exclude:NAME[,NAME...]` protects content within this target.** Put it in `CUSTOM_ACTION` to add patterns to the global `--exclude` / `LINUX_CLEANER_EXCLUDE` list for this row only. It uses the same `find` glob/path semantics: `exclude:notes` preserves every matching `notes` directory and everything beneath it, including old files, while old session logs remain eligible. Dry-run sizes, deletion, quarantine, and empty-directory cleanup all honor the exclusions. Even with age `0`, cleanup processes individual files and retains the target directory. Wildcard rows keep normal ancestor pruning. Patterns must be non-empty (not blank), comma-separated, and contain no pipe or newline characters. Field 7 holds a single token; `exclude:`, `filter:`, and `action:` cannot be combined.
+
+```text
+medium|App Sessions|$HOME/.local/share/example-app/sessions|Old session logs, keep notes|7||exclude:notes
+```
 
 > [!WARNING]
 > One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. Combined with `--allow-outside-home` a wildcard reaches beyond `$HOME`, where the HOME boundary no longer limits the blast radius; prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.
@@ -169,6 +174,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
+- **`--debug`**: Show per-target clean status lines (suppressed by default; overridden by `--quiet`).
 
 Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
 (forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
@@ -267,6 +273,7 @@ Security threat model: [docs/threat-model.md](docs/threat-model.md).
 4. **No Eval, No Shell Globbing**: Path expansion resolves only the explicit placeholders (`$HOME`, `~`, and `$USER`), and never invokes `eval` or lets the shell expand a pattern. Wildcards are resolved by `find` at a fixed depth below a literal parent directory, and every match re-enters this same safety pipeline individually.
 5. **Physical Canonicalization**: Resolves target paths physically by resolving the closest existing parent directory. This prevents directory traversal or symlink-based boundary escapes.
 6. **Conflict Guard during Restore**: During quarantine restoration, if the original destination path already exists, the restoration is skipped for that file to prevent overwriting active data.
+7. **Git Guard**: With Git available, targets containing git-tracked files are skipped even with `--force`, unless the cleaner runs as root or the target requires sudo.
 
 ---
 
@@ -297,6 +304,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_CONFIG` | When set to a non-empty path, uses that file as the configuration (same as `--config`). Explicit `-c/--config` overrides. |
 | `LINUX_CLEANER_LOG` | Enable operation logging to the given path (same rules as `--log`). |
 | `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
+| `LINUX_CLEANER_DEBUG` | When set to `1`, `true`, or `yes`, enables `--debug` (show per-target clean status lines). |
 | `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
 | `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
 | `LINUX_CLEANER_EXCLUDE_TARGET` | When set to a non-empty pattern, enables `--exclude-target` (substring match on config target `NAME`). |

@@ -59,6 +59,7 @@ Options:
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
+  --debug                    Show per-target clean status lines (suppressed by default; overridden by --quiet).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, or --list-sessions inventory).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
@@ -72,6 +73,7 @@ INTERACTIVE=false
 FORCE=false
 YES_DANGER=false
 QUIET=false
+DEBUG=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
@@ -110,6 +112,9 @@ if [[ -n "${LINUX_CLEANER_CONFIG:-}" ]]; then
 fi
 case "${LINUX_CLEANER_QUIET:-}" in
   1|true|TRUE|yes|YES) QUIET=true ;;
+esac
+case "${LINUX_CLEANER_DEBUG:-}" in
+  1|true|TRUE|yes|YES) DEBUG=true ;;
 esac
 case "${LINUX_CLEANER_JSON:-}" in
   1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
@@ -174,6 +179,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -q|--quiet)
       QUIET=true
+      shift
+      ;;
+    --debug)
+      DEBUG=true
       shift
       ;;
     --json)
@@ -396,6 +405,13 @@ status_echo() {
     return 0
   fi
   echo -e "$@"
+}
+
+debug_echo() {
+  if [[ "$DEBUG" != true ]]; then
+    return 0
+  fi
+  status_echo "$@"
 }
 
 json_escape() {
@@ -726,16 +742,18 @@ canonicalize_physical() {
   echo "$resolved"
 }
 
-# Build the global array EXCLUDE_FIND_ARGS for use in find commands based on EXCLUDE_PATTERNS
+# Build find arguments using the same patterns for global and per-target exclusions.
 EXCLUDE_FIND_ARGS=()
 build_exclude_find_args() {
-  if [[ -z "${EXCLUDE_PATTERNS:-}" ]]; then
+  local patterns="${1-${EXCLUDE_PATTERNS:-}}"
+  EXCLUDE_FIND_ARGS=()
+  if [[ -z "$patterns" ]]; then
     return
   fi
   
   local IFS=','
   local -a pats
-  read -r -a pats <<< "$EXCLUDE_PATTERNS"
+  read -r -a pats <<< "$patterns"
   
   if [[ ${#pats[@]} -eq 0 ]]; then
     return
@@ -763,6 +781,15 @@ build_exclude_find_args() {
   if [[ ${#clauses[@]} -gt 0 ]]; then
     EXCLUDE_FIND_ARGS+=("!" "(" "${clauses[@]}" ")")
   fi
+}
+
+# Rebuild from the global list each time so row exclusions never leak.
+set_target_exclusions() {
+  TARGET_EXCLUDE_PATTERNS="${EXCLUDE_PATTERNS:-}"
+  if [[ "$1" == exclude:* ]]; then
+    TARGET_EXCLUDE_PATTERNS+="${TARGET_EXCLUDE_PATTERNS:+,}${1#exclude:}"
+  fi
+  build_exclude_find_args "$TARGET_EXCLUDE_PATTERNS"
 }
 
 # Append one human-readable operation-log line (opt-in). The log is confined to
@@ -824,7 +851,7 @@ list_config_targets() {
 validate_config_file() {
   local config_line config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
-  local target_count=0
+  local target_count=0 exclusion_patterns
 
   while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     config_lineno=$((config_lineno + 1))
@@ -862,6 +889,15 @@ validate_config_file() {
     fi
     if [[ -n "$custom_clean_cmd" ]]; then
       case "$custom_clean_cmd" in
+        exclude:*)
+          exclusion_patterns="${custom_clean_cmd#exclude:}"
+          if [[ -z "$exclusion_patterns" || "$exclusion_patterns" =~ (^|,)[[:space:]]*(,|$) \
+                || "$exclusion_patterns" == *'|'* || "$exclusion_patterns" == *$'\n'* \
+                || "$exclusion_patterns" == *$'\r'* ]]; then
+            echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CUSTOM_ACTION '${custom_clean_cmd}' (unsafe or empty exclusion pattern)${NC}" >&2
+            exit 1
+          fi
+          ;;
         action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|filter:cxx_build)
           ;;
         *)
@@ -1468,6 +1504,25 @@ check_path_safety() {
   return 0
 }
 
+# Count tracked files without exposing filenames or querying Git with privileges.
+# The scanned repository is untrusted: its .git/config can name a core.fsmonitor
+# command that ls-files would run, so fsmonitor is forced off on every call.
+count_git_tracked() {
+  local target_path="$1" git_dir="$1" pathspec=. count=0 inside_work_tree
+  if [[ "$EUID" -ne 0 ]] && command -v git >/dev/null 2>&1; then
+    if [[ ! -d "$target_path" ]]; then
+      git_dir=$(dirname "$target_path")
+      pathspec=${target_path##*/}
+    fi
+    if inside_work_tree=$(git -c core.fsmonitor=false -C "$git_dir" rev-parse --is-inside-work-tree 2>/dev/null) \
+       && [[ "$inside_work_tree" == true ]]; then
+      count=$(git -c core.fsmonitor=false --literal-pathspecs -C "$git_dir" ls-files -z -- "$pathspec" 2>/dev/null \
+        | tr -cd '\000' | wc -c) || count=0
+    fi
+  fi
+  echo "$count"
+}
+
 # Treat validated digit-only ages as decimal strings. Bash arithmetic parses a
 # leading zero as octal and can overflow on long values; only zero/nonzero is
 # needed to choose the age-filter path.
@@ -1482,7 +1537,7 @@ has_matching_files() {
   local use_sudo="${3:-false}"
 
   # Check if the target itself is excluded
-  if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+  if [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
     if [[ -z $(with_sudo "$use_sudo" find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       return 1
     fi
@@ -1516,7 +1571,7 @@ get_size_bytes() {
   fi
   
   # Check if the target itself is excluded
-  if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+  if [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
     if [[ -z $(with_sudo "$use_sudo" find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       echo 0
       return
@@ -1525,8 +1580,8 @@ get_size_bytes() {
 
   if path_is_real_dir "$use_sudo" "$target_path"; then
     # Sum size of files/symlinks older than age_days within the directory
-    # If EXCLUDE_PATTERNS is set, we must use find even if age_days is 0!
-    if [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    # Exclusions require file-by-file handling even when age_days is 0.
+    if [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
       local find_mtime_args=()
       if has_positive_age "$age_days"; then
         find_mtime_args+=("-mtime" "+$age_days")
@@ -1806,6 +1861,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   min_age=$(trim "$min_age")
   check_procs=$(trim "${check_procs:-}")
   custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+  set_target_exclusions "$custom_clean_cmd"
 
   if [[ -n "$ONLY_TARGET" ]]; then
     if [[ "$name" != *"$ONLY_TARGET"* ]]; then
@@ -1891,7 +1947,14 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           fi
         fi
 
-        if [[ "$DRY_RUN" = true ]] && [[ "$requires_sudo" = true ]] && [[ "$use_sudo" = false ]]; then
+        git_tracked_count=0
+        if [[ -e "$path" && "$requires_sudo" != true ]]; then
+          git_tracked_count=$(count_git_tracked "$path")
+        fi
+        if [[ "$git_tracked_count" -gt 0 ]]; then
+          target_status=skipped
+          status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: contains $git_tracked_count git-tracked file(s) under '$path'."
+        elif [[ "$DRY_RUN" = true ]] && [[ "$requires_sudo" = true ]] && [[ "$use_sudo" = false ]]; then
           # Try to get size without sudo. If it's readable, we show it, but warn that sudo is required for cleanup
           size_bytes=$(get_size_bytes "$path" "$min_age" false)
           readable_size=$(format_bytes "$size_bytes")
@@ -1910,7 +1973,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
             readable_size=$(format_bytes "$size_bytes")
             
             should_clean=false
-            if has_positive_age "$min_age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+            if has_positive_age "$min_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
               if has_matching_files "$path" "$min_age" "$use_sudo"; then
                 should_clean=true
               fi
@@ -1924,28 +1987,25 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               exists=true
               total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
               
-              if [[ $safety_status -eq 2 ]]; then
-                target_status=found
-                status_echo "  [${YELLOW}WARNING${NC}] $name ($readable_size): Path '$path' is outside HOME (Risk: $risk)."
+              target_status=found
+              outside_home_suffix=""
+              [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
+              if has_positive_age "$min_age"; then
+                status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)$outside_home_suffix"
               else
-                target_status=found
-                if has_positive_age "$min_age"; then
-                  status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)"
-                else
-                  status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc"
-                fi
+                status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc$outside_home_suffix"
               fi
             else
               target_status=clean
               if has_positive_age "$min_age"; then
-                status_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
+                debug_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
               else
-                status_echo "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
+                debug_echo "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
               fi
             fi
           else
             target_status=missing
-            status_echo "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
+            debug_echo "  [${BLUE}CLEAN${NC}] $name: Path '$path' does not exist."
           fi
         fi
       fi
@@ -2007,6 +2067,7 @@ fi
 
 # Determine whether to proceed based on options
 proceed_all=false
+clean_outside_home=true
 if [[ "$FORCE" = true ]]; then
   proceed_all=true
 elif [[ "$INTERACTIVE" = false ]]; then
@@ -2015,6 +2076,19 @@ elif [[ "$INTERACTIVE" = false ]]; then
   read -r reply || true
   if [[ "$reply" =~ ^[yY](es)?$ ]]; then
     proceed_all=true
+    outside_home_count=0
+    for i in "${!parsed_names[@]}"; do
+      if [[ "${parsed_exists[$i]}" == true && "${parsed_safety[$i]}" -eq 2 ]]; then
+        outside_home_count=$((outside_home_count + 1))
+      fi
+    done
+    if [[ "$outside_home_count" -gt 0 ]]; then
+      echo -n -e "${YELLOW}$outside_home_count target(s) are outside HOME. Clean them too? [y/N]: ${NC}"
+      clean_outside_home=false
+      if read -r reply && [[ "$reply" =~ ^[yY](es)?$ ]]; then
+        clean_outside_home=true
+      fi
+    fi
   else
     echo -e "${YELLOW}Cleanup aborted.${NC}"
     exit 0
@@ -2049,6 +2123,11 @@ for i in "${!parsed_names[@]}"; do
   if [[ "$exists" != true || "$safety" -eq 1 ]]; then
     continue
   fi
+
+  if [[ "$safety" -eq 2 && "$clean_outside_home" != true ]]; then
+    status_echo "  Skipping $name..."
+    continue
+  fi
   
   # Dangerous Confirmation Guard
   danger_prompted=false
@@ -2060,16 +2139,6 @@ for i in "${!parsed_names[@]}"; do
       continue
     fi
     danger_prompted=true
-  fi
-  
-  # If outside home and not forced, extra warning
-  if [[ "$safety" -eq 2 && "$FORCE" != true && "$proceed_all" = true && "$danger_prompted" != true ]]; then
-    echo -n -e "${YELLOW}Warning: Target '$name' points outside HOME ('$path'). Clean anyway? [y/N]: ${NC}"
-    read -r reply || true
-    if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
-      status_echo "  Skipping $name..."
-      continue
-    fi
   fi
   
   # Interactive mode confirmation (ask for each target)
@@ -2089,10 +2158,11 @@ for i in "${!parsed_names[@]}"; do
   
   # Handle Cleanup
   custom_clean_cmd="${parsed_cmds[$i]:-}"
+  set_target_exclusions "$custom_clean_cmd"
   use_sudo="${parsed_sudos[$i]:-false}"
   cleanup_bytes_before=$total_deleted_bytes
 
-  if [[ -n "$custom_clean_cmd" && "$custom_clean_cmd" != filter:* ]]; then
+  if [[ "$custom_clean_cmd" == action:* ]]; then
     # Safe degradation: skip an action whose actual binary is absent, before any
     # sudo call (e.g. paccache when pacman-contrib is not installed, or apt/dnf on
     # the wrong distro), so it is a clean skip rather than a failed sudo call.
@@ -2203,7 +2273,7 @@ for i in "${!parsed_names[@]}"; do
     [[ "$use_sudo" = true ]] && owner_fallback="0|0"
     owner_info=$(with_sudo "$use_sudo" stat -c '%u|%g' "$path" 2>/dev/null || echo "$owner_fallback")
 
-    if has_positive_age "$age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    if has_positive_age "$age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
       # File-by-file quarantine
       if path_is_real_dir "$use_sudo" "$path"; then
         # Record aged quarantine metadata
@@ -2253,7 +2323,7 @@ for i in "${!parsed_names[@]}"; do
     
   else
     # Permanent Deletion Mode
-    if has_positive_age "$age" || [[ -n "${EXCLUDE_PATTERNS:-}" ]]; then
+    if has_positive_age "$age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
       if path_is_real_dir "$use_sudo" "$path"; then
         find_mtime_args=()
         if has_positive_age "$age"; then

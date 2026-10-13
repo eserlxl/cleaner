@@ -16,7 +16,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Setup test environment directories
-export TEST_ENV_DIR="$SCRIPT_DIR/test_env"
+export TEST_ENV_DIR="${TEST_ENV_DIR:-$SCRIPT_DIR/test_env}"
 MOCK_HOME="$TEST_ENV_DIR/mock_home"
 OUTSIDE_DIR="$TEST_ENV_DIR/outside_dir"
 
@@ -200,6 +200,191 @@ run_test_case() {
 
 # --- Executing Test Cases ---
 
+# Tracked files protect the entire target, including untracked build output.
+for git_target in "\$HOME/proj/build" "\$HOME/proj/build*"; do
+  setup_mock_env
+  mkdir -p "$MOCK_HOME/proj/build" "$MOCK_HOME/proj/build2" "$MOCK_HOME/plain-build"
+  printf 'cache\n' > "$MOCK_HOME/proj/build/CMakeCache.txt"
+  printf 'old output\n' > "$MOCK_HOME/proj/build/old.bin"
+  touch -d '30 days ago' "$MOCK_HOME/proj/build/old.bin"
+  printf 'source\n' > "$MOCK_HOME/proj/build/tracked.c"
+  git_newline_file="$MOCK_HOME/proj/build/"$'tracked\nsource.c'
+  printf 'source\n' > "$git_newline_file"
+  printf 'cache\n' > "$MOCK_HOME/proj/build2/CMakeCache.txt"
+  printf 'ignored output\n' > "$MOCK_HOME/proj/build2/output.bin"
+  printf 'output\n' > "$MOCK_HOME/plain-build/output.bin"
+  printf 'build2/\n' > "$MOCK_HOME/proj/.gitignore"
+  (
+    export HOME="$MOCK_HOME"
+    git init -q "$MOCK_HOME/proj"
+    git -C "$MOCK_HOME/proj" config user.name 'Cleaner Test'
+    git -C "$MOCK_HOME/proj" config user.email 'cleaner-test@example.invalid'
+    git -C "$MOCK_HOME/proj" add -- build/tracked.c "$git_newline_file"
+    git -C "$MOCK_HOME/proj" -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+      commit -qm 'Track source in build tree'
+    # An untrusted repository config must never run a command during the scan.
+    git -C "$MOCK_HOME/proj" config core.fsmonitor "touch '$TEST_ENV_DIR/fsmonitor_ran'; false"
+  )
+  rm -f "$TEST_ENV_DIR/fsmonitor_ran"
+  cat > "$TEST_ENV_DIR/git_guard.conf" <<GIT_GUARD
+safe|Tracked Build|$git_target|Build tree with source|0||filter:cxx_build
+safe|Tracked File|\$HOME/proj/build/tracked.c|Single source file|0||
+safe|Plain Build|\$HOME/plain-build|Outside any repository|0||
+GIT_GUARD
+  if [[ "$git_target" != *'*' ]]; then
+    printf '%s\n' "safe|Ignored Build|\$HOME/proj/build2|Ignored output|0||filter:cxx_build" \
+      >> "$TEST_ENV_DIR/git_guard.conf"
+  fi
+  if ! run_test_case "Git-Tracked Target Guard JSON ($git_target)" 0 "git_guard_json.log" \
+       --config "$TEST_ENV_DIR/git_guard.conf" --json --dry-run \
+     || ! python3 - "$TEST_ENV_DIR/git_guard_json.log" "$MOCK_HOME" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+home = sys.argv[2]
+targets = {target["path"]: target for target in data["targets"]}
+for path in (home + "/proj/build", home + "/proj/build/tracked.c"):
+    assert targets[path]["status"] == "skipped", targets[path]
+    assert targets[path]["bytes"] == 0, targets[path]
+for path in (home + "/proj/build2", home + "/plain-build"):
+    assert targets[path]["status"] == "found", targets[path]
+assert data["total_reclaimable_bytes"] == sum(target["bytes"] for target in targets.values())
+PY
+  then
+    echo -e "${RED}FAIL: Git-tracked targets were not skipped with zero reclaimable bytes.${NC}"
+    cat "$TEST_ENV_DIR/git_guard_json.log"
+    exit 1
+  fi
+  if ! run_test_case "Git-Tracked Target Guard ($git_target)" 0 "git_guard.log" \
+       --config "$TEST_ENV_DIR/git_guard.conf" --force \
+     || ! grep -qF "[SKIP] Tracked Build: skipped: contains 2 git-tracked file(s) under '$MOCK_HOME/proj/build'." \
+       "$TEST_ENV_DIR/git_guard.log" \
+     || ! grep -qF "[SKIP] Tracked File: skipped: contains 1 git-tracked file(s)" "$TEST_ENV_DIR/git_guard.log" \
+     || [[ ! -f "$MOCK_HOME/proj/build/tracked.c" || ! -f "$git_newline_file" \
+        || ! -f "$MOCK_HOME/proj/build/CMakeCache.txt" || ! -f "$MOCK_HOME/proj/build/old.bin" \
+        || -e "$MOCK_HOME/proj/build2" || -e "$MOCK_HOME/plain-build" \
+        || -e "$TEST_ENV_DIR/fsmonitor_ran" ]]; then
+    echo -e "${RED}FAIL: Git-tracked content or its untracked siblings were cleaned, or output controls were preserved.${NC}"
+    cat "$TEST_ENV_DIR/git_guard.log"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: Git-tracked targets and all contents survive --force; ignored and non-repo output is cleaned.${NC}"
+done
+
+# Old transcripts and durable memory share a tree and cannot be separated by age.
+assert_row_exclusion() {
+  local age="$1" mode="$2" global_source="${3:-none}"
+  local target second test_name
+  local -a mode_args=() global_args=()
+  setup_mock_env
+  target="$MOCK_HOME/projects"
+  second="$MOCK_HOME/other-projects"
+  test_name="Row Exclusion Age $age ($mode, $global_source)"
+  mkdir -p "$target/p1/memory/empty" "$target/p1/uuid" "$second/p2/memory"
+  printf 'old transcript\n' > "$target/p1/old.jsonl"
+  printf 'nested transcript\n' > "$target/p1/uuid/old.jsonl"
+  printf 'new transcript\n' > "$target/p1/new.jsonl"
+  printf 'durable memory\n' > "$target/p1/memory/MEMORY.md"
+  printf 'durable note\n' > "$target/p1/memory/note.md"
+  printf 'disposable memory\n' > "$second/p2/memory/old.md"
+  touch -d '30 days ago' "$target/p1/old.jsonl" "$target/p1/uuid/old.jsonl" \
+    "$target/p1/memory/MEMORY.md" "$target/p1/memory/note.md" "$second/p2/memory/old.md"
+  cat > "$TEST_ENV_DIR/row_exclusion.conf" <<'ROW_EXCLUSION'
+medium|T|$HOME/projects|session transcripts|AGE||exclude:memory
+medium|Next|$HOME/other-projects|no row exclusion|7||
+ROW_EXCLUSION
+  sed -i "s/|AGE|/|$age|/" "$TEST_ENV_DIR/row_exclusion.conf"
+  [[ "$mode" == trash ]] && mode_args=(--trash)
+  case "$global_source" in
+    cli) global_args=(--exclude '*.keep') ;;
+    env) export LINUX_CLEANER_EXCLUDE='*.keep' ;;
+  esac
+  if [[ "$global_source" != none ]]; then
+    printf 'global exclusion\n' > "$target/p1/global.keep"
+    printf 'global exclusion\n' > "$second/p2/global.keep"
+    touch -d '30 days ago' "$target/p1/global.keep" "$second/p2/global.keep"
+  fi
+  if ! run_test_case "$test_name" 0 "row_exclusion.log" --config "$TEST_ENV_DIR/row_exclusion.conf" \
+       --risk medium --force "${mode_args[@]}" "${global_args[@]}" \
+     || [[ ! -d "$target" || ! -d "$target/p1/memory/empty" \
+           || -e "$target/p1/old.jsonl" || -e "$target/p1/uuid/old.jsonl" \
+           || -e "$second/p2/memory/old.md" ]] \
+     || ! cmp -s "$target/p1/memory/MEMORY.md" <(printf 'durable memory\n') \
+     || ! cmp -s "$target/p1/memory/note.md" <(printf 'durable note\n') \
+     || { [[ "$age" == 7 ]] && [[ ! -f "$target/p1/new.jsonl" ]]; } \
+     || { [[ "$age" == 0 ]] && [[ -e "$target/p1/new.jsonl" ]]; } \
+     || { [[ "$global_source" != none ]] && \
+          [[ ! -f "$target/p1/global.keep" || ! -f "$second/p2/global.keep" ]]; } \
+     || grep -qE 'Executing action|Requires sudo|predefined action' "$TEST_ENV_DIR/row_exclusion.log"; then
+    echo -e "${RED}FAIL: $test_name lost protected data, kept transcripts, or leaked exclusions.${NC}"
+    cat "$TEST_ENV_DIR/row_exclusion.log"
+    return 1
+  fi
+  unset LINUX_CLEANER_EXCLUDE
+  echo -e "${GREEN}PASS: $test_name preserves memory and prunes the next target independently.${NC}"
+}
+
+assert_row_exclusion 7 permanent || exit 1
+assert_row_exclusion 0 permanent || exit 1
+assert_row_exclusion 7 trash || exit 1
+assert_row_exclusion 0 trash || exit 1
+assert_row_exclusion 7 permanent cli || exit 1
+assert_row_exclusion 0 trash env || exit 1
+
+setup_mock_env
+mkdir -p "$MOCK_HOME/projects/p1/memory"
+printf 'old jsonl\n' > "$MOCK_HOME/projects/p1/old.jsonl"
+printf 'new jsonl\n' > "$MOCK_HOME/projects/p1/new.jsonl"
+printf 'large durable memory that must not count\n' > "$MOCK_HOME/projects/p1/memory/MEMORY.md"
+touch -d '30 days ago' "$MOCK_HOME/projects/p1/old.jsonl" "$MOCK_HOME/projects/p1/memory/MEMORY.md"
+for row_age in 7 0; do
+  printf "medium|T|\$HOME/projects|size test|%s||exclude:memory\n" "$row_age" > "$TEST_ENV_DIR/row_size.conf"
+  expected_bytes=$(stat -c %s "$MOCK_HOME/projects/p1/old.jsonl")
+  if [[ "$row_age" == 0 ]]; then
+    expected_bytes=$((expected_bytes + $(stat -c %s "$MOCK_HOME/projects/p1/new.jsonl")))
+  fi
+  if ! run_test_case "Row Exclusion Dry Run Size (age $row_age)" 0 "row_size.log" \
+       --config "$TEST_ENV_DIR/row_size.conf" --risk medium --dry-run --json \
+     || ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["total_reclaimable_bytes"] == int(sys.argv[2])' \
+       "$TEST_ENV_DIR/row_size.log" "$expected_bytes"; then
+    echo -e "${RED}FAIL: row exclusion size included memory or ignored age.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: row exclusion dry-run size counts only eligible jsonl bytes.${NC}"
+done
+
+# Wildcard inventory must retain the token and ordinary ancestor pruning.
+mkdir -p "$MOCK_HOME/projects/p1/nested"
+printf "medium|T|\$HOME/projects/**|inventory|7||exclude:memory\n" > "$TEST_ENV_DIR/row_inventory.conf"
+for row_output in text json; do
+  row_output_args=()
+  [[ "$row_output" == json ]] && row_output_args=(--json)
+  if ! run_test_case "Row Exclusion Wildcard Inventory ($row_output)" 0 "row_inventory.log" \
+       --config "$TEST_ENV_DIR/row_inventory.conf" --list-targets "${row_output_args[@]}" \
+     || { [[ "$row_output" == json ]] && ! grep -q 'exclude:memory' "$TEST_ENV_DIR/row_inventory.log"; } \
+     || grep -q '/p1/nested' "$TEST_ENV_DIR/row_inventory.log"; then
+    echo -e "${RED}FAIL: row exclusion changed wildcard pruning or inventory token.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: row exclusion inventory retains its token and wildcard pruning.${NC}"
+done
+
+for row_token in 'exclude:' 'exclude:a,,b' 'exclude:a,' 'exclude: ,b' 'exclude:a, ,b' \
+                 'exclude:a|b' $'exclude:a\nb' 'exclude:memory' 'exclude:memory,cache'; do
+  row_expected_exit=1
+  case "$row_token" in
+    exclude:memory|exclude:memory,cache) row_expected_exit=0 ;;
+  esac
+  printf "medium|T|\$HOME/projects|validation|7||%s\n" "$row_token" > "$TEST_ENV_DIR/row_validation.conf"
+  if ! run_test_case "Row Exclusion Validation ($row_token)" "$row_expected_exit" "row_validation.log" \
+       --config "$TEST_ENV_DIR/row_validation.conf" --check-config \
+     || { [[ "$row_expected_exit" == 1 ]] && \
+          ! grep -qE 'row_validation.conf:[12]:' "$TEST_ENV_DIR/row_validation.log"; }; then
+    echo -e "${RED}FAIL: row exclusion validation returned the wrong result or omitted its source line.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: row exclusion validation reports the expected result.${NC}"
+done
+
 setup_mock_env
 
 # 1. Test Case: Dry Run Mode (Default without flags)
@@ -293,8 +478,9 @@ fi
 
 # 4. Test Case: Outside HOME with --allow-outside-home
 if run_test_case "Outside HOME with --allow-outside-home" 0 "outside_home.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --dry-run; then
-  if grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/outside_home.log"; then
-    echo -e "${GREEN}PASS: Outside HOME target is allowed with warning when --allow-outside-home is active.${NC}"
+  if grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/outside_home.log" \
+     && ! grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/outside_home.log"; then
+    echo -e "${GREEN}PASS: Outside HOME target is FOUND with an outside HOME suffix and no warning.${NC}"
   else
     echo -e "${RED}FAIL: Outside HOME target was still blocked with --allow-outside-home active.${NC}"
     cat "$TEST_ENV_DIR/outside_home.log"
@@ -311,13 +497,51 @@ LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HO
   "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   > "$TEST_ENV_DIR/allow_outside_env.log" 2>&1 || allow_env_ec=$?
 if [[ ${allow_env_ec:-0} -eq 0 ]] \
-   && grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/allow_outside_env.log"; then
+   && grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/allow_outside_env.log" \
+   && ! grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/allow_outside_env.log"; then
   echo -e "${GREEN}PASS: LINUX_CLEANER_ALLOW_OUTSIDE_HOME allows outside-HOME targets without the CLI flag.${NC}"
 else
   echo -e "${RED}FAIL: LINUX_CLEANER_ALLOW_OUTSIDE_HOME did not allow outside-HOME targets (ec=${allow_env_ec:-0}).${NC}"
   cat "$TEST_ENV_DIR/allow_outside_env.log"
   exit 1
 fi
+
+# Default cleanup asks once for the outside-HOME group, then honors that answer.
+assert_outside_home_confirmation() {
+  local answer="$1" exit_code=0 prompt_count
+  setup_mock_env
+  mkdir -p "$OUTSIDE_DIR/first" "$OUTSIDE_DIR/second"
+  printf 'outside one\n' > "$OUTSIDE_DIR/first/cache.txt"
+  printf 'outside two\n' > "$OUTSIDE_DIR/second/cache.txt"
+  cat > "$TEST_ENV_DIR/outside_confirmation.conf" <<EOF
+safe|Outside One|$OUTSIDE_DIR/first|first outside cache|0||
+safe|Outside Two|$OUTSIDE_DIR/second|second outside cache|0||
+safe|Inside|$MOCK_HOME/.cache/yarn|inside cache|0||
+EOF
+  echo -e "\n${BOLD}Test Case: Outside HOME Group Confirmation ($answer)${NC}"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" --config "$TEST_ENV_DIR/outside_confirmation.conf" --allow-outside-home --clean \
+    < <(printf 'y\n%s\n' "$answer") > "$TEST_ENV_DIR/outside_confirmation.log" 2>&1 || exit_code=$?
+  prompt_count=$(grep -oF '2 target(s) are outside HOME. Clean them too? [y/N]:' \
+    "$TEST_ENV_DIR/outside_confirmation.log" | wc -l) || prompt_count=0
+  if [[ "$exit_code" -ne 0 || "$prompt_count" -ne 1 \
+        || -f "$MOCK_HOME/.cache/yarn/yarn-cache.json" ]] \
+     || grep -q "Warning: Target.*outside HOME" "$TEST_ENV_DIR/outside_confirmation.log" \
+     || { [[ "$answer" == y ]] && \
+          [[ -f "$OUTSIDE_DIR/first/cache.txt" || -f "$OUTSIDE_DIR/second/cache.txt" ]]; } \
+     || { [[ "$answer" == n ]] && \
+          { [[ ! -f "$OUTSIDE_DIR/first/cache.txt" || ! -f "$OUTSIDE_DIR/second/cache.txt" ]] \
+            || ! grep -q '  Skipping Outside One\.\.\.' "$TEST_ENV_DIR/outside_confirmation.log" \
+            || ! grep -q '  Skipping Outside Two\.\.\.' "$TEST_ENV_DIR/outside_confirmation.log"; }; }; then
+    echo -e "${RED}FAIL: Outside HOME group answer $answer was not honored with one prompt (ec=$exit_code).${NC}"
+    cat "$TEST_ENV_DIR/outside_confirmation.log"
+    return 1
+  fi
+  echo -e "${GREEN}PASS: Outside HOME group answer $answer uses one prompt and always cleans the inside target.${NC}"
+}
+
+assert_outside_home_confirmation y || exit 1
+assert_outside_home_confirmation n || exit 1
 
 # 5. Test Case: Age Filter execution (Force Clean)
 setup_mock_env
@@ -1499,11 +1723,11 @@ setup_mock_env
 LINUX_CLEANER_JSON=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
   "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_json.log" 2>&1 || true
-if python3 -m json.tool < "$TEST_ENV_DIR/env_json.log" > /tmp/env_json_parsed.out 2>/tmp/env_json_parse.err; then
+if python3 -m json.tool < "$TEST_ENV_DIR/env_json.log" > "$TEST_ENV_DIR/env_json_parsed.out" 2>"$TEST_ENV_DIR/env_json_parse.err"; then
   echo -e "${GREEN}PASS: LINUX_CLEANER_JSON enables JSON dry-run output.${NC}"
 else
   echo -e "${RED}FAIL: LINUX_CLEANER_JSON did not emit valid JSON.${NC}"
-  cat /tmp/env_json_parse.err
+  cat "$TEST_ENV_DIR/env_json_parse.err"
   cat "$TEST_ENV_DIR/env_json.log"
   exit 1
 fi
@@ -2174,7 +2398,7 @@ printf 'safe|Robust Probe|$HOME/.cache/robust_probe_xyz|USER-unset resolution gu
 robust_log="$TEST_ENV_DIR/robust_user.log"
 robust_ec=0
 env -u USER HOME="$MOCK_HOME" XDG_CONFIG_HOME="$TEST_ENV_DIR/nope" PATH="$TEST_ENV_DIR/bin:$PATH" \
-  "$CLEANER_SH" --config "$robust_conf" --dry-run < /dev/null > "$robust_log" 2>&1 || robust_ec=$?
+  "$CLEANER_SH" --config "$robust_conf" --debug --dry-run < /dev/null > "$robust_log" 2>&1 || robust_ec=$?
 if [[ $robust_ec -eq 0 ]] \
    && ! grep -qi "unbound variable" "$robust_log" \
    && grep -q "$MOCK_HOME/.cache/robust_probe_xyz" "$robust_log"; then
@@ -2782,6 +3006,7 @@ fi
 
 # --only-target: scoped cleanup by config target NAME (invent tier).
 echo -e "\n${BOLD}Test Case: Only Target Dry Run Filter${NC}"
+setup_mock_env
 if run_test_case "Only Target Dry Run" 0 "only_target_dry.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --dry-run; then
   if grep -q "NPM Cache" "$TEST_ENV_DIR/only_target_dry.log" \
@@ -2974,22 +3199,22 @@ fi
 echo -e "\n${BOLD}Test Case: JSON Dry Run Output${NC}"
 if run_test_case "JSON Dry Run" 0 "json_dry.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --json --dry-run; then
-  if python3 -m json.tool < "$TEST_ENV_DIR/json_dry.log" > /tmp/json_parsed.out 2>/tmp/json_parse.err; then
-    if grep -q '"total_reclaimable_bytes"' /tmp/json_parsed.out \
-       && grep -q '"total_reclaimable_human"' /tmp/json_parsed.out \
-       && grep -q '"size_human"' /tmp/json_parsed.out \
-       && grep -q '"NPM Cache"' /tmp/json_parsed.out \
-       && grep -q '"status": "found"' /tmp/json_parsed.out \
+  if python3 -m json.tool < "$TEST_ENV_DIR/json_dry.log" > "$TEST_ENV_DIR/json_parsed.out" 2>"$TEST_ENV_DIR/json_parse.err"; then
+    if grep -q '"total_reclaimable_bytes"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"total_reclaimable_human"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"size_human"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"NPM Cache"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"status": "found"' "$TEST_ENV_DIR/json_parsed.out" \
        && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/json_dry.log"; then
       echo -e "${GREEN}PASS: --json --dry-run emits valid JSON with target metadata.${NC}"
     else
       echo -e "${RED}FAIL: --json output missing expected fields or still has human status lines.${NC}"
-      cat /tmp/json_parsed.out
+      cat "$TEST_ENV_DIR/json_parsed.out"
       exit 1
     fi
   else
     echo -e "${RED}FAIL: --json output is not valid JSON.${NC}"
-    cat /tmp/json_parse.err
+    cat "$TEST_ENV_DIR/json_parse.err"
     cat "$TEST_ENV_DIR/json_dry.log"
     exit 1
   fi
@@ -3005,8 +3230,8 @@ mkdir -p "$MOCK_HOME/.cache/json_escape_test"
 echo "payload" > "$MOCK_HOME/.cache/json_escape_test/file.txt"
 if run_test_case "JSON Escaping Special Target Names" 0 "json_escape.log" \
      --config "$TEST_ENV_DIR/json_escape.conf" --json --dry-run; then
-  if python3 -m json.tool < "$TEST_ENV_DIR/json_escape.log" > /tmp/json_escape_parsed.out 2>/tmp/json_escape_parse.err; then
-    if python3 - "$TEST_ENV_DIR/json_escape.conf" /tmp/json_escape_parsed.out << 'PY'
+  if python3 -m json.tool < "$TEST_ENV_DIR/json_escape.log" > "$TEST_ENV_DIR/json_escape_parsed.out" 2>"$TEST_ENV_DIR/json_escape_parse.err"; then
+    if python3 - "$TEST_ENV_DIR/json_escape.conf" "$TEST_ENV_DIR/json_escape_parsed.out" << 'PY'
 import json, sys
 data = json.load(open(sys.argv[2]))
 # Config NAME includes two literal backslashes and representative C0 controls.
@@ -3018,12 +3243,12 @@ PY
       echo -e "${GREEN}PASS: --json --dry-run escapes special characters in target names.${NC}"
     else
       echo -e "${RED}FAIL: escaped target name missing from parsed JSON.${NC}"
-      cat /tmp/json_escape_parsed.out
+      cat "$TEST_ENV_DIR/json_escape_parsed.out"
       exit 1
     fi
   else
     echo -e "${RED}FAIL: --json output with special target names is not valid JSON.${NC}"
-    cat /tmp/json_escape_parse.err
+    cat "$TEST_ENV_DIR/json_escape_parse.err"
     cat "$TEST_ENV_DIR/json_escape.log"
     exit 1
   fi
@@ -3219,8 +3444,8 @@ echo -e "\n${BOLD}Test Case: List Targets JSON Output${NC}"
 setup_mock_env
 if run_test_case "List Targets JSON" 0 "list_targets_json.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets --json; then
-  if python3 -m json.tool < "$TEST_ENV_DIR/list_targets_json.log" > /tmp/list_targets_json_parsed.out 2>/tmp/list_targets_json_parse.err; then
-    if python3 - /tmp/list_targets_json_parsed.out << 'PY'
+  if python3 -m json.tool < "$TEST_ENV_DIR/list_targets_json.log" > "$TEST_ENV_DIR/list_targets_json_parsed.out" 2>"$TEST_ENV_DIR/list_targets_json_parse.err"; then
+    if python3 - "$TEST_ENV_DIR/list_targets_json_parsed.out" << 'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
 targets = data.get("targets", [])
@@ -3239,12 +3464,12 @@ PY
       echo -e "${GREEN}PASS: --list-targets --json emits valid JSON inventory.${NC}"
     else
       echo -e "${RED}FAIL: --list-targets JSON missing expected target fields.${NC}"
-      cat /tmp/list_targets_json_parsed.out
+      cat "$TEST_ENV_DIR/list_targets_json_parsed.out"
       exit 1
     fi
   else
     echo -e "${RED}FAIL: --list-targets --json is not valid JSON.${NC}"
-    cat /tmp/list_targets_json_parse.err
+    cat "$TEST_ENV_DIR/list_targets_json_parse.err"
     cat "$TEST_ENV_DIR/list_targets_json.log"
     exit 1
   fi
@@ -4361,6 +4586,60 @@ if [[ "$aur_skip_rc" -eq 0 || "$aur_pinned_rc" -ne 0 || "$aur_noprep_rc" -ne 0 ]
   exit 1
 fi
 echo -e "${GREEN}PASS: check-aur-ready rejects a SKIP checksum and accepts a pinned one.${NC}"
+
+# Debug output: --debug and LINUX_CLEANER_DEBUG expose [CLEAN] lines; hidden by default and --quiet.
+echo -e "\n${BOLD}Test Case: Debug Dry Run Output${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/debug_clean_target"
+echo "recent content" > "$MOCK_HOME/debug_clean_target/recent.txt"
+cat << 'EOF' > "$TEST_ENV_DIR/debug_test.conf"
+safe|Clean Age Target|$HOME/debug_clean_target|Clean age target|7||
+safe|Missing Target|$HOME/debug_missing_target|Missing target|0||
+EOF
+
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/debug_test.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/debug_default.log" 2>&1 || true
+
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/debug_test.conf" --debug --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/debug_flag.log" 2>&1 || true
+
+LINUX_CLEANER_DEBUG=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/debug_test.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/debug_env.log" 2>&1 || true
+
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/debug_test.conf" --debug --quiet --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/debug_quiet.log" 2>&1 || true
+
+if grep -q 'CLEAN\]' "$TEST_ENV_DIR/debug_default.log"; then
+  echo -e "${RED}FAIL: default run without --debug printed CLEAN lines.${NC}"
+  cat "$TEST_ENV_DIR/debug_default.log"
+  exit 1
+fi
+
+if ! grep -q 'No files older than' "$TEST_ENV_DIR/debug_flag.log" \
+   || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_flag.log"; then
+  echo -e "${RED}FAIL: --debug did not print both clean and missing status lines.${NC}"
+  cat "$TEST_ENV_DIR/debug_flag.log"
+  exit 1
+fi
+
+if ! grep -q 'No files older than' "$TEST_ENV_DIR/debug_env.log" \
+   || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_env.log"; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_DEBUG=1 did not print both clean and missing status lines.${NC}"
+  cat "$TEST_ENV_DIR/debug_env.log"
+  exit 1
+fi
+
+if grep -q 'CLEAN\]' "$TEST_ENV_DIR/debug_quiet.log"; then
+  echo -e "${RED}FAIL: --debug --quiet did not suppress CLEAN status lines.${NC}"
+  cat "$TEST_ENV_DIR/debug_quiet.log"
+  exit 1
+fi
+
+echo -e "${GREEN}PASS: --debug and LINUX_CLEANER_DEBUG show CLEAN lines; default and --quiet suppress them.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

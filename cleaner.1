@@ -60,6 +60,10 @@ one line per restored target or purged session.
 Suppress per-target status lines and the decorative header; errors, total
 savings, and the final summary still print.
 .TP
+.B \-\-debug
+Show per-target clean status lines (suppressed by default; overridden by
+.BR \-\-quiet ).
+.TP
 .B \-\-json
 With
 .BR \-\-dry\-run ,
@@ -219,6 +223,13 @@ enables
 .BR \-\-quiet
 (suppress per-target status lines). No CLI flag disables it; set it to 0 or unset it.
 .TP
+.B LINUX_CLEANER_DEBUG
+When set to
+.BR 1 ", " true ", or " yes ,
+enables
+.BR \-\-debug
+(show per-target clean status lines). No CLI flag disables it; set it to 0 or unset it.
+.TP
 .B LINUX_CLEANER_JSON
 When set to
 .BR 1 ", " true ", or " yes ,
@@ -336,9 +347,23 @@ marker
 .RB ( CMakeCache.txt ", " CMakeFiles ", " build.ninja ", " meson-info ,
 .BR compile_commands.json ", or " .qmake.stash )
 directly or one level below, so a source directory whose name merely begins with
-"build" is excluded. A target carries either a filter or an action, never both.
+"build" is excluded.
 The same filter applies to literal paths without wildcards; surrounding whitespace
 in the field is ignored and never disables the filter.
+.PP
+The field also accepts
+.BR exclude:NAME[,NAME...] .
+These comma-separated patterns add to the global
+.BR \-\-exclude " / " LINUX_CLEANER_EXCLUDE
+patterns for this target only, using the same find glob/path semantics.
+For example,
+.B exclude:notes
+preserves matching notes directories and all their contents while old session
+logs can be cleaned. Dry-run sizes, deletion, quarantine, and empty-directory
+cleanup honor the exclusions. With MIN_AGE_DAYS 0, files are processed individually
+and the target directory remains. Wildcard rows retain normal ancestor pruning.
+Empty or blank patterns and patterns containing pipes or newlines are invalid.
+Field 7 holds one token: exclusions, filters, and actions cannot be combined.
 .PP
 Wildcard matches containing newlines, a pipe character, leading/trailing whitespace,
 or literal placeholders that would expand again are skipped with a warning. These
@@ -391,6 +416,7 @@ unless
 .B \-\-allow\-outside\-home
 is given. Symlinked targets are refused, and paths are physically canonicalized to
 prevent traversal or symlink escapes.
+With Git available, targets containing git-tracked files are skipped even with \-\-force, unless the cleaner runs as root or the target requires sudo.
 .SH FILES
 .TP
 .I ~/.config/linux\-cleaner/cleaner.conf
@@ -439,6 +465,10 @@ Preview cleanup for a single config target by name:
 Enable quiet mode via environment (same as
 .BR \-\-quiet ):
 .B LINUX_CLEANER_QUIET=1 cleaner \-\-dry\-run
+.TP
+Show clean targets via environment (same as
+.BR \-\-debug ):
+.B LINUX_CLEANER_DEBUG=1 cleaner \-\-dry\-run
 .SH SEE ALSO
 .BR paccache (8),
 .BR find (1)

@@ -15,7 +15,39 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Changed
+- Codex Sessions, Codex Generated Images, Cursor Chats, Claude Desktop Logs and
+  Hermes Logs now prune files older than 7 days (was 30) and no longer skip while
+  their application runs; the age filter already spares the live session's files.
+- The C++ build-directory rows now scan all of `/opt/lxl` instead of `/opt/lxl/c++`;
+  `filter:cxx_build` still keeps only directories that hold a build-system marker.
+- New rows prune per-project AI tool logs under `/opt/lxl` older than 7 days:
+  `.gemini/model_debug_logs` and `.codex/logs`, and `.remember/logs` after one year.
+  The rest of those tool directories (settings, rules, skills, plans, memory) is
+  left alone.
+
 ### Added
+- Per-target exclusions: CUSTOM_ACTION may be `exclude:NAME[,NAME...]`, using the
+  `--exclude` pattern syntax for that row only, e.g. `exclude:notes` to keep a
+  `notes/` directory inside a session-log tree.
+
+### Removed
+- The Claude Projects row (`$HOME/.claude/projects`). Claude Code prunes its own
+  transcripts per session (`cleanupPeriodDays`); a file-age filter would delete the
+  old sidecar files of a session that is still open.
+- `--debug` (env `LINUX_CLEANER_DEBUG`) shows the per-target `[CLEAN]` lines (nothing
+  to clean, size 0, path missing); they are hidden by default so wildcard rows that
+  expand to many targets do not flood the output.
+- A target inside a git work tree that holds any git-tracked file is skipped as a
+  whole (`[SKIP] ... contains N git-tracked file(s)`), so a cleanup row can never
+  remove committed project content.
+
+### Changed (output and prompts)
+- With `--allow-outside-home`, an outside-HOME target is listed as a normal `FOUND`
+  line (description and age filter included) tagged `(outside HOME)` instead of a
+  `WARNING` line.
+- Default-mode cleanup asks once per run whether to clean the outside-HOME targets,
+  instead of once per target; answering no skips them and still cleans the rest.
 - Add `action:apk_clean` custom action to clear the Alpine Linux package cache
   (`sudo apk cache clean`) when apk is available.
 

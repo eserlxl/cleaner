@@ -25,19 +25,22 @@ Rules for evolving the pipe-delimited config contract:
 
 Use [contract-semver-taxonomy.md](contract-semver-taxonomy.md) before merging.
 
-## CUSTOM_ACTION: actions and filters
+## CUSTOM_ACTION: actions, filters, and exclusions
 
-The seventh field holds one enumerated token, and there are two kinds:
+The seventh field holds one token, and there are three kinds:
 
 - `action:*` — runs a predefined command *instead of* deleting the path. Irreversible;
   bypasses quarantine.
 - `filter:*` — constrains which literal paths or expanded wildcard matches become targets. It only ever
   narrows the match set, so it can never introduce a target the pattern alone would
   not have produced, and it never replaces deletion.
+- `exclude:NAME[,NAME...]` — adds exclusions for this target only; it never
+  replaces deletion or runs a command.
 
-A target carries one or the other, never both. Both are validated against the same
-enumeration, so an unknown token of either kind is rejected with the same
-line-numbered error.
+A target carries exactly one of these tokens; exclusions cannot be combined with
+an action or filter. Actions and filters are validated against their enumeration;
+exclusion lists reject empty/blank elements, pipes, and newlines. Invalid tokens
+are rejected with a line-numbered error, including by `--check-config`.
 
 `filter:cxx_build` keeps a match only when it holds a build-system marker
 (`CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json`,
@@ -46,6 +49,15 @@ per-kit layout such as `build/Desktop-Debug`. Selecting by contents is what sepa
 real build output from a source directory whose name merely begins with "build".
 Surrounding field whitespace is trimmed before applying the filter, for both
 wildcard and literal paths.
+
+`exclude:notes` protects matching `notes` directories and everything beneath
+them, including old files. Other old session logs remain eligible. Row patterns merge with the global
+`--exclude` / `LINUX_CLEANER_EXCLUDE` patterns using the same `find` glob/path
+builder, and never carry over to the next target. Size reporting, age checks,
+deletion, quarantine, and empty-directory cleanup all use the merged set.
+An exclusion forces file-by-file cleanup even at age `0`, preserving the target
+directory. Wildcard expansion passes the token through unchanged and keeps normal
+ancestor pruning; only `filter:cxx_build` disables that pruning.
 
 ## CHECK_PROCESSES: name tokens and cmdline tokens
 
