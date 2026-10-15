@@ -48,7 +48,12 @@ are rejected with a line-numbered error, including by `--check-config`.
 per-kit layout such as `build/Desktop-Debug`. Selecting by contents is what separates
 real build output from a source directory whose name merely begins with "build".
 Surrounding field whitespace is trimmed before applying the filter, for both
-wildcard and literal paths.
+wildcard and literal paths. When paired with a positive `MIN_AGE_DAYS`, the age is an
+idle threshold for the whole directory rather than a per-file filter: if anything under
+the directory was modified within `MIN_AGE_DAYS` days, the target is reported clean
+(`active within N days`) and untouched; otherwise the entire build tree is sized and
+removed as a whole (`(idle > N days)` in the plan report), while JSON dry-run preserves
+the configured `min_age_days`.
 
 `exclude:notes` protects matching `notes` directories and everything beneath
 them, including old files. Other old session logs remain eligible. Row patterns merge with the global

@@ -5066,5 +5066,63 @@ for bad_case in \
 done
 echo -e "${GREEN}PASS: --check-config rejects malformed protect| lines with file:line errors.${NC}"
 
+# filter:cxx_build with MIN_AGE_DAYS > 0 cleans C++ build directories only when
+# idle as a whole; active build trees survive untouched, and non-cxx_build aged
+# rows keep per-file age deletion.
+setup_mock_env
+active_build="$MOCK_HOME/proj/active/build"
+idle_build="$MOCK_HOME/proj/idle/build"
+aged_plain="$MOCK_HOME/proj/aged_plain"
+mkdir -p "$active_build/CMakeFiles" "$idle_build/CMakeFiles" "$aged_plain"
+printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$active_build/CMakeCache.txt"
+printf 'old-obj\n' > "$active_build/CMakeFiles/old.o"
+printf 'fresh-obj\n' > "$active_build/CMakeFiles/fresh.o"
+touch -d '30 days ago' "$active_build/CMakeCache.txt" "$active_build/CMakeFiles/old.o" \
+  "$active_build/CMakeFiles" "$active_build"
+touch "$active_build/CMakeFiles/fresh.o"
+
+printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$idle_build/CMakeCache.txt"
+printf 'idle-obj\n' > "$idle_build/CMakeFiles/idle.o"
+touch -d '30 days ago' "$idle_build/CMakeCache.txt" "$idle_build/CMakeFiles/idle.o" \
+  "$idle_build/CMakeFiles" "$idle_build"
+
+printf 'old-cache\n' > "$aged_plain/old.txt"
+printf 'new-cache\n' > "$aged_plain/new.txt"
+touch -d '30 days ago' "$aged_plain/old.txt"
+
+cat > "$TEST_ENV_DIR/idle_builds.conf" <<'EOF'
+safe|Idle Builds|$HOME/proj/**/build*|Per-project build output|14||filter:cxx_build
+safe|Aged Plain|$HOME/proj/aged_plain|Per-file aged cache|14||
+EOF
+
+if ! run_test_case "Idle Builds Debug Dry Run" 0 "idle_builds_dry.log" \
+       --config "$TEST_ENV_DIR/idle_builds.conf" --debug --dry-run \
+   || ! grep -q '\[CLEAN\] Idle Builds: active within 14 days\.' "$TEST_ENV_DIR/idle_builds_dry.log" \
+   || ! grep -q '\[FOUND\] Idle Builds ' "$TEST_ENV_DIR/idle_builds_dry.log" \
+   || ! awk '
+        /^Largest targets:/ { in_largest=1 }
+        in_largest && /Idle Builds/ && /\(idle > 14 days\)/ { idle_ok=1 }
+        in_largest && /Aged Plain/ && /\(files > 14 days\)/ { files_ok=1 }
+        END { exit !(idle_ok && files_ok) }
+      ' "$TEST_ENV_DIR/idle_builds_dry.log"; then
+  echo -e "${RED}FAIL: --debug --dry-run did not report active build as CLEAN, idle build as FOUND, or (idle > 14 days) in plan report.${NC}"
+  cat "$TEST_ENV_DIR/idle_builds_dry.log"
+  exit 1
+fi
+
+if ! run_test_case "Idle Builds Clean Force" 0 "idle_builds_clean.log" \
+       --config "$TEST_ENV_DIR/idle_builds.conf" --clean --force \
+   || [[ ! -f "$active_build/CMakeCache.txt" ]] \
+   || [[ ! -f "$active_build/CMakeFiles/old.o" ]] \
+   || [[ ! -f "$active_build/CMakeFiles/fresh.o" ]] \
+   || [[ -e "$idle_build" ]] \
+   || [[ -e "$aged_plain/old.txt" ]] \
+   || [[ ! -f "$aged_plain/new.txt" ]]; then
+  echo -e "${RED}FAIL: --clean --force did not preserve active build whole, remove idle build whole, or keep per-file age semantics on plain row.${NC}"
+  cat "$TEST_ENV_DIR/idle_builds_clean.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: filter:cxx_build idle threshold preserves active build trees whole, removes idle build trees whole, and keeps per-file age deletion on other rows.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

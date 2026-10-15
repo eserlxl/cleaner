@@ -57,6 +57,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-49 | Root-requiring target is skipped when sudo cannot authenticate; a sibling is still cleaned | Root Skip Without Privileges |
 | U-50 | User-defined `protect|PATH` skips equal, under, contains, and wildcard-expanded targets while cleaning siblings | Protect List Targets / Protect List Targets JSON / Protect Debug Dry Run / Protect Dry Run JSON / Protect Clean Force |
 | U-51 | `--check-config` accepts valid `protect|PATH` lines without counting them as targets and rejects empty, relative, glob-bearing, or extra-field `protect` lines with `file:line` | Protect Check Config Valid / Protect Invalid (empty, relative, glob_star, glob_qmark, glob_bracket, extra) |
+| U-52 | `filter:cxx_build` with `MIN_AGE_DAYS > 0` cleans build directories as a whole only when idle and leaves active build trees untouched while keeping per-file age deletion on other rows | Idle Builds Debug Dry Run / Idle Builds Clean Force |
 
 ## Drift guards
 

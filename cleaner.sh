@@ -1765,7 +1765,9 @@ print_plan_report() {
         break
       fi
       age_note=""
-      if has_positive_age "${parsed_ages[$i]}"; then
+      if has_positive_age "${parsed_idle[$i]:-0}"; then
+        age_note=" (idle > ${parsed_idle[$i]} days)"
+      elif has_positive_age "${parsed_ages[$i]}"; then
         age_note=" (files > ${parsed_ages[$i]} days)"
       fi
       printf '%s\n' "  $(format_bytes "${parsed_sizes[$i]}") ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
@@ -2060,6 +2062,7 @@ parsed_sizes=()
 parsed_exists=()
 parsed_safety=()
 parsed_ages=()
+parsed_idle=()
 parsed_risks=()
 parsed_cmds=()
 parsed_sudos=()
@@ -2153,6 +2156,12 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   
   # An empty age means the whole directory (effective 0).
   [[ -z "$min_age" ]] && min_age=0
+  effective_age="$min_age"
+  idle_age=0
+  if [[ "$custom_clean_cmd" == "filter:cxx_build" ]] && has_positive_age "$min_age"; then
+    effective_age=0
+    idle_age="$min_age"
+  fi
   
   # Safe path expansions & cleanup trailing slashes
   expanded_path=$(expand_path_safe "$raw_path")
@@ -2240,7 +2249,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: contains $git_tracked_count git-tracked file(s) under '$path'."
         elif [[ "$DRY_RUN" = true ]] && [[ "$requires_sudo" = true ]] && [[ "$use_sudo" = false ]]; then
           # Try to get size without sudo. If it's readable, we show it, but warn that sudo is required for cleanup
-          size_bytes=$(get_size_bytes "$path" "$min_age" false)
+          size_bytes=$(get_size_bytes "$path" "$effective_age" false)
           readable_size=$(format_bytes "$size_bytes")
           if [[ "$size_bytes" -gt 0 ]]; then
             target_status=root
@@ -2253,38 +2262,46 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           exists=true
         else
           if path_present "$use_sudo" "$path"; then
-            size_bytes=$(get_size_bytes "$path" "$min_age" "$use_sudo")
-            readable_size=$(format_bytes "$size_bytes")
-            
-            should_clean=false
-            if has_positive_age "$min_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
-              if has_matching_files "$path" "$min_age" "$use_sudo"; then
-                should_clean=true
-              fi
-            else
-              if ! path_is_real_dir "$use_sudo" "$path" || [[ "$size_bytes" -gt 0 ]]; then
-                should_clean=true
-              fi
-            fi
-            
-            if [[ "$should_clean" = true ]]; then
-              exists=true
-              total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
-              
-              target_status=found
-              outside_home_suffix=""
-              [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
-              if has_positive_age "$min_age"; then
-                debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)$outside_home_suffix"
-              else
-                debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc$outside_home_suffix"
-              fi
-            else
+            if has_positive_age "$idle_age" \
+               && [[ -n $(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) ]]; then
               target_status=clean
-              if has_positive_age "$min_age"; then
-                debug_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $min_age days."
+              debug_echo "  [${BLUE}CLEAN${NC}] $name: active within $idle_age days."
+            else
+              size_bytes=$(get_size_bytes "$path" "$effective_age" "$use_sudo")
+              readable_size=$(format_bytes "$size_bytes")
+              
+              should_clean=false
+              if has_positive_age "$effective_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+                if has_matching_files "$path" "$effective_age" "$use_sudo"; then
+                  should_clean=true
+                fi
               else
-                debug_echo "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
+                if ! path_is_real_dir "$use_sudo" "$path" || [[ "$size_bytes" -gt 0 ]]; then
+                  should_clean=true
+                fi
+              fi
+              
+              if [[ "$should_clean" = true ]]; then
+                exists=true
+                total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
+                
+                target_status=found
+                outside_home_suffix=""
+                [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
+                if has_positive_age "$idle_age"; then
+                  debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Idle > $idle_age days)$outside_home_suffix"
+                elif has_positive_age "$effective_age"; then
+                  debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $effective_age days)$outside_home_suffix"
+                else
+                  debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc$outside_home_suffix"
+                fi
+              else
+                target_status=clean
+                if has_positive_age "$effective_age"; then
+                  debug_echo "  [${BLUE}CLEAN${NC}] $name: No files older than $effective_age days."
+                else
+                  debug_echo "  [${BLUE}CLEAN${NC}] $name: Target size is 0 B."
+                fi
               fi
             fi
           else
@@ -2313,7 +2330,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   parsed_sizes+=("$size_bytes")
   parsed_exists+=("$exists")
   parsed_safety+=("$safety_status")
-  parsed_ages+=("$min_age")
+  parsed_ages+=("$effective_age")
+  parsed_idle+=("$idle_age")
   parsed_risks+=("$risk")
   parsed_cmds+=("$custom_clean_cmd")
   parsed_sudos+=("$use_sudo")

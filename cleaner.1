@@ -384,6 +384,18 @@ directly or one level below, so a source directory whose name merely begins with
 "build" is excluded.
 The same filter applies to literal paths without wildcards; surrounding whitespace
 in the field is ignored and never disables the filter.
+When a
+.B filter:cxx_build
+target has a positive
+.BR MIN_AGE_DAYS ,
+that age is an idle threshold for the directory as a whole: if anything under the
+target was modified within
+.B MIN_AGE_DAYS
+days, the target is treated as clean
+.RB ( "active within " \fIN\fR " days" )
+and left untouched; otherwise the whole directory is sized and removed at once
+.RB ( "(idle > " \fIN\fR " days)"
+in the plan report).
 .PP
 The field also accepts
 .BR exclude:NAME[,NAME...] .

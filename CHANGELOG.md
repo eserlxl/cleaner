@@ -77,6 +77,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` is accepted and ignored (see Deprecated).
 
 ### Changed
+- `filter:cxx_build` targets with `MIN_AGE_DAYS > 0` now treat the age as an
+  idle threshold for the directory as a whole: if anything under the build
+  directory was modified within `MIN_AGE_DAYS` days, it is left untouched
+  (`active within N days.` under `--debug`); otherwise the whole build
+  directory is sized and removed at once (`(idle > N days)` in the plan
+  report). Other aged rows keep per-file age deletion unchanged.
 - Targets outside `$HOME` are always allowed. Protected system directories stay
   `UNSAFE` and symlink targets stay refused. The C++ Build Dirs and C++ CMake
   Build Dirs rows are risk `safe`, so the safe-tier daily timer cleans them.
