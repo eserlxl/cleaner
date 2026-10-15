@@ -388,7 +388,7 @@ done
 setup_mock_env
 
 # 1. Test Case: Dry Run Mode (Default without flags)
-  if run_test_case "Dry Run Mode (Default)" 0 "dry_run.log" --config "$TEST_ENV_DIR/test_cleaner.conf"; then
+  if run_test_case "Dry Run Mode (Default)" 0 "dry_run.log" --debug --config "$TEST_ENV_DIR/test_cleaner.conf"; then
   # Verify that no files were deleted
   if [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] && \
      [[ -f "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] && \
@@ -449,7 +449,7 @@ else
 fi
 
 # Dry run with --risk medium
-if run_test_case "Dry Run with Risk Medium" 0 "dry_run_medium.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --risk medium --dry-run; then
+if run_test_case "Dry Run with Risk Medium" 0 "dry_run_medium.log" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --risk medium --dry-run; then
   if grep -q "Medium Risk Target" "$TEST_ENV_DIR/dry_run_medium.log" && ! grep -q "Danger Risk Target" "$TEST_ENV_DIR/dry_run_medium.log"; then
     echo -e "${GREEN}PASS: Medium risk target was included, danger risk target was excluded.${NC}"
   else
@@ -477,7 +477,7 @@ else
 fi
 
 # 4. Test Case: Outside HOME with --allow-outside-home
-if run_test_case "Outside HOME with --allow-outside-home" 0 "outside_home.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --dry-run; then
+if run_test_case "Outside HOME with --allow-outside-home" 0 "outside_home.log" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --dry-run; then
   if grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/outside_home.log" \
      && ! grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/outside_home.log"; then
     echo -e "${GREEN}PASS: Outside HOME target is FOUND with an outside HOME suffix and no warning.${NC}"
@@ -494,7 +494,7 @@ fi
 setup_mock_env
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env${NC}"
 LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   > "$TEST_ENV_DIR/allow_outside_env.log" 2>&1 || allow_env_ec=$?
 if [[ ${allow_env_ec:-0} -eq 0 ]] \
    && grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/allow_outside_env.log" \
@@ -1200,7 +1200,7 @@ fi
 
 # 15. Test Case: Invalid/Empty Exclusion Patterns
 setup_mock_env
-if run_test_case "Invalid Exclusions Dry Run" 0 "exclusions_invalid.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude ",," --dry-run; then
+if run_test_case "Invalid Exclusions Dry Run" 0 "exclusions_invalid.log" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude ",," --dry-run; then
   if grep -q "NPM Cache" "$TEST_ENV_DIR/exclusions_invalid.log"; then
     echo -e "${GREEN}PASS: Invalid/empty exclusion patterns did not cause find to crash and dry-run completed successfully.${NC}"
   else
@@ -1217,7 +1217,7 @@ setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/dotdot_escape.conf"
 safe|Dotdot Escape Probe|\$HOME/../dotdot_escape_probe|Path climbing above HOME via ..|0||
 EOF
-if run_test_case "Canonicalization Dotdot Escape" 0 "dotdot_escape.log" --config "$TEST_ENV_DIR/dotdot_escape.conf" --dry-run; then
+if run_test_case "Canonicalization Dotdot Escape" 0 "dotdot_escape.log" --debug --config "$TEST_ENV_DIR/dotdot_escape.conf" --dry-run; then
   if grep -q "REJECTED.*Dotdot Escape Probe" "$TEST_ENV_DIR/dotdot_escape.log"; then
     echo -e "${GREEN}PASS: '..'-traversal path escaping HOME was resolved and REJECTED, not classified as in-HOME safe.${NC}"
   else
@@ -1235,7 +1235,7 @@ ln -s "$OUTSIDE_DIR" "$MOCK_HOME/escape_link"
 cat << EOF > "$TEST_ENV_DIR/symlink_parent.conf"
 safe|Symlinked Parent Escape|\$HOME/escape_link/sub|Target under a symlinked parent that escapes HOME|0||
 EOF
-if run_test_case "Symlinked Parent Escape" 0 "symlink_parent.log" --config "$TEST_ENV_DIR/symlink_parent.conf" --dry-run; then
+if run_test_case "Symlinked Parent Escape" 0 "symlink_parent.log" --debug --config "$TEST_ENV_DIR/symlink_parent.conf" --dry-run; then
   if grep -q "REJECTED.*Symlinked Parent Escape" "$TEST_ENV_DIR/symlink_parent.log" && \
      [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
     echo -e "${GREEN}PASS: Symlinked parent resolved outside HOME and was REJECTED; real outside dir untouched.${NC}"
@@ -1292,7 +1292,7 @@ safe|HOME Slash|\$HOME/|Mock HOME trailing slash|0||
 safe|HOME Dotdot|\$HOME/.cache/..|Mock HOME dot-dot alias|0||
 safe|NPM Descendant|\$HOME/.npm/_cacache|Allowed HOME descendant|0||
 EOF
-if run_test_case "HOME Root Protected from Bypass Flags" 0 "home_root.log" --force --allow-outside-home --dry-run --config "$TEST_ENV_DIR/home_root.conf"; then
+if run_test_case "HOME Root Protected from Bypass Flags" 0 "home_root.log" --debug --force --allow-outside-home --dry-run --config "$TEST_ENV_DIR/home_root.conf"; then
   if grep -q "UNSAFE.*HOME Root" "$TEST_ENV_DIR/home_root.log" && \
      grep -q "UNSAFE.*HOME Slash" "$TEST_ENV_DIR/home_root.log" && \
      grep -q "UNSAFE.*HOME Dotdot" "$TEST_ENV_DIR/home_root.log" && \
@@ -1343,7 +1343,7 @@ truncate -s 2G "$MOCK_HOME/.cache/gb_probe/big.sparse"
 cat << EOF > "$TEST_ENV_DIR/gb_size.conf"
 safe|GB Size Probe|\$HOME/.cache/gb_probe|Sparse 2G file to exercise GB scaling|0||
 EOF
-if run_test_case "format_bytes GB Scaling" 0 "gb_size.log" --config "$TEST_ENV_DIR/gb_size.conf" --dry-run; then
+if run_test_case "format_bytes GB Scaling" 0 "gb_size.log" --debug --config "$TEST_ENV_DIR/gb_size.conf" --dry-run; then
   if grep -q "GB Size Probe (2 GB)" "$TEST_ENV_DIR/gb_size.log"; then
     echo -e "${GREEN}PASS: format_bytes rendered a GB-magnitude target as '2 GB'.${NC}"
   else
@@ -1362,7 +1362,7 @@ truncate -s 2T "$MOCK_HOME/.cache/tb_probe/big.sparse"
 cat << EOF > "$TEST_ENV_DIR/tb_size.conf"
 safe|TB Size Probe|\$HOME/.cache/tb_probe|Sparse 2T file to exercise TB scaling and the cap|0||
 EOF
-if run_test_case "format_bytes TB Scaling" 0 "tb_size.log" --config "$TEST_ENV_DIR/tb_size.conf" --dry-run; then
+if run_test_case "format_bytes TB Scaling" 0 "tb_size.log" --debug --config "$TEST_ENV_DIR/tb_size.conf" --dry-run; then
   if grep -q "TB Size Probe (2 TB)" "$TEST_ENV_DIR/tb_size.log"; then
     echo -e "${GREEN}PASS: format_bytes scaled to '2 TB' and capped at the TB unit.${NC}"
   else
@@ -1736,7 +1736,7 @@ fi
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_ONLY_TARGET Env${NC}"
 setup_mock_env
 LINUX_CLEANER_ONLY_TARGET=NPM PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_only_target.log" 2>&1 || true
 if grep -q "NPM Cache" "$TEST_ENV_DIR/env_only_target.log" \
    && ! grep -q "Gemini Temp" "$TEST_ENV_DIR/env_only_target.log"; then
@@ -1748,7 +1748,7 @@ else
 fi
 # CLI --only-target overrides env when both are set.
 LINUX_CLEANER_ONLY_TARGET=NPM PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target Gemini --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target Gemini --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_only_target_cli.log" 2>&1 || true
 if grep -q "Gemini Temp" "$TEST_ENV_DIR/env_only_target_cli.log" \
    && ! grep -q "NPM Cache" "$TEST_ENV_DIR/env_only_target_cli.log"; then
@@ -1763,7 +1763,7 @@ fi
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_RISK Env${NC}"
 setup_mock_env
 LINUX_CLEANER_RISK=medium PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_risk.log" 2>&1 || true
 if grep -q "Medium Risk Target" "$TEST_ENV_DIR/env_risk.log" \
    && ! grep -q "Danger Risk Target" "$TEST_ENV_DIR/env_risk.log"; then
@@ -1774,7 +1774,7 @@ else
   exit 1
 fi
 LINUX_CLEANER_RISK=medium PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --risk safe --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --risk safe --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_risk_cli.log" 2>&1 || true
 if grep -q "NPM Cache" "$TEST_ENV_DIR/env_risk_cli.log" \
    && ! grep -q "Medium Risk Target" "$TEST_ENV_DIR/env_risk_cli.log"; then
@@ -1900,7 +1900,7 @@ mkdir -p "$MOCK_HOME/.config/linux-cleaner"
 printf 'safe|Env Config Target|$HOME/.cache/aurman|d|0||\n' > "$MOCK_HOME/.config/linux-cleaner/cleaner.conf"
 LINUX_CLEANER_CONFIG="$TEST_ENV_DIR/test_cleaner.conf" \
   env -u XDG_CONFIG_HOME HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" \
-  "$CLEANER_SH" --dry-run < /dev/null > "$TEST_ENV_DIR/env_config.log" 2>&1 || true
+  "$CLEANER_SH" --debug --dry-run < /dev/null > "$TEST_ENV_DIR/env_config.log" 2>&1 || true
 if grep -q "Config file: $TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/env_config.log" \
    && grep -q "NPM Cache" "$TEST_ENV_DIR/env_config.log" \
    && ! grep -q "Env Config Target" "$TEST_ENV_DIR/env_config.log"; then
@@ -1912,7 +1912,7 @@ else
 fi
 LINUX_CLEANER_CONFIG="$MOCK_HOME/.config/linux-cleaner/cleaner.conf" \
   env -u XDG_CONFIG_HOME HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_config_cli.log" 2>&1 || true
 if grep -q "Config file: $TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/env_config_cli.log" \
    && ! grep -q "Env Config Target" "$TEST_ENV_DIR/env_config_cli.log"; then
@@ -2325,7 +2325,7 @@ cat << EOF > "$TEST_ENV_DIR/token_expand.conf"
 safe|Prefixed HOME Token|\$HOMEDATA/x|Must stay literal, not \$HOME-expanded|0||
 safe|Real HOME Target|\$HOME/.cache/aurman|Real target that must still expand|0||
 EOF
-if run_test_case "Whole-Token HOME/USER Expansion" 0 "token_expand.log" --config "$TEST_ENV_DIR/token_expand.conf" --dry-run; then
+if run_test_case "Whole-Token HOME/USER Expansion" 0 "token_expand.log" --debug --config "$TEST_ENV_DIR/token_expand.conf" --dry-run; then
   # The prefixed token must be left literal ('$HOMEDATA' present verbatim) and
   # must NOT be over-expanded to <mock_home>DATA.
   # shellcheck disable=SC2016  # literal $HOMEDATA is intentional; it must NOT expand
@@ -3013,7 +3013,7 @@ fi
 echo -e "\n${BOLD}Test Case: Only Target Dry Run Filter${NC}"
 setup_mock_env
 if run_test_case "Only Target Dry Run" 0 "only_target_dry.log" \
-     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --dry-run; then
+     --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --dry-run; then
   if grep -q "NPM Cache" "$TEST_ENV_DIR/only_target_dry.log" \
      && ! grep -q "Yarn Cache" "$TEST_ENV_DIR/only_target_dry.log"; then
     echo -e "${GREEN}PASS: --only-target NPM shows NPM Cache only.${NC}"
@@ -3113,7 +3113,7 @@ fi
 # --exclude-target: skip matching NAMEs (inverse of --only-target).
 echo -e "\n${BOLD}Test Case: Exclude Target Dry Run Filter${NC}"
 if run_test_case "Exclude Target Dry Run" 0 "exclude_target_dry.log" \
-     --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target NPM --dry-run; then
+     --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target NPM --dry-run; then
   if ! grep -q "NPM Cache" "$TEST_ENV_DIR/exclude_target_dry.log" \
      && grep -q "Gemini Temp" "$TEST_ENV_DIR/exclude_target_dry.log"; then
     echo -e "${GREEN}PASS: --exclude-target NPM skips NPM Cache and keeps Gemini Temp.${NC}"
@@ -3171,7 +3171,7 @@ fi
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_EXCLUDE_TARGET Env${NC}"
 setup_mock_env
 LINUX_CLEANER_EXCLUDE_TARGET=NPM PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_exclude_target.log" 2>&1 || true
 if ! grep -q "NPM Cache" "$TEST_ENV_DIR/env_exclude_target.log" \
    && grep -q "Gemini Temp" "$TEST_ENV_DIR/env_exclude_target.log"; then
@@ -3682,7 +3682,7 @@ else
 fi
 
 # The same expansion must reach the analyzer, so each match is sized on its own.
-if run_test_case "Wildcard Expansion Dry Run" 0 "glob_dry.log" \
+if run_test_case "Wildcard Expansion Dry Run" 0 "glob_dry.log" --debug \
      --config "$TEST_ENV_DIR/glob.conf"; then
   if grep -q "FOUND.*Project Builds" "$TEST_ENV_DIR/glob_dry.log" \
      && [[ "$(grep -c "Project Builds" "$TEST_ENV_DIR/glob_dry.log")" -eq 2 ]]; then
@@ -3950,7 +3950,7 @@ fi
 kill "$mock_cmdline_pid" 2>/dev/null || true
 wait "$mock_cmdline_pid" 2>/dev/null || true
 echo "$mock_cmdline_pid" > "$TEST_ENV_DIR/mock_cmdline_pid"
-if run_test_case "Cmdline Guard Releases" 0 "cmdline_release.log" \
+if run_test_case "Cmdline Guard Releases" 0 "cmdline_release.log" --debug \
      --config "$TEST_ENV_DIR/cmdline_guard.conf"; then
   if grep -q "FOUND.*Cmdline Guarded" "$TEST_ENV_DIR/cmdline_release.log"; then
     echo -e "${GREEN}PASS: a dead PID in the match set does not block the target.${NC}"
@@ -3969,7 +3969,7 @@ cat > "$TEST_ENV_DIR/cmdline_self.conf" <<'CMDSELF'
 safe|mock_cmdline_proc|$HOME/guarded|Pattern appears in our own argv|0|cmdline:mock_cmdline_proc|
 CMDSELF
 rm -f "$TEST_ENV_DIR/mock_cmdline_pid"
-if run_test_case "Cmdline Guard Ignores Self" 0 "cmdline_self.log" \
+if run_test_case "Cmdline Guard Ignores Self" 0 "cmdline_self.log" --debug \
      --config "$TEST_ENV_DIR/cmdline_self.conf" --only-target mock_cmdline_proc; then
   if grep -q "FOUND.*mock_cmdline_proc" "$TEST_ENV_DIR/cmdline_self.log"; then
     echo -e "${GREEN}PASS: a pattern present only in our own command line does not block.${NC}"
@@ -4347,7 +4347,7 @@ cat > "$TEST_ENV_DIR/unreadable_aged.conf" <<'UNREADABLE'
 safe|Partly Unreadable Aged|$HOME/.cache/partly-unreadable|partly unreadable cache|5||
 UNREADABLE
 unreadable_ok=true
-if ! run_test_case "Partly Unreadable Dry Run" 0 "unreadable_dry.log" --config "$TEST_ENV_DIR/unreadable.conf" \
+if ! run_test_case "Partly Unreadable Dry Run" 0 "unreadable_dry.log" --debug --config "$TEST_ENV_DIR/unreadable.conf" \
    || grep -q 'syntax error' "$TEST_ENV_DIR/unreadable_dry.log" \
    || ! grep -q 'FOUND.*Partly Unreadable ([1-9]' "$TEST_ENV_DIR/unreadable_dry.log"; then
   unreadable_ok=false
@@ -4356,7 +4356,7 @@ if ! run_test_case "Partly Unreadable JSON" 0 "unreadable_json.log" --config "$T
    || ! python3 -m json.tool "$TEST_ENV_DIR/unreadable_json.log" > /dev/null 2>&1; then
   unreadable_ok=false
 fi
-if ! run_test_case "Partly Unreadable Aged Dry Run" 0 "unreadable_aged.log" --config "$TEST_ENV_DIR/unreadable_aged.conf" \
+if ! run_test_case "Partly Unreadable Aged Dry Run" 0 "unreadable_aged.log" --debug --config "$TEST_ENV_DIR/unreadable_aged.conf" \
    || ! grep -q 'FOUND.*Partly Unreadable Aged' "$TEST_ENV_DIR/unreadable_aged.log"; then
   unreadable_ok=false
 fi
@@ -4594,15 +4594,20 @@ if [[ "$aur_skip_rc" -eq 0 || "$aur_pinned_rc" -ne 0 || "$aur_noprep_rc" -ne 0 ]
 fi
 echo -e "${GREEN}PASS: check-aur-ready rejects a SKIP checksum and accepts a pinned one.${NC}"
 
-# Debug output: --debug and LINUX_CLEANER_DEBUG expose [CLEAN] lines; hidden by default and --quiet.
+# Debug output: --debug and LINUX_CLEANER_DEBUG expose [FOUND], [REJECTED] and [CLEAN] lines; hidden by default and --quiet.
 echo -e "\n${BOLD}Test Case: Debug Dry Run Output${NC}"
 setup_mock_env
 mkdir -p "$MOCK_HOME/debug_clean_target"
 echo "recent content" > "$MOCK_HOME/debug_clean_target/recent.txt"
+mkdir -p "$MOCK_HOME/debug_found_target" "$TEST_ENV_DIR/debug_outside_target"
+echo "found content" > "$MOCK_HOME/debug_found_target/found.txt"
+echo "outside content" > "$TEST_ENV_DIR/debug_outside_target/outside.txt"
 cat << 'EOF' > "$TEST_ENV_DIR/debug_test.conf"
 safe|Clean Age Target|$HOME/debug_clean_target|Clean age target|7||
 safe|Missing Target|$HOME/debug_missing_target|Missing target|0||
+safe|Debug Found Target|$HOME/debug_found_target|Found target|0||
 EOF
+echo "safe|Debug Outside Target|$TEST_ENV_DIR/debug_outside_target|Outside HOME target|0||" >> "$TEST_ENV_DIR/debug_test.conf"
 
 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
   "$CLEANER_SH" --config "$TEST_ENV_DIR/debug_test.conf" --dry-run \
@@ -4620,33 +4625,37 @@ PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
   "$CLEANER_SH" --config "$TEST_ENV_DIR/debug_test.conf" --debug --quiet --dry-run \
   < /dev/null > "$TEST_ENV_DIR/debug_quiet.log" 2>&1 || true
 
-if grep -q 'CLEAN\]' "$TEST_ENV_DIR/debug_default.log"; then
-  echo -e "${RED}FAIL: default run without --debug printed CLEAN lines.${NC}"
+if grep -qE '(CLEAN|FOUND|REJECTED)\]' "$TEST_ENV_DIR/debug_default.log"; then
+  echo -e "${RED}FAIL: default run without --debug printed CLEAN, FOUND or REJECTED lines.${NC}"
   cat "$TEST_ENV_DIR/debug_default.log"
   exit 1
 fi
 
 if ! grep -q 'No files older than' "$TEST_ENV_DIR/debug_flag.log" \
-   || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_flag.log"; then
-  echo -e "${RED}FAIL: --debug did not print both clean and missing status lines.${NC}"
+   || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_flag.log" \
+   || ! grep -q 'FOUND.*Debug Found Target' "$TEST_ENV_DIR/debug_flag.log" \
+   || ! grep -q 'REJECTED.*Debug Outside Target' "$TEST_ENV_DIR/debug_flag.log"; then
+  echo -e "${RED}FAIL: --debug did not print clean, missing, FOUND and REJECTED status lines.${NC}"
   cat "$TEST_ENV_DIR/debug_flag.log"
   exit 1
 fi
 
 if ! grep -q 'No files older than' "$TEST_ENV_DIR/debug_env.log" \
-   || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_env.log"; then
-  echo -e "${RED}FAIL: LINUX_CLEANER_DEBUG=1 did not print both clean and missing status lines.${NC}"
+   || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_env.log" \
+   || ! grep -q 'FOUND.*Debug Found Target' "$TEST_ENV_DIR/debug_env.log" \
+   || ! grep -q 'REJECTED.*Debug Outside Target' "$TEST_ENV_DIR/debug_env.log"; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_DEBUG=1 did not print clean, missing, FOUND and REJECTED status lines.${NC}"
   cat "$TEST_ENV_DIR/debug_env.log"
   exit 1
 fi
 
-if grep -q 'CLEAN\]' "$TEST_ENV_DIR/debug_quiet.log"; then
-  echo -e "${RED}FAIL: --debug --quiet did not suppress CLEAN status lines.${NC}"
+if grep -qE '(CLEAN|FOUND|REJECTED)\]' "$TEST_ENV_DIR/debug_quiet.log"; then
+  echo -e "${RED}FAIL: --debug --quiet did not suppress CLEAN, FOUND or REJECTED status lines.${NC}"
   cat "$TEST_ENV_DIR/debug_quiet.log"
   exit 1
 fi
 
-echo -e "${GREEN}PASS: --debug and LINUX_CLEANER_DEBUG show CLEAN lines; default and --quiet suppress them.${NC}"
+echo -e "${GREEN}PASS: --debug and LINUX_CLEANER_DEBUG show FOUND, REJECTED and CLEAN lines; default and --quiet suppress them.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

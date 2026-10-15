@@ -59,6 +59,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   enables `--allow-outside-home`. No CLI flag disables it; set it to `0` or unset it.
 
 ### Changed
+- `--debug` (and `LINUX_CLEANER_DEBUG`) now also shows per-target `FOUND` and
+  `REJECTED` lines; a default dry-run hides them so the totals stay readable.
+  `--quiet` still suppresses them.
 - Codex Sessions, Codex Generated Images, Cursor Chats, Claude Desktop Logs and
   Hermes Logs now prune files older than 7 days (was 30) and no longer skip while
   their application runs; the age filter already spares the live session's files.

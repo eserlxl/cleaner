@@ -174,7 +174,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
 - **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
 - **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
-- **`--debug`**: Show per-target clean status lines (suppressed by default; overridden by `--quiet`).
+- **`--debug`**: Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by `--quiet`).
 
 Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
 (forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
@@ -305,7 +305,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_CONFIG` | When set to a non-empty path, uses that file as the configuration (same as `--config`). Explicit `-c/--config` overrides. |
 | `LINUX_CLEANER_LOG` | Enable operation logging to the given path (same rules as `--log`). |
 | `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
-| `LINUX_CLEANER_DEBUG` | When set to `1`, `true`, or `yes`, enables `--debug` (show per-target clean status lines). |
+| `LINUX_CLEANER_DEBUG` | When set to `1`, `true`, or `yes`, enables `--debug` (show per-target FOUND, REJECTED and CLEAN lines). |
 | `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
 | `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
 | `LINUX_CLEANER_EXCLUDE_TARGET` | When set to a non-empty pattern, enables `--exclude-target` (substring match on config target `NAME`). |

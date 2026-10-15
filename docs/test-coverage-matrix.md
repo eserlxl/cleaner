@@ -44,7 +44,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-36 | action:apk_clean | Cross-Distro Actions / Action Required Binary Mapping / Apk Safe Degradation |
 | U-37 | Failed aged quarantine move leaves no phantom metadata or empty staging dir | Failed Quarantine Move Not Recorded / Restore After a Failed Quarantine Move |
 | U-38 | Per-target exclude:NAME[,NAME...] in CUSTOM_ACTION | Row Exclusion Age 7 (permanent, none) / Row Exclusion Dry Run Size (age 7) / Row Exclusion Wildcard Inventory (json) / Row Exclusion Validation (exclude:memory) |
-| U-39 | --debug and LINUX_CLEANER_DEBUG show per-target CLEAN lines | Debug Dry Run Output |
+| U-39 | --debug and LINUX_CLEANER_DEBUG show per-target FOUND, REJECTED and CLEAN lines | Debug Dry Run Output |
 | U-40 | Git-tracked target guard skips targets holding tracked files | Git-Tracked Target Guard JSON / Git-Tracked Target Guard |
 | U-41 | Outside-HOME group confirmation prompt and (outside HOME) FOUND suffix | Outside HOME with --allow-outside-home / Outside HOME Group Confirmation (y) / Outside HOME Group Confirmation (n) |
 | U-42 | --dry-run --json description/min_age_days | JSON Dry Run |

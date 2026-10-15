@@ -59,7 +59,7 @@ Options:
   --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
-  --debug                    Show per-target clean status lines (suppressed by default; overridden by --quiet).
+  --debug                    Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by --quiet).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, or --list-sessions inventory).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
@@ -1921,7 +1921,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     # Enforce outside HOME restriction unless flag is set
     if [[ $safety_status -eq 2 && "$ALLOW_OUTSIDE_HOME" != true ]]; then
       target_status=rejected
-      status_echo "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
+      debug_echo "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
       safety_status=1 # Skipped
     elif [[ "$custom_clean_cmd" == action:* ]] \
          && required_bin=$(action_required_binary "$custom_clean_cmd") \
@@ -1995,9 +1995,9 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               outside_home_suffix=""
               [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
               if has_positive_age "$min_age"; then
-                status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)$outside_home_suffix"
+                debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $min_age days)$outside_home_suffix"
               else
-                status_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc$outside_home_suffix"
+                debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc$outside_home_suffix"
               fi
             else
               target_status=clean
