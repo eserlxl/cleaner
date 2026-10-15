@@ -464,7 +464,7 @@ fi
 # 3. Test Case: Tilde Expansion safety
 # Verify tilde~test folder backup.txt size is detected (meaning it resolved the path literally and did not map ~ to HOME in the middle of the string)
 if grep -q "Tilde Tilde Test" "$TEST_ENV_DIR/dry_run.log"; then
-  # The path was $HOME/tilde~test. Check if it was resolved correctly (not as $HOME/tilde/home/eserlxltest)
+  # The path was $HOME/tilde~test. Check if it was resolved correctly (not as $HOME/tilde<expanded-HOME>test)
   if [[ -f "$MOCK_HOME/tilde~test/backup.txt" ]]; then
     echo -e "${GREEN}PASS: Path containing internal ~ did not undergo unsafe expansion.${NC}"
   else

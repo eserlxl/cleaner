@@ -62,9 +62,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Codex Sessions, Codex Generated Images, Cursor Chats, Claude Desktop Logs and
   Hermes Logs now prune files older than 7 days (was 30) and no longer skip while
   their application runs; the age filter already spares the live session's files.
-- The C++ build-directory rows now scan all of `/opt/lxl` instead of `/opt/lxl/c++`;
+- The C++ build-directory rows now scan all of `/opt` instead of one fixed C++ subtree;
   `filter:cxx_build` still keeps only directories that hold a build-system marker.
-- New rows prune per-project AI tool logs under `/opt/lxl` older than 7 days:
+- New rows prune per-project AI tool logs under `/opt` older than 7 days:
   `.gemini/model_debug_logs` and `.codex/logs`, and `.remember/logs` after one year.
   The rest of those tool directories (settings, rules, skills, plans, memory) is
   left alone.
