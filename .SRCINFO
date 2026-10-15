@@ -11,6 +11,6 @@ pkgbase = linux-cleaner
 	optdepends = pacman-contrib: paccache-based package-cache actions
 	backup = etc/linux-cleaner/cleaner.conf
 	source = linux-cleaner-1.4.1.tar.gz::https://github.com/eserlxl/cleaner/archive/refs/tags/v1.4.1.tar.gz
-	sha256sums = SKIP
+	sha256sums = 3793c396cecfd32b26121f6cd8b776dfc6502b9a86eddec93de16b3cb153a898
 
 pkgname = linux-cleaner

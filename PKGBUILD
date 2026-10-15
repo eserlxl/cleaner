@@ -13,7 +13,7 @@ source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Pinned sha256 of the v$pkgver release tarball. After each version bump, run
 # `updpkgsums` once the tag is pushed (see RELEASING.md "Packaging"); never
 # publish with 'SKIP'.
-sha256sums=('SKIP')
+sha256sums=('3793c396cecfd32b26121f6cd8b776dfc6502b9a86eddec93de16b3cb153a898')
 
 package() {
   cd "$srcdir/cleaner-$pkgver"
