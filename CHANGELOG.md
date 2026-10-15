@@ -74,7 +74,6 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Human `--list-targets` also prints each target's `DESCRIPTION` column.
 - RUNBOOK documents `--check-config`, `LINUX_CLEANER_CONFIG`,
   `--exclude-target` / `LINUX_CLEANER_EXCLUDE_TARGET`, and `action:zypper_clean`.
-- `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` is accepted and ignored (see Deprecated).
 
 ### Changed
 - `filter:cxx_build` targets with `MIN_AGE_DAYS > 0` now treat the age as an
@@ -107,11 +106,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Default-mode cleanup asks once per run whether to clean the outside-HOME targets,
   instead of once per target; answering no skips them and still cleans the rest.
 - `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are
-  `UNSAFE` targets; their descendants stay subject to the outside-HOME rules.
+  `UNSAFE` targets; their descendants are cleaned like any other target.
 
 ### Deprecated
-- `--allow-outside-home` and `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` are accepted
-  no-ops. Each prints one warning; a run prints the warning at most once.
+- `--allow-outside-home` is an accepted no-op that prints one deprecation
+  warning, since targets outside `$HOME` are always allowed. The unreleased
+  `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` mirror behaves the same way.
 
 ### Removed
 - The Claude Projects row (`$HOME/.claude/projects`). Claude Code prunes its own
@@ -131,9 +131,6 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   with already-restored records still listed and failing every retry.
 - Correct operator guidance for execution flags, config lookup, systemd
   environment overrides, config compatibility, and quarantine ownership/trust.
-- State in the example environment file that its outside-HOME opt-in also needs
-  LINUX_CLEANER_RISK=medium: the shipped package-cache targets are medium risk
-  and are skipped under the example's RISK=safe.
 - Discover valid nested C/C++ build trees beneath rejected wildcard parents,
   while keeping accepted parent and child targets from overlapping.
 - Report partial filesystem traversal failures during quarantine and restore,
