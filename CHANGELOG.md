@@ -16,6 +16,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- A plan report after the savings total (status counts, reclaimable bytes by
+  risk, the largest targets, skipped and rejected targets) and a result report
+  after cleanup (cleaned, skipped, and failed counts, quarantined versus
+  permanently reclaimed bytes, the quarantine session, and elapsed time).
+  `--quiet` hides the plan report; `--json` includes neither.
 - Per-target exclusions: CUSTOM_ACTION may be `exclude:NAME[,NAME...]`, using the
   `--exclude` pattern syntax for that row only, e.g. `exclude:notes` to keep a
   `notes/` directory inside a session-log tree.

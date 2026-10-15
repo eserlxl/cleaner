@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Elapsed time for the result report. $SECONDS is seconds since this shell started.
+CLEANER_START_SECONDS=$SECONDS
+
 # Determine script directory to find the default configuration file
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Config resolution: an explicit -c/--config wins; otherwise the default is
@@ -1210,6 +1213,8 @@ delete_path_full() {
   fi
   echo -e "  ${RED}Error: Failed to delete '$target'${via}${NC}" >&2
   OPERATION_FAILED=true
+  # Flag the failure for the result report; a non-zero return would abort the run under set -e.
+  target_failed=true
 }
 
 # Log one restored (or skipped) quarantine record; a no-op unless logging is on.
@@ -1633,6 +1638,106 @@ format_bytes() {
   echo "$size ${units[$unit_idx]}"
 }
 
+# Compact plan printed after the savings total. status_echo so --quiet hides it.
+# --json exits before this runs.
+print_plan_report() {
+  local i status bytes mode=dry-run shown=0
+  local found=0 clean_missing=0 skipped=0 blocked=0 rejected=0 unsafe_symlink=0 root_n=0
+  local safe_b=0 med_b=0 dang_b=0
+  local reason name age_note
+  local -a rank=()
+  local -A skip_groups=() block_groups=() rej_counts=()
+  [[ "$DRY_RUN" != true ]] && mode=clean
+  status_echo "Plan: mode=${mode} risk=${MAX_RISK} config=${CONFIG_FILE}"
+  for i in "${!parsed_names[@]}"; do
+    status="${parsed_statuses[$i]:-skipped}"
+    bytes="${parsed_sizes[$i]:-0}"
+    name="${parsed_names[$i]}"
+    case "$status" in
+      found) found=$((found + 1)) ;;
+      clean|missing) clean_missing=$((clean_missing + 1)) ;;
+      skipped)
+        skipped=$((skipped + 1))
+        reason="${parsed_reasons[$i]:-unspecified}"
+        skip_groups["$reason"]="${skip_groups[$reason]:+${skip_groups[$reason]}, }$name"
+        ;;
+      blocked)
+        blocked=$((blocked + 1))
+        reason="${parsed_reasons[$i]:-unspecified}"
+        block_groups["$reason"]="${block_groups[$reason]:+${block_groups[$reason]}, }$name"
+        ;;
+      rejected)
+        rejected=$((rejected + 1))
+        rej_counts["$name"]=$(( ${rej_counts[$name]:-0} + 1 ))
+        ;;
+      unsafe|symlink) unsafe_symlink=$((unsafe_symlink + 1)) ;;
+      root) root_n=$((root_n + 1)) ;;
+    esac
+    if [[ "$status" == found || "$status" == root ]]; then
+      case "${parsed_risks[$i],,}" in
+        safe) safe_b=$((safe_b + bytes)) ;;
+        medium) med_b=$((med_b + bytes)) ;;
+        danger|dangerous) dang_b=$((dang_b + bytes)) ;;
+      esac
+    fi
+  done
+  status_echo "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} rejected=${rejected} unsafe/symlink=${unsafe_symlink} root=${root_n}"
+  status_echo "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
+  if [[ "$found" -gt 0 ]]; then
+    mapfile -t rank < <(
+      for i in "${!parsed_names[@]}"; do
+        if [[ "${parsed_statuses[$i]:-}" == found ]]; then
+          printf '%s\t%s\n' "${parsed_sizes[$i]}" "$i"
+        fi
+      done | sort -nr | cut -f2
+    )
+    status_echo "Largest targets:"
+    for i in "${rank[@]}"; do
+      if [[ "$shown" -ge 10 ]]; then
+        status_echo "  ... and $((${#rank[@]} - 10)) more"
+        break
+      fi
+      age_note=""
+      if has_positive_age "${parsed_ages[$i]}"; then
+        age_note=" (files > ${parsed_ages[$i]} days)"
+      fi
+      status_echo "  $(format_bytes "${parsed_sizes[$i]}") ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
+      shown=$((shown + 1))
+    done
+  fi
+  for reason in "${!skip_groups[@]}"; do
+    status_echo "Skipped (${reason}): ${skip_groups[$reason]}"
+  done
+  for reason in "${!block_groups[@]}"; do
+    status_echo "Blocked (${reason}): ${block_groups[$reason]}"
+  done
+  for name in "${!rej_counts[@]}"; do
+    status_echo "Rejected: ${name} (${rej_counts[$name]} path(s))"
+  done
+  if [[ "$rejected" -gt 0 ]]; then
+    status_echo "Hint: pass --allow-outside-home to include targets outside HOME."
+  fi
+  status_echo
+}
+
+# Always printed, like the final summary. Counts are filled in by the cleanup loop.
+print_result_report() {
+  local quarantined=0 permanent="$total_deleted_bytes" elapsed
+  if [[ "$TRASH_MODE" = true ]]; then
+    quarantined=$((total_deleted_bytes - total_action_bytes))
+    permanent=$total_action_bytes
+  fi
+  elapsed=$((SECONDS - CLEANER_START_SECONDS))
+  echo "Result: cleaned=${result_cleaned} skipped=${result_skipped} failed=${result_failed} elapsed=${elapsed}s"
+  if [[ "$result_failed" -gt 0 ]]; then
+    echo "Failed targets: ${result_failed_names}"
+  fi
+  echo "Reclaimed: quarantined=$(format_bytes "$quarantined") permanent=$(format_bytes "$permanent")"
+  if [[ -n "$QUARANTINE_DIR" ]]; then
+    echo "Quarantine session: ${QUARANTINE_DIR}"
+  fi
+}
+
 # Check if any specified process is running
 # True when some process OTHER than this run matches PATTERN on its command line.
 # The whole ancestry is excluded, not just our own PID: an invoking shell, wrapper
@@ -1829,6 +1934,8 @@ parsed_ages=()
 parsed_risks=()
 parsed_cmds=()
 parsed_sudos=()
+parsed_statuses=()
+parsed_reasons=()
 
 json_names=()
 json_paths=()
@@ -1909,6 +2016,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   size_bytes=0
   use_sudo=false
   target_status=""
+  target_reason=""
   
   if [[ $safety_status -eq 1 ]]; then
     target_status=unsafe
@@ -1927,12 +2035,14 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
          && required_bin=$(action_required_binary "$custom_clean_cmd") \
          && ! command -v "$required_bin" >/dev/null 2>&1; then
       target_status=skipped
+      target_reason="'$required_bin' not available"
       status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
     else
       # Check if running processes block this target
       running_proc=$(is_process_running "$check_procs" || true)
       if [[ -n "$running_proc" ]]; then
         target_status=blocked
+        target_reason="process '$running_proc' is active"
         status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
         # Determine if sudo is needed
@@ -1957,6 +2067,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         fi
         if [[ "$git_tracked_count" -gt 0 ]]; then
           target_status=skipped
+          target_reason="$git_tracked_count git-tracked file(s)"
           status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: contains $git_tracked_count git-tracked file(s) under '$path'."
         elif [[ "$DRY_RUN" = true ]] && [[ "$requires_sudo" = true ]] && [[ "$use_sudo" = false ]]; then
           # Try to get size without sudo. If it's readable, we show it, but warn that sudo is required for cleanup
@@ -2037,6 +2148,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   parsed_risks+=("$risk")
   parsed_cmds+=("$custom_clean_cmd")
   parsed_sudos+=("$use_sudo")
+  parsed_statuses+=("${target_status:-skipped}")
+  parsed_reasons+=("${target_reason:-}")
 
 done < <(expand_config_globs)
 
@@ -2058,6 +2171,8 @@ fi
 echo
 echo -e "${BOLD}Total potential space savings: ${GREEN}$(format_bytes "$total_reclaimable_bytes")${NC}"
 echo
+
+print_plan_report
 
 # If dry-run is specified, we stop here
 if [[ "$DRY_RUN" = true ]]; then
@@ -2113,11 +2228,16 @@ fi
 status_echo "${BOLD}Starting cleanup...${NC}"
 total_deleted_bytes=0
 total_action_bytes=0
+result_cleaned=0
+result_skipped=0
+result_failed=0
+result_failed_names=""
 
 QUARANTINE_DIR=""
 
 for i in "${!parsed_names[@]}"; do
   name="${parsed_names[$i]}"
+  target_failed=false
   path="${parsed_paths[$i]}"
   size="${parsed_sizes[$i]}"
   exists="${parsed_exists[$i]}"
@@ -2132,6 +2252,7 @@ for i in "${!parsed_names[@]}"; do
 
   if [[ "$safety" -eq 2 && "$clean_outside_home" != true ]]; then
     status_echo "  Skipping $name..."
+    result_skipped=$((result_skipped + 1))
     continue
   fi
   
@@ -2142,6 +2263,7 @@ for i in "${!parsed_names[@]}"; do
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
       status_echo "  Skipping $name..."
+      result_skipped=$((result_skipped + 1))
       continue
     fi
     danger_prompted=true
@@ -2158,6 +2280,7 @@ for i in "${!parsed_names[@]}"; do
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then
       status_echo "  Skipping $name..."
+      result_skipped=$((result_skipped + 1))
       continue
     fi
   fi
@@ -2175,6 +2298,7 @@ for i in "${!parsed_names[@]}"; do
     required_bin=$(action_required_binary "$custom_clean_cmd")
     if [[ -n "$required_bin" ]] && ! command -v "$required_bin" >/dev/null 2>&1; then
       status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
+      result_skipped=$((result_skipped + 1))
       continue
     fi
     if [[ "$TRASH_MODE" = true ]]; then
@@ -2228,10 +2352,13 @@ for i in "${!parsed_names[@]}"; do
     if [[ "$action_success" = true ]]; then
       total_deleted_bytes=$((total_deleted_bytes + size))
       total_action_bytes=$((total_action_bytes + size))
+      result_cleaned=$((result_cleaned + 1))
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=success"
     else
       echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
       OPERATION_FAILED=true
+      result_failed=$((result_failed + 1))
+      result_failed_names+="${result_failed_names:+, }${name}"
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=failed"
     fi
     continue
@@ -2329,6 +2456,7 @@ for i in "${!parsed_names[@]}"; do
     else
       echo -e "  ${RED}Error: Failed to move some files for '$name' to quarantine.${NC}" >&2
       OPERATION_FAILED=true
+      target_failed=true
     fi
     
   else
@@ -2349,6 +2477,7 @@ for i in "${!parsed_names[@]}"; do
         else
           echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${via}${NC}" >&2
           OPERATION_FAILED=true
+          target_failed=true
         fi
       else
         # Single file or symlink deletion
@@ -2375,7 +2504,15 @@ for i in "${!parsed_names[@]}"; do
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=delete risk=${risk_level} target='${name}' path='${path}' outcome=${op_outcome}"
     fi
   fi
+  if [[ "$target_failed" == true ]]; then
+    result_failed=$((result_failed + 1))
+    result_failed_names+="${result_failed_names:+, }${name}"
+  else
+    result_cleaned=$((result_cleaned + 1))
+  fi
 done
+
+print_result_report
 
 echo
 if [[ "$TRASH_MODE" = true ]]; then

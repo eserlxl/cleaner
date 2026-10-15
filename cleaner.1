@@ -13,6 +13,16 @@ paths outside the user's
 .BR $HOME ,
 refuses to follow symlinks, and can move files to a restorable quarantine instead
 of deleting them permanently.
+After the savings total,
+.B cleaner
+prints a plan report: run mode, risk ceiling, config path, counts per status,
+reclaimable bytes by risk, the largest targets, and skipped or rejected targets.
+.B \-\-quiet
+suppresses the plan report. After cleanup, a result report lists cleaned,
+skipped, and failed counts, bytes quarantined versus permanently reclaimed,
+the quarantine session path when one was created, and elapsed time.
+.B \-\-json
+includes neither report.
 .SH OPTIONS
 .TP
 .BR \-c ", " \-\-config " " \fIFILE\fR

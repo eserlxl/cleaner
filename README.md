@@ -176,6 +176,8 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
 - **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
 - **`--debug`**: Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by `--quiet`).
 
+A plan report follows the savings total: run mode, risk ceiling, config path, counts per status, reclaimable bytes by risk, the largest targets, and skipped or rejected targets with the reason. `--quiet` suppresses that report. After cleanup, a result report lists cleaned, skipped, and failed counts, bytes quarantined versus permanently reclaimed, the quarantine session path when one was created, and elapsed time. `--json` includes neither report.
+
 Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
 (forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
 

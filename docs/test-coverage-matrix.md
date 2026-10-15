@@ -48,6 +48,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-40 | Git-tracked target guard skips targets holding tracked files | Git-Tracked Target Guard JSON / Git-Tracked Target Guard |
 | U-41 | Outside-HOME group confirmation prompt and (outside HOME) FOUND suffix | Outside HOME with --allow-outside-home / Outside HOME Group Confirmation (y) / Outside HOME Group Confirmation (n) |
 | U-42 | --dry-run --json description/min_age_days | JSON Dry Run |
+| U-43 | Plan report before cleanup and result report after | Plan Report Dry Run / Plan Report Quiet / Result Report Clean / Plan Report JSON |
 
 ## Drift guards
 

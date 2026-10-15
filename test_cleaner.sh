@@ -3685,7 +3685,7 @@ fi
 if run_test_case "Wildcard Expansion Dry Run" 0 "glob_dry.log" --debug \
      --config "$TEST_ENV_DIR/glob.conf"; then
   if grep -q "FOUND.*Project Builds" "$TEST_ENV_DIR/glob_dry.log" \
-     && [[ "$(grep -c "Project Builds" "$TEST_ENV_DIR/glob_dry.log")" -eq 2 ]]; then
+     && [[ "$(grep -c 'FOUND.*Project Builds' "$TEST_ENV_DIR/glob_dry.log")" -eq 2 ]]; then
     echo -e "${GREEN}PASS: both expanded targets were analyzed separately in dry-run.${NC}"
   else
     echo -e "${RED}FAIL: dry-run did not analyze each expanded match as its own target.${NC}"
@@ -4656,6 +4656,93 @@ if grep -qE '(CLEAN|FOUND|REJECTED)\]' "$TEST_ENV_DIR/debug_quiet.log"; then
 fi
 
 echo -e "${GREEN}PASS: --debug and LINUX_CLEANER_DEBUG show FOUND, REJECTED and CLEAN lines; default and --quiet suppress them.${NC}"
+
+# Plan report (after the totals line, without --debug) and result report (after cleanup).
+setup_mock_env
+mkdir -p "$MOCK_HOME/report_found" "$MOCK_HOME/report_old"
+echo 'found-bytes' > "$MOCK_HOME/report_found/cache.txt"
+echo 'old-bytes' > "$MOCK_HOME/report_old/cache.txt"
+touch -d '30 days ago' "$MOCK_HOME/report_old/cache.txt"
+cat > "$TEST_ENV_DIR/plan_report.conf" <<'EOF'
+safe|Report Found|$HOME/report_found|found cache|0||
+safe|Report Old|$HOME/report_old|old cache|3||
+EOF
+
+if run_test_case "Plan Report Dry Run" 0 "plan_report.log" \
+     --config "$TEST_ENV_DIR/plan_report.conf" --dry-run; then
+  plan_totals=$(grep -n 'Total potential space savings' "$TEST_ENV_DIR/plan_report.log" | head -1 | cut -d: -f1)
+  plan_header=$(grep -n '^Plan: mode=dry-run risk=safe config=' "$TEST_ENV_DIR/plan_report.log" | head -1 | cut -d: -f1)
+  if [[ -n "$plan_totals" && -n "$plan_header" && "$plan_header" -gt "$plan_totals" ]] \
+     && awk '
+          /^Largest targets:/ { in_largest=1 }
+          in_largest && /Report Found/ { found=1 }
+          in_largest && /Report Old/ && /files > 3 days/ { aged=1 }
+          END { exit !(found && aged) }
+        ' "$TEST_ENV_DIR/plan_report.log" \
+     && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/plan_report.log"; then
+    echo -e "${GREEN}PASS: dry-run plan report follows the totals and lists found targets without --debug.${NC}"
+  else
+    echo -e "${RED}FAIL: dry-run plan report missing header, largest targets, or age filter.${NC}"
+    cat "$TEST_ENV_DIR/plan_report.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Plan Report Quiet" 0 "plan_report_quiet.log" \
+     --config "$TEST_ENV_DIR/plan_report.conf" --quiet --dry-run; then
+  if grep -q 'Total potential space savings' "$TEST_ENV_DIR/plan_report_quiet.log" \
+     && ! grep -q '^Plan:' "$TEST_ENV_DIR/plan_report_quiet.log" \
+     && ! grep -q 'Largest targets:' "$TEST_ENV_DIR/plan_report_quiet.log"; then
+    echo -e "${GREEN}PASS: --quiet keeps the savings total and suppresses the plan report.${NC}"
+  else
+    echo -e "${RED}FAIL: --quiet did not suppress the plan report.${NC}"
+    cat "$TEST_ENV_DIR/plan_report_quiet.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Plan Report JSON" 0 "plan_report_json.log" \
+     --config "$TEST_ENV_DIR/plan_report.conf" --json --dry-run; then
+  if python3 -m json.tool < "$TEST_ENV_DIR/plan_report_json.log" >/dev/null \
+     && ! grep -q '^Plan:' "$TEST_ENV_DIR/plan_report_json.log" \
+     && ! grep -q 'Largest targets:' "$TEST_ENV_DIR/plan_report_json.log" \
+     && ! grep -q '^Result:' "$TEST_ENV_DIR/plan_report_json.log" \
+     && ! grep -q 'Reclaimed:' "$TEST_ENV_DIR/plan_report_json.log"; then
+    echo -e "${GREEN}PASS: --json output contains no plan or result report text.${NC}"
+  else
+    echo -e "${RED}FAIL: --json output included report text or was not JSON.${NC}"
+    cat "$TEST_ENV_DIR/plan_report_json.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Result Report Clean" 0 "plan_report_clean.log" \
+     --config "$TEST_ENV_DIR/plan_report.conf" --clean --force; then
+  clean_plan=$(grep -n '^Plan: mode=clean ' "$TEST_ENV_DIR/plan_report_clean.log" | head -1 | cut -d: -f1)
+  clean_start=$(grep -n 'Starting cleanup' "$TEST_ENV_DIR/plan_report_clean.log" | head -1 | cut -d: -f1)
+  clean_result=$(grep -n '^Result: cleaned=2 skipped=0 failed=0 elapsed=' "$TEST_ENV_DIR/plan_report_clean.log" | head -1 | cut -d: -f1)
+  clean_done=$(grep -n 'Cleanup finished!' "$TEST_ENV_DIR/plan_report_clean.log" | head -1 | cut -d: -f1)
+  if [[ -n "$clean_plan" && -n "$clean_start" && -n "$clean_result" && -n "$clean_done" \
+        && "$clean_plan" -lt "$clean_start" && "$clean_start" -lt "$clean_result" \
+        && "$clean_result" -lt "$clean_done" ]] \
+     && grep -q 'Reclaimed: quarantined=0 B permanent=' "$TEST_ENV_DIR/plan_report_clean.log" \
+     && ! grep -q 'Quarantine session:' "$TEST_ENV_DIR/plan_report_clean.log" \
+     && [[ ! -f "$MOCK_HOME/report_found/cache.txt" && ! -f "$MOCK_HOME/report_old/cache.txt" ]]; then
+    echo -e "${GREEN}PASS: --clean prints the plan report before cleanup and the result report after it.${NC}"
+  else
+    echo -e "${RED}FAIL: result report missing cleaned count or printed out of order.${NC}"
+    cat "$TEST_ENV_DIR/plan_report_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
