@@ -55,6 +55,8 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-47 | --report is mutually exclusive with --list-sessions | Report With List Sessions Rejected |
 | U-48 | --allow-outside-home and LINUX_CLEANER_ALLOW_OUTSIDE_HOME warn at most once and the run succeeds | Outside HOME with --allow-outside-home / LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env / Allow Outside HOME Deprecation Once |
 | U-49 | Root-requiring target is skipped when sudo cannot authenticate; a sibling is still cleaned | Root Skip Without Privileges |
+| U-50 | User-defined `protect|PATH` skips equal, under, contains, and wildcard-expanded targets while cleaning siblings | Protect List Targets / Protect List Targets JSON / Protect Debug Dry Run / Protect Dry Run JSON / Protect Clean Force |
+| U-51 | `--check-config` accepts valid `protect|PATH` lines without counting them as targets and rejects empty, relative, glob-bearing, or extra-field `protect` lines with `file:line` | Protect Check Config Valid / Protect Invalid (empty, relative, glob_star, glob_qmark, glob_bracket, extra) |
 
 ## Drift guards
 

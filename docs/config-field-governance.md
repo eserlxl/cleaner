@@ -81,3 +81,13 @@ otherwise block every target forever while nothing is running:
 Prefer an installation path (`cmdline:/usr/share/cursor`) over a bare word: a path cannot
 collide with an unrelated process the way a common word can. An empty pattern after the
 prefix would match every process and is rejected at config-validation time.
+
+## `protect|PATH` directive lines
+
+Alongside 5–7 field target rows, the config accepts a two-field directive:
+`protect|PATH` (first field literally `protect`, case-sensitive).
+
+- **Validation**: Must have exactly 2 fields. `PATH` expands `$HOME`, `$USER`, and leading `~` (`expand_path_safe`); an empty `PATH`, a non-absolute `PATH` after expansion, a `PATH` containing glob characters (`*`, `?`, `[`), or extra fields is rejected by `validate_config_file` with `Error: <config-file>:<lineno>: ...`. `PATH` need not exist on disk.
+- **Non-target semantics**: `protect` lines are skipped by `expand_config_globs` and every target-row consumer (`--list-targets`, `--list-targets --json`, and the cleanup loop), and are not counted in `--check-config`'s `OK: N targets` total.
+- **Protection rules**: Before target analysis, each `protect|PATH` is canonicalized (`canonicalize_physical` after `strip_trailing_slashes`). Any target whose canonical path equals a protected path, lies under one, or contains one (whole path components only) gets `target_status=protected`, reason `"protected by config"`, and is never sized or cleaned.
+

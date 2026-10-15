@@ -16,6 +16,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- `protect|PATH` config directive protects any directory tree from cleanup:
+  targets whose canonical path equals, lies under, or contains a protected path
+  are skipped (`status="protected"`, `[PROTECTED]` under `--debug`, and
+  `Protected (by config):` in the plan report). Invalid `protect` lines are
+  rejected with a `<config>:<line>:` error.
 - `make install` ships the systemd user units under `$(PREFIX)/lib/systemd/user`
   (mode 0644). Install does not enable them.
 - `--report` prints the last non-dry-run cleanup report (plan plus result, without

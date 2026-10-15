@@ -617,6 +617,7 @@ expand_config_globs() {
     fields=$(( ${#pipes} + 1 ))
     IFS='|' read -r f1 f2 f3 frest <<< "$line"
     risk=$(trim "$f1")
+    [[ "$risk" == "protect" ]] && continue
     raw_path=$(trim "$f3")
     # Leave malformed lines intact for the field-count validator.
     if [[ -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$fields" -gt 7 ]]; then
@@ -886,6 +887,27 @@ validate_config_file() {
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
     risk=$(trim "$risk")
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
+    if [[ "$risk" == "protect" ]]; then
+      if [[ "$field_count" -ne 2 ]]; then
+        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect line requires 2 fields (protect|PATH), found ${field_count}${NC}" >&2
+        exit 1
+      fi
+      name=$(trim "$name")
+      if [[ -z "$name" ]]; then
+        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH is empty${NC}" >&2
+        exit 1
+      fi
+      name=$(expand_path_safe "$name")
+      if [[ "$name" != /* ]]; then
+        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH '${name}' must be absolute${NC}" >&2
+        exit 1
+      fi
+      if [[ "$name" == *[*?\[]* ]]; then
+        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH '${name}' cannot contain glob characters${NC}" >&2
+        exit 1
+      fi
+      continue
+    fi
     if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
       exit 1
@@ -1687,9 +1709,9 @@ format_bytes() {
 # --json exits before this runs.
 print_plan_report() {
   local i status bytes mode=dry-run shown=0
-  local found=0 clean_missing=0 skipped=0 blocked=0 unsafe_symlink=0 root_n=0
+  local found=0 clean_missing=0 skipped=0 blocked=0 unsafe_symlink=0 root_n=0 protected_n=0
   local safe_b=0 med_b=0 dang_b=0
-  local reason name age_note
+  local reason name age_note protected_names=""
   local -a rank=()
   local -A skip_groups=() block_groups=()
   [[ "$DRY_RUN" != true ]] && mode=clean
@@ -1711,6 +1733,10 @@ print_plan_report() {
         reason="${parsed_reasons[$i]:-unspecified}"
         block_groups["$reason"]="${block_groups[$reason]:+${block_groups[$reason]}, }$name"
         ;;
+      protected)
+        protected_n=$((protected_n + 1))
+        protected_names+="${protected_names:+, }$name"
+        ;;
       unsafe|symlink) unsafe_symlink=$((unsafe_symlink + 1)) ;;
       root) root_n=$((root_n + 1)) ;;
     esac
@@ -1722,7 +1748,7 @@ print_plan_report() {
       esac
     fi
   done
-  printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} unsafe/symlink=${unsafe_symlink} root=${root_n}"
+  printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} protected=${protected_n} unsafe/symlink=${unsafe_symlink} root=${root_n}"
   printf '%s\n' "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
   if [[ "$found" -gt 0 ]]; then
     mapfile -t rank < <(
@@ -1752,6 +1778,9 @@ print_plan_report() {
   for reason in "${!block_groups[@]}"; do
     printf '%s\n' "Blocked (${reason}): ${block_groups[$reason]}"
   done
+  if [[ "$protected_n" -gt 0 ]]; then
+    printf '%s\n' "Protected (by config): ${protected_names}"
+  fi
   printf '\n'
 }
 
@@ -2049,6 +2078,34 @@ total_reclaimable_bytes=0
 only_target_matched=false
 name_filter_kept=false
 
+# Collect canonical paths from protect|PATH config lines before target analysis.
+PROTECTED_PATHS=()
+collect_protected_paths() {
+  local line f1 f2 expanded stripped
+  PROTECTED_PATHS=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    IFS='|' read -r f1 f2 _ <<< "$line"
+    [[ "$(trim "$f1")" == "protect" ]] || continue
+    expanded=$(expand_path_safe "$(trim "$f2")")
+    stripped=$(strip_trailing_slashes "$expanded")
+    PROTECTED_PATHS+=("$(canonicalize_physical "$stripped")")
+  done < "$CONFIG_FILE"
+}
+
+# True when canonical target path equals, lies under, or contains a protected path
+# (whole path components only: /opt/a does not match /opt/ab).
+is_path_protected() {
+  local target="$1" p
+  for p in "${PROTECTED_PATHS[@]}"; do
+    if [[ "$p" == / || "$target" == "$p" || "$target" == "$p"/* || "$p" == "$target"/* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+collect_protected_paths
+
 # First pass: Parse config line-by-line safely and analyze targets
 status_echo "${BOLD}Analyzing targets...${NC}"
 
@@ -2125,6 +2182,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     target_status=symlink
     status_echo "  [${RED}SYMLINK${NC}] $name: Refusing to delete symlink target '$path'. Skipping."
     safety_status=1 # Treat as completely unsafe to skip deletion later
+  elif is_path_protected "$path"; then
+    target_status=protected
+    target_reason="protected by config"
+    debug_echo "  [PROTECTED] $name: '$path' is protected by the config. Skipping."
+    safety_status=1 # Treat as unsafe to skip deletion later
   else
     # safety_status 2 (outside HOME) is cleaned like an in-HOME target.
     if [[ "$custom_clean_cmd" == action:* ]] \

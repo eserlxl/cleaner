@@ -416,6 +416,36 @@ or
 .B \-\-list\-targets
 to enumerate every expanded match before cleaning.
 .PP
+A two-field directive of the form
+.B protect|\fIPATH\fR
+(first field literally
+.BR protect ,
+case-sensitive) protects a directory tree from cleanup.
+.I PATH
+expands
+.BR $HOME ,
+.BR ~ ,
+and
+.BR $USER ,
+is physically canonicalized, and need not exist; an empty path, a relative path
+after expansion, a path containing glob characters
+.RB ( * ", " ? ", " [ ),
+or extra fields is rejected with a
+.IR config : line :
+error. Protected lines are not listed by
+.B \-\-list\-targets
+or counted as targets by
+.BR \-\-check\-config .
+Any target whose canonical path equals a protected path, lies under one, or contains
+one (whole path components only) is skipped before sizing with status
+.BR protected ,
+shown under
+.B \-\-debug
+as
+.B [PROTECTED]
+and grouped in the plan report under
+.BR "Protected (by config):" .
+.PP
 The default config is resolved from an explicit
 .BR \-c ,
 then the XDG user config, then
@@ -451,8 +481,10 @@ itself. Paths outside
 are allowed. Symlinked targets are refused, and paths are physically canonicalized to
 prevent traversal or symlink escapes. A target that needs root is skipped, with a
 warning, when those privileges are not available; a run with no terminal on stdin
-never prompts for a password. User-defined protected directories come in a later
-change.
+never prompts for a password. User-defined
+.B protect|\fIPATH\fR
+lines in the configuration skip any target that equals, lies under, or contains a
+protected path.
 With Git available, targets containing git-tracked files are skipped even with \-\-force, unless the cleaner runs as root or the target requires sudo.
 .SH FILES
 .TP

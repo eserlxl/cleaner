@@ -99,6 +99,21 @@ medium|App Sessions|$HOME/.local/share/example-app/sessions|Old session logs, ke
 
 `filter:cxx_build` also checks literal paths without wildcards. Surrounding whitespace in the field is ignored, just as for other config fields; it never disables the filter.
 
+### Protecting directories
+
+To keep the cleaner away from a directory, add a `protect|PATH` line to your config file:
+
+```text
+protect|$HOME/Projects
+protect|/opt/important
+```
+
+The cleaner then never touches that directory. A target is skipped as a whole when it is the protected directory, lies inside it, or contains it. For example, `protect|/opt/work/app/build` also keeps the `/opt/**/build*` row from cleaning that one build directory, while other matches of the same row are still cleaned. Matching uses whole path components, so `protect|/opt/a` does not protect `/opt/ab`.
+
+- `PATH` may use `$HOME`, `$USER`, or a leading `~`, must be absolute, cannot contain wildcards (`*`, `?`, `[`), and does not need to exist yet. Symlinks are resolved, so a protected directory stays protected under any name.
+- `cleaner --check-config` reports an invalid `protect` line with its file and line number.
+- The plan report lists skipped targets under `Protected (by config):`. `--debug` shows a `[PROTECTED]` line per target, and `--dry-run --json` reports `"status": "protected"`.
+
 ### Example `cleaner.conf`
 ```text
 safe|NPM Cache|$HOME/.npm/_cacache|NPM dependency cache files|0|node,npm|

@@ -4962,5 +4962,109 @@ else
   exit 1
 fi
 
+# User-defined protected paths via protect|PATH config lines: equal, under,
+# contains, and wildcard matches are skipped; whole-component sibling is cleaned;
+# --debug, --dry-run --json, --list-targets, and --check-config validation work.
+setup_mock_env
+mkdir -p "$MOCK_HOME/keep/sub" "$MOCK_HOME/parent/keep" "$MOCK_HOME/parent/other" \
+         "$MOCK_HOME/keepsake" "$MOCK_HOME/wild/keep_dir" "$MOCK_HOME/wild/clean_dir"
+printf 'keep-root\n' > "$MOCK_HOME/keep/file.txt"
+printf 'keep-sub\n' > "$MOCK_HOME/keep/sub/file.txt"
+printf 'parent-keep\n' > "$MOCK_HOME/parent/keep/file.txt"
+printf 'parent-other\n' > "$MOCK_HOME/parent/other/file.txt"
+printf 'sibling\n' > "$MOCK_HOME/keepsake/file.txt"
+printf 'wild-keep\n' > "$MOCK_HOME/wild/keep_dir/file.txt"
+printf 'wild-clean\n' > "$MOCK_HOME/wild/clean_dir/file.txt"
+
+cat > "$TEST_ENV_DIR/protect.conf" <<'EOF'
+protect|$HOME/keep
+protect|$HOME/parent/keep
+protect|$HOME/wild/keep_dir
+protect|$HOME/nonexistent_protected
+safe|Equal Protected|$HOME/keep|equal protected target|0||
+safe|Under Protected|$HOME/keep/sub|under protected target|0||
+safe|Contains Protected|$HOME/parent|contains protected target|0||
+safe|Wildcard Target|$HOME/wild/*_dir|wildcard target|0||
+safe|Sibling Keepsake|$HOME/keepsake|unrelated sibling target|0||
+EOF
+
+if ! run_test_case "Protect Check Config Valid" 0 "protect_check.log" \
+       --config "$TEST_ENV_DIR/protect.conf" --check-config \
+   || ! grep -q '^OK: 5 targets in ' "$TEST_ENV_DIR/protect_check.log"; then
+  echo -e "${RED}FAIL: --check-config did not accept valid protect lines or miscounted targets.${NC}"
+  cat "$TEST_ENV_DIR/protect_check.log"
+  exit 1
+fi
+
+if ! run_test_case "Protect List Targets" 0 "protect_lt.log" \
+       --config "$TEST_ENV_DIR/protect.conf" --list-targets \
+   || grep -q 'protect|' "$TEST_ENV_DIR/protect_lt.log" \
+   || grep -q 'nonexistent_protected' "$TEST_ENV_DIR/protect_lt.log" \
+   || ! run_test_case "Protect List Targets JSON" 0 "protect_lt_json.log" \
+       --config "$TEST_ENV_DIR/protect.conf" --list-targets --json \
+   || ! python3 -m json.tool < "$TEST_ENV_DIR/protect_lt_json.log" >/dev/null \
+   || grep -q '"risk":"protect"' "$TEST_ENV_DIR/protect_lt_json.log"; then
+  echo -e "${RED}FAIL: --list-targets included protect lines or produced invalid JSON.${NC}"
+  cat "$TEST_ENV_DIR/protect_lt.log" "$TEST_ENV_DIR/protect_lt_json.log"
+  exit 1
+fi
+
+if ! run_test_case "Protect Debug Dry Run" 0 "protect_debug.log" \
+       --config "$TEST_ENV_DIR/protect.conf" --debug --dry-run \
+   || ! grep -qF "  [PROTECTED] Equal Protected: '$MOCK_HOME/keep' is protected by the config. Skipping." "$TEST_ENV_DIR/protect_debug.log" \
+   || ! grep -qF "  [PROTECTED] Under Protected: '$MOCK_HOME/keep/sub' is protected by the config. Skipping." "$TEST_ENV_DIR/protect_debug.log" \
+   || ! grep -qF "  [PROTECTED] Contains Protected: '$MOCK_HOME/parent' is protected by the config. Skipping." "$TEST_ENV_DIR/protect_debug.log" \
+   || ! grep -qF "  [PROTECTED] Wildcard Target: '$MOCK_HOME/wild/keep_dir' is protected by the config. Skipping." "$TEST_ENV_DIR/protect_debug.log" \
+   || ! grep -q '^Protected (by config): Equal Protected, Under Protected, Contains Protected, Wildcard Target$' "$TEST_ENV_DIR/protect_debug.log" \
+   || ! grep -q 'protected=4' "$TEST_ENV_DIR/protect_debug.log"; then
+  echo -e "${RED}FAIL: --debug dry-run did not show [PROTECTED] lines or plan report summary.${NC}"
+  cat "$TEST_ENV_DIR/protect_debug.log"
+  exit 1
+fi
+
+if ! run_test_case "Protect Dry Run JSON" 0 "protect_json.log" \
+       --config "$TEST_ENV_DIR/protect.conf" --dry-run --json \
+   || ! python3 -m json.tool < "$TEST_ENV_DIR/protect_json.log" >/dev/null \
+   || [[ "$(grep -o '"status":"protected"' "$TEST_ENV_DIR/protect_json.log" | wc -l)" -ne 4 ]]; then
+  echo -e "${RED}FAIL: --dry-run --json did not emit 4 protected statuses or valid JSON.${NC}"
+  cat "$TEST_ENV_DIR/protect_json.log"
+  exit 1
+fi
+
+if ! run_test_case "Protect Clean Force" 0 "protect_clean.log" \
+       --config "$TEST_ENV_DIR/protect.conf" --clean --force \
+   || [[ ! -f "$MOCK_HOME/keep/file.txt" ]] \
+   || [[ ! -f "$MOCK_HOME/keep/sub/file.txt" ]] \
+   || [[ ! -f "$MOCK_HOME/parent/keep/file.txt" ]] \
+   || [[ ! -f "$MOCK_HOME/parent/other/file.txt" ]] \
+   || [[ ! -f "$MOCK_HOME/wild/keep_dir/file.txt" ]] \
+   || [[ -e "$MOCK_HOME/wild/clean_dir" ]] \
+   || [[ -e "$MOCK_HOME/keepsake" ]]; then
+  echo -e "${RED}FAIL: --clean --force did not preserve protected targets or failed to clean unprotected ones.${NC}"
+  cat "$TEST_ENV_DIR/protect_clean.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: protect|PATH skips equal, under, contains, and wildcard matches while cleaning sibling targets.${NC}"
+
+for bad_case in \
+    "empty:protect|" \
+    "relative:protect|relative/path" \
+    "glob_star:protect|\$HOME/*" \
+    "glob_qmark:protect|\$HOME/keep?" \
+    "glob_bracket:protect|\$HOME/keep[0-9]" \
+    "extra:protect|\$HOME/a|extra"; do
+  bad_label="${bad_case%%:*}"
+  bad_line="${bad_case#*:}"
+  printf "# header\n%s\nsafe|Valid|\$HOME/keepsake|valid|0||\n" "$bad_line" > "$TEST_ENV_DIR/protect_bad_${bad_label}.conf"
+  if ! run_test_case "Protect Invalid ($bad_label)" 1 "protect_bad_${bad_label}.log" \
+         --config "$TEST_ENV_DIR/protect_bad_${bad_label}.conf" --check-config \
+     || ! grep -qF "$TEST_ENV_DIR/protect_bad_${bad_label}.conf:2:" "$TEST_ENV_DIR/protect_bad_${bad_label}.log"; then
+    echo -e "${RED}FAIL: --check-config did not reject invalid protect line '$bad_line' with config:line.${NC}"
+    cat "$TEST_ENV_DIR/protect_bad_${bad_label}.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: --check-config rejects malformed protect| lines with file:line errors.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
