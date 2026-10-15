@@ -15,26 +15,24 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-16
+
 ### Fixed
-- `expand_config_globs` now verifies wildcard candidates component by component
-  (`glob_components_match`), so in patterns containing `**` only a `**`
-  component spans multiple directory levels while `*` and `?` match within a
-  single component without pruning deeper valid matches beneath rejected
-  candidates.
-- `--restore` now treats a symlink at a full or aged record's original path, or
-  at any existing intermediate directory component between an aged record's
-  original path and the destination file's parent, as a conflict (`outcome=conflict`)
-  without following the link, keeping unrestored files and the quarantine
-  session intact.
-- Create each quarantine session directory atomically with mode `0700` (`mkdir
-  -m 700`) and create missing `~/.cache/linux-cleaner/quarantine` directories
-  under `umask 077` (`0700`), preventing aged or full `--trash` runs under a
-  permissive umask (such as `022`) from exposing quarantined files from private
-  `0700` source directories to other local users.
-- `strip_trailing_slashes` now removes all trailing slashes (preserving `/` for
-  all-slash inputs) so a symlink target configured with multiple trailing
-  slashes (e.g. `$HOME/link//`) is still caught by the `[SYMLINK]` guard instead
-  of resolving and deleting its referent directory.
+- **Security:** a target path ending in two or more slashes (for example
+  `$HOME/link//`) no longer slips past the symlink refusal. Such a target used
+  to resolve through the link and clean the directory it points to; it is now
+  refused as `[SYMLINK]` like `$HOME/link` and `$HOME/link/`.
+- **Security:** every quarantine session directory is created with mode `0700`
+  (and a quarantine base the tool creates is `0700` too), whatever the umask.
+  Under `umask 022`, files quarantined from a private directory could
+  previously become readable by other local users.
+- **Security:** `--restore` no longer writes through a symlink planted at a
+  record's original path or at a directory inside it. Such files are reported
+  as a conflict (`outcome=conflict`), stay in quarantine, and the run exits `1`.
+- In a wildcard pattern that also contains `**`, a plain `*` or `?` now matches
+  exactly one path component, as documented. It used to span several
+  directories (`$HOME/a/**/app/*/build` matched `.../app/one/extra/build`).
+  Patterns without `**` select the same targets as before.
 - Uninstall instructions (README, RUNBOOK, `cleaner.1`, packager handoff) now
   tell each user to disable the timers first and run `systemctl --user
   daemon-reload` after removal.
@@ -320,7 +318,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.1
 [1.4.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.0
 [1.3.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.3.0
 [1.2.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.2.0
