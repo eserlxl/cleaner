@@ -61,7 +61,7 @@ Recommended DAY values: 30 (default), 7 (aggressive small disks). Exits 0 when n
 
 Use this to watch session growth under trash mode before retention runs. `LINUX_CLEANER_JSON=1` is also valid with `--list-sessions` or `--list-targets` (not only dry-run).
 
-Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) additionally need `LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1` or `--allow-outside-home`.
+Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) are allowed. They are medium risk, so the safe-tier timer does not select them; pass `--risk medium`. They need root, and a target is skipped when privileges are not available. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated and have no effect.
 
 ## systemd user timers
 
@@ -118,9 +118,9 @@ cleaner --list-sessions --json
 
 ## Env recipe: outside-HOME package caches
 
+Outside-HOME targets are always allowed. Package-cache rows are medium risk and need root. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` is a deprecated no-op.
+
 ```sh
-# High-risk: only when cleaning paths outside $HOME (e.g. pacman/apt/dnf/zypper/apk caches).
-export LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1
 cleaner --clean --force --risk medium
 ```
 

@@ -15,7 +15,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-07 | LINUX_CLEANER_FORCE | LINUX_CLEANER_FORCE Env |
 | U-08 | LINUX_CLEANER_YES_DANGER | LINUX_CLEANER_YES_DANGER Env |
 | U-09 | --list-sessions --json | List Sessions JSON / List Sessions JSON Empty |
-| U-10 | LINUX_CLEANER_ALLOW_OUTSIDE_HOME | LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env |
+| U-10 | LINUX_CLEANER_ALLOW_OUTSIDE_HOME deprecated no-op warning | LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env |
 | U-11 | --list-targets --json description/min_age_days | List Targets JSON |
 | U-12 | --exclude-target / LINUX_CLEANER_EXCLUDE_TARGET | Exclude Target Dry Run / Env |
 | U-13 | LINUX_CLEANER_CONFIG | LINUX_CLEANER_CONFIG Env |
@@ -44,7 +44,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-36 | action:apk_clean | Cross-Distro Actions / Action Required Binary Mapping / Apk Safe Degradation |
 | U-37 | Failed aged quarantine move leaves no phantom metadata or empty staging dir | Failed Quarantine Move Not Recorded / Restore After a Failed Quarantine Move |
 | U-38 | Per-target exclude:NAME[,NAME...] in CUSTOM_ACTION | Row Exclusion Age 7 (permanent, none) / Row Exclusion Dry Run Size (age 7) / Row Exclusion Wildcard Inventory (json) / Row Exclusion Validation (exclude:memory) |
-| U-39 | --debug and LINUX_CLEANER_DEBUG show per-target FOUND, REJECTED and CLEAN lines | Debug Dry Run Output |
+| U-39 | --debug and LINUX_CLEANER_DEBUG show per-target FOUND and CLEAN lines | Debug Dry Run Output |
 | U-40 | Git-tracked target guard skips targets holding tracked files | Git-Tracked Target Guard JSON / Git-Tracked Target Guard |
 | U-41 | Outside-HOME group confirmation prompt and (outside HOME) FOUND suffix | Outside HOME with --allow-outside-home / Outside HOME Group Confirmation (y) / Outside HOME Group Confirmation (n) |
 | U-42 | --dry-run --json description/min_age_days | JSON Dry Run |
@@ -53,6 +53,8 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-45 | --report prints the saved report or exits 1 when it is absent | Last Report Print / Last Report Missing |
 | U-46 | A symlinked state directory is not written | Last Report Symlink |
 | U-47 | --report is mutually exclusive with --list-sessions | Report With List Sessions Rejected |
+| U-48 | --allow-outside-home and LINUX_CLEANER_ALLOW_OUTSIDE_HOME warn at most once and the run succeeds | Outside HOME with --allow-outside-home / LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env / Allow Outside HOME Deprecation Once |
+| U-49 | Root-requiring target is skipped when sudo cannot authenticate; a sibling is still cleaned | Root Skip Without Privileges |
 
 ## Drift guards
 

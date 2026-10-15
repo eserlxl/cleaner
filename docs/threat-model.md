@@ -58,7 +58,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Unknown action | Enumerated whitelist | Predefined Action |
 | Compromised /etc/linux-cleaner/cleaner.conf | Root-owned config + dry-run before clean | Operator mitigations (below) |
 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
-| Over-broad wildcard | Expansion is amplification, not escape: a wildcard cannot reach a depth the pattern does not describe, cannot start at the filesystem root, and never runs through the shell or `eval`. Every match is then checked individually, so the root/system block, HOME boundary and symlink guard still apply. `--dry-run` and `--list-targets` enumerate every match before deletion; `--allow-outside-home` removes the HOME limit and widens the blast radius, so an anchored pattern is preferred there. | Wildcard Path Expansion / Wildcard Root Refusal / Wildcard Line Number Fidelity |
+| Over-broad wildcard | Expansion is amplification, not escape: a wildcard cannot reach a depth the pattern does not describe, cannot start at the filesystem root, and never runs through the shell or `eval`. Every match is then checked individually, so the root/system block and symlink guard still apply. A match outside HOME is allowed. `--dry-run` and `--list-targets` enumerate every match before deletion; an anchored pattern is preferred when a sibling directory could match by accident. | Wildcard Path Expansion / Wildcard Root Refusal / Wildcard Line Number Fidelity |
 
 ### Operator mitigations (/etc config)
 
@@ -68,16 +68,22 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 
 ## Path Safety and Filesystem Races
 
-| Scenario | check_path_safety | Test |
-|----------|-------------------|------|
-| Dotdot escape | REJECTED | Canonicalization Dotdot Escape |
-| Symlink parent outside HOME | REJECTED | Symlinked Parent Escape |
+| Scenario | Posture | Test |
+|----------|---------|------|
+| Dotdot escape | FOUND at the canonical outside path | Canonicalization Dotdot Escape |
+| Symlink parent outside HOME | FOUND at the canonical outside path | Symlinked Parent Escape |
+| Symlink target | Refused (SYMLINK) | Dry Run Mode (Default) |
+| Protected system directory | UNSAFE (`check_path_safety` returns 1) | Protected System Dir UNSAFE / Top-Level System Directories |
+| Root required, privileges unavailable | Skipped (`requires root`); the rest of the run continues and the exit status stays 0 | Root Skip Without Privileges |
 | TOCTOU on live paths | residual | manual VM review |
 
-### GNU userland and --allow-outside-home
+Targets outside HOME are allowed. `check_path_safety` still returns 1 for protected system directories and 3 for a symlink target. Return 2 (outside HOME) is cleaned like an in-HOME target. User-defined protected directories come in a later change.
+
+A target that needs root and cannot obtain it is skipped with a warning and an operation-log record (`outcome=skipped reason=requires-root`). An unattended run (no TTY on stdin) never prompts. A failed or cancelled prompt is remembered, and every later root-requiring target of that run is skipped without asking again. A dry-run never prompts.
+
+### GNU userland
 
 GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protection).
-`--allow-outside-home` is high-risk opt-in for paths like /var/cache/pacman/pkg.
 
 ## Quarantine Integrity and Collisions
 

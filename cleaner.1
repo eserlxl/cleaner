@@ -8,15 +8,15 @@ cleaner \- safely clean cache and temporary files
 .B cleaner
 is a configuration-driven Bash utility that estimates and reclaims disk space by
 cleaning caches, temporary files, and logs. It runs in dry-run mode by default,
-routes every deletion through a path-safety check, blocks system directories and
-paths outside the user's
+routes every deletion through a path-safety check, blocks system directories,
+allows paths outside the user's
 .BR $HOME ,
 refuses to follow symlinks, and can move files to a restorable quarantine instead
 of deleting them permanently.
 After the savings total,
 .B cleaner
 prints a plan report: run mode, risk ceiling, config path, counts per status,
-reclaimable bytes by risk, the largest targets, and skipped or rejected targets.
+reclaimable bytes by risk, the largest targets, and skipped targets.
 .B \-\-quiet
 suppresses the plan report. After cleanup, a result report lists cleaned,
 skipped, and failed counts, bytes quarantined versus permanently reclaimed,
@@ -61,8 +61,9 @@ Maximum risk level to clean: safe, medium, or danger (default: safe).
 Comma-separated glob patterns to exclude from cleanup.
 .TP
 .B \-\-allow\-outside\-home
-Explicitly allow cleaning targets outside the user's
-.BR $HOME .
+Deprecated no-op. Targets outside
+.BR $HOME
+are always allowed. Prints one warning on stderr.
 .TP
 .B \-\-log \fR[\fIFILE\fR]
 Append an operation log (opt-in, off by default; kept under
@@ -78,7 +79,7 @@ Suppress per-target status lines and the decorative header; errors, total
 savings, and the final summary still print.
 .TP
 .B \-\-debug
-Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by
+Show per-target FOUND and CLEAN lines (suppressed by default; overridden by
 .BR \-\-quiet ).
 .TP
 .B \-\-json
@@ -263,7 +264,7 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-debug
-(show per-target FOUND, REJECTED and CLEAN lines). No CLI flag disables it; set it to 0 or unset it.
+(show per-target FOUND and CLEAN lines). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to
@@ -324,13 +325,11 @@ enables
 (bypass danger confirmation). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_ALLOW_OUTSIDE_HOME
-When set to
+Deprecated no-op. When set to
 .BR 1 ", " true ", or " yes ,
-enables
-.BR \-\-allow\-outside\-home
-(permit cleaning targets outside
-.BR $HOME ).
-No CLI flag disables it; set it to 0 or unset it.
+prints one warning. Targets outside
+.BR $HOME
+are always allowed.
 .TP
 .B NO_COLOR
 When set to any non-empty value, disables ANSI color codes in output (see
@@ -445,12 +444,15 @@ values (enumerated whitelist only):
 .SH SAFETY
 Deletions are blocked for the filesystem root, system directories
 .RI ( /usr ", " /etc ", " /var ", " /lib ", " /opt ", " /srv ", " /tmp ", " /run ", " /mnt ", " /media ", "
-and similar), and any path resolving outside
+and similar), and for
 .BR $HOME
-unless
-.B \-\-allow\-outside\-home
-is given. Symlinked targets are refused, and paths are physically canonicalized to
-prevent traversal or symlink escapes.
+itself. Paths outside
+.BR $HOME
+are allowed. Symlinked targets are refused, and paths are physically canonicalized to
+prevent traversal or symlink escapes. A target that needs root is skipped, with a
+warning, when those privileges are not available; a run with no terminal on stdin
+never prompts for a password. User-defined protected directories come in a later
+change.
 With Git available, targets containing git-tracked files are skipped even with \-\-force, unless the cleaner runs as root or the target requires sudo.
 .SH FILES
 .TP
@@ -524,7 +526,7 @@ Enable quiet mode via environment (same as
 .BR \-\-quiet ):
 .B LINUX_CLEANER_QUIET=1 cleaner \-\-dry\-run
 .TP
-Show per-target FOUND, REJECTED and CLEAN lines via environment (same as
+Show per-target FOUND and CLEAN lines via environment (same as
 .BR \-\-debug ):
 .B LINUX_CLEANER_DEBUG=1 cleaner \-\-dry\-run
 .TP

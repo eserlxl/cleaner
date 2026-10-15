@@ -420,11 +420,11 @@ setup_mock_env
     exit 1
   fi
   
-  # C. Outside HOME rejection without --allow-outside-home
-  if grep -q "REJECTED.*Outside HOME Target" "$TEST_ENV_DIR/dry_run.log"; then
-    echo -e "${GREEN}PASS: Target outside HOME was rejected without --allow-outside-home.${NC}"
+  # C. Outside HOME is FOUND without a special flag
+  if grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/dry_run.log"; then
+    echo -e "${GREEN}PASS: Target outside HOME was listed as FOUND.${NC}"
   else
-    echo -e "${RED}FAIL: Outside HOME target was not rejected.${NC}"
+    echo -e "${RED}FAIL: Outside HOME target was not listed as FOUND.${NC}"
     cat "$TEST_ENV_DIR/dry_run.log"
     exit 1
   fi
@@ -478,13 +478,14 @@ else
   exit 1
 fi
 
-# 4. Test Case: Outside HOME with --allow-outside-home
+# 4. Test Case: deprecated --allow-outside-home is a no-op warning; outside HOME stays FOUND.
 if run_test_case "Outside HOME with --allow-outside-home" 0 "outside_home.log" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --dry-run; then
   if grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/outside_home.log" \
+     && grep -qF "Warning: --allow-outside-home is deprecated and has no effect; targets outside HOME are always allowed." "$TEST_ENV_DIR/outside_home.log" \
      && ! grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/outside_home.log"; then
-    echo -e "${GREEN}PASS: Outside HOME target is FOUND with an outside HOME suffix and no warning.${NC}"
+    echo -e "${GREEN}PASS: --allow-outside-home warns once and outside HOME stays FOUND.${NC}"
   else
-    echo -e "${RED}FAIL: Outside HOME target was still blocked with --allow-outside-home active.${NC}"
+    echo -e "${RED}FAIL: --allow-outside-home did not warn, or the outside HOME target was not FOUND.${NC}"
     cat "$TEST_ENV_DIR/outside_home.log"
     exit 1
   fi
@@ -492,7 +493,7 @@ else
   exit 1
 fi
 
-# Env mirror for --allow-outside-home (unattended package-cache cleans).
+# Deprecated env mirror: one warning, the run still succeeds, outside HOME stays FOUND.
 setup_mock_env
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_ALLOW_OUTSIDE_HOME Env${NC}"
 LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
@@ -500,11 +501,28 @@ LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HO
   > "$TEST_ENV_DIR/allow_outside_env.log" 2>&1 || allow_env_ec=$?
 if [[ ${allow_env_ec:-0} -eq 0 ]] \
    && grep -q "FOUND.*Outside HOME Target.*(outside HOME)$" "$TEST_ENV_DIR/allow_outside_env.log" \
+   && grep -qF "Warning: LINUX_CLEANER_ALLOW_OUTSIDE_HOME is deprecated and has no effect; targets outside HOME are always allowed." "$TEST_ENV_DIR/allow_outside_env.log" \
    && ! grep -q "WARNING.*Outside HOME Target" "$TEST_ENV_DIR/allow_outside_env.log"; then
-  echo -e "${GREEN}PASS: LINUX_CLEANER_ALLOW_OUTSIDE_HOME allows outside-HOME targets without the CLI flag.${NC}"
+  echo -e "${GREEN}PASS: LINUX_CLEANER_ALLOW_OUTSIDE_HOME warns once and the run still succeeds.${NC}"
 else
-  echo -e "${RED}FAIL: LINUX_CLEANER_ALLOW_OUTSIDE_HOME did not allow outside-HOME targets (ec=${allow_env_ec:-0}).${NC}"
+  echo -e "${RED}FAIL: LINUX_CLEANER_ALLOW_OUTSIDE_HOME did not warn or the run failed (ec=${allow_env_ec:-0}).${NC}"
   cat "$TEST_ENV_DIR/allow_outside_env.log"
+  exit 1
+fi
+
+# Flag and env together still warn at most once.
+setup_mock_env
+echo -e "\n${BOLD}Test Case: Allow Outside HOME Deprecation Once${NC}"
+both_ec=0
+LINUX_CLEANER_ALLOW_OUTSIDE_HOME=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --allow-outside-home --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  > "$TEST_ENV_DIR/allow_outside_both.log" 2>&1 || both_ec=$?
+both_warns=$(grep -c 'deprecated and has no effect' "$TEST_ENV_DIR/allow_outside_both.log" || true)
+if [[ "$both_ec" -eq 0 && "$both_warns" -eq 1 ]]; then
+  echo -e "${GREEN}PASS: flag and env together print one deprecation warning.${NC}"
+else
+  echo -e "${RED}FAIL: expected one deprecation warning and exit 0 (ec=$both_ec warns=$both_warns).${NC}"
+  cat "$TEST_ENV_DIR/allow_outside_both.log"
   exit 1
 fi
 
@@ -522,7 +540,7 @@ safe|Inside|$MOCK_HOME/.cache/yarn|inside cache|0||
 EOF
   echo -e "\n${BOLD}Test Case: Outside HOME Group Confirmation ($answer)${NC}"
   PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-    "$CLEANER_SH" --config "$TEST_ENV_DIR/outside_confirmation.conf" --allow-outside-home --clean \
+    "$CLEANER_SH" --config "$TEST_ENV_DIR/outside_confirmation.conf" --clean \
     < <(printf 'y\n%s\n' "$answer") > "$TEST_ENV_DIR/outside_confirmation.log" 2>&1 || exit_code=$?
   prompt_count=$(grep -oF '2 target(s) are outside HOME. Clean them too? [y/N]:' \
     "$TEST_ENV_DIR/outside_confirmation.log" | wc -l) || prompt_count=0
@@ -810,7 +828,7 @@ medium|Pacman Cache (Keep 2)|$OUTSIDE_DIR|Mock Pacman Cache 2|0||action:paccache
 medium|Pacman Cache (Keep 1)|$OUTSIDE_DIR|Mock Pacman Cache 1|0||action:paccache_keep1
 EOF
 
-if run_test_case "Predefined Action" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --allow-outside-home --risk medium; then
+if run_test_case "Predefined Action" 0 "sudo_custom.log" --config "$TEST_ENV_DIR/sudo_custom_config.conf" --clean --force --risk medium; then
   # Check if mock paccache was executed with correct arguments
   if grep -q "Mock paccache called with: -rk3" "$TEST_ENV_DIR/sudo_custom.log" && \
      grep -q "Mock paccache called with: -rk2" "$TEST_ENV_DIR/sudo_custom.log" && \
@@ -1214,16 +1232,21 @@ else
   exit 1
 fi
 
-# 16. Test Case: Canonicalization ..-traversal escape (REJECTED, not classified in-HOME safe)
+# 16. Test Case: Canonicalization ..-traversal escape is FOUND at the canonical outside path
 setup_mock_env
+dotdot_canon="$(realpath -m "$MOCK_HOME/../dotdot_escape_probe")"
+mkdir -p "$dotdot_canon"
+echo probe > "$dotdot_canon/probe.txt"
 cat << EOF > "$TEST_ENV_DIR/dotdot_escape.conf"
 safe|Dotdot Escape Probe|\$HOME/../dotdot_escape_probe|Path climbing above HOME via ..|0||
 EOF
 if run_test_case "Canonicalization Dotdot Escape" 0 "dotdot_escape.log" --debug --config "$TEST_ENV_DIR/dotdot_escape.conf" --dry-run; then
-  if grep -q "REJECTED.*Dotdot Escape Probe" "$TEST_ENV_DIR/dotdot_escape.log"; then
-    echo -e "${GREEN}PASS: '..'-traversal path escaping HOME was resolved and REJECTED, not classified as in-HOME safe.${NC}"
+  if grep -q "FOUND.*Dotdot Escape Probe.*(outside HOME)" "$TEST_ENV_DIR/dotdot_escape.log" \
+     && grep -qF "$dotdot_canon" "$TEST_ENV_DIR/dotdot_escape.log" \
+     && ! grep -qF "$MOCK_HOME/../dotdot_escape_probe" "$TEST_ENV_DIR/dotdot_escape.log"; then
+    echo -e "${GREEN}PASS: '..'-traversal path was FOUND under its canonical outside path.${NC}"
   else
-    echo -e "${RED}FAIL: '..'-traversal escape was not rejected (canonicalization may not resolve '..').${NC}"
+    echo -e "${RED}FAIL: '..'-traversal escape was not FOUND at the canonical path.${NC}"
     cat "$TEST_ENV_DIR/dotdot_escape.log"
     exit 1
   fi
@@ -1231,18 +1254,23 @@ else
   exit 1
 fi
 
-# 17. Test Case: Symlinked-parent escape (parent symlink resolves outside HOME -> REJECTED)
+# 17. Test Case: Symlinked-parent escape resolves to the canonical outside path and is FOUND
 setup_mock_env
+mkdir -p "$OUTSIDE_DIR/sub"
+echo kept > "$OUTSIDE_DIR/sub/kept.txt"
 ln -s "$OUTSIDE_DIR" "$MOCK_HOME/escape_link"
+symlink_canon="$(realpath "$OUTSIDE_DIR/sub")"
 cat << EOF > "$TEST_ENV_DIR/symlink_parent.conf"
 safe|Symlinked Parent Escape|\$HOME/escape_link/sub|Target under a symlinked parent that escapes HOME|0||
 EOF
 if run_test_case "Symlinked Parent Escape" 0 "symlink_parent.log" --debug --config "$TEST_ENV_DIR/symlink_parent.conf" --dry-run; then
-  if grep -q "REJECTED.*Symlinked Parent Escape" "$TEST_ENV_DIR/symlink_parent.log" && \
-     [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
-    echo -e "${GREEN}PASS: Symlinked parent resolved outside HOME and was REJECTED; real outside dir untouched.${NC}"
+  if grep -q "FOUND.*Symlinked Parent Escape.*(outside HOME)" "$TEST_ENV_DIR/symlink_parent.log" \
+     && grep -qF "$symlink_canon" "$TEST_ENV_DIR/symlink_parent.log" \
+     && ! grep -qF "$MOCK_HOME/escape_link/sub" "$TEST_ENV_DIR/symlink_parent.log" \
+     && [[ -f "$OUTSIDE_DIR/sub/kept.txt" ]]; then
+    echo -e "${GREEN}PASS: Symlinked parent was FOUND at its canonical outside path; real outside dir untouched.${NC}"
   else
-    echo -e "${RED}FAIL: Symlinked-parent escape was not rejected or the outside dir was affected.${NC}"
+    echo -e "${RED}FAIL: Symlinked-parent escape was not FOUND at the canonical path.${NC}"
     cat "$TEST_ENV_DIR/symlink_parent.log"
     exit 1
   fi
@@ -1310,13 +1338,13 @@ else
   exit 1
 fi
 
-# 20. Test Case: Actual outside-HOME deletion with --allow-outside-home --force
+# 20. Test Case: --force cleans an outside-HOME target with no extra flag
 setup_mock_env
-if run_test_case "Actual Outside HOME Clean" 0 "outside_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --allow-outside-home --force; then
+if run_test_case "Actual Outside HOME Clean" 0 "outside_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then
   if [[ ! -f "$OUTSIDE_DIR/outside.txt" ]]; then
-    echo -e "${GREEN}PASS: Outside-HOME target was actually deleted under --allow-outside-home --force.${NC}"
+    echo -e "${GREEN}PASS: Outside-HOME target was deleted under --force.${NC}"
   else
-    echo -e "${RED}FAIL: Outside-HOME target survived a destructive --allow-outside-home run.${NC}"
+    echo -e "${RED}FAIL: Outside-HOME target survived a destructive --force run.${NC}"
     cat "$TEST_ENV_DIR/outside_clean.log"
     exit 1
   fi
@@ -1324,17 +1352,39 @@ else
   exit 1
 fi
 
-# 21. Test Case: Destructive run WITHOUT --allow-outside-home leaves outside target intact
+# 21. Test Case: a root-requiring target is skipped when sudo cannot authenticate
 setup_mock_env
-if run_test_case "Destructive Without Escape Flag" 0 "outside_gated.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then
-  if [[ -f "$OUTSIDE_DIR/outside.txt" ]]; then
-    echo -e "${GREEN}PASS: Outside-HOME target survived a real --force run because --allow-outside-home was absent.${NC}"
+root_target="$MOCK_HOME/.cache/needs-root"
+plain_target="$MOCK_HOME/.cache/plain-sibling"
+mkdir -p "$root_target" "$plain_target"
+echo secret > "$root_target/secret.txt"
+echo plain > "$plain_target/plain.txt"
+root_canon="$(realpath "$root_target")"
+chmod 000 "$root_target"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/sudo"
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+cat > "$TEST_ENV_DIR/root_skip.conf" <<EOF
+safe|Needs Root|$root_target|unreadable cache|0||
+safe|Plain Sibling|$plain_target|writable cache|0||
+EOF
+root_log="$MOCK_HOME/root-skip.log"
+if run_test_case "Root Skip Without Privileges" 0 "root_skip_run.log" \
+     --config "$TEST_ENV_DIR/root_skip.conf" --clean --force --log "$root_log"; then
+  chmod u+rwx "$root_target" 2>/dev/null || true
+  if grep -qF "Warning: skipping 'Needs Root' ($root_canon): requires root privileges that are not available." "$TEST_ENV_DIR/root_skip_run.log" \
+     && grep -qF "outcome=skipped reason=requires-root" "$root_log" \
+     && grep -qF "Skipped (requires root): Needs Root" "$TEST_ENV_DIR/root_skip_run.log" \
+     && grep -qF "Skipped (requires root): Needs Root" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+     && [[ ! -e "$plain_target" ]] \
+     && [[ -f "$root_target/secret.txt" ]]; then
+    echo -e "${GREEN}PASS: root target was skipped with a warning and log record; the sibling was cleaned.${NC}"
   else
-    echo -e "${RED}FAIL: Outside-HOME target was deleted under --force without --allow-outside-home.${NC}"
-    cat "$TEST_ENV_DIR/outside_gated.log"
+    echo -e "${RED}FAIL: root skip did not warn, log, list the plan skip, and clean the sibling.${NC}"
+    cat "$TEST_ENV_DIR/root_skip_run.log" "$root_log" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" 2>/dev/null
     exit 1
   fi
 else
+  chmod u+rwx "$root_target" 2>/dev/null || true
   exit 1
 fi
 
@@ -2070,7 +2120,7 @@ medium|DNF Clean|$OUTSIDE_DIR|Mock DNF cache|0||action:dnf_clean
 medium|Zypper Clean|$OUTSIDE_DIR|Mock Zypper cache|0||action:zypper_clean
 medium|APK Clean|$OUTSIDE_DIR|Mock APK cache|0||action:apk_clean
 EOF
-if run_test_case "Cross-Distro Actions" 0 "aptdnf.log" --config "$TEST_ENV_DIR/aptdnf_config.conf" --clean --force --allow-outside-home --risk medium; then
+if run_test_case "Cross-Distro Actions" 0 "aptdnf.log" --config "$TEST_ENV_DIR/aptdnf_config.conf" --clean --force --risk medium; then
   if grep -q "Mock apt-get called with: clean" "$TEST_ENV_DIR/aptdnf.log" && \
      grep -q "Mock dnf called with: clean all" "$TEST_ENV_DIR/aptdnf.log" && \
      grep -q "Mock zypper called with: clean -a" "$TEST_ENV_DIR/aptdnf.log" && \
@@ -2097,7 +2147,7 @@ else
   cat << EOF > "$TEST_ENV_DIR/degrade_config.conf"
 medium|DNF Clean|$OUTSIDE_DIR|Mock DNF cache|0||action:dnf_clean
 EOF
-  if run_test_case "Cross-Distro Degradation" 0 "degrade.log" --config "$TEST_ENV_DIR/degrade_config.conf" --clean --force --allow-outside-home --risk medium; then
+  if run_test_case "Cross-Distro Degradation" 0 "degrade.log" --config "$TEST_ENV_DIR/degrade_config.conf" --clean --force --risk medium; then
     if grep -qi "not available on this platform" "$TEST_ENV_DIR/degrade.log" && \
        ! grep -q "command not found" "$TEST_ENV_DIR/degrade.log" && \
        ! grep -q "Mock dnf called" "$TEST_ENV_DIR/degrade.log"; then
@@ -2122,7 +2172,7 @@ else
   cat << EOF > "$TEST_ENV_DIR/zypper_degrade.conf"
 medium|Zypper Clean|$OUTSIDE_DIR|Mock Zypper cache|0||action:zypper_clean
 EOF
-  if run_test_case "Zypper Degradation" 0 "zypper_degrade.log" --config "$TEST_ENV_DIR/zypper_degrade.conf" --clean --force --allow-outside-home --risk medium; then
+  if run_test_case "Zypper Degradation" 0 "zypper_degrade.log" --config "$TEST_ENV_DIR/zypper_degrade.conf" --clean --force --risk medium; then
     if grep -qi "not available on this platform" "$TEST_ENV_DIR/zypper_degrade.log" && \
        ! grep -q "command not found" "$TEST_ENV_DIR/zypper_degrade.log" && \
        ! grep -q "Mock zypper called" "$TEST_ENV_DIR/zypper_degrade.log"; then
@@ -2147,7 +2197,7 @@ else
   cat << EOF > "$TEST_ENV_DIR/apk_degrade.conf"
 medium|APK Clean|$OUTSIDE_DIR|Mock APK cache|0||action:apk_clean
 EOF
-  if run_test_case "Apk Degradation" 0 "apk_degrade.log" --config "$TEST_ENV_DIR/apk_degrade.conf" --clean --force --allow-outside-home --risk medium; then
+  if run_test_case "Apk Degradation" 0 "apk_degrade.log" --config "$TEST_ENV_DIR/apk_degrade.conf" --clean --force --risk medium; then
     if grep -qi "not available on this platform" "$TEST_ENV_DIR/apk_degrade.log" && \
        ! grep -q "command not found" "$TEST_ENV_DIR/apk_degrade.log" && \
        ! grep -q "Mock apk called" "$TEST_ENV_DIR/apk_degrade.log"; then
@@ -2167,7 +2217,7 @@ setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/pacman_clean_config.conf"
 medium|Pacman Purge|$OUTSIDE_DIR|Mock pacman purge|0||action:pacman_clean
 EOF
-if run_test_case "Pacman Clean Action" 0 "pacman_clean.log" --config "$TEST_ENV_DIR/pacman_clean_config.conf" --clean --force --allow-outside-home --risk medium; then
+if run_test_case "Pacman Clean Action" 0 "pacman_clean.log" --config "$TEST_ENV_DIR/pacman_clean_config.conf" --clean --force --risk medium; then
   if grep -q "Mock pacman called with: -Sc --noconfirm" "$TEST_ENV_DIR/pacman_clean.log"; then
     echo -e "${GREEN}PASS: action:pacman_clean invoked 'pacman -Sc --noconfirm'.${NC}"
   else
@@ -2191,7 +2241,7 @@ printf 'full|0_Action_Prior|%s|false|%s|%s\n' \
 cat << EOF > "$TEST_ENV_DIR/trash_action_config.conf"
 medium|Paccache Trash|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
 EOF
-if run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV_DIR/trash_action_config.conf" --trash --force --allow-outside-home --risk medium; then
+if run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV_DIR/trash_action_config.conf" --trash --force --risk medium; then
   trash_action_session_count=$(find "$trash_action_qbase" -mindepth 1 -maxdepth 1 -type d | wc -l)
   if grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/trash_action.log" \
      && grep -q "Mock paccache called with: -rk1" "$TEST_ENV_DIR/trash_action.log" \
@@ -2228,7 +2278,7 @@ medium|Paccache Mixed|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_
 safe|Mixed Quarantine|$mixed_trash_target|Mock path quarantine|0||
 EOF
 if run_test_case "Mixed Trash and Action Summary" 0 "mixed_trash_action.log" \
-     --config "$TEST_ENV_DIR/mixed_trash_action.conf" --trash --force --allow-outside-home --risk medium; then
+     --config "$TEST_ENV_DIR/mixed_trash_action.conf" --trash --force --risk medium; then
   mixed_quarantined=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name payload -print -quit)
   if [[ ! -e "$mixed_trash_target" && -n "$mixed_quarantined" ]] \
      && grep -q "Total space quarantined:" "$TEST_ENV_DIR/mixed_trash_action.log" \
@@ -4625,7 +4675,7 @@ if [[ "$aur_skip_rc" -eq 0 || "$aur_pinned_rc" -ne 0 || "$aur_noprep_rc" -ne 0 ]
 fi
 echo -e "${GREEN}PASS: check-aur-ready rejects a SKIP checksum and accepts a pinned one.${NC}"
 
-# Debug output: --debug and LINUX_CLEANER_DEBUG expose [FOUND], [REJECTED] and [CLEAN] lines; hidden by default and --quiet.
+# Debug output: --debug and LINUX_CLEANER_DEBUG expose [FOUND] and [CLEAN] lines; hidden by default and --quiet.
 echo -e "\n${BOLD}Test Case: Debug Dry Run Output${NC}"
 setup_mock_env
 mkdir -p "$MOCK_HOME/debug_clean_target"
@@ -4665,8 +4715,8 @@ fi
 if ! grep -q 'No files older than' "$TEST_ENV_DIR/debug_flag.log" \
    || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_flag.log" \
    || ! grep -q 'FOUND.*Debug Found Target' "$TEST_ENV_DIR/debug_flag.log" \
-   || ! grep -q 'REJECTED.*Debug Outside Target' "$TEST_ENV_DIR/debug_flag.log"; then
-  echo -e "${RED}FAIL: --debug did not print clean, missing, FOUND and REJECTED status lines.${NC}"
+   || ! grep -q 'FOUND.*Debug Outside Target.*(outside HOME)' "$TEST_ENV_DIR/debug_flag.log"; then
+  echo -e "${RED}FAIL: --debug did not print clean, missing, and FOUND status lines.${NC}"
   cat "$TEST_ENV_DIR/debug_flag.log"
   exit 1
 fi
@@ -4674,8 +4724,8 @@ fi
 if ! grep -q 'No files older than' "$TEST_ENV_DIR/debug_env.log" \
    || ! grep -q 'does not exist' "$TEST_ENV_DIR/debug_env.log" \
    || ! grep -q 'FOUND.*Debug Found Target' "$TEST_ENV_DIR/debug_env.log" \
-   || ! grep -q 'REJECTED.*Debug Outside Target' "$TEST_ENV_DIR/debug_env.log"; then
-  echo -e "${RED}FAIL: LINUX_CLEANER_DEBUG=1 did not print clean, missing, FOUND and REJECTED status lines.${NC}"
+   || ! grep -q 'FOUND.*Debug Outside Target.*(outside HOME)' "$TEST_ENV_DIR/debug_env.log"; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_DEBUG=1 did not print clean, missing, and FOUND status lines.${NC}"
   cat "$TEST_ENV_DIR/debug_env.log"
   exit 1
 fi
@@ -4686,7 +4736,7 @@ if grep -qE '(CLEAN|FOUND|REJECTED)\]' "$TEST_ENV_DIR/debug_quiet.log"; then
   exit 1
 fi
 
-echo -e "${GREEN}PASS: --debug and LINUX_CLEANER_DEBUG show FOUND, REJECTED and CLEAN lines; default and --quiet suppress them.${NC}"
+echo -e "${GREEN}PASS: --debug and LINUX_CLEANER_DEBUG show FOUND and CLEAN lines; default and --quiet suppress them.${NC}"
 
 # Plan report (after the totals line, without --debug) and result report (after cleanup).
 setup_mock_env

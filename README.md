@@ -95,7 +95,7 @@ medium|App Sessions|$HOME/.local/share/example-app/sessions|Old session logs, ke
 ```
 
 > [!WARNING]
-> One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. Combined with `--allow-outside-home` a wildcard reaches beyond `$HOME`, where the HOME boundary no longer limits the blast radius; prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.
+> One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. A wildcard can reach beyond `$HOME`; protected system directories and symlink targets are still refused. Prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.
 
 `filter:cxx_build` also checks literal paths without wildcards. Surrounding whitespace in the field is ignored, just as for other config fields; it never disables the filter.
 
@@ -174,11 +174,11 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   ```
   > [!WARNING]
   > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
-- **`--allow-outside-home`**: Explicitly allow cleaning targets outside the user's `$HOME` directory.
+- **`--allow-outside-home`**: Deprecated no-op. Targets outside `$HOME` are always allowed. Passing the flag prints one warning on stderr.
 - **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
-- **`--debug`**: Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by `--quiet`).
+- **`--debug`**: Show per-target FOUND and CLEAN lines (suppressed by default; overridden by `--quiet`).
 
-A plan report follows the savings total: run mode, risk ceiling, config path, counts per status, reclaimable bytes by risk, the largest targets, and skipped or rejected targets with the reason. `--quiet` suppresses that report. After cleanup, a result report lists cleaned, skipped, and failed counts, bytes quarantined versus permanently reclaimed, the quarantine session path when one was created, and elapsed time. `--json` includes neither report. A non-dry-run cleanup that reaches the result report also writes both reports, without color codes, to `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt`. The saved copy includes the plan even when `--quiet` hid it on screen. Dry-run, `--json`, and the read-only modes write nothing. `--report` prints the file.
+A plan report follows the savings total: run mode, risk ceiling, config path, counts per status, reclaimable bytes by risk, the largest targets, and skipped targets with the reason. `--quiet` suppresses that report. After cleanup, a result report lists cleaned, skipped, and failed counts, bytes quarantined versus permanently reclaimed, the quarantine session path when one was created, and elapsed time. `--json` includes neither report. A non-dry-run cleanup that reaches the result report also writes both reports, without color codes, to `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt`. The saved copy includes the plan even when `--quiet` hid it on screen. Dry-run, `--json`, and the read-only modes write nothing. `--report` prints the file.
 
 Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
 (forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
@@ -195,7 +195,7 @@ Returns **0** on success and **non-zero** on a configuration error or a failed o
 
 A **failed operation** is one that was attempted and did not succeed: a delete, a quarantine move, a predefined action, or a session purge. The tool reports every failure on stderr, keeps going with the remaining targets, and then exits `1`.
 
-A **skip is not a failure**, and still exits `0`: a danger target you declined, a target blocked by a running process, a path rejected as unsafe or outside `$HOME`, or a predefined action whose binary is not installed on this platform.
+A **skip is not a failure**, and still exits `0`: a danger target you declined, a target blocked by a running process, a path classified unsafe, a target that needs root privileges that are not available, or a predefined action whose binary is not installed on this platform.
 
 ---
 
@@ -275,7 +275,7 @@ The same `cleaner.conf` may list pacman, apt, dnf, zypper, and apk package-cache
 Actions whose package manager is **not installed** are **skipped** with a clear message
 (hermetic test: `Cross-Distro Safe Degradation`) rather than failing the run.
 
-Outside-HOME paths (e.g. `/var/cache/pacman/pkg`) require `--allow-outside-home`.
+Outside-HOME paths (e.g. `/var/cache/pacman/pkg`) are allowed. Package-cache rows stay medium risk and need root; if privileges are not available the target is skipped and the rest of the run continues.
 
 > Irreversible `action:pacman_clean` should stay **commented** or at **danger** tier with
 > `--yes-danger` only — it purges all cached packages not currently installed.
@@ -290,7 +290,7 @@ Security threat model: [docs/threat-model.md](docs/threat-model.md).
 ## Safety Features
 
 1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
-2. **HOME Boundary**: Targets outside the user's `$HOME` directory are blocked unless `--allow-outside-home` is active.
+2. **Outside HOME**: Targets outside the user's `$HOME` directory are allowed. `$HOME` itself and protected system directories stay `UNSAFE`. A symlink target is refused. A target that needs root is skipped, with a warning, when those privileges are not available (an unattended run never prompts).
 3. **Symlink Guard**: If a target path is a symlink, the script refuses to delete it to prevent deletion bugs.
 4. **No Eval, No Shell Globbing**: Path expansion resolves only the explicit placeholders (`$HOME`, `~`, and `$USER`), and never invokes `eval` or lets the shell expand a pattern. Wildcards are resolved by `find` at a fixed depth below a literal parent directory, and every match re-enters this same safety pipeline individually.
 5. **Physical Canonicalization**: Resolves target paths physically by resolving the closest existing parent directory. This prevents directory traversal or symlink-based boundary escapes.
@@ -326,7 +326,7 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_CONFIG` | When set to a non-empty path, uses that file as the configuration (same as `--config`). Explicit `-c/--config` overrides. |
 | `LINUX_CLEANER_LOG` | Enable operation logging to the given path (same rules as `--log`). |
 | `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
-| `LINUX_CLEANER_DEBUG` | When set to `1`, `true`, or `yes`, enables `--debug` (show per-target FOUND, REJECTED and CLEAN lines). |
+| `LINUX_CLEANER_DEBUG` | When set to `1`, `true`, or `yes`, enables `--debug` (show per-target FOUND and CLEAN lines). |
 | `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
 | `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
 | `LINUX_CLEANER_EXCLUDE_TARGET` | When set to a non-empty pattern, enables `--exclude-target` (substring match on config target `NAME`). |
@@ -335,11 +335,11 @@ LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
 | `LINUX_CLEANER_EXCLUDE` | When set to a non-empty pattern list, enables `--exclude` (comma-separated globs). |
 | `LINUX_CLEANER_FORCE` | When set to `1`, `true`, or `yes`, enables `--force` (non-interactive clean). |
 | `LINUX_CLEANER_YES_DANGER` | When set to `1`, `true`, or `yes`, enables `--yes-danger` (bypass danger confirmation). |
-| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | When set to `1`, `true`, or `yes`, enables `--allow-outside-home` (permit targets outside `$HOME`). |
+| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | Deprecated no-op. When set to `1`, `true`, or `yes`, prints one warning; targets outside `$HOME` are always allowed. |
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are overridden by their CLI flag. On/off variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`, `ALLOW_OUTSIDE_HOME`) can only be switched on from the CLI: no flag switches them off, so set one to `0` or unset it to disable it for a run (an explicit `--dry-run` still previews when `LINUX_CLEANER_FORCE` is set).
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are overridden by their CLI flag. On/off variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) can only be switched on from the CLI: no flag switches them off, so set one to `0` or unset it to disable it for a run (an explicit `--dry-run` still previews when `LINUX_CLEANER_FORCE` is set). `ALLOW_OUTSIDE_HOME` is a deprecated no-op.
 
 ---
 

@@ -15,6 +15,6 @@ The hermetic suite stubs `sudo`, `pgrep`, `paccache`, `pacman`, `apt-get`, `dnf`
 
 | Step | Command | Warning |
 |------|---------|---------|
-| pacman_clean dry-run | config with `action:pacman_clean`, `--dry-run --allow-outside-home` | irreversible when not dry-run |
+| pacman_clean dry-run | config with `action:pacman_clean`, `--dry-run` | irreversible when not dry-run; outside HOME is allowed; a clean needs root and skips that target if privileges are unavailable |
 | apt_clean | `action:apt_clean` on Debian family | requires sudo |
 | dnf_clean | `action:dnf_clean` on Fedora family | requires sudo |

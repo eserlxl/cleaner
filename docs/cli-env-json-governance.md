@@ -14,7 +14,8 @@
 - Mirrors use `LINUX_CLEANER_*` prefix (see `docs/env-automation-contract.md`).
 - Truthy values: `1`, `true`, `yes` (documented per variable).
 - **CLI overrides value mirrors** (config, log, risk, exclude, target filters) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
-- High-risk mirrors (`LINUX_CLEANER_ALLOW_OUTSIDE_HOME`, `LINUX_CLEANER_YES_DANGER`) stay off in default examples.
+- `LINUX_CLEANER_YES_DANGER` stays off in default examples. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated no-ops (one warning per run); targets outside `$HOME` are always allowed.
+- JSON target `status` no longer emits `rejected`. Older clients that accept that value keep working; current runs use the other statuses (`found`, `skipped`, and the rest).
 
 ## 3. JSON additive vs breaking changes
 

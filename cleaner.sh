@@ -60,10 +60,10 @@ Options:
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
   --exclude-target PATTERN   With cleanup: skip config targets whose NAME contains PATTERN (substring match).
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
-  --allow-outside-home       Explicitly allow cleaning targets outside user's HOME directory.
+  --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
-  --debug                    Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by --quiet).
+  --debug                    Show per-target FOUND and CLEAN lines (suppressed by default; overridden by --quiet).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, or --list-sessions inventory).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
@@ -81,7 +81,6 @@ DEBUG=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
-ALLOW_OUTSIDE_HOME=false
 EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
 RESTORE_ONLY=""
@@ -99,7 +98,8 @@ RESULT_REPORT_TEXT=""
 # a predefined action, a purge). The tool exits non-zero when it is set, per the
 # contract in cleaner.1 ("non-zero on ... a failed operation") -- an unattended run
 # must be able to detect a failure it only printed to stderr. Deliberate skips (a
-# declined danger target, a blocked process, an unsafe path, an action whose binary
+# declined danger target, a blocked process, an unsafe path, a target whose root
+# privileges are not available, an action whose binary
 # is absent) are not failures and leave this false.
 OPERATION_FAILED=false
 
@@ -147,8 +147,13 @@ esac
 case "${LINUX_CLEANER_YES_DANGER:-}" in
   1|true|TRUE|yes|YES) YES_DANGER=true ;;
 esac
+# Deprecated no-op. Warn at most once per run (the CLI flag uses the same guard).
+ALLOW_OUTSIDE_HOME_DEPRECATION_WARNED=false
 case "${LINUX_CLEANER_ALLOW_OUTSIDE_HOME:-}" in
-  1|true|TRUE|yes|YES) ALLOW_OUTSIDE_HOME=true ;;
+  1|true|TRUE|yes|YES)
+    ALLOW_OUTSIDE_HOME_DEPRECATION_WARNED=true
+    echo "Warning: LINUX_CLEANER_ALLOW_OUTSIDE_HOME is deprecated and has no effect; targets outside HOME are always allowed." >&2
+    ;;
 esac
 
 # Parse command line options
@@ -261,7 +266,10 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --allow-outside-home)
-      ALLOW_OUTSIDE_HOME=true
+      if [[ "$ALLOW_OUTSIDE_HOME_DEPRECATION_WARNED" != true ]]; then
+        ALLOW_OUTSIDE_HOME_DEPRECATION_WARNED=true
+        echo "Warning: --allow-outside-home is deprecated and has no effect; targets outside HOME are always allowed." >&2
+      fi
       shift
       ;;
     --log)
@@ -1457,13 +1465,36 @@ restore_quarantine() {
 
 
 
-# Ensure sudo is authenticated; returns non-zero when authentication fails, so a
-# caller that must reconcile state first (restore) can do so before giving up.
+# Authenticate for sudo. Returns non-zero when privileges are not available so a
+# cleanup target can be skipped. No stdin TTY means never prompt (the daily timer).
+# A failed or cancelled prompt is remembered for the rest of the run.
+SUDO_AUTH_FAILED=false
 ensure_sudo() {
-  if ! sudo -n true 2>/dev/null; then
-    echo -e "${YELLOW}Target(s) require root privileges. Please authenticate for sudo:${NC}"
-    sudo -v || return 1
+  if [[ "$SUDO_AUTH_FAILED" == true ]]; then
+    return 1
   fi
+  if sudo -n true 2>/dev/null; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    SUDO_AUTH_FAILED=true
+    return 1
+  fi
+  echo -e "${YELLOW}Target(s) require root privileges. Please authenticate for sudo:${NC}"
+  if ! sudo -v; then
+    SUDO_AUTH_FAILED=true
+    return 1
+  fi
+}
+
+# One stderr warning (--quiet does not hide it) and one opt-in log line.
+warn_root_skip() {
+  local name="$1" path="$2" risk="$3" mode=delete
+  echo "Warning: skipping '$name' ($path): requires root privileges that are not available." >&2
+  if [[ "$TRASH_MODE" == true ]]; then
+    mode=quarantine
+  fi
+  log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=${mode} risk=${risk} target='${name}' path='${path}' outcome=skipped reason=requires-root"
 }
 
 # Check if the path is safe to delete
@@ -1656,11 +1687,11 @@ format_bytes() {
 # --json exits before this runs.
 print_plan_report() {
   local i status bytes mode=dry-run shown=0
-  local found=0 clean_missing=0 skipped=0 blocked=0 rejected=0 unsafe_symlink=0 root_n=0
+  local found=0 clean_missing=0 skipped=0 blocked=0 unsafe_symlink=0 root_n=0
   local safe_b=0 med_b=0 dang_b=0
   local reason name age_note
   local -a rank=()
-  local -A skip_groups=() block_groups=() rej_counts=()
+  local -A skip_groups=() block_groups=()
   [[ "$DRY_RUN" != true ]] && mode=clean
   printf '%s\n' "Plan: mode=${mode} risk=${MAX_RISK} config=${CONFIG_FILE}"
   for i in "${!parsed_names[@]}"; do
@@ -1680,10 +1711,6 @@ print_plan_report() {
         reason="${parsed_reasons[$i]:-unspecified}"
         block_groups["$reason"]="${block_groups[$reason]:+${block_groups[$reason]}, }$name"
         ;;
-      rejected)
-        rejected=$((rejected + 1))
-        rej_counts["$name"]=$(( ${rej_counts[$name]:-0} + 1 ))
-        ;;
       unsafe|symlink) unsafe_symlink=$((unsafe_symlink + 1)) ;;
       root) root_n=$((root_n + 1)) ;;
     esac
@@ -1695,7 +1722,7 @@ print_plan_report() {
       esac
     fi
   done
-  printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} rejected=${rejected} unsafe/symlink=${unsafe_symlink} root=${root_n}"
+  printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} unsafe/symlink=${unsafe_symlink} root=${root_n}"
   printf '%s\n' "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
   if [[ "$found" -gt 0 ]]; then
     mapfile -t rank < <(
@@ -1725,12 +1752,6 @@ print_plan_report() {
   for reason in "${!block_groups[@]}"; do
     printf '%s\n' "Blocked (${reason}): ${block_groups[$reason]}"
   done
-  for name in "${!rej_counts[@]}"; do
-    printf '%s\n' "Rejected: ${name} (${rej_counts[$name]} path(s))"
-  done
-  if [[ "$rejected" -gt 0 ]]; then
-    printf '%s\n' "Hint: pass --allow-outside-home to include targets outside HOME."
-  fi
   printf '\n'
 }
 
@@ -2105,12 +2126,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     status_echo "  [${RED}SYMLINK${NC}] $name: Refusing to delete symlink target '$path'. Skipping."
     safety_status=1 # Treat as completely unsafe to skip deletion later
   else
-    # Enforce outside HOME restriction unless flag is set
-    if [[ $safety_status -eq 2 && "$ALLOW_OUTSIDE_HOME" != true ]]; then
-      target_status=rejected
-      debug_echo "  [${RED}REJECTED${NC}] $name: Path '$path' is outside HOME and --allow-outside-home is not set. Skipping."
-      safety_status=1 # Skipped
-    elif [[ "$custom_clean_cmd" == action:* ]] \
+    # safety_status 2 (outside HOME) is cleaned like an in-HOME target.
+    if [[ "$custom_clean_cmd" == action:* ]] \
          && required_bin=$(action_required_binary "$custom_clean_cmd") \
          && ! command -v "$required_bin" >/dev/null 2>&1; then
       target_status=skipped
@@ -2124,27 +2141,38 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         target_reason="process '$running_proc' is active"
         status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
       else
-        # Determine if sudo is needed
+        # Determine if sudo is needed. A dry-run only probes with sudo -n and
+        # never prompts. A real run skips the target when privileges are unavailable.
         requires_sudo=false
+        root_unavailable=false
         if [[ "$custom_clean_cmd" == action:* ]] || \
            [[ -e "$path" && ! -r "$path" ]] || \
            { [[ ! -e "$path" ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; }; then
           requires_sudo=true
-          use_sudo=true
           if [[ "$DRY_RUN" = false ]]; then
-            ensure_sudo || exit 1
-          else
-            if ! sudo -n true 2>/dev/null; then
+            if ensure_sudo; then
+              use_sudo=true
+            else
+              root_unavailable=true
               use_sudo=false
+              target_status=skipped
+              target_reason="requires root"
+              warn_root_skip "$name" "$path" "$risk"
             fi
+          elif sudo -n true 2>/dev/null; then
+            use_sudo=true
+          else
+            use_sudo=false
           fi
         fi
 
         git_tracked_count=0
-        if [[ -e "$path" && "$requires_sudo" != true ]]; then
+        if [[ "$root_unavailable" != true && -e "$path" && "$requires_sudo" != true ]]; then
           git_tracked_count=$(count_git_tracked "$path")
         fi
-        if [[ "$git_tracked_count" -gt 0 ]]; then
+        if [[ "$root_unavailable" == true ]]; then
+          :
+        elif [[ "$git_tracked_count" -gt 0 ]]; then
           target_status=skipped
           target_reason="$git_tracked_count git-tracked file(s)"
           status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: contains $git_tracked_count git-tracked file(s) under '$path'."
@@ -2336,6 +2364,13 @@ for i in "${!parsed_names[@]}"; do
     continue
   fi
 
+  use_sudo="${parsed_sudos[$i]:-false}"
+  if [[ "$use_sudo" == true ]] && ! ensure_sudo; then
+    warn_root_skip "$name" "$path" "$risk_level"
+    result_skipped=$((result_skipped + 1))
+    continue
+  fi
+
   if [[ "$safety" -eq 2 && "$clean_outside_home" != true ]]; then
     status_echo "  Skipping $name..."
     result_skipped=$((result_skipped + 1))
@@ -2374,7 +2409,6 @@ for i in "${!parsed_names[@]}"; do
   # Handle Cleanup
   custom_clean_cmd="${parsed_cmds[$i]:-}"
   set_target_exclusions "$custom_clean_cmd"
-  use_sudo="${parsed_sudos[$i]:-false}"
   cleanup_bytes_before=$total_deleted_bytes
 
   if [[ "$custom_clean_cmd" == action:* ]]; then

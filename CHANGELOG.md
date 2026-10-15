@@ -26,7 +26,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   state path is refused without failing the cleanup. Exits 1 when no report
   has been saved.
 - A plan report after the savings total (status counts, reclaimable bytes by
-  risk, the largest targets, skipped and rejected targets) and a result report
+  risk, the largest targets, and skipped targets) and a result report
   after cleanup (cleaned, skipped, and failed counts, quarantined versus
   permanently reclaimed bytes, the quarantine session, and elapsed time).
   `--quiet` hides the plan report; `--json` includes neither.
@@ -69,13 +69,18 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Human `--list-targets` also prints each target's `DESCRIPTION` column.
 - RUNBOOK documents `--check-config`, `LINUX_CLEANER_CONFIG`,
   `--exclude-target` / `LINUX_CLEANER_EXCLUDE_TARGET`, and `action:zypper_clean`.
-- `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` — when set to `1`, `true`, or `yes`,
-  enables `--allow-outside-home`. No CLI flag disables it; set it to `0` or unset it.
+- `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` is accepted and ignored (see Deprecated).
 
 ### Changed
+- Targets outside `$HOME` are always allowed. Protected system directories stay
+  `UNSAFE` and symlink targets stay refused. The C++ Build Dirs and C++ CMake
+  Build Dirs rows are risk `safe`, so the safe-tier daily timer cleans them.
+  A target that needs root is skipped with a warning and an operation-log record
+  when privileges are not available, instead of aborting the run. Skips still
+  exit 0.
 - The daily clean unit no longer forces `--trash` (opt in with `LINUX_CLEANER_TRASH=1`).
-- `--debug` (and `LINUX_CLEANER_DEBUG`) now also shows per-target `FOUND` and
-  `REJECTED` lines; a default dry-run hides them so the totals stay readable.
+- `--debug` (and `LINUX_CLEANER_DEBUG`) shows per-target `FOUND` and `CLEAN`
+  lines; a default dry-run hides them so the totals stay readable.
   `--quiet` still suppresses them.
 - Codex Sessions, Codex Generated Images, Cursor Chats, Claude Desktop Logs and
   Hermes Logs now prune files older than 7 days (was 30) and no longer skip while
@@ -86,14 +91,16 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `.gemini/model_debug_logs` and `.codex/logs`, and `.remember/logs` after one year.
   The rest of those tool directories (settings, rules, skills, plans, memory) is
   left alone.
-- With `--allow-outside-home`, an outside-HOME target is listed as a normal `FOUND`
-  line (description and age filter included) tagged `(outside HOME)` instead of a
-  `WARNING` line.
+- An outside-HOME target is listed as a normal `FOUND` line (description and
+  age filter included) tagged `(outside HOME)`.
 - Default-mode cleanup asks once per run whether to clean the outside-HOME targets,
   instead of once per target; answering no skips them and still cleans the rest.
-- `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are now
-  `UNSAFE` targets, even with `--allow-outside-home`; their descendants keep
-  the existing outside-HOME rules.
+- `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are
+  `UNSAFE` targets; their descendants stay subject to the outside-HOME rules.
+
+### Deprecated
+- `--allow-outside-home` and `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` are accepted
+  no-ops. Each prints one warning; a run prints the warning at most once.
 
 ### Removed
 - The Claude Projects row (`$HOME/.claude/projects`). Claude Code prunes its own
