@@ -11,6 +11,7 @@ Pre-release checklist for AUR/distro packagers. Complete every row before publis
 
 - [ ] README install table matches `make install` / `install.sh` behavior (see [packaging-install-parity.md](packaging-install-parity.md))
 - [ ] `make install` with `PREFIX=/usr` ships these user units under `/usr/lib/systemd/user` and does not enable them: `linux-cleaner-clean.service`, `linux-cleaner-clean.timer`, `linux-cleaner-retention.service`, `linux-cleaner-retention.timer`, `linux-cleaner-monitor.service`, `linux-cleaner-monitor.timer`
+- [ ] Removal docs (`make uninstall`, `pacman -R`) tell each user who enabled the timers to first run `systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer` and `systemctl --user daemon-reload` after removal
 - [ ] `PKGBUILD` `depends` (`bash`, `findutils`, `coreutils`) and `optdepends` (`pacman-contrib`) align with README Supported Platforms
 
 ## Version consistency

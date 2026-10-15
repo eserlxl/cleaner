@@ -79,6 +79,8 @@ systemctl --user enable --now linux-cleaner-monitor.timer
 
 User linger may be required for timers without an active session.
 
+Before uninstalling or removing the package (`sudo make uninstall`, `pacman -R`), each user who enabled the timers runs `systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer`, then `systemctl --user daemon-reload` after removal. Removal alone leaves enabled-unit links and loaded timer state.
+
 Journal review:
 
 ```sh

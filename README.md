@@ -32,8 +32,12 @@ sudo make install                   # install under /usr/local (default PREFIX)
 sudo make install PREFIX=/usr        # install under /usr (standard distro layout)
 make install DESTDIR=/tmp/stage      # stage into a packaging root
 sudo ./install.sh install            # POSIX-sh alternative (honors PREFIX and DESTDIR)
+systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer  # before uninstall
 sudo make uninstall                  # remove installed files (system config is preserved)
+systemctl --user daemon-reload       # after uninstall
 ```
+
+The `systemctl --user` commands are per user: each user who enabled the timers runs them. Uninstall only removes files, so enabled-unit links and loaded timer state remain otherwise.
 
 For Arch Linux (`PKGBUILD`), `package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`, placing the command at `/usr/bin/cleaner` and the user units at `/usr/lib/systemd/user/`. See [RELEASING.md](RELEASING.md#ordered-aur-packaging-checklist) and [docs/packager-handoff.md](docs/packager-handoff.md).
 

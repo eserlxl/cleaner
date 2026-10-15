@@ -539,6 +539,11 @@ and deletes permanently unless
 .B LINUX_CLEANER_TRASH=1
 is set in
 .IR ~/.config/linux-cleaner/env .
+Before uninstalling or removing the package, each user who enabled the timers
+should run
+.B systemctl \-\-user disable \-\-now linux\-cleaner\-clean.timer linux\-cleaner\-retention.timer linux\-cleaner\-monitor.timer
+and, after removal,
+.BR "systemctl \-\-user daemon\-reload" .
 .SH EXIT STATUS
 Returns 0 on success and non-zero on a configuration error or a failed operation.
 .SH EXAMPLES
