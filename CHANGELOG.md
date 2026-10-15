@@ -103,8 +103,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   left alone.
 - An outside-HOME target is listed as a normal `FOUND` line (description and
   age filter included) tagged `(outside HOME)`.
-- Default-mode cleanup asks once per run whether to clean the outside-HOME targets,
-  instead of once per target; answering no skips them and still cleans the rest.
+- Default-mode cleanup no longer asks a separate question for outside-HOME
+  targets; the single "clean all the found items?" confirmation covers them.
 - `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, and `/media` themselves are
   `UNSAFE` targets; their descendants are cleaned like any other target.
 

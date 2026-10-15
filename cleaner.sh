@@ -2382,7 +2382,6 @@ fi
 
 # Determine whether to proceed based on options
 proceed_all=false
-clean_outside_home=true
 if [[ "$FORCE" = true ]]; then
   proceed_all=true
 elif [[ "$INTERACTIVE" = false ]]; then
@@ -2391,19 +2390,6 @@ elif [[ "$INTERACTIVE" = false ]]; then
   read -r reply || true
   if [[ "$reply" =~ ^[yY](es)?$ ]]; then
     proceed_all=true
-    outside_home_count=0
-    for i in "${!parsed_names[@]}"; do
-      if [[ "${parsed_exists[$i]}" == true && "${parsed_safety[$i]}" -eq 2 ]]; then
-        outside_home_count=$((outside_home_count + 1))
-      fi
-    done
-    if [[ "$outside_home_count" -gt 0 ]]; then
-      echo -n -e "${YELLOW}$outside_home_count target(s) are outside HOME. Clean them too? [y/N]: ${NC}"
-      clean_outside_home=false
-      if read -r reply && [[ "$reply" =~ ^[yY](es)?$ ]]; then
-        clean_outside_home=true
-      fi
-    fi
   else
     echo -e "${YELLOW}Cleanup aborted.${NC}"
     exit 0
@@ -2451,12 +2437,6 @@ for i in "${!parsed_names[@]}"; do
     continue
   fi
 
-  if [[ "$safety" -eq 2 && "$clean_outside_home" != true ]]; then
-    status_echo "  Skipping $name..."
-    result_skipped=$((result_skipped + 1))
-    continue
-  fi
-  
   # Dangerous Confirmation Guard
   danger_prompted=false
   if [[ "${risk_level,,}" =~ ^danger(ous)?$ && "$YES_DANGER" != true ]]; then

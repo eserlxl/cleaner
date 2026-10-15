@@ -46,7 +46,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-38 | Per-target exclude:NAME[,NAME...] in CUSTOM_ACTION | Row Exclusion Age 7 (permanent, none) / Row Exclusion Dry Run Size (age 7) / Row Exclusion Wildcard Inventory (json) / Row Exclusion Validation (exclude:memory) |
 | U-39 | --debug and LINUX_CLEANER_DEBUG show per-target FOUND and CLEAN lines | Debug Dry Run Output |
 | U-40 | Git-tracked target guard skips targets holding tracked files | Git-Tracked Target Guard JSON / Git-Tracked Target Guard |
-| U-41 | Outside-HOME group confirmation prompt and (outside HOME) FOUND suffix | Outside HOME with --allow-outside-home / Outside HOME Group Confirmation (y) / Outside HOME Group Confirmation (n) |
+| U-41 | Outside-HOME targets need no extra prompt; (outside HOME) FOUND suffix | Outside HOME with --allow-outside-home / Outside HOME Single Confirmation |
 | U-42 | --dry-run --json description/min_age_days | JSON Dry Run |
 | U-43 | Plan report before cleanup and result report after | Plan Report Dry Run / Plan Report Quiet / Result Report Clean / Plan Report JSON |
 | U-44 | Non-dry-run cleanup writes last-report.txt in a 0700 directory; dry-run and --quiet still keep the plan in the file | Last Report Saved / Last Report Dry Run / Last Report Quiet |

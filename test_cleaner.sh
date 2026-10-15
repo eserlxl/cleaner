@@ -526,42 +526,32 @@ else
   exit 1
 fi
 
-# Default cleanup asks once for the outside-HOME group, then honors that answer.
-assert_outside_home_confirmation() {
-  local answer="$1" exit_code=0 prompt_count
-  setup_mock_env
-  mkdir -p "$OUTSIDE_DIR/first" "$OUTSIDE_DIR/second"
-  printf 'outside one\n' > "$OUTSIDE_DIR/first/cache.txt"
-  printf 'outside two\n' > "$OUTSIDE_DIR/second/cache.txt"
-  cat > "$TEST_ENV_DIR/outside_confirmation.conf" <<EOF
+# Default cleanup asks one question; outside-HOME targets get no extra prompt.
+setup_mock_env
+mkdir -p "$OUTSIDE_DIR/first" "$OUTSIDE_DIR/second"
+printf 'outside one\n' > "$OUTSIDE_DIR/first/cache.txt"
+printf 'outside two\n' > "$OUTSIDE_DIR/second/cache.txt"
+cat > "$TEST_ENV_DIR/outside_confirmation.conf" <<EOF
 safe|Outside One|$OUTSIDE_DIR/first|first outside cache|0||
 safe|Outside Two|$OUTSIDE_DIR/second|second outside cache|0||
 safe|Inside|$MOCK_HOME/.cache/yarn|inside cache|0||
 EOF
-  echo -e "\n${BOLD}Test Case: Outside HOME Group Confirmation ($answer)${NC}"
-  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-    "$CLEANER_SH" --config "$TEST_ENV_DIR/outside_confirmation.conf" --clean \
-    < <(printf 'y\n%s\n' "$answer") > "$TEST_ENV_DIR/outside_confirmation.log" 2>&1 || exit_code=$?
-  prompt_count=$(grep -oF '2 target(s) are outside HOME. Clean them too? [y/N]:' \
-    "$TEST_ENV_DIR/outside_confirmation.log" | wc -l) || prompt_count=0
-  if [[ "$exit_code" -ne 0 || "$prompt_count" -ne 1 \
-        || -f "$MOCK_HOME/.cache/yarn/yarn-cache.json" ]] \
-     || grep -q "Warning: Target.*outside HOME" "$TEST_ENV_DIR/outside_confirmation.log" \
-     || { [[ "$answer" == y ]] && \
-          [[ -f "$OUTSIDE_DIR/first/cache.txt" || -f "$OUTSIDE_DIR/second/cache.txt" ]]; } \
-     || { [[ "$answer" == n ]] && \
-          { [[ ! -f "$OUTSIDE_DIR/first/cache.txt" || ! -f "$OUTSIDE_DIR/second/cache.txt" ]] \
-            || ! grep -q '  Skipping Outside One\.\.\.' "$TEST_ENV_DIR/outside_confirmation.log" \
-            || ! grep -q '  Skipping Outside Two\.\.\.' "$TEST_ENV_DIR/outside_confirmation.log"; }; }; then
-    echo -e "${RED}FAIL: Outside HOME group answer $answer was not honored with one prompt (ec=$exit_code).${NC}"
-    cat "$TEST_ENV_DIR/outside_confirmation.log"
-    return 1
-  fi
-  echo -e "${GREEN}PASS: Outside HOME group answer $answer uses one prompt and always cleans the inside target.${NC}"
-}
-
-assert_outside_home_confirmation y || exit 1
-assert_outside_home_confirmation n || exit 1
+echo -e "\n${BOLD}Test Case: Outside HOME Single Confirmation${NC}"
+outside_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/outside_confirmation.conf" --clean \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/outside_confirmation.log" 2>&1 || outside_ec=$?
+prompt_count=$(grep -oF '[y/N]:' "$TEST_ENV_DIR/outside_confirmation.log" | wc -l) || prompt_count=0
+if [[ "$outside_ec" -eq 0 && "$prompt_count" -eq 1 \
+      && ! -f "$OUTSIDE_DIR/first/cache.txt" && ! -f "$OUTSIDE_DIR/second/cache.txt" \
+      && ! -f "$MOCK_HOME/.cache/yarn/yarn-cache.json" ]] \
+   && ! grep -q 'outside HOME. Clean them too' "$TEST_ENV_DIR/outside_confirmation.log"; then
+  echo -e "${GREEN}PASS: one confirmation cleans inside and outside-HOME targets.${NC}"
+else
+  echo -e "${RED}FAIL: expected one prompt and every target cleaned (ec=$outside_ec prompts=$prompt_count).${NC}"
+  cat "$TEST_ENV_DIR/outside_confirmation.log"
+  exit 1
+fi
 
 # 5. Test Case: Age Filter execution (Force Clean)
 setup_mock_env
