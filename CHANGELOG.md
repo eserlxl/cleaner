@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-16
+
 ### Added
 - `protect|PATH` config directive protects any directory tree from cleanup:
   targets whose canonical path equals, lies under, or contains a protected path
@@ -110,8 +112,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Deprecated
 - `--allow-outside-home` is an accepted no-op that prints one deprecation
-  warning, since targets outside `$HOME` are always allowed. The unreleased
-  `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` mirror behaves the same way.
+  warning, since targets outside `$HOME` are always allowed. The
+  `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` mirror added in this release behaves the same way.
 
 ### Removed
 - The Claude Projects row (`$HOME/.claude/projects`). Claude Code prunes its own
@@ -294,7 +296,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.0
 [1.3.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.3.0
 [1.2.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.2.0
 [1.1.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.1.0
