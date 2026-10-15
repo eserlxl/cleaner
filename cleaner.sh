@@ -725,9 +725,12 @@ strip_trailing_slashes() {
   local p="$1"
   if [[ "$p" =~ ^/+$ ]]; then
     echo "/"
-  else
-    echo "${p%/}"
+    return 0
   fi
+  while [[ "$p" == */ ]]; do
+    p="${p%/}"
+  done
+  echo "$p"
 }
 
 # Canonicalize paths physically (resolves nonexistent paths physically by resolving the closest existing parent directory)

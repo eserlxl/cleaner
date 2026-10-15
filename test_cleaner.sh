@@ -5115,5 +5115,31 @@ if ! run_test_case "Idle Builds Clean Force" 0 "idle_builds_clean.log" \
 fi
 echo -e "${GREEN}PASS: filter:cxx_build idle threshold preserves active build trees whole, removes idle build trees whole, and keeps per-file age deletion on other rows.${NC}"
 
+# Symlink target with trailing slashes: strip_trailing_slashes removes all
+# trailing slashes so a symlink target is refused as [SYMLINK] and its referent
+# outside HOME survives --clean --force and --clean --force --trash.
+echo -e "\n${BOLD}Test Case: Symlink Target Trailing Slashes${NC}"
+for link_spelling in 'link' 'link/' 'link//' 'link////'; do
+  setup_mock_env
+  printf 'x\n' > "$OUTSIDE_DIR/referent.txt"
+  ln -s "$OUTSIDE_DIR" "$MOCK_HOME/link"
+  printf "safe|T|\$HOME/%s|d|0||\n" "$link_spelling" > "$TEST_ENV_DIR/symlink_slashes.conf"
+  if ! run_test_case "Symlink Trailing Slashes Dry Run ($link_spelling)" 0 "symlink_slashes_dry.log" \
+         --config "$TEST_ENV_DIR/symlink_slashes.conf" --dry-run --debug \
+     || ! grep -q '\[SYMLINK\] T: Refusing to delete symlink target' "$TEST_ENV_DIR/symlink_slashes_dry.log" \
+     || grep -q '\[FOUND\]' "$TEST_ENV_DIR/symlink_slashes_dry.log" \
+     || ! run_test_case "Symlink Trailing Slashes Clean ($link_spelling)" 0 "symlink_slashes_clean.log" \
+         --config "$TEST_ENV_DIR/symlink_slashes.conf" --clean --force \
+     || [[ ! -L "$MOCK_HOME/link" || ! -f "$OUTSIDE_DIR/referent.txt" ]] \
+     || ! run_test_case "Symlink Trailing Slashes Trash ($link_spelling)" 0 "symlink_slashes_trash.log" \
+         --config "$TEST_ENV_DIR/symlink_slashes.conf" --clean --force --trash \
+     || [[ ! -L "$MOCK_HOME/link" || ! -f "$OUTSIDE_DIR/referent.txt" ]]; then
+    echo -e "${RED}FAIL: symlink target '$link_spelling' bypassed [SYMLINK] guard or deleted referent.${NC}"
+    cat "$TEST_ENV_DIR"/symlink_slashes_*.log 2>/dev/null || true
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: symlink targets with one or more trailing slashes are refused as [SYMLINK] and leave referent and link intact.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

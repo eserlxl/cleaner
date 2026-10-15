@@ -15,6 +15,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Fixed
+- `strip_trailing_slashes` now removes all trailing slashes (preserving `/` for
+  all-slash inputs) so a symlink target configured with multiple trailing
+  slashes (e.g. `$HOME/link//`) is still caught by the `[SYMLINK]` guard instead
+  of resolving and deleting its referent directory.
+
 ## [1.4.0] - 2026-10-16
 
 ### Added
