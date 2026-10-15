@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # Release-notes helper for CHANGELOG.md (Keep a Changelog format).
 #

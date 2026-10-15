@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # Linux Cache and Temp File Cleaner
 # A script to safely clean unnecessary files and folders.

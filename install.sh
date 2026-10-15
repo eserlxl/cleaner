@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # POSIX-sh installer for the Linux Cache and Temp File Cleaner.
 # Mirrors the Makefile install/uninstall; honors PREFIX and DESTDIR.
 set -eu
