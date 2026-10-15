@@ -5199,5 +5199,119 @@ if [[ "$full_umask_ec" -ne 0 || -z "$full_sess" ]] \
 fi
 echo -e "${GREEN}PASS: quarantine base and session directories are mode 0700 under umask 022 for aged and full targets.${NC}"
 
+# Restore refuses symlink conflicts at the original path (full and aged) or any
+# intermediate directory component between an aged record's original path and
+# the destination file's parent, leaving quarantined files intact, logging
+# outcome=conflict, and succeeding after the symlink is removed.
+echo -e "\n${BOLD}Test Case: Restore Symlink Conflicts${NC}"
+# (a) Aged record whose emptied sub directory is replaced by a symlink before restore.
+setup_mock_env
+mkdir -p "$MOCK_HOME/aged_sym_sub/sub/nested" "$MOCK_HOME/other_mock_dir"
+printf 'aged-sub-payload\n' > "$MOCK_HOME/aged_sym_sub/sub/nested/old.txt"
+touch -d '10 days ago' "$MOCK_HOME/aged_sym_sub/sub/nested/old.txt"
+cat > "$TEST_ENV_DIR/aged_sym_sub.conf" <<'EOF'
+safe|Aged Sym Sub|$HOME/aged_sym_sub|aged target with subdir|7||
+EOF
+ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$ops_log"
+if ! run_test_case "Quarantine Aged Sub Symlink" 0 "q_aged_sym_sub.log" \
+       --config "$TEST_ENV_DIR/aged_sym_sub.conf" --clean --force --trash; then
+  exit 1
+fi
+q_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+aged_sub_sess=$(find "$q_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+ln -s "$MOCK_HOME/other_mock_dir" "$MOCK_HOME/aged_sym_sub/sub"
+if ! run_test_case "Restore Aged Subdir Symlink Conflict" 1 "r_aged_sym_sub_conflict.log" \
+       --restore latest --log \
+   || ! grep -q "Conflict detected" "$TEST_ENV_DIR/r_aged_sym_sub_conflict.log" \
+   || [[ -n "$(find "$MOCK_HOME/other_mock_dir" -mindepth 1 -print -quit)" ]] \
+   || [[ ! -f "$aged_sub_sess/0_Aged_Sym_Sub/sub/nested/old.txt" ]] \
+   || [[ ! -d "$aged_sub_sess" ]] \
+   || ! grep -qF "|$MOCK_HOME/aged_sym_sub|" "$aged_sub_sess/quarantine.meta" \
+   || ! grep -q "mode=restore .*path='$MOCK_HOME/aged_sym_sub' outcome=conflict" "$ops_log"; then
+  echo -e "${RED}FAIL: aged restore followed a symlinked subdir or failed to preserve session/log conflict.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_sym_sub_conflict.log" "$ops_log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/aged_sym_sub/sub"
+if ! run_test_case "Restore Aged Subdir Symlink Retry" 0 "r_aged_sym_sub_retry.log" \
+       --restore latest \
+   || [[ ! -f "$MOCK_HOME/aged_sym_sub/sub/nested/old.txt" ]] \
+   || ! grep -qx "aged-sub-payload" "$MOCK_HOME/aged_sym_sub/sub/nested/old.txt" \
+   || [[ -d "$aged_sub_sess" ]]; then
+  echo -e "${RED}FAIL: second restore after removing subdir symlink did not restore file or retire session.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_sym_sub_retry.log" 2>/dev/null || true
+  exit 1
+fi
+
+# (b) Aged record whose original path itself is replaced by a symlink before restore.
+setup_mock_env
+mkdir -p "$MOCK_HOME/aged_sym_orig/sub" "$MOCK_HOME/other_orig_dir"
+printf 'aged-orig-payload\n' > "$MOCK_HOME/aged_sym_orig/sub/old.txt"
+touch -d '10 days ago' "$MOCK_HOME/aged_sym_orig/sub/old.txt"
+cat > "$TEST_ENV_DIR/aged_sym_orig.conf" <<'EOF'
+safe|Aged Sym Orig|$HOME/aged_sym_orig|aged target whose root becomes symlink|7||
+EOF
+ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$ops_log"
+if ! run_test_case "Quarantine Aged Orig Symlink" 0 "q_aged_sym_orig.log" \
+       --config "$TEST_ENV_DIR/aged_sym_orig.conf" --clean --force --trash; then
+  exit 1
+fi
+aged_orig_sess=$(find "$q_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+rmdir "$MOCK_HOME/aged_sym_orig"
+ln -s "$MOCK_HOME/other_orig_dir" "$MOCK_HOME/aged_sym_orig"
+if ! run_test_case "Restore Aged Original Path Symlink Conflict" 1 "r_aged_sym_orig_conflict.log" \
+       --restore latest --log \
+   || ! grep -q "Conflict detected" "$TEST_ENV_DIR/r_aged_sym_orig_conflict.log" \
+   || [[ -n "$(find "$MOCK_HOME/other_orig_dir" -mindepth 1 -print -quit)" ]] \
+   || [[ ! -f "$aged_orig_sess/0_Aged_Sym_Orig/sub/old.txt" ]] \
+   || [[ ! -d "$aged_orig_sess" ]] \
+   || ! grep -qF "|$MOCK_HOME/aged_sym_orig|" "$aged_orig_sess/quarantine.meta" \
+   || ! grep -q "mode=restore .*path='$MOCK_HOME/aged_sym_orig' outcome=conflict" "$ops_log"; then
+  echo -e "${RED}FAIL: aged restore followed a symlinked original path or failed to preserve session/log conflict.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_sym_orig_conflict.log" "$ops_log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/aged_sym_orig"
+if ! run_test_case "Restore Aged Original Path Symlink Retry" 0 "r_aged_sym_orig_retry.log" \
+       --restore latest \
+   || [[ ! -f "$MOCK_HOME/aged_sym_orig/sub/old.txt" ]] \
+   || ! grep -qx "aged-orig-payload" "$MOCK_HOME/aged_sym_orig/sub/old.txt" \
+   || [[ -d "$aged_orig_sess" ]]; then
+  echo -e "${RED}FAIL: second restore after removing original-path symlink did not restore file or retire session.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_sym_orig_retry.log" 2>/dev/null || true
+  exit 1
+fi
+
+# (c) Full record whose original path became a symlink before restore.
+setup_mock_env
+mkdir -p "$MOCK_HOME/full_sym_orig" "$MOCK_HOME/other_full_dir"
+printf 'full-orig-payload\n' > "$MOCK_HOME/full_sym_orig/item.txt"
+cat > "$TEST_ENV_DIR/full_sym_orig.conf" <<'EOF'
+safe|Full Sym Orig|$HOME/full_sym_orig|full target whose root becomes symlink|0||
+EOF
+ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$ops_log"
+if ! run_test_case "Quarantine Full Orig Symlink" 0 "q_full_sym_orig.log" \
+       --config "$TEST_ENV_DIR/full_sym_orig.conf" --clean --force --trash; then
+  exit 1
+fi
+full_orig_sess=$(find "$q_base" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+ln -s "$MOCK_HOME/other_full_dir" "$MOCK_HOME/full_sym_orig"
+if ! run_test_case "Restore Full Original Path Symlink Conflict" 1 "r_full_sym_orig_conflict.log" \
+       --restore latest --log \
+   || ! grep -q "Conflict detected" "$TEST_ENV_DIR/r_full_sym_orig_conflict.log" \
+   || [[ -n "$(find "$MOCK_HOME/other_full_dir" -mindepth 1 -print -quit)" ]] \
+   || [[ ! -f "$full_orig_sess/0_Full_Sym_Orig/item.txt" ]] \
+   || [[ ! -d "$full_orig_sess" ]] \
+   || ! grep -qF "|$MOCK_HOME/full_sym_orig|" "$full_orig_sess/quarantine.meta" \
+   || ! grep -q "mode=restore .*path='$MOCK_HOME/full_sym_orig' outcome=conflict" "$ops_log"; then
+  echo -e "${RED}FAIL: full restore followed a symlinked original path or failed to preserve session/log conflict.${NC}"
+  cat "$TEST_ENV_DIR/r_full_sym_orig_conflict.log" "$ops_log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: restore rejects symlink conflicts on full and aged original paths and aged intermediate directories.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

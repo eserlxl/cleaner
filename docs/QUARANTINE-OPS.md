@@ -57,7 +57,7 @@ Selective restore: `--restore latest --only PATTERN` (`Restore Only One Target`,
 
 ### Conflict and partial failure
 
-If destination exists, restore skips (`Restore with Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry.
+If destination exists, restore skips (`Restore with Conflict`). If the original path (full or aged) or any existing intermediate directory component up to the destination file's parent (aged) is a symlink, restore treats it as a conflict without following the link (`Restore Aged Subdir Symlink Conflict`, `Restore Aged Original Path Symlink Conflict`, `Restore Full Original Path Symlink Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry.
 
 If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; the inventory lists recorded targets only.
 

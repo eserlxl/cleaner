@@ -1354,7 +1354,7 @@ restore_quarantine() {
     
     echo -e "Restoring ${YELLOW}$original_path${NC}..."
     
-    local success=true
+    local success=true had_conflict=false
     # Authenticate before the first privileged probe, so sudo never prompts
     # without the tool's explanation. A failed authentication fails this record
     # only: exiting here would skip the metadata reconciliation below.
@@ -1381,18 +1381,46 @@ restore_quarantine() {
         success=false
       fi
     elif [[ "$type" == "aged" ]]; then
+      if with_sudo "$use_sudo" test -L "$original_path"; then
+        echo -e "${RED}Error: Restore destination '$original_path' is a symlink. Conflict detected, skipping.${NC}" >&2
+        overall_success=false
+        log_restore_outcome "$restore_dir" "$original_path" conflict
+        continue
+      fi
       if ! with_sudo "$use_sudo" mkdir -p "$original_path"; then
         success=false
       else
         while IFS= read -r -d '' file; do
           local file_rel="${file#"$src_path"/}"
           local dest_file="$original_path/$file_rel"
+          local dest_parent check_dir="$original_path" rel_dir part symlink_conflict=false
+          dest_parent=$(dirname "$dest_file")
+          if [[ "$dest_parent" != "$original_path" ]]; then
+            rel_dir="${file_rel%/*}"
+            while [[ -n "$rel_dir" ]]; do
+              part="${rel_dir%%/*}"
+              check_dir="$check_dir/$part"
+              if with_sudo "$use_sudo" test -L "$check_dir"; then
+                echo -e "${RED}Error: Restore destination path '$check_dir' is a symlink. Conflict detected, skipping '$dest_file'.${NC}" >&2
+                symlink_conflict=true
+                break
+              fi
+              [[ "$rel_dir" == "$part" ]] && break
+              rel_dir="${rel_dir#*/}"
+            done
+          fi
+          if [[ "$symlink_conflict" = true ]]; then
+            success=false
+            had_conflict=true
+            continue
+          fi
           if path_present "$use_sudo" "$dest_file"; then
             echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
             success=false
+            had_conflict=true
             continue
           fi
-          if ! with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"; then
+          if ! with_sudo "$use_sudo" mkdir -p "$dest_parent"; then
             success=false
             continue
           fi
@@ -1414,7 +1442,11 @@ restore_quarantine() {
     if [[ "$success" = false ]]; then
       echo -e "${RED}Error: Failed to restore '$original_path'.${NC}" >&2
       overall_success=false
-      log_restore_outcome "$restore_dir" "$original_path" failed
+      if [[ "$had_conflict" = true ]]; then
+        log_restore_outcome "$restore_dir" "$original_path" conflict
+      else
+        log_restore_outcome "$restore_dir" "$original_path" failed
+      fi
     else
       restored_rels+=("$rel_path")
       log_restore_outcome "$restore_dir" "$original_path" success

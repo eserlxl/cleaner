@@ -16,6 +16,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- `--restore` now treats a symlink at a full or aged record's original path, or
+  at any existing intermediate directory component between an aged record's
+  original path and the destination file's parent, as a conflict (`outcome=conflict`)
+  without following the link, keeping unrestored files and the quarantine
+  session intact.
 - Create each quarantine session directory atomically with mode `0700` (`mkdir
   -m 700`) and create missing `~/.cache/linux-cleaner/quarantine` directories
   under `umask 077` (`0700`), preventing aged or full `--trash` runs under a
