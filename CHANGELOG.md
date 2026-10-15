@@ -20,6 +20,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   all-slash inputs) so a symlink target configured with multiple trailing
   slashes (e.g. `$HOME/link//`) is still caught by the `[SYMLINK]` guard instead
   of resolving and deleting its referent directory.
+- Uninstall instructions (README, RUNBOOK, `cleaner.1`, packager handoff) now
+  tell each user to disable the timers first and run `systemctl --user
+  daemon-reload` after removal.
 
 ## [1.4.0] - 2026-10-16
 
