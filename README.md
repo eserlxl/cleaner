@@ -1,388 +1,340 @@
 # Linux Cache and Temp File Cleaner
 
-[![CI](https://github.com/eserlxl/cleaner/actions/workflows/ci.yml/badge.svg)](https://github.com/eserlxl/cleaner/actions/workflows/ci.yml)
+A configuration-driven Bash utility (`cleaner.sh`, installed as `cleaner`) that estimates and reclaims disk space by cleaning caches, temporary files, rotated logs, and stale build directories on Linux systems with a GNU userland. It runs in **dry-run mode by default** at the `safe` risk ceiling, blocks critical system directories, refuses symlinks, skips caches of running applications, and can optionally move files to a restorable quarantine before permanent deletion.
 
-A safe, configuration-driven Bash utility designed to estimate and reclaim disk space by cleaning up unnecessary temporary files, caches, and logs on a Linux system.
+## Quick start
 
-## Features
+```sh
+cleaner                 # preview safe targets and estimated savings (dry-run default)
+cleaner --clean         # clean safe targets after a single confirmation prompt
+cleaner --report        # view the saved plan and result from the last cleanup
+```
 
-- **Dry-run by Default**: By default, the script runs in dry-run mode, printing estimated space savings without deleting any files. Use `--clean` to execute.
-- **Safety Guards**: Bypasses system folders (e.g. `/`, `/usr`, `/var`, `/etc`), rejects symlinked paths directly, and blocks paths outside the user's `$HOME` unless explicitly permitted.
-- **Risk Levels**: Group targets as `safe`, `medium`, or `danger`. Filter execution via `-r, --risk <level>` (default is `safe`).
-- **Confirmation Guards**: High-risk targets (`danger`) require manual confirmation even under `--force`, unless the bypass flag `--yes-danger` is provided.
-- **Age Filter**: Targets can specify a minimum age in days (using `find -mtime`). Only files/symlinks older than the limit are cleaned.
-- **Running-Process Checks**: Skip targets if their associated applications/processes are running (e.g., skip chromium cache if Chrome is open).
-- **Trash Quarantine**: Move deleted files to a quarantine folder (`~/.cache/linux-cleaner/quarantine/`) with collision prevention and path sanitization instead of deleting permanently.
-- **Quarantine Restoration**: Restore files from a previous quarantine session to their original paths. Each target records one `UID`/`GID` pair, applied on a best-effort basis during restore; distinct ownership within a mixed-owner tree is not preserved.
-- **Quarantine Purge & Retention**: Permanently delete quarantine sessions (`latest`, `all`, `older-than:DAYS`, or a specific timestamp) to reclaim the space trash mode holds, with a confirmation prompt naming every target before any irreversible deletion. The `older-than:DAYS` selector is what makes trash mode viable unattended — pair a `--trash` cron job with a periodic retention purge and quarantine stays bounded.
-- **Predefined Custom Actions**: Execute specific system commands (like package cache cleaners) instead of path deletion.
+Running from a repository checkout without installing works the same way (`./cleaner.sh`, `./cleaner.sh --clean`, `./cleaner.sh --report`).
+
+---
+
+## Installation
+
+The tool is a single self-contained script. Run it directly from a checkout (`./cleaner.sh`) or install it system-wide with `make` or the POSIX-sh `install.sh` wrapper (`PREFIX` defaults to `/usr/local`, and `DESTDIR` is honored for staged packaging). Both installers copy the six systemd user units from `examples/systemd/` (mode `0644`) **without enabling them**:
+
+| Variable | Default | Installs |
+|----------|---------|----------|
+| `PREFIX` | `/usr/local` | base install prefix |
+| `BINDIR` | `$PREFIX/bin` | `cleaner.sh`, installed as the `cleaner` command |
+| `SYSCONFDIR` | `/etc` | system config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
+| `MANDIR` | `$PREFIX/share/man` | the `cleaner(1)` man page (`man1/cleaner.1`) |
+| `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
+| `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units (`linux-cleaner-clean`, `linux-cleaner-retention`, and `linux-cleaner-monitor` `.service` and `.timer`; mode `0644`, not enabled) |
+
+```sh
+sudo make install                   # install under /usr/local (default PREFIX)
+sudo make install PREFIX=/usr        # install under /usr (standard distro layout)
+make install DESTDIR=/tmp/stage      # stage into a packaging root
+sudo ./install.sh install            # POSIX-sh alternative (honors PREFIX and DESTDIR)
+sudo make uninstall                  # remove installed files (system config is preserved)
+```
+
+For Arch Linux (`PKGBUILD`), `package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`, placing the command at `/usr/bin/cleaner` and the user units at `/usr/lib/systemd/user/`. See [RELEASING.md](RELEASING.md#ordered-aur-packaging-checklist) and [docs/packager-handoff.md](docs/packager-handoff.md).
+
+A reinstall never overwrites an existing `/etc/linux-cleaner/cleaner.conf`; it writes `/etc/linux-cleaner/cleaner.conf.example` alongside it instead.
+
+At runtime, the configuration file is resolved in this order:
+1. `-c, --config FILE`
+2. `LINUX_CLEANER_CONFIG`
+3. `${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf`
+4. `/etc/linux-cleaner/cleaner.conf`
+5. `cleaner.conf` beside the script (development checkout)
+
+### Supported platforms & requirements
+
+`cleaner` requires Linux with a **GNU userland** (`bash`, GNU `coreutils` for `du -sb`, `stat -c`, `realpath`, and GNU `findutils` for `find -print0`/`-quit`). On a non-GNU userland it refuses `--clean`/`--trash` with an error while still allowing a best-effort `--dry-run` preview.
+
+| Requirement | Source | Notes |
+|-------------|--------|-------|
+| `bash` | `PKGBUILD depends` | Script interpreter |
+| `findutils` | `PKGBUILD depends` | Age filter and bounded wildcard discovery |
+| `coreutils` | `PKGBUILD depends` | `du`, `stat`, `realpath`, `rm`, etc. |
+| `pacman-contrib` | `PKGBUILD optdepends` | Required for `action:paccache_keep*` (`paccache` binary) |
+| `sudo` | runtime | Required for root-owned paths and predefined `action:*` package-cache commands |
+
+---
+
+## Daily cleanup
+
+Enable the daily systemd user timer (runs `cleaner --clean --force` at 03:00 daily and permanently deletes `safe` targets):
+
+```sh
+systemctl --user enable --now linux-cleaner-clean.timer
+```
+
+To customize the scheduled cleanup, copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env`. **This environment file is read only by `linux-cleaner-clean.service` (`EnvironmentFile=-%h/.config/linux-cleaner/env`), not by manual `cleaner` runs or the other systemd units.** Use literal absolute paths inside `~/.config/linux-cleaner/env` because systemd does not expand `$HOME` there.
+
+Key settings in `~/.config/linux-cleaner/env`:
+- **`LINUX_CLEANER_RISK=safe`** (default): Keep unattended runs on `safe` targets, or raise to `medium` if you accept unattended deletion of medium-tier data.
+- **`LINUX_CLEANER_TRASH=1`** (opt-in quarantine): Move files into `~/.cache/linux-cleaner/quarantine/` instead of deleting them permanently. Whenever you enable `LINUX_CLEANER_TRASH=1`, also enable the weekly retention timer (`cleaner --purge-sessions older-than:30 --force` on Sundays at 04:00) so quarantine disk usage stays bounded:
+
+```sh
+systemctl --user enable --now linux-cleaner-retention.timer
+```
+
+An optional six-hourly JSON preview timer (`linux-cleaner-monitor.timer`) is also installed. Inspect the last cleanup or service logs at any time:
+
+```sh
+cleaner --report                                       # saved plan and result from the last cleanup
+journalctl --user -u linux-cleaner-clean.service       # systemd journal output
+```
+
+See [RUNBOOK.md](RUNBOOK.md) for cron recipes, user linger notes, and unattended environment examples.
+
+---
+
+## Risk levels
+
+Every target in `cleaner.conf` has a risk level (`safe`, `medium`, or `danger`), and `-r, --risk LEVEL` (or `LINUX_CLEANER_RISK`) sets the maximum tier to include (default: `safe`):
+
+- **`safe` (default)**: Purely regenerable caches, temporary scratch directories, rotated logs, and idle C/C++ build trees. Deleting them does not lose user work or history.
+- **`medium`**: Browser caches, package-manager caches, and **non-cache user records or artifacts that cannot be recovered after permanent deletion**. In the shipped `cleaner.conf`, `medium` rows are:
+  - **AI assistant transcripts and generated/downloaded artifacts**: Codex CLI conversation transcripts (`$HOME/.codex/sessions`, >7 days) and generated images (`$HOME/.codex/generated_images`, >7 days), Cursor chat transcripts (`$HOME/.cursor/chats`, >7 days), and Grok CLI session transcripts (`$HOME/.grok/sessions`, >30 days) and downloads (`$HOME/.grok/downloads`, >30 days).
+  - **Desktop Trash**: `$HOME/.local/share/Trash` items older than 30 days.
+  - **Browser caches**: Chromium (>3 days), Firefox (>7 days), and Google Chrome (>7 days) under `$HOME/.cache`.
+  - **Package and crate caches**: Cargo registry download cache (`$HOME/.cargo/registry/cache`, >30 days) and Pacman package cache (`action:paccache_keep1` on `/var/cache/pacman/pkg`), plus commented cross-distro package-cache actions (`apt`, `dnf`, `zypper`, `apk`).
+  - **Local VM image**: Claude Desktop local-agent VM image (`$HOME/.config/Claude/vm_bundles/claudevm.bundle/rootfs.img`, >30 days; rebuilds from `rootfs.img.zst` beside it).
+- **`danger`**: Targets that can cause significant state loss or aggressive system-wide purges. They always require an interactive confirmation prompt even under `--force`, unless `--yes-danger` (`LINUX_CLEANER_YES_DANGER=1`) is also passed. **The shipped `cleaner.conf` has no active `danger` rows** (only a commented `action:pacman_clean` example).
+
+---
+
+## What gets cleaned
+
+See [`cleaner.conf`](cleaner.conf) for the authoritative list of targets, age thresholds, and exclusions, or run `cleaner --list-targets` to inspect the active inventory. The shipped configuration covers:
+
+- **Developer & language caches (`safe`, `medium` for Cargo)**: npm, Yarn, pip, Aurman, Go build cache, clangd, TypeScript, Prettier, VSCode C++ extension cache, and Cargo registry cache.
+- **GPU & desktop caches (`safe`, `medium` for Trash)**: NVIDIA compute cache, Mesa shader cache, legacy and modern desktop thumbnails, and desktop Trash (>30 days).
+- **Web browser caches (`medium`)**: Chromium, Firefox, and Google Chrome caches under `$HOME/.cache`.
+- **AI assistant & editor caches, logs, and transcripts (`safe` for caches/logs, `medium` for transcripts/media/VM image)**: Gemini Temp, Cursor, Antigravity, Claude Desktop, Codex CLI/Desktop, Grok CLI, and Hermes caches/logs/sessions, plus per-project AI debug/log directories under `/opt` (`.gemini/model_debug_logs`, `.codex/logs`, `.remember/logs`). Durable configuration, rules, memory stores, SQLite state databases, and `$HOME/.claude/projects` are deliberately excluded.
+- **Idle C/C++ build directories (`safe`)**: `/opt/**/build*` and `/opt/**/cmake-build*` verified by `filter:cxx_build` and idle for more than 14 days.
+- **System package-manager caches (`medium`)**: `/var/cache/pacman/pkg` (`action:paccache_keep1`), plus optional commented rows for `pacman_clean`, `apt_clean`, `dnf_clean`, `zypper_clean`, and `apk_clean`. Because an action whose package manager is not installed is skipped cleanly without failing the run, the same `cleaner.conf` is portable across distributions.
+
+---
+
+## Safety model
+
+Security threat model: [docs/threat-model.md](docs/threat-model.md).
+
+1. **Dry-run by default**: Running `cleaner` without `--clean`, `--force`, `--interactive`, or `LINUX_CLEANER_FORCE=1` never modifies the filesystem.
+2. **System directories are `UNSAFE`**: Targets resolving to `/`, `$HOME` itself, `/home`, `/root`, `/usr`, `/var`, `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/bin`, `/sbin`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, or `/lib*` are flagged `[UNSAFE]` and skipped. Descendants outside `$HOME` (such as `/opt/...` or `/var/cache/...`) are allowed.
+3. **Symlink refusal & physical canonicalization**: If a target path is itself a symlink, it is flagged `[SYMLINK]` and refused. Target paths are physically canonicalized through their closest existing parent directory to prevent `..` traversal or symlink escapes.
+4. **No `eval`, no shell globbing**: Path expansion substitutes only whole-token `$HOME`, leading `~`, and `$USER`. Wildcards are evaluated by `find` below a literal prefix, never by the shell or `eval`.
+5. **Running-process checks**: Targets with `CHECK_PROCESSES` are skipped (`[BLOCKED]`) while any listed process or `cmdline:<pattern>` is active.
+6. **Whole-directory idle check for C/C++ builds**: With `filter:cxx_build` and `MIN_AGE_DAYS > 0` (14 days in `cleaner.conf`), the cleaner checks whether **any** file inside the build tree was modified within the threshold. Active builds are left completely untouched; only build trees idle for the full 14 days are removed as a whole, preventing broken half-cleaned build directories.
+7. **Git-tracked file guard**: When `git` is available and the cleaner runs as a non-root user on a non-sudo target, any target inside a Git work tree that contains git-tracked files is skipped (`[SKIP]`).
+8. **Unprivileged root-target skip**: Targets that require `sudo` (unreadable paths, unwritable parent directories outside `$HOME`, or `action:*` commands) are skipped with a stderr warning when root privileges are unavailable; non-interactive runs (no TTY on stdin) never prompt for a password.
+9. **User-defined `protect|PATH` directives**: Any target that equals, lies inside, or contains a configured `protect|PATH` directory is skipped before sizing or deletion.
+10. **Restore conflict guard**: Restoring a quarantine session never overwrites an existing destination file or directory; conflicts are reported and kept in quarantine.
 
 ---
 
 ## Configuration
 
-The script searches for target definitions in `${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf`, then `/etc/linux-cleaner/cleaner.conf`, then `cleaner.conf` beside the script. `LINUX_CLEANER_CONFIG` overrides this search, and `-c/--config` overrides the environment value. The format is a plain text file where each line defines a target with fields separated by pipe `|` characters:
+Each active target row in `cleaner.conf` has **5 to 7 pipe-delimited fields** (`RISK_LEVEL`, `NAME`, `PATH_EXPRESSION`, `DESCRIPTION`, and `MIN_AGE_DAYS` are required; `CHECK_PROCESSES` and `CUSTOM_ACTION` are optional):
 
 ```text
 RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_ACTION
 ```
 
-- **`RISK_LEVEL`**: The category of danger if cleaned: `safe`, `medium`, or `danger`.
-- **`NAME`**: A human-readable identifier for the target (e.g. `NPM Cache`).
-- **`PATH_EXPRESSION`**: The absolute or relative path to clean. Supports safe placeholder expansion for `$HOME`, `~`, and `$USER`. May also contain `*`/`?` wildcards, which expand to **one independent target per matching directory** — see [Wildcard paths](#wildcard-paths).
-- **`DESCRIPTION`**: A brief explanation of the files being cleaned.
-- **`MIN_AGE_DAYS`**: (Optional) Only delete files/symlinks older than N days. Set to `0` or leave empty to clean immediately. When combined with `filter:cxx_build` in `CUSTOM_ACTION`, `MIN_AGE_DAYS > 0` acts as an idle threshold for the directory as a whole: if anything under the target was modified within N days, the directory is left untouched; otherwise the whole build directory is removed at once.
-- **`CHECK_PROCESSES`**: (Optional) Comma-separated process names. If any process in the list is running, the target is skipped. A token written as `cmdline:<pattern>` matches the **full command line** rather than the process name, which is what guards a tool launched through a shared runtime — `/usr/bin/cursor` execs `electron` and `cursor-agent` execs `node`, so neither runs under its own name and an exact-name guard would silently never fire. Prefer an install path (`cmdline:/usr/share/cursor`) over a bare word, so the pattern cannot collide with an unrelated process. The cleaner never matches its own invocation: its whole process ancestry, its descendants, and any already-exited PID are excluded.
-- **`CUSTOM_ACTION`**: (Optional) One predefined action, filter, or exclusion token:
-  - `action:paccache_keep1`: Runs `sudo paccache -rk1` (retains latest 1 version of package cache).
-  - `action:paccache_keep2`: Runs `sudo paccache -rk2` (retains latest 2 versions of package cache).
-  - `action:paccache_keep3`: Runs `sudo paccache -rk3` (retains latest 3 versions of package cache).
-  - `action:pacman_clean`: Runs `sudo pacman -Sc --noconfirm` (purges all cached packages not currently installed).
-  - `action:apt_clean`: Runs `sudo apt-get clean` (clears the downloaded APT package archive cache). Skipped if apt is not present.
-  - `action:dnf_clean`: Runs `sudo dnf clean all` (clears all DNF caches). Skipped if dnf is not present.
-  - `action:zypper_clean`: Runs `sudo zypper clean -a` (clears all zypper caches). Skipped if zypper is not present.
-  - `action:apk_clean`: Runs `sudo apk cache clean` (clears Alpine Linux apk package cache). Skipped if apk is not present.
-  > [!WARNING]
-  > Custom clean actions — the pacman, apt, dnf, zypper, and apk package-cache actions — bypass quarantine/trash mode and run directly, resulting in irreversible deletion. See [action-registry-governance.md](docs/action-registry-governance.md) for adding new actions.
+- **`RISK_LEVEL`**: `safe`, `medium`, or `danger`.
+- **`NAME`**: Non-empty human-readable target name (e.g. `NPM Cache`).
+- **`PATH_EXPRESSION`**: Non-empty path to clean. Supports `$HOME`, leading `~`, and `$USER` whole-token expansion, plus `*`, `?`, and `**` directory wildcards.
+- **`DESCRIPTION`**: Brief explanation of what the target cleans.
+- **`MIN_AGE_DAYS`**: Numeric minimum age in days (`find -mtime +N`), or `0`/empty to clean the target regardless of age. When paired with `filter:cxx_build`, `MIN_AGE_DAYS > 0` is an idle threshold for the directory as a whole.
+- **`CHECK_PROCESSES`**: (Optional) Comma-separated process names (`pgrep -x`, comparing the first 15 characters for longer plain names) or `cmdline:<pattern>` tokens matching the full command line. Use `cmdline:<install-path>` (e.g. `cmdline:/usr/share/cursor`) for Electron or Node apps that do not run under their own binary name. The cleaner excludes its own process ancestry, descendants, and exited PIDs so its own invocation never self-blocks.
+- **`CUSTOM_ACTION`**: (Optional) Holds at most **one** token — a predefined action, a build filter, or a per-row exclusion list (they cannot be combined):
+  - `action:paccache_keep1` (`sudo paccache -rk1`), `action:paccache_keep2` (`sudo paccache -rk2`), `action:paccache_keep3` (`sudo paccache -rk3`)
+  - `action:pacman_clean` (`sudo pacman -Sc --noconfirm`)
+  - `action:apt_clean` (`sudo apt-get clean`)
+  - `action:dnf_clean` (`sudo dnf clean all`)
+  - `action:zypper_clean` (`sudo zypper clean -a`)
+  - `action:apk_clean` (`sudo apk cache clean`)
+  - `filter:cxx_build`: Keeps a literal path or wildcard match only if it contains a C/C++ build-system marker (`CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json`, or `.qmake.stash`) directly or one level below.
+  - `exclude:NAME[,NAME...]`: Adds comma-separated `find` glob/path exclusions for this row only (merging with `-e/--exclude` / `LINUX_CLEANER_EXCLUDE`). Preserves matching files and directories during dry-run sizing, deletion, quarantine, and empty-directory pruning, and processes files individually even when `MIN_AGE_DAYS` is `0`.
 
+> [!WARNING]
+> Predefined `action:*` package-cache commands bypass quarantine (`--trash`) and run directly via `sudo`, resulting in irreversible deletion. See [docs/action-registry-governance.md](docs/action-registry-governance.md).
 
 ### Action cross-walk
 
-| `action:*` | `cleaner.sh` command | README | `cleaner.conf` target | `cleaner.1` |
-|------------|---------------------|--------|------------------------|-------------|
-| `action:paccache_keep1` | `sudo paccache -rk1` | CUSTOM_ACTION list | `Pacman Cache (Keep 1)` | CONFIGURATION |
-| `action:paccache_keep2` | `sudo paccache -rk2` | CUSTOM_ACTION list | (same pattern) | CONFIGURATION |
-| `action:paccache_keep3` | `sudo paccache -rk3` | CUSTOM_ACTION list | header comment example | CONFIGURATION |
-| `action:pacman_clean` | `sudo pacman -Sc --noconfirm` | CUSTOM_ACTION list | `Pacman Cache (Purge All)` (commented) | CONFIGURATION |
-| `action:apt_clean` | `sudo apt-get clean` | CUSTOM_ACTION list | `APT Cache Clean` (commented) | CONFIGURATION |
-| `action:dnf_clean` | `sudo dnf clean all` | CUSTOM_ACTION list | `DNF Cache Clean` (commented) | CONFIGURATION |
-| `action:zypper_clean` | `sudo zypper clean -a` | CUSTOM_ACTION list | `Zypper Cache Clean` (commented) | CONFIGURATION |
-| `action:apk_clean` | `sudo apk cache clean` | CUSTOM_ACTION list | `APK Cache Clean` (commented) | CONFIGURATION |
-
-### Validation
-
-Each active line must have **5 to 7 fields**. `RISK_LEVEL`, `NAME`, `PATH_EXPRESSION`, `DESCRIPTION`, and `MIN_AGE_DAYS` are required; `CHECK_PROCESSES` and `CUSTOM_ACTION` are optional. `NAME` and `PATH_EXPRESSION` must be non-empty, and a non-empty `MIN_AGE_DAYS` must be numeric (leave it empty to mean "the whole directory"). A malformed line is rejected with a line-numbered error of the form `Error: <config-file>:<lineno>: ...`, for example:
-
-```text
-Error: /etc/linux-cleaner/cleaner.conf:12: expected 5-7 fields, found 4
-```
-
-Fix it by restoring the missing `|` delimiter (or removing a stray one) on the cited line.
+| `action:*` | `cleaner.sh` command | `cleaner.conf` target | `cleaner.1` |
+|------------|---------------------|------------------------|-------------|
+| `action:paccache_keep1` | `sudo paccache -rk1` | `Pacman Cache (Keep 1)` | CONFIGURATION |
+| `action:paccache_keep2` | `sudo paccache -rk2` | (supported) | CONFIGURATION |
+| `action:paccache_keep3` | `sudo paccache -rk3` | header comment example | CONFIGURATION |
+| `action:pacman_clean` | `sudo pacman -Sc --noconfirm` | `Pacman Cache (Purge All)` (commented) | CONFIGURATION |
+| `action:apt_clean` | `sudo apt-get clean` | `APT Cache Clean` (commented) | CONFIGURATION |
+| `action:dnf_clean` | `sudo dnf clean all` | `DNF Cache Clean` (commented) | CONFIGURATION |
+| `action:zypper_clean` | `sudo zypper clean -a` | `Zypper Cache Clean` (commented) | CONFIGURATION |
+| `action:apk_clean` | `sudo apk cache clean` | `APK Cache Clean` (commented) | CONFIGURATION |
 
 ### Wildcard paths
 
-A `PATH_EXPRESSION` may contain `*` or `?`. One such line expands to **one independent target per matching directory** — each is analyzed, sized, confirmed and cleaned on its own, and each passes the same root/system block, HOME boundary and symlink guard as a literal path.
+A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target per matching directory**, each checked individually by the safety pipeline:
 
-```text
-medium|Project Builds|$HOME/src/*/build*|Per-project build output|14||
-```
-
-Rules that keep expansion predictable:
-
-- **Fixed depth by default.** The literal part before the first wildcard is the search root, and matches must sit at exactly the depth the pattern describes. `$HOME/src/*/build*` matches `~/src/app/build` and `~/src/lib/build-asan`, but never `~/src/a/b/build`.
-- **`**` spans nesting levels.** A path component written as `**` matches one or more intervening directories, so a single line covers a directory class that occurs at several depths: `$HOME/src/**/build*` matches `~/src/app/build` *and* `~/src/group/app/build`. Recursion is bounded at **10 levels** below the literal prefix, so a mistyped pattern cannot walk an arbitrarily deep tree — a directory deeper than that is simply not matched. Prefer the non-recursive form when one depth is enough: `**` scans the whole subtree up to the ceiling, which is slow against a large root such as `$HOME` itself.
-- **Directories only.** Expansion matches directories, never individual files.
-- **Preserve directory identity.** Matches containing newlines or `|`, leading/trailing whitespace, or literal placeholders that would be expanded again are skipped with a warning. They cannot be carried unchanged through the config record format; ordinary spaces inside names remain supported.
-- **No eval, no shell globbing.** Matching is done by `find`, so a pattern is never expanded by the shell against the working directory.
-- **A pattern matching nothing is not an error** — it simply contributes no target, and the run still exits `0`.
-- **A wildcard in the first component is refused.** `/*/build` would make the search walk the whole filesystem, so it is left unexpanded with a warning.
-- **Line numbers survive expansion.** A config error after a wildcard line still cites its real physical line.
-- **`filter:cxx_build` selects by contents, not name.** Put it in the `CUSTOM_ACTION` field and an expanded match becomes a target only when it actually looks like a C/C++ build tree — it holds `CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json` or `.qmake.stash`, either directly or one level below (so a qmake `build/Desktop-Debug` layout qualifies). This is what separates real build output from a source directory that merely starts with "build", or a `build/` that holds documentation. The filter only ever narrows the match set. When paired with `MIN_AGE_DAYS > 0`, the age is an idle threshold for the whole directory: if any file or directory inside was modified within `MIN_AGE_DAYS` days, the build tree is reported clean (`active within N days`) and left untouched; otherwise it is sized and removed as a whole (`(idle > N days)` in the plan report), avoiding partial deletion of configure-time files in an active build.
-- **`exclude:NAME[,NAME...]` protects content within this target.** Put it in `CUSTOM_ACTION` to add patterns to the global `--exclude` / `LINUX_CLEANER_EXCLUDE` list for this row only. It uses the same `find` glob/path semantics: `exclude:notes` preserves every matching `notes` directory and everything beneath it, including old files, while old session logs remain eligible. Dry-run sizes, deletion, quarantine, and empty-directory cleanup all honor the exclusions. Even with age `0`, cleanup processes individual files and retains the target directory. Wildcard rows keep normal ancestor pruning. Patterns must be non-empty (not blank), comma-separated, and contain no pipe or newline characters. Field 7 holds a single token; `exclude:`, `filter:`, and `action:` cannot be combined.
-
-```text
-medium|App Sessions|$HOME/.local/share/example-app/sessions|Old session logs, keep notes|7||exclude:notes
-```
+- **Fixed depth by default**: Matches must sit at the exact depth after the literal prefix (e.g. `$HOME/src/*/build*` matches `~/src/app/build` but not `~/src/a/b/build`).
+- **`**` spans nesting levels**: A `**` component matches one or more directory levels, bounded at **10 levels** (`GLOB_RECURSION_MAX_DEPTH=10`) below the literal prefix.
+- **Directories only**: Wildcard expansion matches directories (`-type d`), never individual files.
+- **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing newlines, `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER` tokens are skipped with a warning; a pattern with no matches is not an error.
 
 > [!WARNING]
-> One wildcard line can become many targets, so verify with `--dry-run` and `--list-targets` — both enumerate every expanded match before anything is deleted. A wildcard can reach beyond `$HOME`; protected system directories and symlink targets are still refused. Prefer an anchored pattern (`build` and `build-*`) over a broad one (`build*`) when a sibling directory could match by accident.
-
-`filter:cxx_build` also checks literal paths without wildcards. Surrounding whitespace in the field is ignored, just as for other config fields; it never disables the filter.
+> One wildcard line can expand to many targets. Always preview with `cleaner --dry-run` and `cleaner --list-targets` before cleaning.
 
 ### Protecting directories
 
-To keep the cleaner away from a directory, add a `protect|PATH` line to your config file:
+To keep the cleaner out of a directory tree entirely, add a two-field `protect|PATH` line to `cleaner.conf`:
 
 ```text
 protect|$HOME/Projects
 protect|/opt/important
 ```
 
-The cleaner then never touches that directory. A target is skipped as a whole when it is the protected directory, lies inside it, or contains it. For example, `protect|/opt/work/app/build` also keeps the `/opt/**/build*` row from cleaning that one build directory, while other matches of the same row are still cleaned. Matching uses whole path components, so `protect|/opt/a` does not protect `/opt/ab`.
+Any target whose canonical path equals `PATH`, lies inside `PATH`, or contains `PATH` (matched on whole path components, so `protect|/opt/a` does not match `/opt/ab`) is skipped as a whole. For example, `protect|/opt/work/app/build` prevents the `/opt/**/build*` row from cleaning that build directory while leaving sibling projects eligible.
 
-- `PATH` may use `$HOME`, `$USER`, or a leading `~`, must be absolute, cannot contain wildcards (`*`, `?`, `[`), and does not need to exist yet. Symlinks are resolved, so a protected directory stays protected under any name.
-- `cleaner --check-config` reports an invalid `protect` line with its file and line number.
-- The plan report lists skipped targets under `Protected (by config):`. `--debug` shows a `[PROTECTED]` line per target, and `--dry-run --json` reports `"status": "protected"`.
+- `PATH` supports `$HOME`, `$USER`, and leading `~`, must be absolute after expansion, cannot contain wildcards (`*`, `?`, `[`), and does not need to exist yet. Symlinks are resolved physically.
+- `protect` lines are not listed by `--list-targets` or counted as targets by `--check-config`.
+- Skipped targets appear under `Protected (by config):` in the plan report, as `[PROTECTED]` under `--debug`, and with `"status": "protected"` in `--dry-run --json`.
+
+### Validation (`--check-config`)
+
+Validate a configuration file without scanning disk usage:
+
+```sh
+cleaner --check-config --config cleaner.conf
+# -> OK: 41 targets in cleaner.conf
+```
+
+Malformed lines fail with a line-numbered error (`Error: <config-file>:<lineno>: ...` or `<config-file>:<lineno>: Error: ...`).
 
 ### Example `cleaner.conf`
+
 ```text
+protect|$HOME/Projects
 safe|NPM Cache|$HOME/.npm/_cacache|NPM dependency cache files|0|node,npm|
-safe|Gemini Temp|$HOME/.gemini/tmp|Gemini temporary/scratch files|7|gemini|
+safe|C++ Build Dirs|/opt/**/build*|Per-project build output|14||filter:cxx_build
+medium|App Sessions|$HOME/.local/share/example-app/sessions|Old session logs, keep notes|7||exclude:notes
 medium|Chromium Cache|$HOME/.cache/chromium|Chromium browser cache files|3|chromium|
-medium|Pacman Cache (Keep 3)|/var/cache/pacman/pkg|Retains latest 3 versions of package cache using paccache|0||action:paccache_keep3
+medium|Pacman Cache (Keep 1)|/var/cache/pacman/pkg|Retains latest version of package cache using paccache|0||action:paccache_keep1
 danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific database storage|30|chromium|
 ```
 
 ---
 
-## Usage
-
-Run the script directly from the project directory:
-
-```bash
-./cleaner.sh [OPTIONS]
-```
-
-Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`); it resolves its configuration from your XDG user config or `/etc/linux-cleaner/cleaner.conf` (see [Installation](#installation)). Override the config with `-c/--config` in either case.
+## Options, environment variables, and exit status
 
 ### Options
 
-- **`--clean`**: Enable cleanup with a summary confirmation prompt. Cleanup is also enabled by `--force`, `--interactive`, or a truthy `LINUX_CLEANER_FORCE`.
-- **`-c, --config FILE`**: Use a custom configuration file instead of the resolved default.
-- **`-d, --dry-run`**: Run in preview/dry-run mode (default).
-- **`-i, --interactive`**: Enable cleanup and prompt for confirmation before deleting each target individually.
-- **`-f, --force`**: Enable cleanup and skip normal confirmation prompts (except danger level).
-- **`--yes-danger`**: Bypass manual confirmation prompt for danger risk targets.
-- **`-t, --trash`**: Select quarantine instead of permanent deletion; this flag alone keeps the default preview mode.
-- **`-r, --risk LEVEL`**: Max risk level to clean: `safe`, `medium`, or `danger` (default: `safe`).
-- **`-e, --exclude PATTERNS`**: Comma-separated list of glob patterns to exclude from cleanup (e.g. `.git,*.log`).
-  > [!WARNING]
-  > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
-- **`--list-sessions`**: List quarantine sessions (timestamp, size, date) and the targets each one holds — the type (`full` or `aged`) and original path of every quarantined item, so you can see what a session contains before restoring it or permanently purging it. Read-only and requires no config file.
-- **`--report`**: Print the saved last cleanup report and exit. Read-only and requires no config file. The report is the plan plus the result from the last non-dry-run cleanup, stored at `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` (directory mode `0700`, no color codes). Prints `No cleanup report yet.` on stderr and exits 1 when that file is absent. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
-- **`--list-targets`**: List every target defined in the configuration file (name, risk, path, description) without analyzing disk usage or modifying anything. Read-only; requires a config file.
+- **`-c, --config FILE`**: Use a custom configuration file instead of the default discovery order.
+- **`-d, --dry-run`**: Preview potential space savings without deleting anything (default).
+- **`--clean`**: Enable cleanup with a single summary confirmation prompt. Cleanup is also enabled by `-f/--force`, `-i/--interactive`, or a truthy `LINUX_CLEANER_FORCE` (the last of `--dry-run`, `--clean`, `--force`, or `--interactive` on the command line wins).
+- **`-i, --interactive`**: Enable cleanup and prompt before cleaning each target individually.
+- **`-f, --force`**: Enable cleanup and skip confirmation prompts (except `danger` targets and non-forced session purges).
+- **`--yes-danger`**: Bypass the manual confirmation prompt for `danger` targets.
+- **`-t, --trash`**: Move cleaned files into a restorable quarantine session under `~/.cache/linux-cleaner/quarantine/<timestamp>/` instead of deleting permanently. Passing `--trash` alone keeps dry-run preview mode. Each target records one `UID`/`GID` pair in `quarantine.meta`, applied best-effort on restore (mixed ownership inside a tree is not preserved).
+- **`-r, --risk LEVEL`**: Maximum risk level to process: `safe`, `medium`, or `danger` (default: `safe`).
+- **`-e, --exclude PATTERNS`**: Comma-separated `find` glob/path patterns to exclude globally (e.g. `.git,*.log`). Verify exclusions with `--dry-run` first.
+- **`--only-target PATTERN`**: With cleanup, process only targets whose `NAME` contains `PATTERN` (substring match); exits `1` if none match. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
+- **`--exclude-target PATTERN`**: With cleanup, skip targets whose `NAME` contains `PATTERN` (substring match); exits `1` if no targets remain. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
+- **`--list-targets`**: List configured targets (`NAME`, `risk`, `path`, `description`) without disk analysis. Read-only; requires a config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--report`.
+- **`--check-config`**: Validate config syntax and exit without disk analysis. Prints `OK: N targets in <path>`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--report`.
+- **`--list-sessions`**: List quarantine sessions (timestamp, size, date, and each item's `full`/`aged` type and original path). Read-only; requires no config file.
+- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or an immediate child timestamp directory name; `/` and `.`/`..` are rejected). Rejects an explicit `--dry-run`.
+- **`--only PATTERN`**: Used with `--restore`: restore only targets whose original path contains `PATTERN`, keeping remaining targets and rewriting `quarantine.meta` so a later `--restore` succeeds. Exits `1` if nothing matches or if passed without `--restore`.
+- **`--purge-sessions SESSION`**: Permanently delete quarantine sessions (`latest`, `all`, `older-than:DAYS`, or a timestamp directory name). Prompts for confirmation naming every target unless `-f/--force` is set. `older-than:DAYS` exits `0` when no sessions match. Rejects an explicit `--dry-run`.
+- **`--report`**: Print the saved last cleanup report from `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` and exit (prints `No cleanup report yet.` on stderr and exits `1` if absent). Read-only; requires no config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
+- **`--log [FILE]`**: Append an operation log under `$HOME` (default: `~/.cache/linux-cleaner/operations.log`).
+- **`-q, --quiet`**: Suppress headers, per-target status lines, and the on-screen plan report; keep errors, savings total, result report, and final summary.
+- **`--debug`**: Show per-target `[FOUND]`, `[CLEAN]`, and `[PROTECTED]` lines (hidden by default; overridden by `--quiet`).
+- **`--json`**: Emit machine-readable JSON (implies `--quiet`). Valid only with `--dry-run` (`config`, `total_reclaimable_bytes`, `total_reclaimable_human`, per-target `name`/`path`/`risk`/`bytes`/`size_human`/`status`/`description`/`min_age_days`), `--list-targets` (`config`, per-target `name`/`risk`/`path`/`description`/`min_age_days`/`check_processes`/`custom_action`), or `--list-sessions` (`sessions` array of `timestamp`/`size_bytes`/`size_human`/`date`/`targets`). Consumers should tolerate unknown JSON keys for forward compatibility.
+- **`--allow-outside-home`**: Deprecated no-op (prints one warning on stderr; targets outside `$HOME` are always allowed).
+- **`-h, --help`**: Display help and exit.
+- **`-V, --version`**: Print version and exit.
 
-  ```sh
-  cleaner --list-targets --config cleaner.conf   # inventory before a selective --only-target run
-  ```
-- **`--check-config`**: Validate the configuration file (field count, required fields, CHECK_PROCESSES, MIN_AGE_DAYS, known actions/risks) and exit without analyzing disk usage. Prints `OK: N targets in <path>` on success. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--report`.
+### Environment variables
 
-  ```sh
-  cleaner --check-config --config cleaner.conf   # CI / packager structural check
-  ```
-- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or a specific timestamp/folder name). A named session must be an immediate child of the quarantine directory — path separators and `.`/`..` are rejected.
-- **`--only PATTERN`**: With `--restore`, restore only the targets whose original path contains `PATTERN`; every other target stays quarantined and the session is kept (its metadata is rewritten, so a later full `--restore` of that session still succeeds). Exits 1 if nothing matches. Pairs with `--list-sessions`, which prints each target's path:
+| Variable | Effect |
+|----------|--------|
+| `LINUX_CLEANER_CONFIG` | Non-empty path to the configuration file (same as `--config`; overridden by `-c/--config`). |
+| `LINUX_CLEANER_LOG` | Enable operation logging to the given path under `$HOME` (same as `--log`). |
+| `LINUX_CLEANER_QUIET` | When `1`, `true`, or `yes`, enables `--quiet`. |
+| `LINUX_CLEANER_DEBUG` | When `1`, `true`, or `yes`, enables `--debug`. |
+| `LINUX_CLEANER_JSON` | When `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
+| `LINUX_CLEANER_ONLY_TARGET` | Non-empty pattern enabling `--only-target` (overridden by CLI `--only-target`). |
+| `LINUX_CLEANER_EXCLUDE_TARGET` | Non-empty pattern enabling `--exclude-target` (overridden by CLI `--exclude-target`). |
+| `LINUX_CLEANER_RISK` | Sets the default `--risk` ceiling (`safe`, `medium`, or `danger`; overridden by `-r/--risk`). |
+| `LINUX_CLEANER_TRASH` | When `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
+| `LINUX_CLEANER_EXCLUDE` | Non-empty comma-separated glob list enabling `--exclude` (overridden by `-e/--exclude`). |
+| `LINUX_CLEANER_FORCE` | When `1`, `true`, or `yes`, enables `--force` and non-interactive cleanup (an explicit CLI `--dry-run` still restores preview mode). |
+| `LINUX_CLEANER_YES_DANGER` | When `1`, `true`, or `yes`, enables `--yes-danger`. |
+| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | Deprecated no-op. When `1`, `true`, or `yes`, prints one warning on stderr; targets outside `$HOME` are always allowed. |
 
-  ```sh
-  cleaner --list-sessions                       # see exactly what a session holds
-  cleaner --restore latest --only /.cache/yarn  # take back just that one target
-  ```
-- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
+Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-  ```sh
-  cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
-  cleaner --only-target "NPM" --config cleaner.conf --force     # clean only that target
-  ```
-- **`--exclude-target PATTERN`**: With cleanup, skip config targets whose `NAME` contains `PATTERN` (substring match). Combined with `--only-target`, both filters apply. Exits 1 if the filters leave no targets to process. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
-
-  ```sh
-  cleaner --exclude-target "Chromium" --config cleaner.conf --dry-run   # skip Chromium-named targets
-  ```
-- **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. A named timestamp must be an immediate child directory name (no path separators or `.`/`..`). Requires no config file.
-
-  Daily cleanup permanently deletes safe targets. Quarantine is opt-in and must be paired with a retention purge:
-
-  ```sh
-  cleaner --clean --force                          # daily: permanently delete safe targets
-  cleaner --clean --trash --force                  # opt-in: reclaim into quarantine
-  cleaner --purge-sessions older-than:30 --force   # weekly: expire quarantine 30+ days old
-  ```
-  > [!WARNING]
-  > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
-- **`--allow-outside-home`**: Deprecated no-op. Targets outside `$HOME` are always allowed. Passing the flag prints one warning on stderr.
-- **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
-- **`--debug`**: Show per-target FOUND and CLEAN lines (suppressed by default; overridden by `--quiet`).
-
-A plan report follows the savings total: run mode, risk ceiling, config path, counts per status, reclaimable bytes by risk, the largest targets, and skipped targets with the reason. `--quiet` suppresses that report. After cleanup, a result report lists cleaned, skipped, and failed counts, bytes quarantined versus permanently reclaimed, the quarantine session path when one was created, and elapsed time. `--json` includes neither report. A non-dry-run cleanup that reaches the result report also writes both reports, without color codes, to `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt`. The saved copy includes the plan even when `--quiet` hid it on screen. Dry-run, `--json`, and the read-only modes write nothing. `--report` prints the file.
-
-Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
-(forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
-
-- **`--json`**: With `--dry-run`, emit a machine-readable JSON summary (`config`, `total_reclaimable_bytes`, `total_reclaimable_human`, per-target `name`/`path`/`risk`/`bytes`/`size_human`/`status`/`description`/`min_age_days`) instead of human-formatted output. With `--list-targets`, emit a JSON inventory (`config`, per-target `name`/`risk`/`path`/`description`/`min_age_days`/`check_processes`/`custom_action`). With `--list-sessions`, emit a JSON inventory (`sessions` array of `timestamp`/`size_bytes`/`size_human`/`date`/`targets`). Implies `--quiet`.
-- **`-h, --help`**: Display usage details.
-- **`-V, --version`**: Print the tool version and exit.
-
-For cleanup, the last of `--dry-run`, `--clean`, `--force`, or `--interactive` determines preview versus execution. CLI flags take precedence over environment defaults. An active explicit `--dry-run` is rejected with `--restore` or `--purge-sessions`, which have no preview mode.
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
 
 ### Exit status
 
-Returns **0** on success and **non-zero** on a configuration error or a failed operation — so an unattended run (cron, systemd) can detect a cleanup that did not happen by checking the exit code.
+Returns **`0`** on success and **`1` (non-zero)** on a configuration/usage error or a **failed operation** (an attempted delete, quarantine move, predefined action, restore, or session purge that did not succeed). When an operation fails during cleanup, `cleaner` reports the error on stderr, continues processing remaining targets, and exits `1`.
 
-A **failed operation** is one that was attempted and did not succeed: a delete, a quarantine move, a predefined action, or a session purge. The tool reports every failure on stderr, keeps going with the remaining targets, and then exits `1`.
-
-A **skip is not a failure**, and still exits `0`: a danger target you declined, a target blocked by a running process, a path classified unsafe, a target that needs root privileges that are not available, or a predefined action whose binary is not installed on this platform.
+A **skip is not a failure** and exits **`0`**: a declined `danger` target, a target blocked by a running process, an `UNSAFE` or `protected` path, a git-tracked target, a root-requiring target when privileges are unavailable, or a predefined `action:*` whose package manager binary is not installed.
 
 ---
 
-## Installation
+## Operation log and reports
 
-Packager handoff checklist: [docs/packager-handoff.md](docs/packager-handoff.md).
+### Plan and result reports (`--report`)
 
-The tool is a single script; run it from a checkout (`./cleaner.sh`) or install it system-wide. Install paths derive from `PREFIX` and honor `DESTDIR` for staged/packaged installs:
+Every human-readable cleanup run prints a **plan report** after the savings total (mode, risk ceiling, config path, status counts, reclaimable bytes by risk, top 10 largest targets, and skipped/blocked/protected target groups). `--quiet` hides the plan report on screen.
 
-| Variable | Default | Installs |
-|----------|---------|----------|
-| `PREFIX` | `/usr/local` | base install prefix |
-| `BINDIR` | `$PREFIX/bin` | the `cleaner.sh` script, installed as the `cleaner` command |
-| `SYSCONFDIR` | `/etc` | the config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
-| `MANDIR` | `$PREFIX/share/man` | the `man1` page |
-| `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
-| `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units from `examples/systemd/` (mode 0644; not enabled) |
+After a non-dry-run cleanup, a **result report** prints `cleaned`, `skipped`, and `failed` counts, elapsed seconds, bytes quarantined versus permanently reclaimed, and the quarantine session path. Both reports are saved (without ANSI colors, and including the plan even under `--quiet`) to `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` (directory mode `0700`, refusing symlinks), including when nothing needed cleaning. Run `cleaner --report` to view the saved report. Dry-run, `--json`, and read-only modes do not write `last-report.txt`.
 
-At runtime the config is resolved in this order: an explicit `-c/--config` path, then `$XDG_CONFIG_HOME/linux-cleaner/cleaner.conf` (default `~/.config/linux-cleaner/cleaner.conf`), then `/etc/linux-cleaner/cleaner.conf`, then a `cleaner.conf` beside the script (development checkout). The last cleanup report is `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` (see `--report`).
+### Operation log (`--log` / `LINUX_CLEANER_LOG`)
 
-Install and uninstall with `make` (or the POSIX-sh `install.sh` wrapper):
-
-```bash
-sudo make install                  # install under /usr/local (PREFIX)
-sudo make install PREFIX=/usr       # install under /usr
-make install DESTDIR=/tmp/stage     # stage into a packaging root
-sudo ./install.sh install           # POSIX-sh alternative (honors PREFIX/DESTDIR)
-sudo make uninstall                 # remove installed files (the system config is preserved)
-```
-
-A reinstall never overwrites an edited system config: if `cleaner.conf` already exists it is left untouched and `cleaner.conf.example` is written alongside it instead.
-
-After installation, `man cleaner` shows the manual page. `make install` and `install.sh` copy the six user units. Install does not enable any unit.
-
-## Daily cleanup
-
-The installed user timer permanently deletes safe targets:
+Operation logging is **opt-in and off by default**:
 
 ```sh
-systemctl --user enable --now linux-cleaner-clean.timer
+cleaner --clean --log                                      # logs to ~/.cache/linux-cleaner/operations.log
+LINUX_CLEANER_LOG=$HOME/.cache/linux-cleaner/ops.log cleaner --clean
 ```
 
-When `LINUX_CLEANER_TRASH=1` is set in `~/.config/linux-cleaner/env`, that timer quarantines instead of deleting, and the retention timer must also be enabled:
-
-```sh
-systemctl --user enable --now linux-cleaner-retention.timer
-```
-
-`cleaner --report` prints what the last run did. `journalctl --user -u linux-cleaner-clean.service` shows the raw log.
-
----
-
-## Supported Platforms & Requirements
-
-The tool targets Linux with a **GNU userland**. It relies on GNU coreutils/findutils behavior (`du -sb`, `stat -c`, `find -print0`/`-quit`, and GNU `realpath`); on a non-GNU userland it **refuses `--clean`/`--trash`** with a clear message (a `--dry-run` preview is still best-effort).
-
-| Requirement | Source | Notes |
-|-------------|--------|-------|
-| `bash` | `PKGBUILD depends` | Script interpreter |
-| `findutils` | `PKGBUILD depends` | Age filter / discovery |
-| `coreutils` | `PKGBUILD depends` | `du`, `stat`, `rm`, etc. |
-| `pacman-contrib` | `PKGBUILD optdepends` | Required for `paccache_keep*` actions (`paccache` binary) |
-| `sudo` | runtime | Required for predefined `action:*` package-cache commands |
-
-Predefined package-cache actions are supported for five package managers:
-
-- **pacman** — `action:paccache_keep1/2/3`, `action:pacman_clean`
-- **apt** — `action:apt_clean`
-- **dnf** — `action:dnf_clean`
-- **zypper** — `action:zypper_clean`
-- **apk** — `action:apk_clean`
-
-
-### Portable cross-distro config
-
-The same `cleaner.conf` may list pacman, apt, dnf, zypper, and apk package-cache sections together.
-Actions whose package manager is **not installed** are **skipped** with a clear message
-(hermetic test: `Cross-Distro Safe Degradation`) rather than failing the run.
-
-Outside-HOME paths (e.g. `/var/cache/pacman/pkg`) are allowed. Package-cache rows stay medium risk and need root; if privileges are not available the target is skipped and the rest of the run continues.
-
-> Irreversible `action:pacman_clean` should stay **commented** or at **danger** tier with
-> `--yes-danger` only — it purges all cached packages not currently installed.
-
-An action whose package manager is not installed is **skipped** with a clear message rather than failing the run, so the same config is safe to carry across distributions.
-
----
-
-
-Security threat model: [docs/threat-model.md](docs/threat-model.md).
-
-## Safety Features
-
-1. **Root Block**: Paths that resolve to root (`/`), system directories (`/etc`, `/boot`, `/usr`, `/sys`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, etc.), or `/home` itself will be flagged as `UNSAFE` and skipped automatically.
-2. **Outside HOME**: Targets outside the user's `$HOME` directory are allowed. `$HOME` itself and protected system directories stay `UNSAFE`. A symlink target is refused. A target that needs root is skipped, with a warning, when those privileges are not available (an unattended run never prompts).
-3. **Symlink Guard**: If a target path is a symlink, the script refuses to delete it to prevent deletion bugs.
-4. **No Eval, No Shell Globbing**: Path expansion resolves only the explicit placeholders (`$HOME`, `~`, and `$USER`), and never invokes `eval` or lets the shell expand a pattern. Wildcards are resolved by `find` at a fixed depth below a literal parent directory, and every match re-enters this same safety pipeline individually.
-5. **Physical Canonicalization**: Resolves target paths physically by resolving the closest existing parent directory. This prevents directory traversal or symlink-based boundary escapes.
-6. **Conflict Guard during Restore**: During quarantine restoration, if the original destination path already exists, the restoration is skipped for that file to prevent overwriting active data.
-7. **Git Guard**: With Git available, targets containing git-tracked files are skipped even with `--force`, unless the cleaner runs as root or the target requires sudo.
-
----
-
-## Operation Log
-
-The tool can keep an **opt-in** operation log, **off by default**. Enable it with the `--log` flag or by setting the `LINUX_CLEANER_LOG` environment variable:
-
-```bash
-./cleaner.sh --clean --log                 # logs to ~/.cache/linux-cleaner/operations.log
-LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log ./cleaner.sh --clean
-```
-
-- The log lives **under `$HOME`** (default `~/.cache/linux-cleaner/operations.log`); a path that resolves outside `$HOME` is refused and logging is disabled.
-- Each cleanup entry is one line recording the timestamp, mode (`delete`/`quarantine`/`action`), risk level, target name, path, and outcome. Quarantine maintenance is logged too: `--restore` writes one `mode=restore` line per target (session, original path, and `success`/`failed`/`conflict`/`missing`), and `--purge-sessions` one `mode=purge` line per session — for example:
+- The log path supports `$HOME`, `~`, and `$USER` placeholders and **must resolve inside `$HOME`** (paths outside `$HOME` are refused and logging is disabled).
+- Records one line per real cleanup target (`mode=delete|quarantine|action`), per restored target (`mode=restore`, outcome `success`/`failed`/`conflict`/`missing`), or per purged session (`mode=purge`), and never logs file contents or secrets:
 
 ```text
 2026-01-01T12:00:00 mode=delete risk=safe target='NPM Cache' path='/home/you/.npm/_cacache' outcome=success
 2026-01-08T09:00:00 mode=purge session='2026-01-01_12-00-00' outcome=success
 ```
 
-- The log **records no secrets**: only the path and metadata the tool already prints — never file contents, environment values, or credentials.
-- Only real cleanups are logged; a dry-run writes nothing.
-
-### Environment variables
-
-| Variable | Effect |
-|----------|--------|
-| `LINUX_CLEANER_CONFIG` | When set to a non-empty path, uses that file as the configuration (same as `--config`). Explicit `-c/--config` overrides. |
-| `LINUX_CLEANER_LOG` | Enable operation logging to the given path (same rules as `--log`). |
-| `LINUX_CLEANER_QUIET` | When set to `1`, `true`, or `yes`, enables `--quiet` (suppress per-target status lines). |
-| `LINUX_CLEANER_DEBUG` | When set to `1`, `true`, or `yes`, enables `--debug` (show per-target FOUND and CLEAN lines). |
-| `LINUX_CLEANER_JSON` | When set to `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
-| `LINUX_CLEANER_ONLY_TARGET` | When set to a non-empty pattern, enables `--only-target` (substring match on config target `NAME`). |
-| `LINUX_CLEANER_EXCLUDE_TARGET` | When set to a non-empty pattern, enables `--exclude-target` (substring match on config target `NAME`). |
-| `LINUX_CLEANER_RISK` | When set to `safe`, `medium`, or `danger`, sets the default `--risk` ceiling. |
-| `LINUX_CLEANER_TRASH` | When set to `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
-| `LINUX_CLEANER_EXCLUDE` | When set to a non-empty pattern list, enables `--exclude` (comma-separated globs). |
-| `LINUX_CLEANER_FORCE` | When set to `1`, `true`, or `yes`, enables `--force` (non-interactive clean). |
-| `LINUX_CLEANER_YES_DANGER` | When set to `1`, `true`, or `yes`, enables `--yes-danger` (bypass danger confirmation). |
-| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | Deprecated no-op. When set to `1`, `true`, or `yes`, prints one warning; targets outside `$HOME` are always allowed. |
-
-Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
-
-Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are overridden by their CLI flag. On/off variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) can only be switched on from the CLI: no flag switches them off, so set one to `0` or unset it to disable it for a run (an explicit `--dry-run` still previews when `LINUX_CLEANER_FORCE` is set). `ALLOW_OUTSIDE_HOME` is a deprecated no-op.
-
 ---
 
 ## Development
 
-Contract governance: [docs/contract-semver-taxonomy.md](docs/contract-semver-taxonomy.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints every change must preserve, and record user-facing changes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the safety invariants and design constraints a change must preserve. Record user-facing changes under the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md).
-
-Every change runs through two gate commands, both of which must pass:
+The local gate is `make check` plus ShellCheck, run before every push or release:
 
 ```bash
 shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static analysis / lint
 make check                            # runbook example validation + full safety suite (test_cleaner.sh)
 ```
 
-The test suite is hermetic: it stubs `sudo`, `pgrep`, `paccache`, `pacman`, `apt-get`, `dnf`, `zypper`, and `apk` and builds a mock `$HOME`, so it needs no root, network, or Arch-specific tooling. **Drift guards** (man-page parity, version consistency, env mirrors, and similar) run **after** mock `$HOME` setup and stub installation — guards must not require root or network. See the [guard catalog](docs/hermetic-test-guards.md) and [test coverage matrix](docs/test-coverage-matrix.md). Runner dependencies are:
+The test suite (`test_cleaner.sh`) is hermetic: it stubs `sudo`, `pgrep`, `paccache`, `pacman`, `apt-get`, `dnf`, `zypper`, and `apk` and builds a mock `$HOME`, requiring only `bash`, GNU `coreutils`, GNU `findutils`, and `shellcheck` (no root, network, or Arch-specific tooling). Drift guards (man-page parity, version consistency, env mirrors, and ShellCheck file parity) run inside the hermetic suite after mock `$HOME` setup.
 
-- `bash`
-- `coreutils`
-- `findutils`
-- `shellcheck` (for the lint gate)
+After cutting a release tag, verify consistency on the tagged HEAD (`git fetch --tags`, `git checkout vX.Y.Z`, `make check`); see [RELEASING.md](RELEASING.md#post-tag-local-verification).
 
-### Continuous Integration
+### Further documentation
 
-Both gate commands run automatically on every push and pull request (see the badge above). **Both must pass before a change is merged**: the ShellCheck lint and `make check` (runbook validation plus the full test suite). To enforce this, a maintainer should enable a branch-protection rule on `main` marking the `CI` workflow's `gate` job as a **required status check** (Settings → Branches → Branch protection rules).
-
-After cutting a release tag, verify consistency on the tagged HEAD: `git fetch --tags`, `git checkout vX.Y.Z`, then `make check` (exercises the `Version/Tag/Changelog Consistency` guard). See [RELEASING.md](RELEASING.md#post-tag-local-verification).
+- Unattended cron and systemd operations: [RUNBOOK.md](RUNBOOK.md), `examples/systemd/`, `examples/linux-cleaner.env.example`
+- Quarantine operations and recovery: [docs/QUARANTINE-OPS.md](docs/QUARANTINE-OPS.md)
+- Security threat model: [docs/threat-model.md](docs/threat-model.md)
+- Contract & governance docs: [docs/contract-semver-taxonomy.md](docs/contract-semver-taxonomy.md), [docs/config-field-governance.md](docs/config-field-governance.md), [docs/action-registry-governance.md](docs/action-registry-governance.md), [docs/cli-env-json-governance.md](docs/cli-env-json-governance.md), [docs/env-automation-contract.md](docs/env-automation-contract.md)
+- Testing & packaging checklists: [docs/hermetic-test-guards.md](docs/hermetic-test-guards.md), [docs/test-coverage-matrix.md](docs/test-coverage-matrix.md), [docs/packager-handoff.md](docs/packager-handoff.md), [docs/packaging-install-parity.md](docs/packaging-install-parity.md), [docs/manual-smoke-checklist.md](docs/manual-smoke-checklist.md), [docs/distro-smoke-log.md](docs/distro-smoke-log.md)
 
 ---
 
@@ -391,21 +343,3 @@ After cutting a release tag, verify consistency on the tagged HEAD: `git fetch -
 This project is licensed under the **GNU General Public License v3.0 or later** (SPDX identifier: `GPL-3.0-or-later`) — see the [LICENSE](LICENSE) file for the full text.
 
 Copyright (C) 2026 Eser KUBALI
-
-See [RUNBOOK.md](RUNBOOK.md) for unattended operations.
-
-Systemd examples: `examples/systemd/` (see RUNBOOK.md).
-
-## Unattended operations
-
-Cron and systemd recipes: [RUNBOOK.md](RUNBOOK.md) and `examples/systemd/`.
-
-Quarantine operations: [docs/QUARANTINE-OPS.md](docs/QUARANTINE-OPS.md).
-
-Maintainer manual smoke (hermetic boundaries, `/etc` config resolution, optional live PM/sudo): [docs/manual-smoke-checklist.md](docs/manual-smoke-checklist.md).
-Distro smoke log template: [docs/distro-smoke-log.md](docs/distro-smoke-log.md).
-
-Arch users: `paccache` actions require the `pacman-contrib` package (see PKGBUILD `optdepends`).
-
-AUR packaging checklist: [RELEASING.md](RELEASING.md#ordered-aur-packaging-checklist).
-Packager handoff: [docs/packager-handoff.md](docs/packager-handoff.md).
