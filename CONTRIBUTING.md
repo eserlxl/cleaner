@@ -7,8 +7,7 @@ a change ship without both gates green.
 
 ## Development gates
 
-Every change must pass both gate commands before it is merged (they also run in
-CI on push and pull request):
+Every change must pass both gate commands locally before it is merged or pushed:
 
 ```bash
 shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # lint — must be clean

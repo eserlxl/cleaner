@@ -111,9 +111,8 @@ make check    # exercises Version/Tag/Changelog Consistency on real tagged HEAD
 
 ## Remote sync and external gates
 
-Push `main` after green `make pre-release`; confirm the required CI status check `gate` on `origin/main` before tagging.
+Push `main` only after a green local `make pre-release`; the local suite is the gate, not a hosted CI status check.
 
 Maintainer checklist (GitHub):
 
-- [ ] Branch protection on `main` requires the `gate` status check.
 - [ ] Draft release workflow tested on a prior tag (see [Release workflow permissions](#release-workflow-permissions-fail-closed); do not duplicate full release validation here).

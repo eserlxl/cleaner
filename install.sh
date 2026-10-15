@@ -19,7 +19,7 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
   echo "Usage: $0 [install|uninstall]"
-  echo "Vars: PREFIX (=$PREFIX) DESTDIR BINDIR SYSCONFDIR DATADIR SYSTEMDUSERUNITDIR"
+  echo "Vars: PREFIX (=$PREFIX) DESTDIR BINDIR SYSCONFDIR MANDIR DATADIR SYSTEMDUSERUNITDIR"
 }
 
 do_install() {
