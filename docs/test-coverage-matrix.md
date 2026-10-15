@@ -49,6 +49,10 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-41 | Outside-HOME group confirmation prompt and (outside HOME) FOUND suffix | Outside HOME with --allow-outside-home / Outside HOME Group Confirmation (y) / Outside HOME Group Confirmation (n) |
 | U-42 | --dry-run --json description/min_age_days | JSON Dry Run |
 | U-43 | Plan report before cleanup and result report after | Plan Report Dry Run / Plan Report Quiet / Result Report Clean / Plan Report JSON |
+| U-44 | Non-dry-run cleanup writes last-report.txt in a 0700 directory; dry-run and --quiet still keep the plan in the file | Last Report Saved / Last Report Dry Run / Last Report Quiet |
+| U-45 | --report prints the saved report or exits 1 when it is absent | Last Report Print / Last Report Missing |
+| U-46 | A symlinked state directory is not written | Last Report Symlink |
+| U-47 | --report is mutually exclusive with --list-sessions | Report With List Sessions Rejected |
 
 ## Drift guards
 

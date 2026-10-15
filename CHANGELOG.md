@@ -16,6 +16,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- `--report` prints the last non-dry-run cleanup report (plan plus result, without
+  color codes) saved at
+  `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt`.
+  `--quiet` hides the plan on screen; the saved copy still includes it.
+  Dry-run, `--json`, and read-only modes do not write the file. A symlinked
+  state path is refused without failing the cleanup. Exits 1 when no report
+  has been saved.
 - A plan report after the savings total (status counts, reclaimable bytes by
   risk, the largest targets, skipped and rejected targets) and a result report
   after cleanup (cleaned, skipped, and failed counts, quarantined versus

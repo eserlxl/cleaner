@@ -134,12 +134,13 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   > [!WARNING]
   > Exclusion patterns are matched using standard `find` glob/path expressions. This is powerful but can be dangerous; incorrect patterns can accidentally exclude everything or deeply alter deletion/cleanup semantics. Always verify your exclusion patterns with `--dry-run` first.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date) and the targets each one holds — the type (`full` or `aged`) and original path of every quarantined item, so you can see what a session contains before restoring it or permanently purging it. Read-only and requires no config file.
+- **`--report`**: Print the saved last cleanup report and exit. Read-only and requires no config file. The report is the plan plus the result from the last non-dry-run cleanup, stored at `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` (directory mode `0700`, no color codes). Prints `No cleanup report yet.` on stderr and exits 1 when that file is absent. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
 - **`--list-targets`**: List every target defined in the configuration file (name, risk, path, description) without analyzing disk usage or modifying anything. Read-only; requires a config file.
 
   ```sh
   cleaner --list-targets --config cleaner.conf   # inventory before a selective --only-target run
   ```
-- **`--check-config`**: Validate the configuration file (field count, required fields, CHECK_PROCESSES, MIN_AGE_DAYS, known actions/risks) and exit without analyzing disk usage. Prints `OK: N targets in <path>` on success. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--list-targets`.
+- **`--check-config`**: Validate the configuration file (field count, required fields, CHECK_PROCESSES, MIN_AGE_DAYS, known actions/risks) and exit without analyzing disk usage. Prints `OK: N targets in <path>` on success. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--report`.
 
   ```sh
   cleaner --check-config --config cleaner.conf   # CI / packager structural check
@@ -151,13 +152,13 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   cleaner --list-sessions                       # see exactly what a session holds
   cleaner --restore latest --only /.cache/yarn  # take back just that one target
   ```
-- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
+- **`--only-target PATTERN`**: With cleanup, process only config targets whose `NAME` contains `PATTERN` (substring match). Other targets are ignored for analysis and cleaning. Exits 1 if no target name matches. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 
   ```sh
   cleaner --only-target "NPM" --config cleaner.conf --dry-run   # preview just the NPM target
   cleaner --only-target "NPM" --config cleaner.conf --force     # clean only that target
   ```
-- **`--exclude-target PATTERN`**: With cleanup, skip config targets whose `NAME` contains `PATTERN` (substring match). Combined with `--only-target`, both filters apply. Exits 1 if the filters leave no targets to process. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--check-config`.
+- **`--exclude-target PATTERN`**: With cleanup, skip config targets whose `NAME` contains `PATTERN` (substring match). Combined with `--only-target`, both filters apply. Exits 1 if the filters leave no targets to process. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 
   ```sh
   cleaner --exclude-target "Chromium" --config cleaner.conf --dry-run   # skip Chromium-named targets
@@ -176,7 +177,7 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
 - **`-q, --quiet`**: Suppress per-target status lines and the decorative header; errors, total savings, and the final summary still print. Useful for cron jobs that only need the reclaim total and exit code.
 - **`--debug`**: Show per-target FOUND, REJECTED and CLEAN lines (suppressed by default; overridden by `--quiet`).
 
-A plan report follows the savings total: run mode, risk ceiling, config path, counts per status, reclaimable bytes by risk, the largest targets, and skipped or rejected targets with the reason. `--quiet` suppresses that report. After cleanup, a result report lists cleaned, skipped, and failed counts, bytes quarantined versus permanently reclaimed, the quarantine session path when one was created, and elapsed time. `--json` includes neither report.
+A plan report follows the savings total: run mode, risk ceiling, config path, counts per status, reclaimable bytes by risk, the largest targets, and skipped or rejected targets with the reason. `--quiet` suppresses that report. After cleanup, a result report lists cleaned, skipped, and failed counts, bytes quarantined versus permanently reclaimed, the quarantine session path when one was created, and elapsed time. `--json` includes neither report. A non-dry-run cleanup that reaches the result report also writes both reports, without color codes, to `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt`. The saved copy includes the plan even when `--quiet` hid it on screen. Dry-run, `--json`, and the read-only modes write nothing. `--report` prints the file.
 
 Monitoring scripts consuming `--json`, `--list-targets --json`, or `--list-sessions --json` output should **tolerate unknown JSON keys**
 (forward compatibility). Breaking key renames follow **major** SemVer and appear in CHANGELOG **Changed**.
@@ -211,7 +212,7 @@ The tool is a single script; run it from a checkout (`./cleaner.sh`) or install 
 | `MANDIR` | `$PREFIX/share/man` | the `man1` page |
 | `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
 
-At runtime the config is resolved in this order: an explicit `-c/--config` path, then `$XDG_CONFIG_HOME/linux-cleaner/cleaner.conf` (default `~/.config/linux-cleaner/cleaner.conf`), then `/etc/linux-cleaner/cleaner.conf`, then a `cleaner.conf` beside the script (development checkout).
+At runtime the config is resolved in this order: an explicit `-c/--config` path, then `$XDG_CONFIG_HOME/linux-cleaner/cleaner.conf` (default `~/.config/linux-cleaner/cleaner.conf`), then `/etc/linux-cleaner/cleaner.conf`, then a `cleaner.conf` beside the script (development checkout). The last cleanup report is `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` (see `--report`).
 
 Install and uninstall with `make` (or the POSIX-sh `install.sh` wrapper):
 

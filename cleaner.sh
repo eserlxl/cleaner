@@ -52,6 +52,7 @@ Options:
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
   --list-sessions            List quarantine sessions (read-only) and exit.
+  --report                   Print the saved last cleanup report and exit.
   --list-targets             List configured cleanup targets (read-only) and exit.
   --check-config             Validate the configuration file and exit (no disk analysis).
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
@@ -90,6 +91,9 @@ PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
 CHECK_CONFIG=false
+REPORT=false
+PLAN_REPORT_TEXT=""
+RESULT_REPORT_TEXT=""
 
 # Set by any operation that was attempted and failed (a delete, a quarantine move,
 # a predefined action, a purge). The tool exits non-zero when it is set, per the
@@ -278,6 +282,10 @@ while [[ $# -gt 0 ]]; do
       LIST_SESSIONS=true
       shift
       ;;
+    --report)
+      REPORT=true
+      shift
+      ;;
     --list-targets)
       LIST_TARGETS=true
       shift
@@ -326,23 +334,28 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, or --list-targets).${NC}" >&2
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, or --report).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, or --list-targets).${NC}" >&2
+if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, or --report).${NC}" >&2
   exit 1
 fi
 
-if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true ) ]]; then
-  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, or --list-sessions.${NC}" >&2
+if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true ) ]]; then
+  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, or --report.${NC}" >&2
   exit 1
 fi
 
-if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true ) ]]; then
-  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, or --list-targets.${NC}" >&2
+if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
+  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, or --report.${NC}" >&2
+  exit 1
+fi
+
+if [[ "$REPORT" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --report cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, or --check-config.${NC}" >&2
   exit 1
 fi
 
@@ -357,7 +370,7 @@ if [[ -n "$EXCLUDE_TARGET" && "$CHECK_CONFIG" == true ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || \
+      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$REPORT" == true || \
       ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true ) \
     ) ]]; then
   echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, or --list-sessions.${NC}" >&2
@@ -369,7 +382,7 @@ if [[ "$JSON_OUTPUT" == true ]]; then
 fi
 
 # Check if config file exists (only if not restoring, purging, or listing sessions)
-if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true ]]; then
+if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given:
   # XDG user config > system config > dev-checkout config beside the script.
   if [[ -z "$CONFIG_FILE" ]]; then
@@ -1638,7 +1651,8 @@ format_bytes() {
   echo "$size ${units[$unit_idx]}"
 }
 
-# Compact plan printed after the savings total. status_echo so --quiet hides it.
+# Compact plan after the savings total. Plain printf (no color, ignores --quiet);
+# the caller prints it unless --quiet and always keeps the text for the saved copy.
 # --json exits before this runs.
 print_plan_report() {
   local i status bytes mode=dry-run shown=0
@@ -1648,7 +1662,7 @@ print_plan_report() {
   local -a rank=()
   local -A skip_groups=() block_groups=() rej_counts=()
   [[ "$DRY_RUN" != true ]] && mode=clean
-  status_echo "Plan: mode=${mode} risk=${MAX_RISK} config=${CONFIG_FILE}"
+  printf '%s\n' "Plan: mode=${mode} risk=${MAX_RISK} config=${CONFIG_FILE}"
   for i in "${!parsed_names[@]}"; do
     status="${parsed_statuses[$i]:-skipped}"
     bytes="${parsed_sizes[$i]:-0}"
@@ -1681,8 +1695,8 @@ print_plan_report() {
       esac
     fi
   done
-  status_echo "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} rejected=${rejected} unsafe/symlink=${unsafe_symlink} root=${root_n}"
-  status_echo "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
+  printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} rejected=${rejected} unsafe/symlink=${unsafe_symlink} root=${root_n}"
+  printf '%s\n' "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
   if [[ "$found" -gt 0 ]]; then
     mapfile -t rank < <(
       for i in "${!parsed_names[@]}"; do
@@ -1691,33 +1705,33 @@ print_plan_report() {
         fi
       done | sort -nr | cut -f2
     )
-    status_echo "Largest targets:"
+    printf '%s\n' "Largest targets:"
     for i in "${rank[@]}"; do
       if [[ "$shown" -ge 10 ]]; then
-        status_echo "  ... and $((${#rank[@]} - 10)) more"
+        printf '%s\n' "  ... and $((${#rank[@]} - 10)) more"
         break
       fi
       age_note=""
       if has_positive_age "${parsed_ages[$i]}"; then
         age_note=" (files > ${parsed_ages[$i]} days)"
       fi
-      status_echo "  $(format_bytes "${parsed_sizes[$i]}") ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
+      printf '%s\n' "  $(format_bytes "${parsed_sizes[$i]}") ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
       shown=$((shown + 1))
     done
   fi
   for reason in "${!skip_groups[@]}"; do
-    status_echo "Skipped (${reason}): ${skip_groups[$reason]}"
+    printf '%s\n' "Skipped (${reason}): ${skip_groups[$reason]}"
   done
   for reason in "${!block_groups[@]}"; do
-    status_echo "Blocked (${reason}): ${block_groups[$reason]}"
+    printf '%s\n' "Blocked (${reason}): ${block_groups[$reason]}"
   done
   for name in "${!rej_counts[@]}"; do
-    status_echo "Rejected: ${name} (${rej_counts[$name]} path(s))"
+    printf '%s\n' "Rejected: ${name} (${rej_counts[$name]} path(s))"
   done
   if [[ "$rejected" -gt 0 ]]; then
-    status_echo "Hint: pass --allow-outside-home to include targets outside HOME."
+    printf '%s\n' "Hint: pass --allow-outside-home to include targets outside HOME."
   fi
-  status_echo
+  printf '\n'
 }
 
 # Always printed, like the final summary. Counts are filled in by the cleanup loop.
@@ -1735,6 +1749,65 @@ print_result_report() {
   echo "Reclaimed: quarantined=$(format_bytes "$quarantined") permanent=$(format_bytes "$permanent")"
   if [[ -n "$QUARANTINE_DIR" ]]; then
     echo "Quarantine session: ${QUARANTINE_DIR}"
+  fi
+}
+
+# Read-only print of the last saved cleanup report. A symlink is not followed.
+show_last_report() {
+  local state_dir report_file
+  state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner"
+  report_file="${state_dir}/last-report.txt"
+  if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
+    echo "No cleanup report yet." >&2
+    exit 1
+  fi
+  cat -- "$report_file"
+}
+
+# Save the plan plus the result. Non-fatal: a bad state path or a write error
+# warns and leaves the cleanup's exit status unchanged. The state path is
+# untrusted, so a symlink is never followed and readers never see a partial file.
+save_last_cleanup_report() {
+  local state_dir report_file tmp body
+  state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner"
+  report_file="${state_dir}/last-report.txt"
+  if [[ -L "$state_dir" || -L "$report_file" ]]; then
+    echo "Warning: refusing to write the cleanup report; the state path is a symlink." >&2
+    return 0
+  fi
+  if ! (
+    umask 077
+    mkdir -p -- "$state_dir"
+  ); then
+    echo "Warning: could not create the cleanup report directory." >&2
+    return 0
+  fi
+  if [[ -L "$state_dir" || -L "$report_file" ]]; then
+    echo "Warning: refusing to write the cleanup report; the state path is a symlink." >&2
+    return 0
+  fi
+  if [[ ! -d "$state_dir" ]] || ! chmod 700 -- "$state_dir"; then
+    echo "Warning: could not create the cleanup report directory." >&2
+    return 0
+  fi
+  tmp=$(mktemp "${state_dir}/last-report.XXXXXX" 2>/dev/null) || {
+    echo "Warning: could not create a temporary cleanup report." >&2
+    return 0
+  }
+  body=$(printf 'Saved: %s\n%s\n\n%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$PLAN_REPORT_TEXT" "$RESULT_REPORT_TEXT" | sed $'s/\033\\[[0-9;]*m//g') || {
+    rm -f -- "$tmp" || true
+    echo "Warning: could not format the cleanup report." >&2
+    return 0
+  }
+  if ! printf '%s\n' "$body" > "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo "Warning: could not write the cleanup report." >&2
+    return 0
+  fi
+  if ! mv -f -- "$tmp" "$report_file"; then
+    rm -f -- "$tmp" || true
+    echo "Warning: could not save the cleanup report." >&2
+    return 0
   fi
 }
 
@@ -1874,6 +1947,12 @@ MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
 
 # Build exclude arguments for find
 build_exclude_find_args
+
+# Read-only: print the saved last cleanup report and exit.
+if [[ "$REPORT" == true ]]; then
+  show_last_report
+  exit 0
+fi
 
 # Read-only: list quarantine sessions and exit
 if [[ "$LIST_SESSIONS" == true ]]; then
@@ -2172,7 +2251,11 @@ echo
 echo -e "${BOLD}Total potential space savings: ${GREEN}$(format_bytes "$total_reclaimable_bytes")${NC}"
 echo
 
-print_plan_report
+# Captured once, with no color codes (the printer uses printf, not the color vars).
+PLAN_REPORT_TEXT=$(print_plan_report)
+if [[ "$QUIET" != true ]]; then
+  printf '%s\n\n' "$PLAN_REPORT_TEXT"
+fi
 
 # If dry-run is specified, we stop here
 if [[ "$DRY_RUN" = true ]]; then
@@ -2183,6 +2266,9 @@ fi
 # Check if there is anything to clean
 if [[ "$total_reclaimable_bytes" -eq 0 ]]; then
   echo -e "${GREEN}No files need cleaning. Everything is already clean!${NC}"
+  # Overwrite the previous report so --report never shows a stale run as the last one.
+  RESULT_REPORT_TEXT="Result: nothing to clean"
+  save_last_cleanup_report
   exit 0
 fi
 
@@ -2512,7 +2598,9 @@ for i in "${!parsed_names[@]}"; do
   fi
 done
 
-print_result_report
+RESULT_REPORT_TEXT=$(print_result_report)
+printf '%s\n' "$RESULT_REPORT_TEXT"
+save_last_cleanup_report
 
 echo
 if [[ "$TRASH_MODE" = true ]]; then

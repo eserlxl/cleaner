@@ -23,6 +23,13 @@ skipped, and failed counts, bytes quarantined versus permanently reclaimed,
 the quarantine session path when one was created, and elapsed time.
 .B \-\-json
 includes neither report.
+A non-dry-run cleanup also saves both reports, with a timestamp and
+without color codes, under the state directory (see
+.BR FILES ).
+.B \-\-quiet
+hides the plan on the screen; the saved copy still includes it.
+.B \-\-report
+prints that file.
 .SH OPTIONS
 .TP
 .BR \-c ", " \-\-config " " \fIFILE\fR
@@ -98,6 +105,18 @@ array of
 Implies
 .BR \-\-quiet .
 .TP
+.B \-\-report
+Print the saved last cleanup report and exit. Read-only; requires no
+configuration file. Prints
+.B "No cleanup report yet."
+on stderr and exits 1 when the file is absent. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+or
+.BR \-\-check\-config .
+.TP
 .B \-\-list\-sessions
 List quarantine sessions (read-only) and exit. Each session is shown with its
 timestamp, size, and date, followed by the targets it holds: the type
@@ -117,8 +136,9 @@ without analyzing disk usage or modifying anything. Read-only; requires a
 configuration file. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
 or
-.BR \-\-list\-sessions .
+.BR \-\-report .
 .TP
 .B \-\-check\-config
 Validate the configuration file with the same structural checks as a cleanup
@@ -129,8 +149,9 @@ on success. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
 or
-.BR \-\-list\-targets .
+.BR \-\-report .
 .TP
 .B \-\-only \fIPATTERN\fR
 Used with
@@ -156,8 +177,9 @@ Cannot be combined with
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,
+.BR \-\-check\-config ,
 or
-.BR \-\-check\-config .
+.BR \-\-report .
 .TP
 .B \-\-exclude\-target \fIPATTERN\fR
 Used with cleanup: skip config targets whose
@@ -172,8 +194,9 @@ Cannot be combined with
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,
+.BR \-\-check\-config ,
 or
-.BR \-\-check\-config .
+.BR \-\-report .
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
@@ -447,6 +470,12 @@ Default operation log when
 or
 .B LINUX_CLEANER_LOG
 is enabled and no explicit path is given.
+.TP
+.I ${XDG_STATE_HOME:\-$HOME/.local/state}/linux\-cleaner/last\-report.txt
+Last cleanup report (plan and result, without color codes), rewritten by every
+non-dry-run cleanup, including one with nothing to clean. The directory is created mode
+0700. A symlink at the directory or the file is not followed. Printed by
+.BR \-\-report .
 .SH EXIT STATUS
 Returns 0 on success and non-zero on a configuration error or a failed operation.
 .SH EXAMPLES

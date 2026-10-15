@@ -18,6 +18,8 @@ NC='\033[0m'
 # Setup test environment directories
 export TEST_ENV_DIR="${TEST_ENV_DIR:-$SCRIPT_DIR/test_env}"
 MOCK_HOME="$TEST_ENV_DIR/mock_home"
+# Last-report state stays inside the disposable test env.
+export XDG_STATE_HOME="$TEST_ENV_DIR/xdg-state"
 OUTSIDE_DIR="$TEST_ENV_DIR/outside_dir"
 
 echo -e "${BOLD}${BLUE}=== Running Refactored Cleaner Test Suite ===${NC}"
@@ -4738,6 +4740,143 @@ if run_test_case "Result Report Clean" 0 "plan_report_clean.log" \
   else
     echo -e "${RED}FAIL: result report missing cleaned count or printed out of order.${NC}"
     cat "$TEST_ENV_DIR/plan_report_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# Last cleanup report: written only after a real cleanup, printed by --report.
+setup_mock_env
+mkdir -p "$MOCK_HOME/last_report_target"
+printf 'bytes\n' > "$MOCK_HOME/last_report_target/cache.txt"
+cat > "$TEST_ENV_DIR/last_report.conf" <<'EOF'
+safe|Last Report Target|$HOME/last_report_target|last report cache|0||
+EOF
+report_state_dir="$XDG_STATE_HOME/linux-cleaner"
+report_file="$report_state_dir/last-report.txt"
+
+if run_test_case "Last Report Dry Run" 0 "last_report_dry.log" \
+     --config "$TEST_ENV_DIR/last_report.conf" --dry-run; then
+  if [[ ! -e "$XDG_STATE_HOME" && ! -e "$report_file" ]]; then
+    echo -e "${GREEN}PASS: --dry-run does not create the last cleanup report.${NC}"
+  else
+    echo -e "${RED}FAIL: --dry-run created last-report state.${NC}"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Last Report Missing" 1 "last_report_missing.log" --report; then
+  if grep -q 'No cleanup report yet.' "$TEST_ENV_DIR/last_report_missing.log"; then
+    echo -e "${GREEN}PASS: --report exits 1 when no cleanup report has been saved.${NC}"
+  else
+    echo -e "${RED}FAIL: --report missing-file message was not printed.${NC}"
+    cat "$TEST_ENV_DIR/last_report_missing.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Last Report Saved" 0 "last_report_saved.log" \
+     --config "$TEST_ENV_DIR/last_report.conf" --clean --force; then
+  report_mode=""
+  if [[ -d "$report_state_dir" && ! -L "$report_state_dir" ]]; then
+    report_mode=$(stat -c '%a' "$report_state_dir")
+  fi
+  if [[ -f "$report_file" && ! -L "$report_file" && "$report_mode" == 700 ]] \
+     && grep -q '^Plan: mode=clean ' "$report_file" \
+     && grep -q '^Result: cleaned=' "$report_file" \
+     && ! grep -q $'\033' "$report_file"; then
+    echo -e "${GREEN}PASS: --clean --force wrote the plan and result into a mode 0700 state dir.${NC}"
+  else
+    echo -e "${RED}FAIL: last cleanup report missing, colored, or not in a mode 0700 directory (mode='$report_mode').${NC}"
+    cat "$report_file" 2>/dev/null || true
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Last Report Print" 0 "last_report_print.log" --report; then
+  if diff -q "$report_file" "$TEST_ENV_DIR/last_report_print.log" >/dev/null; then
+    echo -e "${GREEN}PASS: --report prints the saved cleanup report and exits 0.${NC}"
+  else
+    echo -e "${RED}FAIL: --report output did not match the saved report.${NC}"
+    cat "$TEST_ENV_DIR/last_report_print.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A later run with nothing to clean replaces the report, so --report never shows a stale run.
+if run_test_case "Last Report Nothing To Clean" 0 "last_report_empty.log" \
+     --config "$TEST_ENV_DIR/last_report.conf" --clean --force; then
+  if grep -q '^Result: nothing to clean' "$report_file" && grep -q '^Saved: ' "$report_file"; then
+    echo -e "${GREEN}PASS: a nothing-to-clean run overwrote the saved report.${NC}"
+  else
+    echo -e "${RED}FAIL: nothing-to-clean run left a stale report.${NC}"
+    cat "$report_file" 2>/dev/null || true
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+mkdir -p "$MOCK_HOME/last_report_target"
+printf 'bytes\n' > "$MOCK_HOME/last_report_target/cache.txt"
+if run_test_case "Last Report Quiet" 0 "last_report_quiet.log" \
+     --config "$TEST_ENV_DIR/last_report.conf" --clean --force --quiet; then
+  if ! grep -q '^Plan:' "$TEST_ENV_DIR/last_report_quiet.log" \
+     && grep -q '^Result: cleaned=' "$TEST_ENV_DIR/last_report_quiet.log" \
+     && grep -q '^Plan: mode=clean ' "$report_file" \
+     && grep -q '^Result: cleaned=' "$report_file"; then
+    echo -e "${GREEN}PASS: --quiet hides the plan on screen and still saves it.${NC}"
+  else
+    echo -e "${RED}FAIL: quiet cleanup did not keep the plan in the saved report only.${NC}"
+    cat "$TEST_ENV_DIR/last_report_quiet.log"
+    cat "$report_file" 2>/dev/null || true
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+mkdir -p "$MOCK_HOME/last_report_target"
+printf 'bytes\n' > "$MOCK_HOME/last_report_target/cache.txt"
+symlink_target="$TEST_ENV_DIR/symlink-report-target"
+rm -rf "$XDG_STATE_HOME"
+mkdir -p "$XDG_STATE_HOME" "$symlink_target"
+printf 'untouched\n' > "$symlink_target/marker"
+ln -s "$symlink_target" "$XDG_STATE_HOME/linux-cleaner"
+if run_test_case "Last Report Symlink" 0 "last_report_symlink.log" \
+     --config "$TEST_ENV_DIR/last_report.conf" --clean --force; then
+  if grep -q 'state path is a symlink' "$TEST_ENV_DIR/last_report_symlink.log" \
+     && [[ -L "$XDG_STATE_HOME/linux-cleaner" ]] \
+     && [[ "$(cat "$symlink_target/marker")" == "untouched" ]] \
+     && [[ -z "$(find "$symlink_target" -mindepth 1 ! -name marker -print)" ]] \
+     && [[ ! -e "$MOCK_HOME/last_report_target/cache.txt" ]]; then
+    echo -e "${GREEN}PASS: a symlinked state directory was refused and its target stayed untouched.${NC}"
+  else
+    echo -e "${RED}FAIL: symlinked state directory was followed or cleanup did not finish.${NC}"
+    cat "$TEST_ENV_DIR/last_report_symlink.log"
+    find "$symlink_target" -print
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Report With List Sessions Rejected" 1 "last_report_mutex.log" \
+     --report --list-sessions; then
+  if grep -q 'report cannot be combined' "$TEST_ENV_DIR/last_report_mutex.log"; then
+    echo -e "${GREEN}PASS: --report with --list-sessions is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --report with --list-sessions was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/last_report_mutex.log"
     exit 1
   fi
 else
