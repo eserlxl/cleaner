@@ -1,8 +1,9 @@
 [Unit]
-Description=Linux Cleaner quarantine cleanup
+Description=Linux Cleaner daily cleanup
 
 [Service]
 Type=oneshot
 # Adjust path if cleaner is not on PATH (default install: /usr/local/bin; Arch: /usr/bin).
-ExecStart=/usr/bin/env cleaner --clean --trash --force
+# Matches RUNBOOK cron: cleaner --clean --force (permanent deletion; quarantine is LINUX_CLEANER_TRASH=1).
+ExecStart=/usr/bin/env cleaner --clean --force
 EnvironmentFile=-%h/.config/linux-cleaner/env

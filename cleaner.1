@@ -476,6 +476,23 @@ Last cleanup report (plan and result, without color codes), rewritten by every
 non-dry-run cleanup, including one with nothing to clean. The directory is created mode
 0700. A symlink at the directory or the file is not followed. Printed by
 .BR \-\-report .
+.TP
+.I /usr/lib/systemd/user/linux-cleaner-clean.service
+.I /usr/lib/systemd/user/linux-cleaner-clean.timer
+.I /usr/lib/systemd/user/linux-cleaner-retention.service
+.I /usr/lib/systemd/user/linux-cleaner-retention.timer
+.I /usr/lib/systemd/user/linux-cleaner-monitor.service
+.I /usr/lib/systemd/user/linux-cleaner-monitor.timer
+Systemd user units installed by
+.B make install
+with
+.B PREFIX=/usr
+(mode 0644). Install does not enable them. The clean unit runs
+.B cleaner \-\-clean \-\-force
+and deletes permanently unless
+.B LINUX_CLEANER_TRASH=1
+is set in
+.IR ~/.config/linux-cleaner/env .
 .SH EXIT STATUS
 Returns 0 on success and non-zero on a configuration error or a failed operation.
 .SH EXAMPLES
@@ -511,7 +528,10 @@ Show per-target FOUND, REJECTED and CLEAN lines via environment (same as
 .BR \-\-debug ):
 .B LINUX_CLEANER_DEBUG=1 cleaner \-\-dry\-run
 .TP
-Bounded unattended retention (daily trash, weekly expire):
+Daily cleanup (permanent deletion of safe targets):
+.B cleaner \-\-clean \-\-force
+.TP
+Opt-in quarantine, paired with weekly retention:
 .B cleaner \-\-clean \-\-trash \-\-force
 .br
 .B cleaner \-\-purge\-sessions older\-than:30 \-\-force

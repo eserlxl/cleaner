@@ -2612,6 +2612,12 @@ else
   exit 1
 fi
 
+if grep -q -- '--trash' "$SCRIPT_DIR/examples/systemd/linux-cleaner-clean.service"; then
+  echo -e "${RED}FAIL: examples/systemd/linux-cleaner-clean.service passes --trash.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: examples/systemd/linux-cleaner-clean.service does not pass --trash.${NC}"
+
 if command -v make > /dev/null 2>&1; then
   freshroot="$TEST_ENV_DIR/freshroot"
   makeroot="$TEST_ENV_DIR/makeroot"
@@ -2626,16 +2632,39 @@ if command -v make > /dev/null 2>&1; then
     cat "$TEST_ENV_DIR/drift.log"
     exit 1
   fi
+  units_ok=true
+  for unit in linux-cleaner-clean.service linux-cleaner-clean.timer \
+              linux-cleaner-retention.service linux-cleaner-retention.timer \
+              linux-cleaner-monitor.service linux-cleaner-monitor.timer; do
+    unit_path="$makeroot/usr/lib/systemd/user/$unit"
+    if [[ ! -f "$unit_path" ]] || [[ "$(stat -c '%a' "$unit_path" 2>/dev/null)" != "644" ]]; then
+      echo -e "${RED}FAIL: make install did not ship '$unit' mode 644.${NC}"
+      units_ok=false
+    fi
+  done
+  if [[ "$units_ok" != true ]]; then
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: make install shipped six systemd user units mode 644.${NC}"
   unmakeroot="$TEST_ENV_DIR/unmakeroot"
   make -C "$SCRIPT_DIR" install DESTDIR="$unmakeroot" PREFIX=/usr \
     > "$TEST_ENV_DIR/make_install_for_uninstall.log" 2>&1
   make -C "$SCRIPT_DIR" uninstall DESTDIR="$unmakeroot" PREFIX=/usr \
     > "$TEST_ENV_DIR/make_uninstall.log" 2>&1
+  units_removed=true
+  for unit in linux-cleaner-clean.service linux-cleaner-clean.timer \
+              linux-cleaner-retention.service linux-cleaner-retention.timer \
+              linux-cleaner-monitor.service linux-cleaner-monitor.timer; do
+    if [[ -e "$unmakeroot/usr/lib/systemd/user/$unit" ]]; then
+      units_removed=false
+    fi
+  done
   if [[ ! -e "$unmakeroot/usr/bin/cleaner" ]] \
      && [[ ! -e "$unmakeroot/usr/share/man/man1/cleaner.1" ]] \
      && [[ ! -e "$unmakeroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
-     && [[ -f "$unmakeroot/etc/linux-cleaner/cleaner.conf" ]]; then
-    echo -e "${GREEN}PASS: make uninstall removed the binary, man page, and license but kept the config.${NC}"
+     && [[ -f "$unmakeroot/etc/linux-cleaner/cleaner.conf" ]] \
+     && [[ "$units_removed" == true ]]; then
+    echo -e "${GREEN}PASS: make uninstall removed the binary, man page, license, and systemd user units but kept the config.${NC}"
   else
     echo -e "${RED}FAIL: make uninstall did not clean up correctly (or removed the system config).${NC}"
     cat "$TEST_ENV_DIR/make_uninstall.log"

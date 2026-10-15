@@ -16,6 +16,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Added
+- `make install` ships the systemd user units under `$(PREFIX)/lib/systemd/user`
+  (mode 0644). Install does not enable them.
 - `--report` prints the last non-dry-run cleanup report (plan plus result, without
   color codes) saved at
   `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt`.
@@ -71,6 +73,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   enables `--allow-outside-home`. No CLI flag disables it; set it to `0` or unset it.
 
 ### Changed
+- The daily clean unit no longer forces `--trash` (opt in with `LINUX_CLEANER_TRASH=1`).
 - `--debug` (and `LINUX_CLEANER_DEBUG`) now also shows per-target `FOUND` and
   `REJECTED` lines; a default dry-run hides them so the totals stay readable.
   `--quiet` still suppresses them.

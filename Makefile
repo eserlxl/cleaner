@@ -1,12 +1,13 @@
 # Makefile for the Linux Cache and Temp File Cleaner.
 # Install paths derive from PREFIX and honor DESTDIR (see README "Installation").
 
-PREFIX     ?= /usr/local
-DESTDIR    ?=
-BINDIR     ?= $(PREFIX)/bin
-SYSCONFDIR ?= /etc
-MANDIR     ?= $(PREFIX)/share/man
-DATADIR    ?= $(PREFIX)/share
+PREFIX             ?= /usr/local
+DESTDIR            ?=
+BINDIR             ?= $(PREFIX)/bin
+SYSCONFDIR         ?= /etc
+MANDIR             ?= $(PREFIX)/share/man
+DATADIR            ?= $(PREFIX)/share
+SYSTEMDUSERUNITDIR ?= $(PREFIX)/lib/systemd/user
 
 # Installed command name (the source script is cleaner.sh) and package namespace.
 BINNAME    ?= cleaner
@@ -18,7 +19,7 @@ all: help
 
 help:
 	@echo "Targets: install, uninstall, install-man, check, clean, pre-release, check-aur-ready, check-runbook-examples"
-	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR"
+	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR SYSTEMDUSERUNITDIR (=$(SYSTEMDUSERUNITDIR))"
 
 install: install-man
 	install -d "$(DESTDIR)$(BINDIR)"
@@ -32,6 +33,8 @@ install: install-man
 	fi
 	install -d "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)"
 	install -m 0644 LICENSE "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
+	install -d "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"
+	install -m 0644 examples/systemd/*.service examples/systemd/*.timer "$(DESTDIR)$(SYSTEMDUSERUNITDIR)/"
 
 install-man:
 	install -d "$(DESTDIR)$(MANDIR)/man1"
@@ -42,6 +45,13 @@ uninstall:
 	rm -f "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
 	rm -f "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
 	-rmdir "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)" 2>/dev/null
+	rm -f "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.service \
+		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.timer \
+		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-retention.service \
+		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-retention.timer \
+		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-monitor.service \
+		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-monitor.timer
+	-rmdir "$(DESTDIR)$(SYSTEMDUSERUNITDIR)" 2>/dev/null
 	@echo "Note: the system config $(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)/cleaner.conf is preserved (it may hold user edits)."
 
 check-runbook-examples:

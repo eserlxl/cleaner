@@ -165,11 +165,12 @@ Once installed system-wide, run the command directly (e.g. `cleaner [OPTIONS]`);
   ```
 - **`--purge-sessions SESSION`**: Permanently delete quarantine session(s) to reclaim the space trash mode holds — `latest`, `all`, `older-than:DAYS` (age-based retention: purge every session older than `DAYS`; exits 0 when none match, so it is safe to run from cron), or a specific timestamp/folder name. A named timestamp must be an immediate child directory name (no path separators or `.`/`..`). Requires no config file.
 
-  A bounded unattended setup — clean into quarantine daily, expire it weekly:
+  Daily cleanup permanently deletes safe targets. Quarantine is opt-in and must be paired with a retention purge:
 
   ```sh
-  cleaner --clean --trash --force                 # daily: reclaim into quarantine
-  cleaner --purge-sessions older-than:30 --force  # weekly: expire what is 30+ days old
+  cleaner --clean --force                          # daily: permanently delete safe targets
+  cleaner --clean --trash --force                  # opt-in: reclaim into quarantine
+  cleaner --purge-sessions older-than:30 --force   # weekly: expire quarantine 30+ days old
   ```
   > [!WARNING]
   > Purging is irreversible: a purged session can no longer be restored. It prompts for confirmation unless `-f/--force` is given, and only ever removes directories under `~/.cache/linux-cleaner/quarantine/`.
@@ -211,6 +212,7 @@ The tool is a single script; run it from a checkout (`./cleaner.sh`) or install 
 | `SYSCONFDIR` | `/etc` | the config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
 | `MANDIR` | `$PREFIX/share/man` | the `man1` page |
 | `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
+| `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units from `examples/systemd/` (mode 0644; not enabled) |
 
 At runtime the config is resolved in this order: an explicit `-c/--config` path, then `$XDG_CONFIG_HOME/linux-cleaner/cleaner.conf` (default `~/.config/linux-cleaner/cleaner.conf`), then `/etc/linux-cleaner/cleaner.conf`, then a `cleaner.conf` beside the script (development checkout). The last cleanup report is `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` (see `--report`).
 
@@ -226,7 +228,23 @@ sudo make uninstall                 # remove installed files (the system config 
 
 A reinstall never overwrites an edited system config: if `cleaner.conf` already exists it is left untouched and `cleaner.conf.example` is written alongside it instead.
 
-After installation, `man cleaner` shows the manual page.
+After installation, `man cleaner` shows the manual page. `make install` and `install.sh` copy the six user units. Install does not enable any unit.
+
+## Daily cleanup
+
+The installed user timer permanently deletes safe targets:
+
+```sh
+systemctl --user enable --now linux-cleaner-clean.timer
+```
+
+When `LINUX_CLEANER_TRASH=1` is set in `~/.config/linux-cleaner/env`, that timer quarantines instead of deleting, and the retention timer must also be enabled:
+
+```sh
+systemctl --user enable --now linux-cleaner-retention.timer
+```
+
+`cleaner --report` prints what the last run did. `journalctl --user -u linux-cleaner-clean.service` shows the raw log.
 
 ---
 

@@ -27,7 +27,13 @@ cleaner --check-config --config /path/to/cleaner.conf
 
 Exit codes: skips exit 0; failed operations exit 1 (see README Exit status).
 
-## Cron: daily quarantine cleanup
+## Cron: daily cleanup
+
+```cron
+0 3 * * * LINUX_CLEANER_FORCE=1 cleaner --clean --force
+```
+
+Permanent deletion of safe targets. Quarantine is opt-in and must be paired with the retention purge below:
 
 ```cron
 0 3 * * * LINUX_CLEANER_FORCE=1 LINUX_CLEANER_TRASH=1 cleaner --clean --trash --force
@@ -59,12 +65,13 @@ Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) additionally n
 
 ## systemd user timers
 
-Copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. Only `linux-cleaner-clean.service` loads this file. The monitor and retention services use their own unit settings; cleanup filters and JSON flags in this file do not affect them. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
+`make install` places the units on the systemd user path (`$PREFIX/lib/systemd/user`) and does not enable them. A checkout that is not installed can instead copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. Only `linux-cleaner-clean.service` loads this file. The monitor and retention services use their own unit settings; cleanup filters and JSON flags in this file do not affect them. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
 
-Enable the paired timers:
+Enable the daily cleanup timer. It deletes permanently unless `LINUX_CLEANER_TRASH=1` is set in `~/.config/linux-cleaner/env`. Enable the retention timer only in that case:
 
 ```sh
 systemctl --user enable --now linux-cleaner-clean.timer
+# When LINUX_CLEANER_TRASH=1 is set in ~/.config/linux-cleaner/env:
 systemctl --user enable --now linux-cleaner-retention.timer
 # Optional JSON monitoring dry-run (parity with cron below):
 systemctl --user enable --now linux-cleaner-monitor.timer
@@ -84,10 +91,18 @@ journalctl --user -u linux-cleaner-monitor.service
 
 ```sh
 export LINUX_CLEANER_FORCE=1
-export LINUX_CLEANER_TRASH=1
 export LINUX_CLEANER_RISK=safe
 # optional: LINUX_CLEANER_QUIET=1 LINUX_CLEANER_LOG=~/.cache/linux-cleaner/ops.log
 # debug:    LINUX_CLEANER_DEBUG=1 (same as --debug)
+cleaner --clean --force
+```
+
+Quarantine instead of delete, paired with the retention purge above (or `linux-cleaner-retention.timer`):
+
+```sh
+export LINUX_CLEANER_FORCE=1
+export LINUX_CLEANER_TRASH=1
+export LINUX_CLEANER_RISK=safe
 cleaner --clean --trash --force
 ```
 
@@ -131,7 +146,7 @@ Package-cache `action:*` tokens include `action:apt_clean`, `action:dnf_clean`, 
 
 | Path | Purpose |
 |------|---------|
-| examples/systemd/linux-cleaner-clean.service | daily trash clean |
+| examples/systemd/linux-cleaner-clean.service | daily permanent cleanup (quarantine if LINUX_CLEANER_TRASH=1) |
 | examples/systemd/linux-cleaner-clean.timer | clean timer |
 | examples/systemd/linux-cleaner-retention.service | retention purge |
 | examples/systemd/linux-cleaner-retention.timer | retention timer |
