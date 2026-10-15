@@ -599,6 +599,50 @@ is_cxx_build_dir() {
             -print -quit 2>/dev/null) ]]
 }
 
+# True when a candidate path relative to the literal prefix ($1) matches a
+# pattern tail ($2) component by component. A "**" component spans one or more
+# whole directory components; any other pattern component matches exactly one
+# component via [[ "$comp" == $pat ]] (pattern matching, not pathname expansion).
+_glob_parts_match() {
+  local ci="$1" pi="$2" cn="${#cand_parts[@]}" pn="${#pat_parts[@]}"
+  local pat rem
+  while [[ "$pi" -lt "$pn" ]]; do
+    pat="${pat_parts[$pi]}"
+    if [[ "$pat" == "**" ]]; then
+      while [[ $((pi + 1)) -lt "$pn" && "${pat_parts[$((pi + 1))]}" == "**" ]]; do
+        pi=$((pi + 1))
+        ci=$((ci + 1))
+      done
+      # "**" must consume at least one component.
+      ci=$((ci + 1))
+      [[ "$ci" -gt "$cn" ]] && return 1
+      pi=$((pi + 1))
+      [[ "$pi" -eq "$pn" ]] && return 0
+      rem=$((pn - pi))
+      while [[ "$ci" -le $((cn - rem)) ]]; do
+        _glob_parts_match "$ci" "$pi" && return 0
+        ci=$((ci + 1))
+      done
+      return 1
+    fi
+    [[ "$ci" -ge "$cn" ]] && return 1
+    # Intentionally unquoted on the right side of == inside [[ ]] for pattern matching.
+    # shellcheck disable=SC2053
+    [[ "${cand_parts[$ci]}" == $pat ]] || return 1
+    ci=$((ci + 1))
+    pi=$((pi + 1))
+  done
+  [[ "$ci" -eq "$cn" ]]
+}
+
+glob_components_match() {
+  local rel_cand="$1" rel_pat="$2"
+  local -a cand_parts=() pat_parts=()
+  IFS='/' read -r -a cand_parts <<< "$rel_cand"
+  IFS='/' read -r -a pat_parts <<< "$rel_pat"
+  _glob_parts_match 0 0
+}
+
 # Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
 # one line per matching directory. Expansion runs through find, never a shell glob
 # and never eval, so the documented no-wildcard-eval contract still holds: only the
@@ -608,7 +652,7 @@ is_cxx_build_dir() {
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor
+  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar
   local -a prune_args
   local -A accepted_matches
 
@@ -651,12 +695,16 @@ expand_config_globs() {
     max_depth="$depth"
 
     # A "**" component matches one or more intervening directories, so the pattern
-    # spans a range of depths instead of one exact depth. GNU find's -path already
-    # lets * cross '/', so the pattern itself needs no rewriting -- only the search
-    # bounds widen. The ceiling is fixed rather than unbounded so a mistyped pattern
+    # spans a range of depths instead of one exact depth. Because GNU find's -path
+    # lets a plain * cross '/', widen the search bounds here and then verify each
+    # candidate component by component via glob_components_match so only a "**"
+    # component spans multiple directory levels while * and ? match within a single
+    # component. The ceiling is fixed rather than unbounded so a mistyped pattern
     # cannot walk an arbitrarily deep tree; a "**" in the first component is still
     # refused below, because the prefix is then empty.
+    has_globstar=false
     if [[ "/$tail_part/" == *"/**/"* || "$tail_part" == "**" ]]; then
+      has_globstar=true
       max_depth="$GLOB_RECURSION_MAX_DEPTH"
       [[ "$depth" -gt "$max_depth" ]] && max_depth="$depth"
     fi
@@ -678,15 +726,17 @@ expand_config_globs() {
     # "build/CMakeFiles" and every path below it.
     leaf="${raw_path##*/}"
 
-    # Stop at unfiltered matches. Filtered discovery must walk through rejected
-    # parents; suppress descendants only after a parent passes the filter.
+    # Stop at unfiltered matches. When "**" widens the search depth or a filter is
+    # active, find must walk through rejected parents so a candidate rejected by
+    # glob_components_match or the filter cannot prune a valid deeper match;
+    # descendants of accepted matches are suppressed in bash below.
     #
     # A pattern that matches nothing emits no target and is not an error, matching
     # the existing status of a configured path that does not exist.
     # A filter: token in CUSTOM_ACTION (field 7) constrains which expanded matches
     # become targets. Every accepted directory must still match the path pattern.
     prune_args=(-prune)
-    [[ "$target_filter" == "filter:cxx_build" ]] && prune_args=()
+    [[ "$target_filter" == "filter:cxx_build" || "$has_globstar" == true ]] && prune_args=()
     accepted_matches=()
     while IFS= read -r -d '' match; do
       [[ -z "$match" ]] && continue
@@ -699,15 +749,18 @@ expand_config_globs() {
           "$CONFIG_FILE" "$lineno" "$match" >&2
         continue
       fi
-      if [[ "$target_filter" == "filter:cxx_build" ]]; then
+      glob_components_match "${match#"$prefix"/}" "$tail_part" || continue
+      if [[ "${#prune_args[@]}" -eq 0 ]]; then
         ancestor="${match%/*}"
         while [[ "$ancestor" == "$prefix"/* ]]; do
           [[ -n "${accepted_matches[$ancestor]:-}" ]] && continue 2
           ancestor="${ancestor%/*}"
         done
-        is_cxx_build_dir "$match" || continue
-        accepted_matches["$match"]=1
       fi
+      if [[ "$target_filter" == "filter:cxx_build" ]]; then
+        is_cxx_build_dir "$match" || continue
+      fi
+      [[ "${#prune_args[@]}" -eq 0 ]] && accepted_matches["$match"]=1
       printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
     done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
                   -type d -name "$leaf" -path "$raw_path" "${prune_args[@]}" -print0 2>/dev/null | sort -z)

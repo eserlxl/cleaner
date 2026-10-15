@@ -61,6 +61,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-53 | `strip_trailing_slashes` strips all trailing slashes so symlink targets with repeated trailing slashes are refused as `[SYMLINK]` | Symlink Target Trailing Slashes |
 | U-54 | Quarantine session directories (`mkdir -m 700`) and newly created quarantine base directories are created with mode `0700` regardless of caller umask | Quarantine Session And Base Mode 0700 |
 | U-55 | Restore rejects symlink conflicts at the original path (full and aged) or any existing intermediate directory component under an aged target, logging `outcome=conflict` and keeping the session retryable | Restore Aged Subdir Symlink Conflict / Restore Aged Subdir Symlink Retry / Restore Aged Original Path Symlink Conflict / Restore Aged Original Path Symlink Retry / Restore Full Original Path Symlink Conflict |
+| U-56 | Wildcard patterns with `**` match non-`**` components (`*`, `?`, literals) within a single directory component only, without pruning deeper valid matches beneath rejected parents | Wildcard Component Matching Dry Run |
 
 ## Drift guards
 

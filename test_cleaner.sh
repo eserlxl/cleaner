@@ -5313,5 +5313,42 @@ if ! run_test_case "Restore Full Original Path Symlink Conflict" 1 "r_full_sym_o
 fi
 echo -e "${GREEN}PASS: restore rejects symlink conflicts on full and aged original paths and aged intermediate directories.${NC}"
 
+# In a pattern containing "**", only a "**" component may span multiple
+# directory levels; "*" and "?" must match within a single component only,
+# and a rejected parent candidate must not prune a valid deeper match.
+echo -e "\n${BOLD}Test Case: Wildcard Component Matching With Globstar${NC}"
+setup_mock_env
+for rel_dir in \
+    "glob/p/app/one/build" \
+    "glob/p/q/app/one/build" \
+    "glob/p/app/one/extra/build" \
+    "glob/p/app/one/extra/app/two/build" \
+    "glob2/a/x/m/build" \
+    "glob2/a/b/x/m/build"; do
+  mkdir -p "$MOCK_HOME/$rel_dir"
+  printf 'payload\n' > "$MOCK_HOME/$rel_dir/out.o"
+done
+cat > "$TEST_ENV_DIR/glob_comp.conf" <<'EOF'
+safe|Glob App Build|$HOME/glob/**/app/*/build|globstar before single-component star|0||
+safe|Glob2 Build|$HOME/glob2/*/x/**/b?ild|single-component star before globstar and qmark|0||
+EOF
+
+if ! run_test_case "Wildcard Component Matching Dry Run" 0 "glob_comp_dry.log" \
+       --config "$TEST_ENV_DIR/glob_comp.conf" --dry-run --debug \
+   || [[ "$(grep -c '\[FOUND\] Glob App Build ' "$TEST_ENV_DIR/glob_comp_dry.log")" -ne 3 ]] \
+   || [[ "$(grep -c '\[FOUND\] Glob2 Build ' "$TEST_ENV_DIR/glob_comp_dry.log")" -ne 1 ]] \
+   || ! grep -qF "Glob App Build $MOCK_HOME/glob/p/app/one/build" "$TEST_ENV_DIR/glob_comp_dry.log" \
+   || ! grep -qF "Glob App Build $MOCK_HOME/glob/p/q/app/one/build" "$TEST_ENV_DIR/glob_comp_dry.log" \
+   || ! grep -qF "Glob App Build $MOCK_HOME/glob/p/app/one/extra/app/two/build" "$TEST_ENV_DIR/glob_comp_dry.log" \
+   || grep -qE "Glob App Build $MOCK_HOME/glob/p/app/one/extra/build$" "$TEST_ENV_DIR/glob_comp_dry.log" \
+   || ! grep -qF "Glob2 Build $MOCK_HOME/glob2/a/x/m/build" "$TEST_ENV_DIR/glob_comp_dry.log" \
+   || grep -qF "$MOCK_HOME/glob2/a/b/x/m/build" "$TEST_ENV_DIR/glob_comp_dry.log" \
+   || [[ "$(grep -c '\[FOUND\]' "$TEST_ENV_DIR/glob_comp_dry.log")" -ne 4 ]]; then
+  echo -e "${RED}FAIL: wildcard component matching with '**' selected multi-component '*' matches or pruned a valid deeper match.${NC}"
+  cat "$TEST_ENV_DIR/glob_comp_dry.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: '**' spans multiple directory levels while '*' and '?' match single components only.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

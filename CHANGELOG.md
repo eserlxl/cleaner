@@ -16,6 +16,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- `expand_config_globs` now verifies wildcard candidates component by component
+  (`glob_components_match`), so in patterns containing `**` only a `**`
+  component spans multiple directory levels while `*` and `?` match within a
+  single component without pruning deeper valid matches beneath rejected
+  candidates.
 - `--restore` now treats a symlink at a full or aged record's original path, or
   at any existing intermediate directory component between an aged record's
   original path and the destination file's parent, as a conflict (`outcome=conflict`)
