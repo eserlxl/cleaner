@@ -16,6 +16,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ## [Unreleased]
 
 ### Fixed
+- Create each quarantine session directory atomically with mode `0700` (`mkdir
+  -m 700`) and create missing `~/.cache/linux-cleaner/quarantine` directories
+  under `umask 077` (`0700`), preventing aged or full `--trash` runs under a
+  permissive umask (such as `022`) from exposing quarantined files from private
+  `0700` source directories to other local users.
 - `strip_trailing_slashes` now removes all trailing slashes (preserving `/` for
   all-slash inputs) so a symlink target configured with multiple trailing
   slashes (e.g. `$HOME/link//`) is still caught by the `[SYMLINK]` guard instead

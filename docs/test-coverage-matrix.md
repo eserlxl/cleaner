@@ -59,6 +59,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-51 | `--check-config` accepts valid `protect|PATH` lines without counting them as targets and rejects empty, relative, glob-bearing, or extra-field `protect` lines with `file:line` | Protect Check Config Valid / Protect Invalid (empty, relative, glob_star, glob_qmark, glob_bracket, extra) |
 | U-52 | `filter:cxx_build` with `MIN_AGE_DAYS > 0` cleans build directories as a whole only when idle and leaves active build trees untouched while keeping per-file age deletion on other rows | Idle Builds Debug Dry Run / Idle Builds Clean Force |
 | U-53 | `strip_trailing_slashes` strips all trailing slashes so symlink targets with repeated trailing slashes are refused as `[SYMLINK]` | Symlink Target Trailing Slashes |
+| U-54 | Quarantine session directories (`mkdir -m 700`) and newly created quarantine base directories are created with mode `0700` regardless of caller umask | Quarantine Session And Base Mode 0700 |
 
 ## Drift guards
 

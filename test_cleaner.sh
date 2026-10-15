@@ -5141,5 +5141,63 @@ for link_spelling in 'link' 'link/' 'link//' 'link////'; do
 done
 echo -e "${GREEN}PASS: symlink targets with one or more trailing slashes are refused as [SYMLINK] and leave referent and link intact.${NC}"
 
+# Quarantine session and base directories are created mode 0700 even under
+# umask 022 and a 0755 HOME/.cache, for both aged and full targets.
+echo -e "\n${BOLD}Test Case: Quarantine Session And Base Mode 0700${NC}"
+setup_mock_env
+chmod 755 "$MOCK_HOME" "$MOCK_HOME/.cache"
+mkdir -p "$MOCK_HOME/aged_target/priv"
+chmod 700 "$MOCK_HOME/aged_target/priv"
+printf 'secret\n' > "$MOCK_HOME/aged_target/priv/old.txt"
+chmod 644 "$MOCK_HOME/aged_target/priv/old.txt"
+touch -d '10 days ago' "$MOCK_HOME/aged_target/priv/old.txt"
+cat > "$TEST_ENV_DIR/umask_aged.conf" <<'EOF'
+safe|Aged Private|$HOME/aged_target|aged target with private subdir|7||
+EOF
+aged_umask_ec=0
+(
+  umask 022
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/umask_aged.conf" --clean --force --trash \
+    < /dev/null > "$TEST_ENV_DIR/umask_aged.log" 2>&1
+) || aged_umask_ec=$?
+q_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+aged_sess=$(find "$q_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n 1)
+if [[ "$aged_umask_ec" -ne 0 || -z "$aged_sess" ]] \
+   || [[ "$(stat -c %a "$MOCK_HOME/.cache/linux-cleaner")" != "700" ]] \
+   || [[ "$(stat -c %a "$q_base")" != "700" ]] \
+   || [[ "$(stat -c %a "$aged_sess")" != "700" ]] \
+   || [[ ! -f "$aged_sess/0_Aged_Private/priv/old.txt" ]]; then
+  echo -e "${RED}FAIL: aged quarantine under umask 022 did not create 0700 base and session directories.${NC}"
+  cat "$TEST_ENV_DIR/umask_aged.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+chmod 755 "$MOCK_HOME" "$MOCK_HOME/.cache"
+mkdir -p "$MOCK_HOME/full_target"
+printf 'full-secret\n' > "$MOCK_HOME/full_target/item.txt"
+chmod 644 "$MOCK_HOME/full_target/item.txt"
+cat > "$TEST_ENV_DIR/umask_full.conf" <<'EOF'
+safe|Full Target|$HOME/full_target|full target|0||
+EOF
+full_umask_ec=0
+(
+  umask 022
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/umask_full.conf" --clean --force --trash \
+    < /dev/null > "$TEST_ENV_DIR/umask_full.log" 2>&1
+) || full_umask_ec=$?
+full_sess=$(find "$q_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n 1)
+if [[ "$full_umask_ec" -ne 0 || -z "$full_sess" ]] \
+   || [[ "$(stat -c %a "$q_base")" != "700" ]] \
+   || [[ "$(stat -c %a "$full_sess")" != "700" ]] \
+   || [[ ! -f "$full_sess/0_Full_Target/item.txt" ]]; then
+  echo -e "${RED}FAIL: full quarantine under umask 022 did not create 0700 base and session directories.${NC}"
+  cat "$TEST_ENV_DIR/umask_full.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: quarantine base and session directories are mode 0700 under umask 022 for aged and full targets.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

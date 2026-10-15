@@ -92,6 +92,7 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 | Scenario | Control |
 |----------|---------|
 | Metadata tampering | Residual risk: restore trusts recorded paths and ownership; protect the quarantine tree from untrusted edits |
+| Multi-user disclosure of quarantined files | Each session directory is created atomically with mode `0700` (`mkdir -m 700`), and missing `~/.cache/linux-cleaner/quarantine` parents are created `0700` when created by the tool |
 | Restore conflicts | Restore with Conflict test (collision detection) |
 | Action vs trash confusion | irreversible action:* WARNING |
 | Path escape via SESSION name | `validate_quarantine_session_name` rejects `/`, `.`, `..` (Restore/Purge Invalid Session) |

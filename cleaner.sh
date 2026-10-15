@@ -2554,7 +2554,7 @@ for i in "${!parsed_names[@]}"; do
     if [[ -z "$QUARANTINE_DIR" ]]; then
       time_stamp=$(date +%Y-%m-%d_%H-%M-%S)
       quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
-      mkdir -p "$quarantine_base"
+      (umask 077; mkdir -p "$quarantine_base")
       session_suffix=0
       while true; do
         if [[ "$session_suffix" -eq 0 ]]; then
@@ -2563,7 +2563,7 @@ for i in "${!parsed_names[@]}"; do
           printf -v session_suffix_text '%06d' "$session_suffix"
           QUARANTINE_DIR="$quarantine_base/${time_stamp}_${session_suffix_text}"
         fi
-        if mkdir "$QUARANTINE_DIR" 2>/dev/null; then
+        if mkdir -m 700 "$QUARANTINE_DIR" 2>/dev/null; then
           break
         fi
         if [[ -e "$QUARANTINE_DIR" || -L "$QUARANTINE_DIR" ]]; then
