@@ -14,7 +14,7 @@ source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # PLACEHOLDER ONLY -- no v$pkgver release tarball exists yet to checksum. Before
 # any real build or AUR submission, run `updpkgsums` to pin the real sha256 of
 # the release tarball (see RELEASING.md "Packaging"). Never publish with SKIP.
-sha256sums=('SKIP')
+sha256sums=('b222e984908050a9c805aaa0d7c94ef452c4dd83958db52df448676f79bacf92')
 
 package() {
   cd "$srcdir/cleaner-$pkgver"
