@@ -39,6 +39,8 @@ systemctl --user daemon-reload       # after uninstall
 
 The `systemctl --user` commands are per user: each user who enabled the timers runs them. Uninstall only removes files, so enabled-unit links and loaded timer state remain otherwise.
 
+**Switching from `make install` to a distro or AUR package.** `make uninstall` keeps `/etc/linux-cleaner/cleaner.conf`, which no package owns, so pacman then refuses to install with "exists in filesystem". After uninstalling, back up that file if you edited it, then move or remove it; the package installs its own copy and keeps your later edits (`backup=`). If the unit files are already gone, `systemctl --user disable --now` fails: run `systemctl --user stop linux-cleaner-clean.timer` (and the other timers you enabled), delete the stale `~/.config/systemd/user/timers.target.wants/linux-cleaner-*.timer` links, and run `systemctl --user daemon-reload`. Before re-enabling the timer, read the catch-up warning under [Daily cleanup](#daily-cleanup).
+
 For Arch Linux (`PKGBUILD`), `package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`, placing the command at `/usr/bin/cleaner` and the user units at `/usr/lib/systemd/user/`. See [RELEASING.md](RELEASING.md#ordered-aur-packaging-checklist) and [docs/packager-handoff.md](docs/packager-handoff.md).
 
 A reinstall never overwrites an existing `/etc/linux-cleaner/cleaner.conf`; it writes `/etc/linux-cleaner/cleaner.conf.example` alongside it instead.
@@ -72,7 +74,7 @@ Enable the daily systemd user timer (runs `cleaner --clean --force` at 03:00 dai
 systemctl --user enable --now linux-cleaner-clean.timer
 ```
 
-Nothing is enabled on install; the Arch package only prints this command as a hint. Preview first with `cleaner --dry-run`.
+Nothing is enabled on install; the Arch package only prints this command as a hint. Preview first with `cleaner --dry-run`. The timer has `Persistent=true`: if a 03:00 slot was missed since its last recorded run (for example a stamp left in `~/.local/share/systemd/timers/` by an earlier install), enabling it runs a cleanup **immediately**, not at the next 03:00.
 
 To customize the scheduled cleanup, copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env`. **This environment file is read only by `linux-cleaner-clean.service` (`EnvironmentFile=-%h/.config/linux-cleaner/env`), not by manual `cleaner` runs or the other systemd units.** Use literal absolute paths inside `~/.config/linux-cleaner/env` because systemd does not expand `$HOME` there.
 

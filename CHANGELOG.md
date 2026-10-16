@@ -27,6 +27,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - The result line of a cleanup report now counts targets skipped before cleanup
   started (for example ones that need root when sudo is unavailable), so its
   `skipped=` agrees with the plan's `skipped=` in the same report.
+- Docs: switching from `make install` to the distro/AUR package now explains
+  the leftover `/etc/linux-cleaner/cleaner.conf` that makes pacman stop with
+  "exists in filesystem", how to clear a stale timer link, and that enabling
+  the timer after a missed 03:00 slot runs a cleanup at once.
 
 ## [1.4.1] - 2026-10-16
 

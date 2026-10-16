@@ -79,7 +79,11 @@ systemctl --user enable --now linux-cleaner-monitor.timer
 
 User linger may be required for timers without an active session.
 
+The timer has `Persistent=true`: enabling it after a missed 03:00 slot (for example a stamp left in `~/.local/share/systemd/timers/` by an earlier install) runs a cleanup immediately. Preview with `cleaner --dry-run` before enabling.
+
 Before uninstalling or removing the package (`sudo make uninstall`, `pacman -R`), each user who enabled the timers runs `systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer`, then `systemctl --user daemon-reload` after removal. Removal alone leaves enabled-unit links and loaded timer state.
+
+Switching from `make install` to the distro/AUR package: `make uninstall` keeps `/etc/linux-cleaner/cleaner.conf`, which pacman then refuses as an unowned existing file ("exists in filesystem"). Back it up if edited, then move or remove it before installing the package. If the unit files are already gone, `disable --now` fails: stop the timers by hand, delete the stale `~/.config/systemd/user/timers.target.wants/linux-cleaner-*.timer` links, and run `systemctl --user daemon-reload`.
 
 Journal review:
 
