@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-16
+
 ### Added
 
 - The Arch package prints a short hint after the first install: preview with
@@ -335,7 +337,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.2
 [1.4.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.1
 [1.4.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.0
 [1.3.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.3.0
