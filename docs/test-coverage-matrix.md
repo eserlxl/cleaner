@@ -73,6 +73,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | Stranded [Unreleased] Entries Are Detected | no stranded changelog | CHANGELOG.md, test_cleaner.sh |
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
 | Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, .SRCINFO, CHANGELOG.md |
+| Package Install Scriptlet Is Hint Only | pacman scriptlet prints the opt-in hint, calls no systemctl, no post_upgrade | linux-cleaner.install, PKGBUILD, .SRCINFO |
 | ShellCheck Invocation Parity | lint parity | ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, Makefile |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.

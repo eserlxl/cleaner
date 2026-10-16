@@ -3,6 +3,7 @@ pkgbase = linux-cleaner
 	pkgver = 1.4.1
 	pkgrel = 1
 	url = https://github.com/eserlxl/cleaner
+	install = linux-cleaner.install
 	arch = any
 	license = GPL-3.0-or-later
 	depends = bash

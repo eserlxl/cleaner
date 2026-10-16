@@ -72,6 +72,8 @@ Enable the daily systemd user timer (runs `cleaner --clean --force` at 03:00 dai
 systemctl --user enable --now linux-cleaner-clean.timer
 ```
 
+Nothing is enabled on install; the Arch package only prints this command as a hint. Preview first with `cleaner --dry-run`.
+
 To customize the scheduled cleanup, copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env`. **This environment file is read only by `linux-cleaner-clean.service` (`EnvironmentFile=-%h/.config/linux-cleaner/env`), not by manual `cleaner` runs or the other systemd units.** Use literal absolute paths inside `~/.config/linux-cleaner/env` because systemd does not expand `$HOME` there.
 
 Key settings in `~/.config/linux-cleaner/env`:

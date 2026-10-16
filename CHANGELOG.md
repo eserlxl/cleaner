@@ -15,6 +15,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- The Arch package prints a short hint after the first install: preview with
+  `cleaner --dry-run`, how to turn on the optional daily timer, and that cleanup
+  deletes permanently unless `LINUX_CLEANER_TRASH=1` is set. Nothing is enabled,
+  and upgrades print nothing.
+
 ### Fixed
 
 - The result line of a cleanup report now counts targets skipped before cleanup

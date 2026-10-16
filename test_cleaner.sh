@@ -4669,6 +4669,39 @@ if [[ "$aur_skip_rc" -eq 0 || "$aur_pinned_rc" -ne 0 || "$aur_noprep_rc" -ne 0 ]
 fi
 echo -e "${GREEN}PASS: check-aur-ready rejects a SKIP checksum and accepts a pinned one.${NC}"
 
+# The pacman install scriptlet only prints an opt-in hint: it must never call
+# systemctl, and upgrades stay quiet (no post_upgrade).
+echo -e "\n${BOLD}Test Case: Package Install Scriptlet Is Hint Only${NC}"
+setup_mock_env
+install_file=$(awk -F= '/^install=/ {print $2; exit}' "$SCRIPT_DIR/PKGBUILD")
+mkdir -p "$TEST_ENV_DIR/scriptlet-bin"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s"\n' "$TEST_ENV_DIR/scriptlet-systemctl.calls" > "$TEST_ENV_DIR/scriptlet-bin/systemctl"
+chmod +x "$TEST_ENV_DIR/scriptlet-bin/systemctl"
+scriptlet_rc=0
+scriptlet_out=$(PATH="$TEST_ENV_DIR/scriptlet-bin:$PATH" bash -c '
+  set -eu
+  . "$1"
+  declare -F post_install >/dev/null
+  if declare -F post_upgrade >/dev/null; then exit 3; fi
+  post_install
+' _ "$SCRIPT_DIR/$install_file" 2>&1) || scriptlet_rc=$?
+if [[ -n "$install_file" && -f "$SCRIPT_DIR/$install_file" ]] \
+   && bash -n "$SCRIPT_DIR/$install_file" \
+   && [[ "$scriptlet_rc" -eq 0 ]] \
+   && [[ ! -e "$TEST_ENV_DIR/scriptlet-systemctl.calls" ]] \
+   && grep -qF "nothing was enabled" <<<"$scriptlet_out" \
+   && grep -qF "cleaner --dry-run" <<<"$scriptlet_out" \
+   && grep -qF "systemctl --user enable --now linux-cleaner-clean.timer" <<<"$scriptlet_out" \
+   && grep -qF "LINUX_CLEANER_TRASH=1" <<<"$scriptlet_out" \
+   && grep -qE "^[[:space:]]*install = ${install_file}$" "$SCRIPT_DIR/.SRCINFO"; then
+  echo -e "${GREEN}PASS: the install scriptlet prints the opt-in hint, calls no systemctl, and has no post_upgrade.${NC}"
+else
+  echo -e "${RED}FAIL: install scriptlet '$install_file' rc=$scriptlet_rc is missing, calls systemctl, defines post_upgrade, or lacks the hint.${NC}"
+  printf '%s\n' "$scriptlet_out"
+  cat "$TEST_ENV_DIR/scriptlet-systemctl.calls" 2>/dev/null
+  exit 1
+fi
+
 # Debug output: --debug and LINUX_CLEANER_DEBUG expose [FOUND] and [CLEAN] lines; hidden by default and --quiet.
 echo -e "\n${BOLD}Test Case: Debug Dry Run Output${NC}"
 setup_mock_env

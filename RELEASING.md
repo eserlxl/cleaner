@@ -95,7 +95,7 @@ See `docs/release-workflow-audit.md` for the step-by-step cross-walk.
 6. `namcap *.pkg.tar.zst` — lint the built package.
 7. `makepkg --printsrcinfo > .SRCINFO` — regenerate metadata.
 8. Commit `PKGBUILD` and `.SRCINFO`.
-9. Human AUR push (never automated).
+9. Human AUR push (never automated): copy `PKGBUILD`, `.SRCINFO` and `linux-cleaner.install` (the `install=` scriptlet) into the AUR repo.
 
 - Documentation review: walk `docs/DOC_REVIEW_CHECKLIST.md` before tagging.
 
