@@ -2499,6 +2499,13 @@ total_deleted_bytes=0
 total_action_bytes=0
 result_cleaned=0
 result_skipped=0
+# Analysis-time skips (requires root, git-tracked files, missing binary) never
+# reach the loop below; count them so the result agrees with the plan's skipped=.
+for i in "${!parsed_statuses[@]}"; do
+  if [[ "${parsed_statuses[$i]}" == skipped ]]; then
+    result_skipped=$((result_skipped + 1))
+  fi
+done
 result_failed=0
 result_failed_names=""
 

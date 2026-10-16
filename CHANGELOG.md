@@ -15,6 +15,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Fixed
+
+- The result line of a cleanup report now counts targets skipped before cleanup
+  started (for example ones that need root when sudo is unavailable), so its
+  `skipped=` agrees with the plan's `skipped=` in the same report.
+
 ## [1.4.1] - 2026-10-16
 
 ### Fixed

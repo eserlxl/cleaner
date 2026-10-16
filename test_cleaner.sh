@@ -1366,9 +1366,11 @@ if run_test_case "Root Skip Without Privileges" 0 "root_skip_run.log" \
      && grep -qF "outcome=skipped reason=requires-root" "$root_log" \
      && grep -qF "Skipped (requires root): Needs Root" "$TEST_ENV_DIR/root_skip_run.log" \
      && grep -qF "Skipped (requires root): Needs Root" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+     && grep -q '^Targets: found=1 .* skipped=1 ' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+     && grep -q '^Result: cleaned=1 skipped=1 failed=0 ' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
      && [[ ! -e "$plain_target" ]] \
      && [[ -f "$root_target/secret.txt" ]]; then
-    echo -e "${GREEN}PASS: root target was skipped with a warning and log record; the sibling was cleaned.${NC}"
+    echo -e "${GREEN}PASS: root target was skipped with a warning and log record, counted once in plan and result; the sibling was cleaned.${NC}"
   else
     echo -e "${RED}FAIL: root skip did not warn, log, list the plan skip, and clean the sibling.${NC}"
     cat "$TEST_ENV_DIR/root_skip_run.log" "$root_log" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" 2>/dev/null
@@ -2399,8 +2401,9 @@ printf 'y\nn\n' | PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH"
 if [[ $inter_ec -eq 0 ]] \
    && [[ ! -e "$MOCK_HOME/.npm/_cacache" ]] \
    && [[ -f "$MOCK_HOME/.cache/aurman/pkg1.tar.zst" ]] \
-   && grep -qi "Skipping" "$inter_log"; then
-  echo -e "${GREEN}PASS: --interactive cleaned the y-confirmed target and skipped the n-declined one.${NC}"
+   && grep -qi "Skipping" "$inter_log" \
+   && grep -q '^Result: cleaned=1 skipped=1 failed=0 ' "$inter_log"; then
+  echo -e "${GREEN}PASS: --interactive cleaned the y-confirmed target and counted the n-declined one once as skipped.${NC}"
 else
   echo -e "${RED}FAIL: --interactive per-target confirmation did not behave as expected (ec=$inter_ec).${NC}"
   cat "$inter_log"
