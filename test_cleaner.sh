@@ -6214,5 +6214,77 @@ else
   exit 1
 fi
 
+# An aged quarantine run killed mid-loop (after the first moved file) must
+# already carry its quarantine.meta record so --restore can return the moved
+# files, while an uninterrupted aged quarantine still writes exactly one record
+# per target.
+setup_mock_env
+aged_int_target="$MOCK_HOME/.cache/aged_interrupted"
+mkdir -p "$aged_int_target"
+printf 'first-aged\n' > "$aged_int_target/first.txt"
+printf 'second-aged\n' > "$aged_int_target/second.txt"
+touch -d '10 days ago' "$aged_int_target/first.txt" "$aged_int_target/second.txt"
+cat > "$TEST_ENV_DIR/aged_interrupted.conf" <<'EOF'
+safe|Aged Interrupted|$HOME/.cache/aged_interrupted|Aged target interrupted mid-loop|7||
+EOF
+cat > "$TEST_ENV_DIR/bin/mv" <<'KILL_MV'
+#!/usr/bin/env bash
+real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
+case "${1:-}" in
+  *aged_interrupted*)
+    if [[ -f "$TEST_ENV_DIR/aged_mv_once" ]]; then
+      kill -9 "$PPID"
+      exit 1
+    fi
+    : > "$TEST_ENV_DIR/aged_mv_once"
+    "$real_mv" "$@"
+    ;;
+  *)
+    exec "$real_mv" "$@"
+    ;;
+esac
+KILL_MV
+chmod +x "$TEST_ENV_DIR/bin/mv"
+
+echo -e "\n${BOLD}Test Case: Trash Aged Interrupted Keeps Metadata${NC}"
+aged_int_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/aged_interrupted.conf" --clean --trash --force \
+  < /dev/null > "$TEST_ENV_DIR/aged_interrupted.log" 2>&1 || aged_int_ec=$?
+rm -f "$TEST_ENV_DIR/bin/mv"
+aged_int_meta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
+if [[ "$aged_int_ec" -eq 0 ]] \
+   || [[ ! -f "$aged_int_meta" ]] \
+   || [[ "$(grep -c '^aged|0_Aged_Interrupted|' "$aged_int_meta")" -ne 1 ]] \
+   || [[ -f "$aged_int_target/first.txt" && -f "$aged_int_target/second.txt" ]] \
+   || [[ ! -f "$aged_int_target/first.txt" && ! -f "$aged_int_target/second.txt" ]]; then
+  echo -e "${RED}FAIL: interrupted aged quarantine did not leave exactly one moved file and one quarantine.meta record (ec=$aged_int_ec).${NC}"
+  cat "$aged_int_meta" "$TEST_ENV_DIR/aged_interrupted.log" 2>/dev/null || true
+  exit 1
+fi
+if ! run_test_case "Restore Interrupted Aged Quarantine" 0 "aged_interrupted_restore.log" --restore latest \
+   || ! grep -qx 'first-aged' "$aged_int_target/first.txt" \
+   || ! grep -qx 'second-aged' "$aged_int_target/second.txt" \
+   || [[ -d "$(dirname "$aged_int_meta")" ]]; then
+  echo -e "${RED}FAIL: --restore latest did not restore the file moved before SIGKILL.${NC}"
+  cat "$TEST_ENV_DIR/aged_interrupted_restore.log" 2>/dev/null || true
+  exit 1
+fi
+# Uninterrupted aged quarantine with multiple files still writes exactly one record.
+touch -d '10 days ago' "$aged_int_target/first.txt" "$aged_int_target/second.txt"
+if ! run_test_case "Uninterrupted Aged Quarantine Single Record" 0 "aged_uninterrupted.log" \
+       --config "$TEST_ENV_DIR/aged_interrupted.conf" --clean --trash --force; then
+  exit 1
+fi
+aged_unint_meta=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name quarantine.meta -print -quit 2>/dev/null)
+if [[ ! -f "$aged_unint_meta" ]] \
+   || [[ "$(wc -l < "$aged_unint_meta")" -ne 1 ]] \
+   || [[ "$(grep -c '^aged|0_Aged_Interrupted|' "$aged_unint_meta")" -ne 1 ]]; then
+  echo -e "${RED}FAIL: uninterrupted aged quarantine did not write exactly one metadata record.${NC}"
+  cat "$aged_unint_meta" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: interrupted aged quarantine records metadata on the first moved file and stays restorable.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

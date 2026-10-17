@@ -3006,18 +3006,18 @@ for i in "${!parsed_names[@]}"; do
             continue
           fi
           if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
-            aged_moved=true
+            if [[ "$aged_moved" = false ]]; then
+              aged_moved=true
+              echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta" || success=false
+            fi
           else
             success=false
           fi
         done < <(with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
         wait "$!" || success=false
         with_sudo "$use_sudo" find "$q_target" -depth -type d -empty -delete 2>/dev/null || true
-        if [[ "$aged_moved" = true ]]; then
-          if [[ "$use_sudo" = true ]]; then
-            sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
-          fi
-          echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta" || success=false
+        if [[ "$aged_moved" = true && "$use_sudo" = true ]]; then
+          sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
         fi
         with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
       else
