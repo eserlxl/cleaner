@@ -224,7 +224,7 @@ Validate a configuration file without scanning disk usage:
 
 ```sh
 cleaner --check-config --config cleaner.conf
-# -> OK: 44 targets in cleaner.conf
+# -> OK: 45 targets in cleaner.conf
 ```
 
 Malformed lines fail with a line-numbered error (`Error: <config-file>:<lineno>: ...` or `<config-file>:<lineno>: Error: ...`).

@@ -4173,6 +4173,20 @@ else
   exit 1
 fi
 
+# 58b. Test Case: the README's quoted --check-config output names the real target count
+# of the shipped cleaner.conf. The number drifted once already (44 vs 45) when a target
+# was added without touching the README.
+echo -e "\n${BOLD}Test Case: README Target Count${NC}"
+readme_count=$(grep -m1 -oE '^# -> OK: [0-9]+ targets in cleaner\.conf$' "$SCRIPT_DIR/README.md" | grep -oE '[0-9]+')
+real_count=$("$CLEANER_SH" --config "$SCRIPT_DIR/cleaner.conf" --check-config 2>/dev/null \
+  | grep -oE '^OK: [0-9]+ targets' | grep -oE '[0-9]+')
+if [[ -n "$readme_count" && "$readme_count" == "$real_count" ]]; then
+  echo -e "${GREEN}PASS: README quotes the real target count ($real_count).${NC}"
+else
+  echo -e "${RED}FAIL: README quotes '${readme_count}' targets but cleaner.conf has '${real_count}'.${NC}"
+  exit 1
+fi
+
 # 59. Test Case: a wildcard PATH_EXPRESSION expands into one independently analyzed
 # target per matching directory, through find rather than a shell glob or eval, and
 # every match still passes the ordinary safety pipeline.
