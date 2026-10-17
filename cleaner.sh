@@ -593,9 +593,14 @@ init_user_config() {
     echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
     return 1
   fi
-  if ! mv -f -- "$tmp" "$dest"; then
+  if ! mv -n -T -- "$tmp" "$dest"; then
     rm -f -- "$tmp" || true
     echo -e "${RED}Error: Failed to move '$tmp' to '$dest'.${NC}" >&2
+    return 1
+  fi
+  if [[ -e "$tmp" || -L "$tmp" ]]; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
     return 1
   fi
 

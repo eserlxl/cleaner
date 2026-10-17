@@ -4127,6 +4127,84 @@ else
   exit 1
 fi
 
+# Inject competing destinations only at the final publication command boundary.
+python3 - "$CLEANER_SH" <<'INIT_PUBLICATION_PY'
+import hashlib, os, pathlib, shutil, stat, subprocess, sys, tempfile
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory(prefix="cleaner-init-publication-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    source = root / "source.conf"
+    source.write_text("safe|Initializer Source|$HOME/cache|source fixture|0||\n")
+    real_mv = shutil.which("mv")
+    bindir = root / "bin"
+    bindir.mkdir()
+    wrapper = bindir / "mv"
+    wrapper.write_text('''#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+[[ "${args[-1]}" == "$INIT_DEST" && "${args[-2]}" == "$INIT_DEST".tmp.* ]] || exit 97
+[[ -f "${args[-2]}" && ! -e "$INIT_DEST" && ! -L "$INIT_DEST" ]] || exit 98
+printf 'publication reached\\n' > "$INIT_TRACE"
+case "$INIT_KIND" in
+  regular) printf 'keep competitor\\n' > "$INIT_DEST" ;;
+  directory) mkdir -- "$INIT_DEST"; printf 'keep competitor\\n' > "$INIT_DEST/keep" ;;
+  symlink) ln -s -- "$INIT_REFERENT" "$INIT_DEST" ;;
+  dangling) ln -s -- "$INIT_REFERENT.missing" "$INIT_DEST" ;;
+  failure) exit 23 ;;
+  success) ;;
+  *) exit 99 ;;
+esac
+exec "$INIT_REAL_MV" "$@"
+''')
+    wrapper.chmod(0o755)
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    for kind in ("regular", "directory", "symlink", "dangling", "failure", "success"):
+        print("Test Case: Init Config Publication " + kind, flush=True)
+        case = root / kind
+        home = case / "home"
+        config_dir = home / ".config/linux-cleaner"
+        config_dir.mkdir(parents=True)
+        dest = config_dir / "cleaner.conf"
+        referent = home / "referent"
+        referent.write_text("keep referent\n")
+        for name in ("cache/payload", "state/linux-cleaner/last-report.txt", ".cache/linux-cleaner/ops.log",
+                     ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00/quarantine.meta"):
+            path = home / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("keep sentinel\n")
+        def snapshot():
+            return {str(p.relative_to(home)): (stat.S_IMODE(p.lstat().st_mode),
+                    os.readlink(p) if p.is_symlink() else hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None)
+                    for p in home.rglob("*") if p != dest and dest not in p.parents}
+        before = snapshot()
+        trace = case / "publication.log"
+        env = base_env | dict(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"), NO_COLOR="1",
+                              PATH=str(bindir) + ":" + base_env["PATH"], INIT_DEST=str(dest), INIT_KIND=kind,
+                              INIT_REFERENT=str(referent), INIT_TRACE=str(trace), INIT_REAL_MV=real_mv)
+        result = subprocess.run([cleaner, "--init-config", "--config", str(source)], env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert trace.is_file(), (kind, result)
+        assert not list(config_dir.glob("cleaner.conf.tmp.*")), (kind, "temporary leak")
+        if kind == "success":
+            assert result.returncode == 0 and "Created " in result.stdout, result
+            assert dest.read_bytes() == source.read_bytes() and stat.S_IMODE(dest.stat().st_mode) == 0o644
+        else:
+            assert result.returncode == 1 and "Created " not in result.stdout, (kind, result)
+            assert ("Failed to move" if kind == "failure" else "refusing to overwrite") in result.stderr, result
+            if kind == "regular":
+                assert dest.is_file() and not dest.is_symlink() and dest.read_text() == "keep competitor\n"
+            elif kind == "directory":
+                assert dest.is_dir() and not dest.is_symlink() and (dest / "keep").read_text() == "keep competitor\n"
+            elif kind in ("symlink", "dangling"):
+                assert dest.is_symlink() and os.readlink(dest) == str(referent) + (".missing" if kind == "dangling" else "")
+                assert not pathlib.Path(str(referent) + ".missing").exists()
+            else:
+                assert not dest.exists() and not dest.is_symlink()
+        assert snapshot() == before, (kind, "unrelated state changed")
+        assert source.read_text() == "safe|Initializer Source|$HOME/cache|source fixture|0||\n"
+        print("PASS: Init Config Publication " + kind, flush=True)
+INIT_PUBLICATION_PY
+
 echo -e "\n${BOLD}Test Case: Init Config Used By Next Run${NC}"
 init_next_ec=0
 env -u LINUX_CLEANER_CONFIG XDG_CONFIG_HOME="$TEST_ENV_DIR/xdg_cfg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \

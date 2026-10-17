@@ -46,6 +46,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Configuration initialization preserves destinations created by another writer
+  during publication and reports refusal instead of overwriting them.
+
 - Global exclusion lists preserve patterns after line feeds and appended per-target
   exclusions, while continuing to ignore empty global entries.
 
