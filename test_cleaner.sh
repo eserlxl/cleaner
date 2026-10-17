@@ -2774,6 +2774,14 @@ for unit_file in "$SCRIPT_DIR"/examples/systemd/*.service; do
 done
 echo -e "${GREEN}PASS: every systemd service tags its journal output as linux-cleaner.${NC}"
 
+# Mutating runs share one lock, so the retention unit must queue behind a
+# cleanup that Persistent=true catch-up starts at the same moment.
+if [[ "$(grep -c '^After=linux-cleaner-clean.service$' "$SCRIPT_DIR/examples/systemd/linux-cleaner-retention.service")" -ne 1 ]]; then
+  echo -e "${RED}FAIL: linux-cleaner-retention.service is not ordered after linux-cleaner-clean.service.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: the retention unit is ordered after the cleanup unit.${NC}"
+
 if command -v make > /dev/null 2>&1; then
   freshroot="$TEST_ENV_DIR/freshroot"
   makeroot="$TEST_ENV_DIR/makeroot"

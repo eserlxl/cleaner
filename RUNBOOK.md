@@ -25,7 +25,7 @@ Validate a config without disk analysis (CI / packager gate):
 cleaner --check-config --config /path/to/cleaner.conf
 ```
 
-Exit codes: skips exit 0; failed operations exit 1 (see README Exit status).
+Exit codes: skips exit 0; failed operations exit 1, as does a mutating run refused because another one holds the lock; an interrupted cleanup exits 130 (SIGINT) or 143 (SIGTERM) after saving its partial report (see README Exit status).
 
 ## Cron: daily cleanup
 

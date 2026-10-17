@@ -1,5 +1,7 @@
 [Unit]
 Description=Linux Cleaner quarantine retention purge
+# Mutating runs share one lock: wait for a catch-up cleanup started at the same time.
+After=linux-cleaner-clean.service
 
 [Service]
 Type=oneshot
