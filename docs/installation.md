@@ -12,7 +12,7 @@ The tool is a single self-contained script. Run it directly from a checkout (`./
 | `BINDIR` | `$PREFIX/bin` | `cleaner.sh`, installed as the `cleaner` command |
 | `SYSCONFDIR` | `/etc` | system config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
 | `MANDIR` | `$PREFIX/share/man` | the `cleaner(1)` man page (`man1/cleaner.1`) |
-| `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/` |
+| `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/`; environment template at `$DATADIR/$PKGNAME/linux-cleaner.env.example` (`PKGNAME=linux-cleaner` by default), mode `0644` |
 | `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units (`linux-cleaner-clean`, `linux-cleaner-retention`, and `linux-cleaner-monitor` `.service` and `.timer`; mode `0644`, not enabled) |
 
 ```sh
@@ -26,6 +26,8 @@ systemctl --user daemon-reload       # after uninstall
 ```
 
 The `systemctl --user` commands are per user: each user who enabled the timers runs them. Uninstall only removes files, so enabled-unit links and loaded timer state remain otherwise.
+
+Copy `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (or `/usr/share/linux-cleaner/linux-cleaner.env.example` with distro `PREFIX=/usr`) to `~/.config/linux-cleaner/env` to customize the cleanup service. A checkout can use `examples/linux-cleaner.env.example`. Custom `DATADIR` and `PKGNAME` move the installed template accordingly. Uninstall removes the shipped template and removes its directory only if empty; user environment copies, system config, and unrelated sibling files are preserved.
 
 For Arch Linux (`PKGBUILD`), `package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`, placing the command at `/usr/bin/cleaner` and the user units at `/usr/lib/systemd/user/`. See [RELEASING.md](../RELEASING.md#ordered-aur-packaging-checklist) and [docs/packager-handoff.md](packager-handoff.md).
 

@@ -36,6 +36,8 @@ do_install() {
   install -m 0644 "$SRC_DIR/cleaner.1" "$DESTDIR$MANDIR/man1/$BINNAME.1"
   install -d "$DESTDIR$DATADIR/licenses/$PKGNAME"
   install -m 0644 "$SRC_DIR/LICENSE" "$DESTDIR$DATADIR/licenses/$PKGNAME/LICENSE"
+  install -d "$DESTDIR$DATADIR/$PKGNAME"
+  install -m 0644 "$SRC_DIR/examples/linux-cleaner.env.example" "$DESTDIR$DATADIR/$PKGNAME/linux-cleaner.env.example"
   install -d "$DESTDIR$SYSTEMDUSERUNITDIR"
   for unit in $UNITS; do
     install -m 0644 "$SRC_DIR/examples/systemd/$unit" "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
@@ -48,6 +50,8 @@ do_uninstall() {
   rm -f "$DESTDIR$MANDIR/man1/$BINNAME.1"
   rm -f "$DESTDIR$DATADIR/licenses/$PKGNAME/LICENSE"
   rmdir "$DESTDIR$DATADIR/licenses/$PKGNAME" 2>/dev/null || true
+  rm -f "$DESTDIR$DATADIR/$PKGNAME/linux-cleaner.env.example"
+  rmdir "$DESTDIR$DATADIR/$PKGNAME" 2>/dev/null || true
   for unit in $UNITS; do
     rm -f "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
   done

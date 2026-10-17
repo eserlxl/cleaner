@@ -17,6 +17,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Both installers ship the scheduled cleanup environment template under
+  `$DATADIR/$PKGNAME/linux-cleaner.env.example` with mode `0644`; uninstall
+  preserves user copies and unrelated files.
 - Saved cleanup reports expose inline retention failures separately from target
   counts, including the additive nullable `retention_failed` JSON field
   (MINOR-compatible capability).

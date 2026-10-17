@@ -71,7 +71,7 @@ Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) are allowed. T
 
 ## systemd user timers
 
-`make install` places the units on the systemd user path (`$PREFIX/lib/systemd/user`) and does not enable them. A checkout that is not installed can instead copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy `examples/linux-cleaner.env.example` to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. Only `linux-cleaner-clean.service` loads this file. The monitor and retention services use their own unit settings; cleanup filters and JSON flags in this file do not affect them. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
+`make install` places the units on the systemd user path (`$PREFIX/lib/systemd/user`) and does not enable them. A checkout that is not installed can instead copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy the installed `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (Arch/package `PREFIX=/usr`: `/usr/share/linux-cleaner/linux-cleaner.env.example`; checkout: `examples/linux-cleaner.env.example`) to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. Only `linux-cleaner-clean.service` loads this file. The monitor and retention services use their own unit settings; cleanup filters and JSON flags in this file do not affect them. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
 
 Enable the daily cleanup timer. It deletes permanently unless `LINUX_CLEANER_TRASH=1` is set in `~/.config/linux-cleaner/env`. Enable the retention timer only in that case:
 

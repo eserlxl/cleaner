@@ -6,6 +6,7 @@
 | man | MANDIR | install | make install |
 | config | SYSCONFDIR | install | make install |
 | license | DATADIR | install | make install |
+| environment template (`$DATADIR/$PKGNAME/linux-cleaner.env.example`, mode 0644; user copies preserved on uninstall) | DATADIR, PKGNAME | install | make install |
 | systemd user units (`linux-cleaner-clean`, `linux-cleaner-retention`, and `linux-cleaner-monitor` `.service` and `.timer` under `/usr/lib/systemd/user` when `PREFIX=/usr`, mode 0644, not enabled) | SYSTEMDUSERUNITDIR | install | make install |
 
 Aligned on HEAD.

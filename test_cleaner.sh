@@ -2720,6 +2720,7 @@ install_ok=true
 for asset in "usr/bin/cleaner" \
              "etc/linux-cleaner/cleaner.conf" \
              "usr/share/man/man1/cleaner.1" \
+             "usr/share/linux-cleaner/linux-cleaner.env.example" \
              "usr/share/licenses/linux-cleaner/LICENSE"; do
   if [[ ! -f "$destroot/$asset" ]]; then
     echo -e "${RED}FAIL: install.sh did not ship '$asset'.${NC}"
@@ -2730,10 +2731,15 @@ if [[ "$(stat -c '%a' "$destroot/usr/bin/cleaner" 2>/dev/null)" != "755" ]]; the
   echo -e "${RED}FAIL: the installed cleaner binary is not mode 0755.${NC}"
   install_ok=false
 fi
+if ! cmp -s "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$destroot/usr/share/linux-cleaner/linux-cleaner.env.example" \
+   || [[ "$(stat -c '%a' "$destroot/usr/share/linux-cleaner/linux-cleaner.env.example" 2>/dev/null)" != 644 ]]; then
+  echo -e "${RED}FAIL: install.sh did not ship the environment template unchanged with mode 0644.${NC}"
+  install_ok=false
+fi
 if [[ "$install_ok" != true ]]; then
   exit 1
 fi
-echo -e "${GREEN}PASS: install.sh shipped all four assets under DESTDIR with a 0755 binary.${NC}"
+echo -e "${GREEN}PASS: install.sh shipped all five assets under DESTDIR with a 0755 binary and 0644 environment template.${NC}"
 
 # Re-installing over an existing config must preserve it and ship .example instead.
 DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
@@ -2751,6 +2757,7 @@ DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" uninstall \
 if [[ ! -e "$destroot/usr/bin/cleaner" ]] \
    && [[ ! -e "$destroot/usr/share/man/man1/cleaner.1" ]] \
    && [[ ! -e "$destroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
+   && [[ ! -e "$destroot/usr/share/linux-cleaner" ]] \
    && [[ -f "$destroot/etc/linux-cleaner/cleaner.conf" ]]; then
   echo -e "${GREEN}PASS: uninstall removed the binary, man page, and license but kept the config.${NC}"
 else
@@ -2809,6 +2816,11 @@ if command -v make > /dev/null 2>&1; then
   if [[ "$units_ok" != true ]]; then
     exit 1
   fi
+  if ! cmp -s "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$makeroot/usr/share/linux-cleaner/linux-cleaner.env.example" \
+     || [[ "$(stat -c '%a' "$makeroot/usr/share/linux-cleaner/linux-cleaner.env.example" 2>/dev/null)" != 644 ]]; then
+    echo -e "${RED}FAIL: make install did not ship the environment template unchanged with mode 0644.${NC}"
+    exit 1
+  fi
   echo -e "${GREEN}PASS: make install shipped six systemd user units mode 644.${NC}"
   unmakeroot="$TEST_ENV_DIR/unmakeroot"
   make -C "$SCRIPT_DIR" install DESTDIR="$unmakeroot" PREFIX=/usr \
@@ -2826,6 +2838,7 @@ if command -v make > /dev/null 2>&1; then
   if [[ ! -e "$unmakeroot/usr/bin/cleaner" ]] \
      && [[ ! -e "$unmakeroot/usr/share/man/man1/cleaner.1" ]] \
      && [[ ! -e "$unmakeroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/linux-cleaner" ]] \
      && [[ -f "$unmakeroot/etc/linux-cleaner/cleaner.conf" ]] \
      && [[ "$units_removed" == true ]]; then
     echo -e "${GREEN}PASS: make uninstall removed the binary, man page, license, and systemd user units but kept the config.${NC}"
@@ -2834,6 +2847,43 @@ if command -v make > /dev/null 2>&1; then
     cat "$TEST_ENV_DIR/make_uninstall.log"
     exit 1
   fi
+
+  for template_installer in sh make; do
+    echo -e "\n${BOLD}Test Case: Environment Template Custom Paths ($template_installer)${NC}"
+    template_root="$TEST_ENV_DIR/template-$template_installer"
+    template_data="$template_root/custom/share/custom-cleaner"
+    template_config="$template_root/etc/custom-cleaner/cleaner.conf"
+    template_user_env="$MOCK_HOME/.config/linux-cleaner/env"
+    template_command=(sh "$SCRIPT_DIR/install.sh")
+    [[ "$template_installer" == make ]] && template_command=(make -s -C "$SCRIPT_DIR")
+    HOME="$MOCK_HOME" DESTDIR="$template_root" PREFIX=/usr DATADIR=/custom/share PKGNAME=custom-cleaner \
+      "${template_command[@]}" install > "$TEST_ENV_DIR/template-$template_installer.log" 2>&1
+    if ! cmp -s "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$template_data/linux-cleaner.env.example" \
+       || [[ "$(stat -c %a "$template_data/linux-cleaner.env.example" 2>/dev/null)" != 644 ]]; then
+      echo -e "${RED}FAIL: $template_installer ignored the custom environment template path, bytes, or mode.${NC}"
+      exit 1
+    fi
+    mkdir -p "$(dirname "$template_user_env")"
+    cp "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$template_user_env"
+    printf 'user config\n' > "$template_config"
+    printf 'keep\n' > "$template_data/keep"
+    HOME="$MOCK_HOME" DESTDIR="$template_root" PREFIX=/usr DATADIR=/custom/share PKGNAME=custom-cleaner \
+      "${template_command[@]}" uninstall >> "$TEST_ENV_DIR/template-$template_installer.log" 2>&1
+    if [[ -e "$template_data/linux-cleaner.env.example" ]] \
+       || ! grep -qx keep "$template_data/keep" || ! grep -qx 'user config' "$template_config" \
+       || ! cmp -s "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$template_user_env"; then
+      echo -e "${RED}FAIL: $template_installer uninstall removed user files or kept the shipped environment template.${NC}"
+      exit 1
+    fi
+    rm "$template_data/keep"
+    HOME="$MOCK_HOME" DESTDIR="$template_root" PREFIX=/usr DATADIR=/custom/share PKGNAME=custom-cleaner \
+      "${template_command[@]}" uninstall >> "$TEST_ENV_DIR/template-$template_installer.log" 2>&1
+    if [[ -e "$template_data" ]]; then
+      echo -e "${RED}FAIL: $template_installer uninstall kept the empty template directory.${NC}"
+      exit 1
+    fi
+    echo -e "${GREEN}PASS: $template_installer honors custom template paths and preserves user files on uninstall.${NC}"
+  done
 else
   echo -e "${GREEN}PASS (skipped): make is not installed; cannot cross-check the Makefile tree.${NC}"
 fi

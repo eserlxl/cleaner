@@ -33,6 +33,8 @@ install: install-man
 	fi
 	install -d "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)"
 	install -m 0644 LICENSE "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
+	install -d "$(DESTDIR)$(DATADIR)/$(PKGNAME)"
+	install -m 0644 examples/linux-cleaner.env.example "$(DESTDIR)$(DATADIR)/$(PKGNAME)/linux-cleaner.env.example"
 	install -d "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"
 	install -m 0644 examples/systemd/*.service examples/systemd/*.timer "$(DESTDIR)$(SYSTEMDUSERUNITDIR)/"
 
@@ -45,6 +47,8 @@ uninstall:
 	rm -f "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
 	rm -f "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
 	-rmdir "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)" 2>/dev/null
+	rm -f "$(DESTDIR)$(DATADIR)/$(PKGNAME)/linux-cleaner.env.example"
+	-rmdir "$(DESTDIR)$(DATADIR)/$(PKGNAME)" 2>/dev/null
 	rm -f "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.service \
 		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.timer \
 		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-retention.service \
