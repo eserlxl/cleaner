@@ -2,7 +2,7 @@
 
 ## Documentation layout
 
-Phase 5 examples live in this `RUNBOOK.md` plus `examples/systemd/` and `examples/linux-cleaner.env.example`. README links here instead of duplicating full crontab blocks.
+Scheduling examples live in this `RUNBOOK.md` plus `examples/systemd/` and `examples/linux-cleaner.env.example`. README links here instead of duplicating full crontab blocks.
 
 ## Table of contents
 
@@ -10,8 +10,7 @@ Phase 5 examples live in this `RUNBOOK.md` plus `examples/systemd/` and `example
 2. Cron recipes
 3. systemd user timers
 4. Environment recipes
-5. Phase 5 completion checklist
-6. Appendix: example files
+5. Appendix: example files
 
 ## Unattended operations contract
 
@@ -154,14 +153,6 @@ Package-cache `action:*` tokens include `action:apt_clean`, `action:dnf_clean`, 
 ## danger tier (explicit opt-in)
 
 > WARNING: Never schedule `LINUX_CLEANER_YES_DANGER=1` by default. See CONTRIBUTING safety invariants.
-
-## Phase 5 completion checklist
-
-- [ ] Cron paired with retention purge documented
-- [ ] systemd units verified on user session
-- [ ] env recipes reviewed
-- [ ] `make check` green
-- [ ] No danger-tier in default examples
 
 ## Appendix: example files
 
