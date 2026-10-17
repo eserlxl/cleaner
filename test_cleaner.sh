@@ -4288,6 +4288,60 @@ for label, args, overrides, expected, error in (
     print("PASS: NAME LF Dry Run " + label, flush=True)
 INVENTORY_PY
 
+# trim must preserve values that bash echo treats as options across config and
+# both NAME filter interfaces.
+echo "Test Case: NAME Trim Echo Options"
+python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'TRIM_OPTIONS_PY'
+import json, os, pathlib, subprocess, sys
+cleaner, test_dir = sys.argv[1:]
+root = pathlib.Path(test_dir) / "trim-options"
+root.mkdir()
+home = root / "home"
+(home / "cache").mkdir(parents=True)
+(home / "cache/payload").write_text("keep fixture payload\n")
+before = {str(path.relative_to(home)): path.read_bytes() if path.is_file() else None
+          for path in home.rglob("*")}
+config = root / "trim-options.conf"
+config.write_text(r"""safe|-n|$HOME/cache|-n|0||
+safe|-e|$HOME/cache|-e|0||
+safe|-E|$HOME/cache|100% backslash\path|0||
+safe|-ne|$HOME/cache|-ne|0||
+protect|$HOME/cache
+""")
+env = {key: value for key, value in os.environ.items()
+       if not key.startswith(("LINUX_CLEANER_", "XDG_"))}
+env.update(HOME=str(home), NO_COLOR="1")
+def run(args, overrides=None):
+    return subprocess.run([cleaner, "--config", str(config)] + args,
+                          env=env | (overrides or {}), capture_output=True, text=True)
+def names(result):
+    assert result.returncode == 0, result
+    return json.loads(result.stdout)["targets"]
+for args, overrides, expected in (
+    (["--list-targets", "--json", "--only-target", "-n"], {}, ["-n", "-ne"]),
+    (["--list-targets", "--json", "--only-target", " \t-n \n"], {}, ["-n", "-ne"]),
+    (["--list-targets", "--json"], {"LINUX_CLEANER_ONLY_TARGET": "-E"}, ["-E"]),
+    (["--list-targets", "--json", "--exclude-target", "-e"], {}, ["-n", "-E", "-ne"]),
+    (["--list-targets", "--json"], {"LINUX_CLEANER_EXCLUDE_TARGET": "-ne"}, ["-n", "-e", "-E"]),
+):
+    rows = names(run(args, overrides))
+    assert [row["name"] for row in rows] == expected, (args, overrides, rows)
+rows = names(run(["--list-targets", "--json"]))
+assert [(row["name"], row["description"]) for row in rows] == [
+    ("-n", "-n"), ("-e", "-e"), ("-E", r"100% backslash\path"), ("-ne", "-ne")], rows
+check = run(["--check-config"])
+assert check.returncode == 0, check
+empty = run(["--list-targets", "--json", "--only-target", ",-n"])
+assert empty.returncode == 1 and "empty pattern" in empty.stderr and empty.stdout == "", empty
+preview = run(["--dry-run", "--json", "--risk", "danger", "--only-target", "-n"])
+preview_rows = json.loads(preview.stdout)["targets"]
+assert preview.returncode == 0 and [row["name"] for row in preview_rows] == ["-n", "-ne"], preview
+assert all(row["status"] == "protected" for row in preview_rows), preview_rows
+assert {str(path.relative_to(home)): path.read_bytes() if path.is_file() else None
+        for path in home.rglob("*")} == before
+print("PASS: NAME Trim Echo Options")
+TRIM_OPTIONS_PY
+
 # Positive PATH scope narrows shared wildcard NAMEs without widening side effects.
 setup_mock_env
 python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'ONLY_PATH_PY'

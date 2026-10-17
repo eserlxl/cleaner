@@ -632,7 +632,7 @@ trim() {
   var="${var#"${var%%[![:space:]]*}"}"
   # remove trailing whitespace
   var="${var%"${var##*[![:space:]]}"}"
-  echo -n "$var"
+  printf '%s' "$var"
 }
 
 name_matches_any() {

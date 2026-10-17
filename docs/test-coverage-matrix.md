@@ -18,6 +18,7 @@
 | U-97 | Physical component resolution rejects raw/resolved LF and partial-output producer failures, propagates errors before cleanup/protection/log writes, and preserves missing tails, relative/dot-dot/root paths and final-symlink refusal | Canonical Path resolved LF alias dry run / Canonical Path aborts cleanup / Canonical Path extra protection fails closed / Canonical Path final symlink / Canonical Path failed log resolution writes nothing |
 | U-98 | Config discovery/init and report reads/writes preserve one or multiple trailing LF in absolute XDG storage directories, exact siblings, defaults and explicit config precedence; private modes, symlink/overwrite guards and nonfatal writer failures remain intact | XDG Storage report human/json / XDG Storage config discovery/check / XDG Storage initialize exact config / XDG Storage save exact report / XDG Storage helper failure |
 | U-99 | NAME filters preserve complete comma-separated CLI/environment values, trim boundary LF, retain internal LF literally, honor later fields and CLI overrides, and reject leading/consecutive/trailing hidden empty fields consistently without read-only side effects | Inventory NAME Selection (human/json LF) / NAME LF Dry Run |
+| U-100 | Trimming preserves literal values that match `echo` options across NAME filters and configuration, including whitespace, exact JSON names/descriptions, percent/backslash bytes, check-config, dry-run, and empty-pattern rejection | NAME Trim Echo Options |
 
 ## 1.3.0 shipped feature inventory
 

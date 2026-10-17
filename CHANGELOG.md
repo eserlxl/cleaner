@@ -41,6 +41,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Preserve literal NAME filters and configuration values equal to `echo` options
+  when trimming whitespace.
+
 - NAME filters split the complete CLI/environment value only at commas, preserving
   internal line feeds and rejecting empty fields even after line feeds.
 
