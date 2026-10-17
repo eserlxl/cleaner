@@ -96,6 +96,10 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 | Restore conflicts | Restore with Conflict test (collision detection) |
 | Action vs trash confusion | irreversible action:* WARNING |
 | Path escape via SESSION name | `validate_quarantine_session_name` rejects `/`, `.`, `..` (Restore/Purge Invalid Session) |
+| Overlapping mutating runs (timer plus manual run, purge during cleanup) | Cleanup, restore and purge take a non-blocking `flock` on `~/.cache/linux-cleaner/cleaner.lock` (symlinks refused); the second run exits 1 and changes nothing (Concurrent Run Lock) |
+| Run killed during an aged quarantine | The `quarantine.meta` record is written on the first moved file, so the moved files stay restorable (Trash Aged Interrupted Keeps Metadata) |
+| Restore killed after moving some targets back | A retried restore drops a whole-target record whose payload is gone and whose original path is back, then retires the session (Restore Retry After Interrupted Restore) |
+| Cross-filesystem quarantine larger than free space in HOME | The target is refused and left in place before any copy starts (Trash Cross Filesystem Space Guard) |
 
 ### Quarantine operator guidance
 
