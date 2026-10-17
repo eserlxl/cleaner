@@ -14,8 +14,9 @@ shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # lint — m
 make check                            # runbook example validation + full safety suite
 ```
 
-The suite is hermetic: it builds a mock `$HOME` and stubs `sudo`, `pgrep`,
-`paccache`, `pacman`, `apt-get`, `dnf`, `zypper`, and `apk`, so it needs no
+The suite is hermetic: it builds a mock `$HOME` and stubs `sudo`, the package
+managers, and the user-level prune tools (full list in
+[docs/hermetic-test-guards.md](docs/hermetic-test-guards.md)), so it needs no
 root, network, or Arch tooling.
 
 ## Safety invariants (do not break)

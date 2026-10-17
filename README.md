@@ -346,7 +346,7 @@ shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static ana
 make check                            # runbook example validation + full safety suite (test_cleaner.sh)
 ```
 
-The test suite (`test_cleaner.sh`) is hermetic: it stubs `sudo`, `pgrep`, `paccache`, `pacman`, `apt-get`, `dnf`, `zypper`, and `apk` and builds a mock `$HOME`, requiring only `bash`, GNU `coreutils`, GNU `findutils`, and `shellcheck` (no root, network, or Arch-specific tooling). Drift guards (man-page parity, version consistency, env mirrors, and ShellCheck file parity) run inside the hermetic suite after mock `$HOME` setup.
+The test suite (`test_cleaner.sh`) is hermetic: it stubs `sudo`, the package managers, and the user-level prune tools (full list in [docs/hermetic-test-guards.md](docs/hermetic-test-guards.md)) and builds a mock `$HOME`, requiring only `bash`, GNU `coreutils`, GNU `findutils`, and `shellcheck` (no root, network, or Arch-specific tooling). Drift guards (man-page parity, version consistency, env mirrors, and ShellCheck file parity) run inside the hermetic suite after mock `$HOME` setup.
 
 After cutting a release tag, verify consistency on the tagged HEAD (`git fetch --tags`, `git checkout vX.Y.Z`, `make check`); see [RELEASING.md](RELEASING.md#post-tag-local-verification).
 
