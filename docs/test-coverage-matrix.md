@@ -74,6 +74,8 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-66 | `--purge-sessions older-than:DAYS` exits 0 when no quarantine directory exists and still rejects an invalid day count | Retention Purge Without Quarantine Dir / Invalid Retention Days Without Quarantine Dir |
 | U-67 | `--interactive` shows `size at run time` instead of `0 B` for user-level prune actions | User Action Interactive Shows Run-Time Size |
 | U-68 | User-level prune actions pass the configured path (`--cache-dir` / `--store-dir`) and hide their FOUND line unless `--debug` is set | User Actions Clean Force Without Sudo / User Actions Dry Run Invokes No Mocks |
+| U-69 | `--dry-run --json` marks user-level prune actions with `size_at_run_time: true` and `size_human: "size at run time"`, and every other target with `size_at_run_time: false` | User Actions Dry Run JSON Marks Run-Time Size / User Actions Dry Run JSON Plain Target False |
+| U-70 | `--dry-run --json` carries `reason` per target: empty for found targets, the plan-report reason for blocked and skipped ones | Dry Run JSON Reports Skip Reasons / JSON Dry Run |
 
 ## Drift guards
 
