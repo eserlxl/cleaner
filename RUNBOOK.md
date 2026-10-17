@@ -91,6 +91,7 @@ Journal review:
 journalctl --user -u linux-cleaner-clean.service
 journalctl --user -u linux-cleaner-retention.service
 journalctl --user -u linux-cleaner-monitor.service
+journalctl --user -t linux-cleaner
 ```
 
 ## Env recipe: safe-tier cleanup

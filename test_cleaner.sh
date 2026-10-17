@@ -2765,6 +2765,15 @@ if grep -q -- '--trash' "$SCRIPT_DIR/examples/systemd/linux-cleaner-clean.servic
 fi
 echo -e "${GREEN}PASS: examples/systemd/linux-cleaner-clean.service does not pass --trash.${NC}"
 
+# Every unit tags its journal output, so `journalctl --user -t linux-cleaner` finds all three.
+for unit_file in "$SCRIPT_DIR"/examples/systemd/*.service; do
+  if [[ "$(grep -c '^SyslogIdentifier=linux-cleaner$' "$unit_file")" -ne 1 ]]; then
+    echo -e "${RED}FAIL: $(basename "$unit_file") lacks exactly one SyslogIdentifier=linux-cleaner line.${NC}"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: every systemd service tags its journal output as linux-cleaner.${NC}"
+
 if command -v make > /dev/null 2>&1; then
   freshroot="$TEST_ENV_DIR/freshroot"
   makeroot="$TEST_ENV_DIR/makeroot"

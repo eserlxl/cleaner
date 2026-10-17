@@ -6,4 +6,5 @@ Type=oneshot
 # Adjust path if cleaner is not on PATH (default install: /usr/local/bin; Arch: /usr/bin).
 # Matches RUNBOOK cron: cleaner --clean --force (permanent deletion; quarantine is LINUX_CLEANER_TRASH=1).
 ExecStart=/usr/bin/env cleaner --clean --force
+SyslogIdentifier=linux-cleaner
 EnvironmentFile=-%h/.config/linux-cleaner/env

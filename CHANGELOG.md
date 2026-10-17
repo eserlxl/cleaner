@@ -17,6 +17,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- The systemd units set `SyslogIdentifier=linux-cleaner`, so their journal
+  output reads `linux-cleaner[pid]` instead of `env[pid]` and
+  `journalctl --user -t linux-cleaner` shows all three. Reinstall the units
+  (or the package) and run `systemctl --user daemon-reload` to apply it.
 - Config paths (`PATH_EXPRESSION`, `protect|PATH`, and `--log` / `LINUX_CLEANER_LOG`) accept `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` whole-token placeholders (falling back to their XDG Base Directory specification defaults when unset or relative).
 - `--min-reclaim SIZE` (and `LINUX_CLEANER_MIN_RECLAIM`) skips a cleanup whose planned reclaim is below SIZE.
 - `--only-target` and `--exclude-target` (and their `LINUX_CLEANER_*` mirrors)

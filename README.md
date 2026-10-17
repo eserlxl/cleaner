@@ -91,6 +91,7 @@ An optional six-hourly JSON preview timer (`linux-cleaner-monitor.timer`) is als
 ```sh
 cleaner --report                                       # saved plan and result from the last cleanup
 journalctl --user -u linux-cleaner-clean.service       # systemd journal output
+journalctl --user -t linux-cleaner                     # output of all three units
 ```
 
 See [RUNBOOK.md](RUNBOOK.md) for cron recipes, user linger notes, and unattended environment examples.
