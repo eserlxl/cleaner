@@ -100,7 +100,7 @@ GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protecti
 ### Quarantine operator guidance
 
 - Audit with `--list-sessions` before destructive purge.
-- Pair `--trash` with `purge-sessions older-than:DAYS` for bounded disk use.
+- Pair `--trash` with `purge-sessions older-than:DAYS` or `max-size:SIZE` (or `--trash-keep-days`) for bounded disk use.
 - Irreversible action:* bypasses quarantine — distinct from trash mode.
 
 See also: [QUARANTINE-OPS.md](QUARANTINE-OPS.md) (session inventory, retention sizing) and

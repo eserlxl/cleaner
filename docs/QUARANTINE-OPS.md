@@ -76,11 +76,11 @@ Restore and purge have no dry-run mode. An active explicit `--dry-run` with eith
 
 > **WARNING:** Supported predefined `action:*` handlers (for example, `action:apt_clean`) bypass quarantine and delete in place. There is no generic `action:custom`; unknown actions are rejected. Review `cleaner.conf` before any automated `--force` run.
 
-Selectors: `latest`, `all`, timestamp, `older-than:DAYS`. A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
+Selectors: `latest`, `all`, timestamp, `older-than:DAYS`, `max-size:SIZE` (keep the newest sessions within SIZE; `Purge Sessions Max Size Keeps Newest`). A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
 
 Interactive: run without `--force` to see `This cannot be undone`; declining prints `No sessions were purged` (`Purge Preview Names Targets`, `Purge Declined Keeps Sessions`).
 
-Automated checklist: cron retention uses `--force` + `older-than:DAYS` only; never schedule `purge-sessions all --force`.
+Automated checklist: cron retention uses `--force` + `older-than:DAYS` or `max-size:SIZE` only (or `--trash-keep-days` on the cleanup run); never schedule `purge-sessions all --force`.
 
 Troubleshooting: missing timestamp exits 1 (`Purge Missing Session`); distinguish from retention no-match success.
 

@@ -15,7 +15,7 @@ Phase 5 examples live in this `RUNBOOK.md` plus `examples/systemd/` and `example
 
 ## Unattended operations contract
 
-Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `purge-sessions older-than:DAYS`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
+Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `purge-sessions older-than:DAYS` (or `max-size:SIZE` for a disk budget), or let the cleanup run retire old sessions itself with `--trash-keep-days DAYS`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
 
 Config resolution: `-c` / `LINUX_CLEANER_CONFIG`, XDG user config, `/etc/linux-cleaner/cleaner.conf`, script-adjacent `cleaner.conf`.
 
@@ -33,10 +33,11 @@ Exit codes: skips exit 0; failed operations exit 1, as does a mutating run refus
 0 3 * * * LINUX_CLEANER_FORCE=1 cleaner --clean --force
 ```
 
-Permanent deletion of safe targets. Quarantine is opt-in and must be paired with the retention purge below:
+Permanent deletion of safe targets. Quarantine is opt-in and must be paired with the retention purge below, or carry its own retention:
 
 ```cron
 0 3 * * * LINUX_CLEANER_FORCE=1 LINUX_CLEANER_TRASH=1 cleaner --clean --trash --force
+0 3 * * * LINUX_CLEANER_FORCE=1 cleaner --clean --trash --force --trash-keep-days 30
 ```
 
 ## Cron: retention purge
@@ -46,6 +47,12 @@ Permanent deletion of safe targets. Quarantine is opt-in and must be paired with
 ```
 
 Recommended DAY values: 30 (default), 7 (aggressive small disks). Exits 0 when no sessions match. Purge is irreversible.
+
+To cap the disk quarantine holds instead of its age, keep the newest sessions within a size budget:
+
+```cron
+0 4 * * 0 cleaner --purge-sessions max-size:5G --force
+```
 
 ## Cron: monitoring dry-run
 
@@ -121,6 +128,13 @@ cleaner --clean --trash --force
 LINUX_CLEANER_JSON=1 cleaner --dry-run
 LINUX_CLEANER_JSON=1 cleaner --list-sessions
 cleaner --list-sessions --json
+cleaner --report --json
+```
+
+`cleaner --report --json` summarizes the last saved cleanup (`result`, `failed`, `failed_targets`, `interrupted`), so a monitor can alert on a failed or interrupted nightly run:
+
+```cron
+30 3 * * * cleaner --report --json
 ```
 
 ## Env recipe: outside-HOME package caches
