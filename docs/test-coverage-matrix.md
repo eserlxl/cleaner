@@ -69,6 +69,11 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-61 | `--dry-run` never executes user-level prune actions and reports `0 B` reclaimable with run-time size notice | User Actions Dry Run Invokes No Mocks |
 | U-62 | User-level prune actions credit filesystem free-space delta (`df -B1 --output=avail`, clamped at 0) instead of planned directory `du`, and warn in `--trash` mode | User Actions Credit DF Delta Not Planned DU |
 | U-63 | System package-cache actions continue routing through `sudo` and crediting planned `du` alongside user-level actions | System Action Still Uses Sudo Alongside User Action |
+| U-64 | A target containing `$HOME` (an ancestor of it, e.g. `$HOME/..`) is `[UNSAFE]` and survives `--clean --force` | Ancestor of HOME UNSAFE |
+| U-65 | The opt-in operation log records `outcome=failed` for a failed delete and `outcome=success` for a successful (including 0-byte) one, never `outcome=attempted` | Log Records Failed And Zero-Byte Outcomes |
+| U-66 | `--purge-sessions older-than:DAYS` exits 0 when no quarantine directory exists and still rejects an invalid day count | Retention Purge Without Quarantine Dir / Invalid Retention Days Without Quarantine Dir |
+| U-67 | `--interactive` shows `size at run time` instead of `0 B` for user-level prune actions | User Action Interactive Shows Run-Time Size |
+| U-68 | User-level prune actions pass the configured path (`--cache-dir` / `--store-dir`) and hide their FOUND line unless `--debug` is set | User Actions Clean Force Without Sudo / User Actions Dry Run Invokes No Mocks |
 
 ## Drift guards
 
