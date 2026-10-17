@@ -2344,6 +2344,7 @@ print_result_report() {
     echo "Failed targets: ${result_failed_names}"
   fi
   echo "Reclaimed: quarantined=$(format_bytes "$quarantined") permanent=$(format_bytes "$permanent")"
+  echo "Accounted bytes: quarantined=$quarantined permanent=$permanent"
   if [[ -n "$QUARANTINE_DIR" ]]; then
     echo "Quarantine session: ${QUARANTINE_DIR}"
   fi
@@ -2361,6 +2362,7 @@ show_last_report() {
   if [[ "$JSON_OUTPUT" == true ]]; then
     local line saved="" result="" cleaned="null" skipped="null" failed="null" elapsed_seconds="null"
     local failed_raw="" rest item first=true quarantine_session="" interrupted="" retention_failed=null
+    local quarantined_bytes=null permanent_bytes=null
     local -a failed_targets=()
     while IFS= read -r line || [[ -n "$line" ]]; do
       case "$line" in
@@ -2406,6 +2408,14 @@ show_last_report() {
         "Retention failed: true"|"Retention failed: false")
           retention_failed="${line#Retention failed: }"
           ;;
+        "Accounted bytes:"*)
+          quarantined_bytes=null
+          permanent_bytes=null
+          if [[ "$line" =~ ^Accounted\ bytes:\ quarantined=(0|[1-9][0-9]*)\ permanent=(0|[1-9][0-9]*)$ ]]; then
+            quarantined_bytes="${BASH_REMATCH[1]}"
+            permanent_bytes="${BASH_REMATCH[2]}"
+          fi
+          ;;
       esac
     done < "$report_file"
     printf '{"saved":"%s","result":"%s","cleaned":%s,"skipped":%s,"failed":%s,"elapsed_seconds":%s,"failed_targets":[' \
@@ -2430,7 +2440,8 @@ show_last_report() {
     else
       printf 'null'
     fi
-    printf ',"retention_failed":%s}\n' "$retention_failed"
+    printf ',"retention_failed":%s,"quarantined_bytes":%s,"permanent_bytes":%s}\n' \
+      "$retention_failed" "$quarantined_bytes" "$permanent_bytes"
     return 0
   fi
   cat -- "$report_file"
@@ -3057,6 +3068,7 @@ fi
 if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
   echo "Planned reclaim $(format_bytes "$total_reclaimable_bytes") is below --min-reclaim ${MIN_RECLAIM}; nothing was cleaned."
   RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
+  RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
   apply_trash_keep_days
   [[ "$OPERATION_FAILED" = true ]] && exit 1
@@ -3068,6 +3080,7 @@ if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; th
   echo -e "${GREEN}No files need cleaning. Everything is already clean!${NC}"
   # Overwrite the previous report so --report never shows a stale run as the last one.
   RESULT_REPORT_TEXT="Result: nothing to clean"
+  RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
   apply_trash_keep_days
   [[ "$OPERATION_FAILED" = true ]] && exit 1

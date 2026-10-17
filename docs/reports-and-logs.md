@@ -10,6 +10,8 @@ After a non-dry-run cleanup, a **result report** prints `cleaned`, `skipped`, an
 
 When `--trash-keep-days` is requested, the saved cleanup report includes `Retention failed: true|false` after retention runs, including nothing-to-clean and minimum-reclaim exits. `--report --json` exposes this as the additive nullable `retention_failed` boolean. `false` means no retention failure, including cancellation; historical reports, runs without retention, and reports saved before retention finishes return `null`. The current cleanup report is saved before retention starts so an interruption during retention does not lose it, then updated once retention finishes. The `cleaned`, `skipped`, `failed`, and `failed_targets` fields continue to describe cleanup targets only.
 
+New reports retain an `Accounted bytes: quarantined=N permanent=N` record. The additive JSON integers `quarantined_bytes` and `permanent_bytes` preserve these values without human-readable rounding; historical or malformed records yield `null`. Nothing-to-clean and minimum-reclaim skips explicitly record zero. These are the existing cleanup estimates credited after successful work: ordinary targets and system package actions use planned sizes, while user-level prune actions use the free-space delta clamped at zero. They do not guarantee physically freed blocks. Interrupted runs include only already-credited work, excluding any unfinished target; retention purge volume is excluded. A cancelled cleanup before work begins preserves the previous report.
+
 ## Operation log (`--log` / `LINUX_CLEANER_LOG`)
 
 Operation logging is **opt-in and off by default**:

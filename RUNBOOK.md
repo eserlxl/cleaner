@@ -136,6 +136,8 @@ cleaner --report --json
 30 3 * * * cleaner --report --json
 ```
 
+The same monitor can read `quarantined_bytes` and `permanent_bytes` for the last cleanup's exact accounted estimates, without rounded-unit parsing. They are `null` for historical or malformed byte records, zero for new nothing-to-clean/minimum-reclaim skips, and exclude retention purges. Interrupted runs include only already-credited work. Ordinary targets and system actions credit planned sizes; user prune actions credit nonnegative free-space deltas, so these counters do not guarantee physically freed blocks. Cancelling cleanup before work preserves the previous report.
+
 ## Env recipe: outside-HOME package caches
 
 Outside-HOME targets are always allowed. Package-cache rows are medium risk and need root. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` is a deprecated no-op.

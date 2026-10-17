@@ -17,6 +17,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Saved-report JSON exposes nullable `quarantined_bytes` and `permanent_bytes`
+  integers, preserving existing accounted cleanup estimates without rounding,
+  including early exits and already-credited interrupted work; retention volume
+  is excluded and historical/malformed byte records remain `null` (MINOR-compatible capability).
 - Configured-target inventories support the existing `--only-target` and
   `--exclude-target` NAME filters and environment mirrors, sharing cleanup matching
   and empty-selection errors without disk or process analysis (MINOR-compatible capability).

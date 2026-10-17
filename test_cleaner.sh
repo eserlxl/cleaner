@@ -2409,6 +2409,8 @@ setup_mock_env
 mixed_trash_target="$MOCK_HOME/.cache/mixed_trash_target"
 mkdir -p "$mixed_trash_target"
 echo quarantined > "$mixed_trash_target/payload"
+mixed_quarantine_bytes=$(du -sb "$mixed_trash_target" | cut -f1)
+mixed_action_bytes=$(du -sb "$OUTSIDE_DIR" | cut -f1)
 cat << EOF > "$TEST_ENV_DIR/mixed_trash_action.conf"
 medium|Paccache Mixed|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
 safe|Mixed Quarantine|$mixed_trash_target|Mock path quarantine|0||
@@ -2428,6 +2430,17 @@ if run_test_case "Mixed Trash and Action Summary" 0 "mixed_trash_action.log" \
     exit 1
   fi
 else
+  exit 1
+fi
+
+if ! run_test_case "Report JSON Mixed Trash Action Bytes" 0 "mixed_report.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/mixed_report.json" "$mixed_quarantine_bytes" "$mixed_action_bytes" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == tuple(map(int, sys.argv[2:])), d
+PY
+then
+  echo -e "${RED}FAIL: saved report lost the mixed quarantine/action byte split.${NC}"
   exit 1
 fi
 
@@ -6599,6 +6612,16 @@ if ! run_test_case "User Actions Credit DF Delta Not Planned DU" 0 "user_actions
   exit 1
 fi
 echo -e "${GREEN}PASS: user actions credit df free-space delta (clamped at 0), never planned du, and warn under --trash.${NC}"
+if ! run_test_case "Report JSON Action DF Bytes" 0 "action_report.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/action_report.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, 1048576), d
+PY
+then
+  echo -e "${RED}FAIL: saved report changed action delta credits or negative clamping.${NC}"
+  exit 1
+fi
 
 # 6. A system action (paccache) still goes through sudo and credits planned du alongside a user action.
 setup_mock_env
@@ -6841,6 +6864,7 @@ int_ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
 rm -f "$int_ops_log"
 int_report_file="$XDG_STATE_HOME/linux-cleaner/last-report.txt"
 rm -f "$int_report_file"
+int_credited_bytes=$(du -sb "$MOCK_HOME/.cache/int_first" | cut -f1)
 
 if ! run_test_case "Interrupted Cleanup Saves Report" 143 "interrupted_clean.log" \
        --config "$TEST_ENV_DIR/interrupted_clean.conf" --clean --force --log; then
@@ -6866,6 +6890,18 @@ if ! run_test_case "Interrupted Cleanup Report Command" 0 "interrupted_report_cm
    || ! cmp -s "$int_report_file" "$TEST_ENV_DIR/interrupted_report_cmd.log"; then
   echo -e "${RED}FAIL: --report did not print the saved interrupted cleanup report.${NC}"
   cat "$TEST_ENV_DIR/interrupted_report_cmd.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Report JSON Interrupted Accounted Bytes" 0 "interrupted_bytes.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/interrupted_bytes.json" "$int_credited_bytes" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["interrupted"] == "SIGTERM", d
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, int(sys.argv[2])), d
+PY
+then
+  echo -e "${RED}FAIL: interrupted report did not retain only already-credited bytes.${NC}"
   exit 1
 fi
 
@@ -7311,9 +7347,9 @@ if ! run_test_case "Report JSON Without Report" 1 "report_json_missing.log" \
 fi
 
 mkdir -p "$MOCK_HOME/.cache/rjson_target"
-printf 'payload\n' > "$MOCK_HOME/.cache/rjson_target/file.txt"
+truncate -s 1537 "$MOCK_HOME/.cache/rjson_target/file.txt"
 cat > "$TEST_ENV_DIR/rjson.conf" <<'EOF'
-safe|Report JSON Target|$HOME/.cache/rjson_target|Report JSON test target|0||
+safe|Report JSON Target|$HOME/.cache/rjson_target/file.txt|Report JSON test target|0||
 EOF
 
 if ! run_test_case "Report JSON Seed Cleanup" 0 "report_json_seed.log" \
@@ -7338,6 +7374,7 @@ assert d["failed_targets"] == [], d
 assert isinstance(d["quarantine_session"], str) and "/quarantine/" in d["quarantine_session"], d
 assert d["interrupted"] is None, d
 assert d["retention_failed"] is None, d
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (1537, 0), d
 PY
 then
   echo -e "${RED}FAIL: --report --json after cleanup did not emit valid expected JSON.${NC}"
@@ -7355,6 +7392,7 @@ import json, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     d = json.load(fh)
 assert d["result"] == "nothing_to_clean", d
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, 0), d
 assert d["cleaned"] is None and d["skipped"] is None and d["failed"] is None and d["elapsed_seconds"] is None, d
 assert d["failed_targets"] == [] and d["quarantine_session"] is None and d["interrupted"] is None, d
 PY
@@ -7375,6 +7413,7 @@ import json, sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     d = json.load(fh)
 assert d["result"] == "skipped_below_min_reclaim", d
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, 0), d
 assert d["cleaned"] is None and d["skipped"] is None and d["failed"] is None and d["elapsed_seconds"] is None, d
 assert d["failed_targets"] == [] and d["quarantine_session"] is None and d["interrupted"] is None, d
 PY
@@ -7384,7 +7423,54 @@ then
   exit 1
 fi
 
-# Interrupted cleanup report with failed_targets populated: verify --report --json.
+# Exact permanent bytes survive human rounding; declining another run preserves them.
+truncate -s 1537 "$MOCK_HOME/.cache/rjson_target/file.txt"
+if ! run_test_case "Report JSON Seed Permanent Bytes" 0 "report_permanent_seed.log" \
+       --config "$TEST_ENV_DIR/rjson.conf" --clean --force \
+   || ! run_test_case "Report JSON Permanent Bytes" 0 "report_permanent.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/report_permanent.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, 1537), d
+PY
+then
+  echo -e "${RED}FAIL: saved report rounded permanent byte accounting.${NC}"
+  exit 1
+fi
+cp "$rjson_report_file" "$TEST_ENV_DIR/report_before_cancel.txt"
+truncate -s 1537 "$MOCK_HOME/.cache/rjson_target/file.txt"
+if ! run_test_case "Report Cancel Preserves Bytes" 0 "report_cancel.log" \
+       --config "$TEST_ENV_DIR/rjson.conf" --clean \
+   || ! grep -q 'Cleanup aborted' "$TEST_ENV_DIR/report_cancel.log" \
+   || ! cmp -s "$rjson_report_file" "$TEST_ENV_DIR/report_before_cancel.txt" \
+   || [[ ! -f "$MOCK_HOME/.cache/rjson_target/file.txt" ]]; then
+  echo -e "${RED}FAIL: cancelled cleanup replaced the previous byte report.${NC}"
+  exit 1
+fi
+
+for byte_case in incomplete negative leading-zero decimal trailing-text; do
+  case "$byte_case" in
+    incomplete) byte_record='Accounted bytes: quarantined=0' ;;
+    negative) byte_record='Accounted bytes: quarantined=0 permanent=-1' ;;
+    leading-zero) byte_record='Accounted bytes: quarantined=01 permanent=2' ;;
+    decimal) byte_record='Accounted bytes: quarantined=0 permanent=1.5' ;;
+    trailing-text) byte_record='Accounted bytes: quarantined=0 permanent=1 extra' ;;
+  esac
+  printf 'Saved: 2026-10-17T12:34:56\nResult: nothing to clean\nReclaimed: quarantined=0 B permanent=0 B\n%s\n' \
+    "$byte_record" > "$rjson_report_file"
+  if ! run_test_case "Report JSON Malformed Bytes ($byte_case)" 0 "report_malformed.json" --report --json \
+     || ! python3 - "$TEST_ENV_DIR/report_malformed.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["quarantined_bytes"] is None and d["permanent_bytes"] is None, d
+PY
+  then
+    echo -e "${RED}FAIL: malformed byte record became a numeric report ($byte_case).${NC}"
+    exit 1
+  fi
+done
+
+# Historical interrupted report: rounded text must not become exact byte counts.
 cat > "$rjson_report_file" <<'EOF'
 Saved: 2026-10-17T12:34:56
 Plan: mode=clean risk=safe config=/tmp/rjson.conf
@@ -7415,6 +7501,8 @@ assert d == {
     "quarantine_session": None,
     "interrupted": "SIGTERM",
     "retention_failed": None,
+    "quarantined_bytes": None,
+    "permanent_bytes": None,
 }, d
 PY
 then
@@ -7464,6 +7552,10 @@ RETENTION_FIND
 
 for retention_case in completed nothing min-reclaim enumeration target-failed cancelled; do
   setup_retention_report "$retention_case"
+  retention_credited_bytes=$(du -sb "$retention_target" | cut -f1)
+  case "$retention_case" in
+    nothing|min-reclaim|target-failed|cancelled) retention_credited_bytes=0 ;;
+  esac
   retention_args=(--force)
   retention_exit=1
   retention_failed=true
@@ -7481,10 +7573,11 @@ for retention_case in completed nothing min-reclaim enumeration target-failed ca
      || ! grep -qx "Retention failed: $retention_failed" "$TEST_ENV_DIR/retention_run.log" \
      || ! grep -qx "Retention failed: $retention_failed" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
      || ! run_test_case "Retention Report JSON ($retention_case)" 0 "retention_report.json" --report --json \
-     || ! python3 - "$TEST_ENV_DIR/retention_report.json" "$retention_case" <<'RETENTION_JSON'
+     || ! python3 - "$TEST_ENV_DIR/retention_report.json" "$retention_case" "$retention_credited_bytes" <<'RETENTION_JSON'
 import json, sys
 d = json.load(open(sys.argv[1]))
 case = sys.argv[2]
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, int(sys.argv[3])), d
 assert d["retention_failed"] is (case not in ("target-failed", "cancelled")), d
 expected = {"nothing": "nothing_to_clean", "cancelled": "nothing_to_clean", "min-reclaim": "skipped_below_min_reclaim"}.get(case, "completed")
 assert d["result"] == expected, d
@@ -7508,16 +7601,18 @@ RETENTION_JSON
 done
 
 setup_retention_report interrupted
+retention_credited_bytes=$(du -sb "$retention_target" | cut -f1)
 mkdir -p "$XDG_STATE_HOME/linux-cleaner"
 printf 'Saved: 2000-01-01T00:00:00\nResult: nothing to clean\n' > "$XDG_STATE_HOME/linux-cleaner/last-report.txt"
 if ! run_test_case "Retention Interrupted Keeps Current Report" 143 "retention_interrupted.log" \
        --config "$TEST_ENV_DIR/retention_report.conf" --clean --force --trash-keep-days 7 \
    || ! run_test_case "Retention Interrupted Report JSON" 0 "retention_interrupted.json" --report --json \
-   || ! python3 - "$TEST_ENV_DIR/retention_interrupted.json" <<'RETENTION_INTERRUPTED'
+   || ! python3 - "$TEST_ENV_DIR/retention_interrupted.json" "$retention_credited_bytes" <<'RETENTION_INTERRUPTED'
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert d["result"] == "completed" and d["cleaned"] == 1 and d["failed"] == 0, d
 assert d["saved"] != "2000-01-01T00:00:00" and d["retention_failed"] is None, d
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, int(sys.argv[2])), d
 RETENTION_INTERRUPTED
 then
   echo -e "${RED}FAIL: interruption during retention lost the current cleanup report.${NC}"
