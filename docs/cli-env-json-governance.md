@@ -15,6 +15,7 @@
 - Truthy values: `1`, `true`, `yes` (documented per variable).
 - **CLI overrides value mirrors** (config, log, risk, exclude, target filters) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
 - `LINUX_CLEANER_YES_DANGER` stays off in default examples. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated no-ops (one warning per run); targets outside `$HOME` are always allowed.
+- `--only-path` is CLI-only, uses last-occurrence precedence, and has no environment mirror or additional JSON fields.
 - JSON target `status` no longer emits `rejected`. Older clients that accept that value keep working; current runs use the other statuses (`found`, `skipped`, and the rest).
 
 ## 3. JSON additive vs breaking changes
@@ -31,15 +32,16 @@ Documented mutual exclusions (enforced in code):
 
 - `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
+- `--only-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--trash-keep-days` (including its environment mirror)
 - `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
-- `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
+- `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--only-path`
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, `--list-sessions`, or `--report` (saved report summary; not `--init-config`)
 - `--only` requires `--restore`
 - `--only-target` and `--exclude-target` vs `--check-config`
 - `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--report`, `--init-config`
 - `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`
-- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--min-reclaim`, `--trash-keep-days`, `--json`
+- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--min-reclaim`, `--trash-keep-days`, `--json`
 
 See `test_cleaner.sh` mutex rejection cases.
 

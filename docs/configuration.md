@@ -81,6 +81,32 @@ cleaner --list-targets --only-target 'NPM,Yarn' --exclude-target Yarn
 cleaner --list-targets --only-target 'NPM,Yarn' --exclude-target Yarn --json
 ```
 
+For shared-NAME wildcard rows, select one existing project without editing the
+configuration or excluding every sibling:
+
+```sh
+cleaner --list-targets --only-path /opt/my-project --only-target 'C++ Build'
+cleaner --dry-run --only-path /opt/my-project --only-target 'C++ Build' --json
+cleaner --clean --trash --only-path /opt/my-project --only-target 'C++ Build'
+```
+
+`--only-path` is CLI-only; its last occurrence wins. Supply one existing absolute
+literal file or directory path, without line feeds. After NAME filtering, only
+resolved ordinary targets equal to or below its physical path are selected on
+whole components: ancestors, prefix siblings, and aliases resolving outside the
+scope are excluded. Ordinary rows, `filter:cxx_build`, and `exclude:*` remain
+eligible; every `action:*` row is excluded because its effects are not confined to
+that path. Unresolved candidates and physical paths containing line feeds are
+ineligible. Placeholder expansion preserves path bytes and rejects line feeds;
+unsafe wildcard/filter rows are skipped with a warning, unsafe protection paths
+abort, and an unsafe log path disables logging. Unscoped ordinary-target analysis
+also aborts before cleanup if expansion fails. Unused environment values containing
+line feeds do not invalidate an otherwise safe path. Inventory preserves configured paths and all risk levels; cleanup
+still applies its risk, age, process, protection, and symlink guards. Existing
+NAME-selection errors take precedence over no eligible PATH matches. Global
+`--trash-keep-days` retention, including its environment mirror, cannot be combined
+with a path scope.
+
 ## Protecting directories
 
 To keep the cleaner out of a directory tree entirely, add a two-field `protect|PATH` line to `cleaner.conf`:

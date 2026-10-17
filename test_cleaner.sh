@@ -4243,6 +4243,270 @@ assert snapshot() == before, "inventory changed cache, quarantine, report, lock,
 print("PASS: Inventory NAME Selection leaves data unchanged without analysis or mutation commands")
 INVENTORY_PY
 
+# Positive PATH scope narrows shared wildcard NAMEs without widening side effects.
+setup_mock_env
+python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'ONLY_PATH_PY'
+import hashlib, json, os, pathlib, shutil, stat, subprocess, sys, tempfile, time
+cleaner, test_dir = sys.argv[1:]
+with tempfile.TemporaryDirectory(prefix="cleaner-only-path-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home = root / "home"
+    projects = home / "projects"
+    alpha = projects / "alpha [*?] space"
+    beta = projects / "beta"
+    sibling = projects / "alpha [*?] space-sibling"
+    for project in (alpha, beta, sibling):
+        for leaf, files in (("build", ("CMakeCache.txt", "object.o")), ("logs", ("keep.log", "old.log"))):
+            target = project / leaf
+            target.mkdir(parents=True)
+            for name in files:
+                (target / name).write_text("keep fixture payload\n")
+    for leaf in ("plain/cache", "plain/blocked", "plain/protected", "plain/aged", "medium/cache",
+                 "fail-resolution", "no-targets", "lf-real", "lf-real\n"):
+        target = home / leaf
+        target.mkdir(parents=True)
+        (target / "payload").write_text("keep " + leaf + "\n")
+    (home / "plain/aged/old").write_text("old payload\n")
+    os.utime(home / "plain/aged/old", (time.time() - 30 * 86400,) * 2)
+    (home / "exact-file").write_text("exact file payload\n")
+    outside = root / "outside/build"
+    outside.mkdir(parents=True)
+    (outside / "payload").write_text("outside payload\n")
+    for link, target in ((home / "scope-alias", alpha), (home / "in-alias", alpha),
+                         (home / "plain/out-alias", outside.parent),
+                         (home / "link-target", home / "plain/cache"),
+                         (home / "lf-alias", home / "lf-real\n")):
+        link.symlink_to(target, target_is_directory=True)
+    state = home / "state/linux-cleaner"
+    state.mkdir(parents=True)
+    (state / "last-report.txt").write_text("keep prior report\n")
+    session = home / ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00"
+    session.mkdir(parents=True)
+    (session / "quarantine.meta").write_text("keep metadata\n")
+    (session / "payload").write_text("keep quarantine payload\n")
+    config = root / "scope.conf"
+    rows = [
+        "safe|Shared Builds|$HOME/projects/*/build*|build outputs|0||filter:cxx_build",
+        "safe|Shared Logs|$HOME/projects/*/logs|logs|0||exclude:keep*",
+        "safe|Ancestor|$HOME/projects|ancestor must not match a child scope|0||",
+        "safe|Alias In|$HOME/in-alias/build|physical inside alias|0||",
+        "safe|Alias Out|$HOME/plain/out-alias/build|physical outside alias|0||",
+        "safe|Literal File|$HOME/exact-file|ordinary file|0||",
+        "safe|Plain Cache|$HOME/plain/cache|ordinary directory|0||",
+        "safe|Blocked Cache|$HOME/plain/blocked|process guard|0|scope_blocked|",
+        "safe|Protected Cache|$HOME/plain/protected|protected directory|0||",
+        "safe|Aged Cache|$HOME/plain/aged|age guard|7||",
+        "medium|Medium Cache|$HOME/medium/cache|risk guard|0||",
+        "safe|Shared Action|$HOME/projects/*/build*|external effects excluded|0||action:uv_cache_prune",
+        "safe|Missing|$HOME/missing|unresolved candidate|0||",
+        "safe|Failed Resolution|$HOME/fail-resolution|failed resolver|0||",
+        "safe|LF Alias|$HOME/lf-alias|physical LF must not truncate|0||",
+        "safe|Symlink Target|$HOME/link-target|symlink guard|0||",
+        "protect|$HOME/plain/protected",
+    ]
+    def write_config(selected=rows):
+        config.write_text("\n".join(selected) + "\n")
+    write_config()
+    bindir, invbin = root / "bin", root / "inventory-bin"
+    bindir.mkdir()
+    invbin.mkdir()
+    trace = root / "forbidden-calls"
+    forbidden = '#!/bin/sh\nprintf "%s\\n" "$0" >> "$SCOPE_TRACE"\nexit 99\n'
+    for command in ("uv", "pnpm", "hf", "paccache", "pacman", "apt-get", "dnf", "zypper", "apk"):
+        (bindir / command).write_text(forbidden)
+    for command in ("du", "pgrep", "df", "sudo", "rm", "mv", "flock"):
+        (invbin / command).write_text(forbidden)
+    (bindir / "pgrep").write_text('#!/bin/sh\n[ "$2" = scope_blocked ]\n')
+    realpath = shutil.which("realpath")
+    (bindir / "realpath").write_text('#!/bin/bash\nif [[ "$1" == -e && "${!#}" == "${SCOPE_FAIL_RESOLVE:-}" ]]; then exit 23; fi\nexec "' + realpath + '" "$@"\n')
+    for path in list(bindir.iterdir()) + list(invbin.iterdir()):
+        path.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1", SCOPE_TRACE=str(trace))
+    env["PATH"] = str(bindir) + ":" + env["PATH"]
+    def run(label, args, error=None, inventory=False, overrides=None):
+        print("Test Case: Only Path " + label, flush=True)
+        current = env | (overrides or {})
+        if inventory:
+            current["PATH"] = str(invbin) + ":" + current["PATH"]
+        result = subprocess.run([cleaner, "--config", str(config)] + args, env=current,
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == (1 if error else 0), (label, result)
+        if error:
+            assert error in result.stderr, (label, result)
+            if "--json" in args:
+                assert result.stdout == "", (label, result)
+        print("PASS: Only Path " + label, flush=True)
+        return result
+    def snapshot():
+        return {str(p.relative_to(home)): (stat.S_IMODE(p.lstat().st_mode),
+                os.readlink(p) if p.is_symlink() else hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None)
+                for p in home.rglob("*")}
+    before = snapshot()
+    selected = [str(alpha / "build"), str(alpha / "logs"), "$HOME/in-alias/build"]
+    plain = ["$HOME/plain/cache", "$HOME/plain/blocked", "$HOME/plain/protected", "$HOME/plain/aged", "$HOME/link-target"]
+    resolved = [str(p / leaf) for leaf in ("build", "logs") for p in (alpha, beta, sibling)] + [
+        "$HOME/projects", "$HOME/in-alias/build", "$HOME/plain/out-alias/build", "$HOME/exact-file",
+        "$HOME/plain/cache", "$HOME/plain/blocked", "$HOME/plain/protected", "$HOME/plain/aged",
+        "$HOME/medium/cache", "$HOME/fail-resolution", "$HOME/link-target"]
+    cases = [
+        ("literal metacharacters and boundaries", ["--only-path", str(alpha)], selected, None, {}),
+        ("trailing slash", ["--only-path", str(alpha) + "/"], selected, None, {}),
+        ("scope alias", ["--only-path", str(home / "scope-alias")], selected, None, {}),
+        ("exact directory", ["--only-path", str(home / "plain/cache")], ["$HOME/plain/cache", "$HOME/link-target"], None, {}),
+        ("exact file", ["--only-path", str(home / "exact-file")], ["$HOME/exact-file"], None, {}),
+        ("root", ["--only-path", "/"], resolved, None, {}),
+        ("outside alias", ["--only-path", str(home / "plain")], plain, None, {}),
+        ("NAME composition", ["--only-path", str(alpha), "--only-target", "Shared", "--exclude-target", "Logs,Action"], [str(alpha / "build")], None, {}),
+        ("NAME error priority", ["--only-path", str(alpha), "--only-target", "absent"], [], "No config target NAME matches", {}),
+        ("exclusion error priority", ["--only-path", str(alpha), "--only-target", "Shared", "--exclude-target", "Shared"], [], "left no config targets", {}),
+        ("actions ineligible", ["--only-path", str(alpha), "--only-target", "Action"], [], "No eligible config target", {}),
+        ("empty scope selection", ["--only-path", str(home / "no-targets")], [], "No eligible config target", {}),
+        ("failed candidate resolution", ["--only-path", str(home), "--only-target", "Failed Resolution"], [], "No eligible config target", {"SCOPE_FAIL_RESOLVE": str(home / "fail-resolution")}),
+        ("all risk levels", ["--only-path", str(home / "medium")], ["$HOME/medium/cache"], None, {}),
+        ("last occurrence wins", ["--only-path", str(beta), "--only-path", str(alpha)], selected, None, {}),
+    ]
+    for fmt in ("human", "json"):
+        for label, args, expected, error, overrides in cases:
+            result = run(fmt + " " + label, ["--list-targets"] + args + (["--json"] if fmt == "json" else []),
+                         error, inventory=True, overrides=overrides)
+            if not error:
+                paths = [r["path"] for r in json.loads(result.stdout)["targets"]] if fmt == "json" else [
+                    line.split("\t")[2] for line in result.stdout.splitlines() if "\t" in line]
+                assert sorted(paths) == sorted(expected), (fmt, label, paths, expected)
+    for label, args, error, overrides in [
+        ("missing argument", ["--only-path"], "literal absolute path", {}),
+        ("empty argument", ["--only-path", ""], "literal absolute path", {}),
+        ("relative argument", ["--only-path", "projects"], "literal absolute path", {}),
+        ("LF argument", ["--only-path", str(home) + "\n"], "literal absolute path", {}),
+        ("missing scope", ["--only-path", str(home / "missing-scope")], "must resolve", {}),
+        ("LF scope alias", ["--only-path", str(home / "lf-alias")], "must resolve", {}),
+        ("failed scope resolution", ["--only-path", str(alpha), "--clean", "--force"], "must resolve", {"SCOPE_FAIL_RESOLVE": str(alpha)}),
+    ]:
+        run(label, args, error, inventory=True, overrides=overrides)
+    for partner in (["--restore", "latest"], ["--purge-sessions", "all"], ["--list-sessions"],
+                    ["--check-config"], ["--report"], ["--init-config"], ["--trash-keep-days", "0"]):
+        run("mutex " + partner[0], ["--only-path", str(alpha)] + partner, "--only-path applies only", inventory=True)
+    run("inherited retention mutex", ["--only-path", str(alpha)], "--only-path applies only", inventory=True,
+        overrides={"LINUX_CLEANER_TRASH_KEEP_DAYS": "7"})
+    write_config(rows + ["safe|Excluded Invalid|$HOME/missing|invalid age|invalid||"])
+    run("raw validation first", ["--only-path", str(home / "missing-scope"), "--only-target", "Shared", "--list-targets", "--json"],
+        "invalid MIN_AGE_DAYS", inventory=True)
+    write_config()
+    unscoped = run("no environment mirror", ["--list-targets", "--json"], inventory=True,
+                   overrides={"LINUX_CLEANER_ONLY_PATH": str(alpha)})
+    assert {"Shared Action", "Missing", "LF Alias"} <= {r["name"] for r in json.loads(unscoped.stdout)["targets"]}
+    assert snapshot() == before and not trace.exists(), "inventory changed state or probed analysis/mutation tools"
+    preview = run("dry-run parity", ["--only-path", str(alpha), "--only-target", "Shared", "--json"])
+    assert [r["path"] for r in json.loads(preview.stdout)["targets"]] == [str(alpha / "build"), str(alpha / "logs")]
+    risk = run("risk ceiling keeps selection valid", ["--only-path", str(home / "medium"), "--json"])
+    assert json.loads(risk.stdout)["targets"] == []
+    for name, target, status in [("Blocked", "plain/blocked", "blocked"), ("Protected", "plain/protected", "protected"),
+                                 ("Symlink", "plain/cache", "symlink")]:
+        result = run(name + " guard", ["--only-path", str(home / target), "--only-target", name, "--json"])
+        assert [r["status"] for r in json.loads(result.stdout)["targets"]] == [status], result
+    write_config([rows[14]])
+    run("LF candidate cannot delete sibling", ["--only-path", str(home), "--clean", "--force"], "No eligible config target")
+    assert (home / "lf-real/payload").read_text() == "keep lf-real\n"
+    assert (home / "lf-real\n/payload").read_text() == "keep lf-real\n\n"
+    write_config()
+    run("clean one shared-NAME project", ["--only-path", str(alpha), "--only-target", "Shared", "--clean", "--force"])
+    assert not (alpha / "build").exists() and not (alpha / "logs/old.log").exists()
+    assert (alpha / "logs/keep.log").is_file()
+    for project in (beta, sibling):
+        assert (project / "build/object.o").is_file() and (project / "logs/old.log").is_file(), project
+    assert (outside / "payload").read_text() == "outside payload\n" and not trace.exists()
+    run("age guard cleanup", ["--only-path", str(home / "plain/aged"), "--clean", "--force"])
+    assert not (home / "plain/aged/old").exists() and (home / "plain/aged/payload").is_file()
+ONLY_PATH_PY
+
+
+# Expansion must reject unrepresentable paths before a checked scope can see a sibling.
+setup_mock_env
+python3 - "$CLEANER_SH" <<'PATH_EXPANSION_PY'
+import json, os, pathlib, subprocess, sys, tempfile
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory(prefix="cleaner-path-expansion-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home = root / "home"
+    home.mkdir()
+    config = root / "expansion.conf"
+    base = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    base.update(HOME=str(home), USER="fixture-user", XDG_STATE_HOME=str(root / "state"), NO_COLOR="1")
+    def run(label, rows, args, env, status, diagnostic=None):
+        print("Test Case: Path Expansion Safety " + label, flush=True)
+        config.write_text("\n".join(rows) + "\n")
+        result = subprocess.run([cleaner, "--config", str(config)] + args, env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == status, (label, result)
+        if diagnostic:
+            assert diagnostic in result.stderr, (label, result)
+        if status and "--json" in args:
+            assert result.stdout == "", (label, result)
+        return result
+    def passed(label):
+        print("PASS: Path Expansion Safety " + label, flush=True)
+    def target(path, action=""):
+        return "safe|Fixture|" + str(path) + "|expansion identity|0||" + action
+    # First case is the observed scoped deletion: a trailing-LF XDG value must
+    # never select the existing sibling produced by command-substitution trimming.
+    for variable in ("XDG_CACHE_HOME", "HOME", "USER", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
+        parent = root / variable
+        normal, physical = parent / "project", parent / "project\n"
+        for path in (normal, physical):
+            path.mkdir(parents=True)
+            (path / "payload").write_text("keep exact identity\n")
+        env = base | {variable: "project\n" if variable == "USER" else str(physical)}
+        raw = str(parent) + "/$USER" if variable == "USER" else "$" + variable
+        for fmt, args in (("cleanup", ["--clean", "--force"]), ("human", ["--list-targets"]),
+                          ("json", ["--list-targets", "--json"])):
+            label = variable + " used " + fmt
+            run(label, [target(raw)], ["--only-path", str(parent)] + args, env, 1, "No eligible config target")
+            assert all((path / "payload").read_text() == "keep exact identity\n" for path in (normal, physical))
+            passed(label)
+        label = variable + " unused"
+        result = run(label, [target(normal)], ["--only-path", str(parent), "--list-targets", "--json"], env, 0)
+        assert [row["path"] for row in json.loads(result.stdout)["targets"]] == [str(normal)]
+        passed(label)
+    parent = root / "discovery"
+    normal, physical = parent / "project", parent / "project\n"
+    for path in (normal, physical):
+        for leaf in (path, path / "build"):
+            leaf.mkdir(parents=True, exist_ok=True)
+            (leaf / "CMakeCache.txt").write_text("keep build marker\n")
+            (leaf / "payload").write_text("keep discovery payload\n")
+    env = base | {"XDG_CACHE_HOME": str(physical)}
+    for label, raw, action in (("wildcard", "$XDG_CACHE_HOME/*", ""),
+                               ("literal build filter", "$XDG_CACHE_HOME", "filter:cxx_build"),
+                               ("wildcard build filter", "$XDG_CACHE_HOME/*", "filter:cxx_build")):
+        run(label, [target(raw, action)], ["--only-path", str(parent), "--clean", "--force"], env, 1, "unsafe path expansion")
+        assert all((path / "build/payload").read_text() == "keep discovery payload\n" for path in (normal, physical))
+        passed(label)
+    good = root / "good"
+    good.mkdir()
+    (good / "payload").write_text("keep until complete analysis\n")
+    label = "unscoped analysis aborts before cleanup"
+    run(label, [target(good), target("$XDG_CACHE_HOME")], ["--clean", "--force"], env, 1, "target PATH has unsafe path expansion")
+    assert (good / "payload").read_text() == "keep until complete analysis\n"
+    assert all((path / "payload").read_text() == "keep discovery payload\n" for path in (normal, physical))
+    passed(label)
+    for mode in (["--check-config"], ["--clean", "--force"]):
+        label = "protection rejects expansion " + mode[0]
+        run(label, [target(good), "protect|$XDG_CACHE_HOME"], mode, env, 1, "protect PATH has unsafe path expansion")
+        assert (good / "payload").read_text() == "keep until complete analysis\n"
+        passed(label)
+    label = "unsafe log disabled without fallback write"
+    log_sibling, log_physical = home / "log", home / "log\n"
+    for path in (log_sibling, log_physical):
+        path.write_text("keep log sentinel\n")
+    env = base | {"XDG_CACHE_HOME": str(log_physical)}
+    run(label, [target(good)], ["--clean", "--force", "--log", "$XDG_CACHE_HOME"], env, 0, "disabling log with unsafe path expansion")
+    assert not good.exists()
+    assert all(path.read_text() == "keep log sentinel\n" for path in (log_sibling, log_physical))
+    assert not (home / ".cache/linux-cleaner/operations.log").exists()
+    passed(label)
+PATH_EXPANSION_PY
+
 if run_test_case "List Targets With Restore Rejected" 1 "list_targets_bad.log" \
      --restore latest --list-targets; then
   if grep -q "list-targets cannot be combined" "$TEST_ENV_DIR/list_targets_bad.log"; then
@@ -4429,18 +4693,19 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --only-target --exclude-target --min-reclaim --trash-keep-days)
+  --init-config --only-target --exclude-target --only-path --min-reclaim --trash-keep-days)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
     --purge-sessions) echo "--purge-sessions all" ;;
     --only-target|--exclude-target) echo "$1 NPM" ;;
+    --only-path) echo "--only-path $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --min-reclaim --trash-keep-days --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --trash-keep-days --list-targets
   --check-config --init-config --report)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do

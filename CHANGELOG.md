@@ -21,6 +21,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- CLI-only `--only-path PATH` selects one existing project’s ordinary targets
+  across cleanup and human/JSON inventory, composing with NAME filters while
+  preserving sibling projects and excluding external actions and global retention.
+  Placeholder expansion rejects line feeds without silently selecting a sibling path.
 - Saved-report JSON exposes nullable `quarantined_bytes` and `permanent_bytes`
   integers, preserving existing accounted cleanup estimates without rounding,
   including early exits and already-credited interrupted work; retention volume

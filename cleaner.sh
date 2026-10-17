@@ -61,6 +61,7 @@ Options:
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
+  --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows.
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
@@ -90,6 +91,8 @@ RESTORE_TARGET=""
 RESTORE_ONLY=""
 ONLY_TARGET=""
 EXCLUDE_TARGET=""
+ONLY_PATH=""
+ONLY_PATH_CANONICAL=""
 MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
 TRASH_KEEP_DAYS=""
@@ -272,6 +275,14 @@ while [[ $# -gt 0 ]]; do
       EXCLUDE_TARGET="$2"
       shift 2
       ;;
+    --only-path)
+      if [[ -z "${2:-}" || "$2" != /* || "$2" == *$'\n'* ]]; then
+        echo "Error: --only-path requires a literal absolute path without line feeds." >&2
+        exit 1
+      fi
+      ONLY_PATH="$2"
+      shift 2
+      ;;
     --min-reclaim)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --min-reclaim requires a size argument.${NC}" >&2
@@ -427,6 +438,11 @@ fi
 
 if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
   echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --report, or --init-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$ONLY_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || -n "$TRASH_KEEP_DAYS" ) ]]; then
+  echo "Error: --only-path applies only to cleanup runs or --list-targets and cannot be combined with --trash-keep-days." >&2
   exit 1
 fi
 
@@ -655,6 +671,8 @@ split_name_patterns --only-target "$ONLY_TARGET" ONLY_TARGET_PATTERNS
 split_name_patterns --exclude-target "$EXCLUDE_TARGET" EXCLUDE_TARGET_PATTERNS
 only_target_matched=false
 name_filter_kept=false
+path_filter_matched=false
+SELECTED_TARGET_PATH=""
 
 select_target_name() {
   local name="$1"
@@ -668,13 +686,41 @@ select_target_name() {
   name_filter_kept=true
 }
 
-check_name_selection() {
+resolve_existing_path() {
+  local resolved
+  # Preserve trailing line feeds until they can be rejected, not silently stripped.
+  resolved=$(realpath -e -- "$1" 2>/dev/null && printf '.') || return 1
+  resolved=${resolved%.}
+  resolved=${resolved%$'\n'}
+  [[ "$resolved" == /* && "$resolved" != *$'\n'* ]] || return 1
+  RESOLVED_PATH="$resolved"
+}
+
+select_target_path() {
+  [[ -z "$ONLY_PATH" ]] && return 0
+  [[ "$2" == action:* ]] && return 1
+  local expanded
+  expanded=$(expand_path_safe "$1") || return 1
+  resolve_existing_path "$expanded" || return 1
+  SELECTED_TARGET_PATH="$RESOLVED_PATH"
+  if [[ "$ONLY_PATH_CANONICAL" == / || "$SELECTED_TARGET_PATH" == "$ONLY_PATH_CANONICAL" || "$SELECTED_TARGET_PATH" == "$ONLY_PATH_CANONICAL"/* ]]; then
+    path_filter_matched=true
+    return 0
+  fi
+  return 1
+}
+
+check_target_selection() {
   if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
     echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
     return 1
   fi
   if [[ -n "$EXCLUDE_TARGET" && "$name_filter_kept" != true ]]; then
     echo -e "${RED}Error: --exclude-target ${EXCLUDE_TARGET} left no config targets to process.${NC}" >&2
+    return 1
+  fi
+  if [[ -n "$ONLY_PATH" && "$path_filter_matched" != true ]]; then
+    echo "Error: No eligible config target resolves at or below '--only-path ${ONLY_PATH}'." >&2
     return 1
   fi
   return 0
@@ -767,6 +813,7 @@ emit_list_targets_json() {
     min_age=$(trim "$min_age")
     check_procs=$(trim "${check_procs:-}")
     custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+    select_target_path "$raw_path" "$custom_clean_cmd" || continue
     lt_names+=("$name")
     lt_risks+=("$risk")
     lt_paths+=("$raw_path")
@@ -776,7 +823,7 @@ emit_list_targets_json() {
     lt_actions+=("$custom_clean_cmd")
   done < <(expand_config_globs)
 
-  check_name_selection || return 1
+  check_target_selection || return 1
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
   printf '"targets":['
@@ -828,7 +875,8 @@ _expand_var_token() {
 # or relative).
 expand_path_safe() {
   local raw_path="$1"
-  local expanded="$raw_path"
+  local expanded="$raw_path" name value default
+  [[ "$raw_path" != *$'\n'* ]] || return 1
 
   # Safe leading ~ expansion
   # shellcheck disable=SC2088
@@ -841,14 +889,27 @@ expand_path_safe() {
   # Replace $HOME, $USER, and the four XDG base-directory variables only as
   # whole tokens (so $HOMEDATA / $USERNAME / $XDG_CACHE_HOMEX stay literal,
   # matching the documented "explicit placeholders only" contract).
-  expanded=$(_expand_var_token "$expanded" "HOME" "${HOME:-}")
-  expanded=$(_expand_var_token "$expanded" "USER" "${USER:-}")
-  expanded=$(_expand_var_token "$expanded" "XDG_CACHE_HOME" "$(_xdg_dir "XDG_CACHE_HOME" "${HOME:-}/.cache")")
-  expanded=$(_expand_var_token "$expanded" "XDG_CONFIG_HOME" "$(_xdg_dir "XDG_CONFIG_HOME" "${HOME:-}/.config")")
-  expanded=$(_expand_var_token "$expanded" "XDG_DATA_HOME" "$(_xdg_dir "XDG_DATA_HOME" "${HOME:-}/.local/share")")
-  expanded=$(_expand_var_token "$expanded" "XDG_STATE_HOME" "$(_xdg_dir "XDG_STATE_HOME" "${HOME:-}/.local/state")")
+  for name in HOME USER XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
+    case "$name" in
+      HOME|USER) value="${!name:-}" ;;
+      *)
+        case "$name" in
+          XDG_CACHE_HOME) default="${HOME:-}/.cache" ;;
+          XDG_CONFIG_HOME) default="${HOME:-}/.config" ;;
+          XDG_DATA_HOME) default="${HOME:-}/.local/share" ;;
+          XDG_STATE_HOME) default="${HOME:-}/.local/state" ;;
+        esac
+        value=$(_xdg_dir "$name" "$default" && printf '.') || return 1
+        value=${value%.}
+        ;;
+    esac
+    # Helpers emit no delimiter; remove only the capture sentinel, preserving LF.
+    expanded=$(_expand_var_token "$expanded" "$name" "$value" && printf '.') || return 1
+    expanded=${expanded%.}
+  done
 
-  echo "$expanded"
+  [[ "$expanded" != *$'\n'* ]] || return 1
+  printf '%s' "$expanded"
 }
 
 # How many directory levels below the literal prefix a "**" pattern component may
@@ -924,7 +985,7 @@ glob_components_match() {
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar
+  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar expanded
   local -a prune_args
   local -A accepted_matches
 
@@ -945,15 +1006,21 @@ expand_config_globs() {
     target_filter=""
     [[ "$fields" -eq 7 ]] && target_filter=$(trim "${frest##*|}")
     if [[ "$raw_path" != *[*?]* ]]; then
-      if [[ "$target_filter" == "filter:cxx_build" ]] \
-         && ! is_cxx_build_dir "$(expand_path_safe "$raw_path")"; then
-        continue
+      if [[ "$target_filter" == "filter:cxx_build" ]]; then
+        if ! expanded=$(expand_path_safe "$raw_path"); then
+          printf 'Warning: %s:%s: skipping target with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
+          continue
+        fi
+        is_cxx_build_dir "$expanded" || continue
       fi
       printf '%s\t%s\n' "$lineno" "$line"
       continue
     fi
 
-    raw_path=$(expand_path_safe "$raw_path")
+    if ! raw_path=$(expand_path_safe "$raw_path"); then
+      printf 'Warning: %s:%s: skipping wildcard with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
+      continue
+    fi
     # Collapse redundant slashes and strip trailing slashes to match the literal-path
     # pipeline, so a trailing or doubled slash cannot silently drop the line.
     while [[ "$raw_path" == *//* ]]; do
@@ -1020,9 +1087,8 @@ expand_config_globs() {
       [[ -z "$match" ]] && continue
       # Config records are line/pipe-delimited and consumers trim and expand the
       # path again. Refuse a match whose identity would change in that transport.
-      if [[ "$match" == *$'\n'* || "$match" == *'|'* \
-            || "$match" != "$(trim "$match")" \
-            || "$match" != "$(expand_path_safe "$match")" ]]; then
+      if ! expanded=$(expand_path_safe "$match") \
+         || [[ "$match" == *'|'* || "$match" != "$(trim "$match")" || "$match" != "$expanded" ]]; then
         printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
           "$CONFIG_FILE" "$lineno" "$match" >&2
         continue
@@ -1048,7 +1114,11 @@ expand_config_globs() {
 # Resolve a user-supplied log path (--log / LINUX_CLEANER_LOG) with the same
 # placeholder rules as config targets, so ~ and $HOME in documented examples work.
 if [[ -n "$LOG_FILE" ]]; then
-  LOG_FILE=$(expand_path_safe "$LOG_FILE")
+  if ! LOG_FILE=$(expand_path_safe "$LOG_FILE"); then
+    echo "Warning: disabling log with unsafe path expansion." >&2
+    LOG_ENABLED=false
+    LOG_FILE=""
+  fi
 fi
 
 # Strip trailing slashes safely (except when path is just "/")
@@ -1203,10 +1273,12 @@ list_config_targets() {
     name=$(trim "$name")
     select_target_name "$name" || continue
     raw_path=$(trim "$raw_path")
+    custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+    select_target_path "$raw_path" "$custom_clean_cmd" || continue
     desc=$(trim "$desc")
     printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
   done < <(expand_config_globs)
-  check_name_selection
+  check_target_selection
 }
 
 # Validate every active config line with the same structural checks as the
@@ -1234,7 +1306,10 @@ validate_config_file() {
         echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH is empty${NC}" >&2
         exit 1
       fi
-      name=$(expand_path_safe "$name")
+      if ! name=$(expand_path_safe "$name"); then
+        echo "Error: ${CONFIG_FILE}:${config_lineno}: protect PATH has unsafe path expansion" >&2
+        exit 1
+      fi
       if [[ "$name" != /* ]]; then
         echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH '${name}' must be absolute${NC}" >&2
         exit 1
@@ -2685,6 +2760,14 @@ if [[ -z "$RESTORE_TARGET" && -z "$PURGE_TARGET" && "$CHECK_CONFIG" != true ]]; 
   validate_config_file >/dev/null
 fi
 
+if [[ -n "$ONLY_PATH" ]]; then
+  if ! resolve_existing_path "$ONLY_PATH"; then
+    echo "Error: --only-path must resolve to an existing path without line feeds: '$ONLY_PATH'." >&2
+    exit 1
+  fi
+  ONLY_PATH_CANONICAL="$RESOLVED_PATH"
+fi
+
 if [[ "$LIST_TARGETS" == true ]]; then
   list_config_targets || exit 1
   exit 0
@@ -2787,7 +2870,10 @@ collect_protected_paths() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     IFS='|' read -r f1 f2 _ <<< "$line"
     [[ "$(trim "$f1")" == "protect" ]] || continue
-    expanded=$(expand_path_safe "$(trim "$f2")")
+    if ! expanded=$(expand_path_safe "$(trim "$f2")"); then
+      echo "Error: protect PATH has unsafe path expansion" >&2
+      return 1
+    fi
     stripped=$(strip_trailing_slashes "$expanded")
     PROTECTED_PATHS+=("$(canonicalize_physical "$stripped")")
   done < "$CONFIG_FILE"
@@ -2805,7 +2891,7 @@ is_path_protected() {
   return 1
 }
 
-collect_protected_paths
+collect_protected_paths || exit 1
 
 # First pass: Parse config line-by-line safely and analyze targets
 status_echo "${BOLD}Analyzing targets...${NC}"
@@ -2833,6 +2919,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   set_target_exclusions "$custom_clean_cmd"
 
   select_target_name "$name" || continue
+  select_target_path "$raw_path" "$custom_clean_cmd" || continue
 
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: ") || exit 1
@@ -2851,11 +2938,18 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   fi
   
   # Safe path expansions & cleanup trailing slashes
-  expanded_path=$(expand_path_safe "$raw_path")
+  if ! expanded_path=$(expand_path_safe "$raw_path"); then
+    echo "Error: ${CONFIG_FILE}:${config_lineno}: target PATH has unsafe path expansion" >&2
+    exit 1
+  fi
   stripped_path=$(strip_trailing_slashes "$expanded_path")
   
   # Resolve to canonical
-  path=$(canonicalize_physical "$stripped_path")
+  if [[ -n "$ONLY_PATH" ]]; then
+    path="$SELECTED_TARGET_PATH"
+  else
+    path=$(canonicalize_physical "$stripped_path")
+  fi
   
   # Run safety check
   safety_status=0
@@ -3038,7 +3132,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
 
 done < <(expand_config_globs)
 
-check_name_selection || exit 1
+check_target_selection || exit 1
 
 if [[ "$JSON_OUTPUT" == true ]]; then
   emit_dry_run_json

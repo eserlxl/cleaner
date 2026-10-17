@@ -180,7 +180,9 @@ without analyzing disk usage or modifying anything. NAME selection with
 .BR \-\-only\-target
 and
 .BR \-\-exclude\-target
-uses the same matching and empty-selection errors as cleanup. Inventory includes
+uses the same matching and empty-selection errors as cleanup.
+.B \-\-only\-path
+selects eligible physical paths with the same rules as cleanup. Inventory includes
 all risk levels. Read-only; requires a configuration file. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
@@ -219,6 +221,7 @@ combined with
 .BR \-\-report ,
 .BR \-\-only\-target ,
 .BR \-\-exclude\-target ,
+.BR \-\-only\-path ,
 .BR \-\-min\-reclaim ,
 .BR \-\-trash\-keep\-days ,
 or
@@ -277,6 +280,29 @@ Cannot be combined with
 or
 .BR \-\-init\-config .
 .TP
+.B \-\-only\-path \fIPATH\fR
+With cleanup or configured-target inventory, select ordinary targets whose physical
+path equals or lies below one existing absolute literal
+.IR PATH .
+Matching uses whole path components; / selects every eligible resolved target.
+The last occurrence wins; there is no environment mirror. NAME filters apply
+first, then PATH selection, then cleanup risk and safety guards. All action:*
+rows are excluded because their effects may extend beyond the scope. Missing or
+unresolvable candidates and expanded or physical paths containing line feeds are
+ineligible.
+An invalid scope exits 1. Existing NAME-selection errors take precedence over
+no eligible PATH matches (also exit 1). Inventory preserves configured paths and includes all risks
+without analysis. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+or
+.BR \-\-trash\-keep\-days
+(including its environment mirror).
+.TP
 .B \-\-min\-reclaim \fISIZE\fR
 Used with cleanup: skip the run when the planned reclaimable total is below
 .IR SIZE
@@ -321,6 +347,7 @@ or if any session purge fails. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-only\-path ,
 or
 .BR \-\-init\-config .
 .TP
