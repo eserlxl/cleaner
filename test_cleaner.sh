@@ -3515,6 +3515,27 @@ else
   exit 1
 fi
 
+# A dry-run that found something names the command that applies the plan.
+setup_mock_env
+cat > "$TEST_ENV_DIR/next_hint_empty.conf" <<'NEXTHINT'
+safe|Absent Target|$HOME/.cache/no_such_dir_for_hint|Missing target|0||
+NEXTHINT
+if run_test_case "Dry Run Next Step Hint" 0 "next_hint.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+   && grep -qF "Next: run 'cleaner --clean' to apply this plan" "$TEST_ENV_DIR/next_hint.log" \
+   && run_test_case "Dry Run Next Step Hint Quiet" 0 "next_hint_quiet.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --quiet \
+   && ! grep -qF "Next: run" "$TEST_ENV_DIR/next_hint_quiet.log" \
+   && run_test_case "Dry Run Next Step Hint Nothing To Clean" 0 "next_hint_empty.log" \
+     --config "$TEST_ENV_DIR/next_hint_empty.conf" --dry-run \
+   && ! grep -qF "Next: run" "$TEST_ENV_DIR/next_hint_empty.log"; then
+  echo -e "${GREEN}PASS: a dry-run with something to clean names the apply command; --quiet and empty plans do not.${NC}"
+else
+  echo -e "${RED}FAIL: dry-run next-step hint did not match the plan or --quiet.${NC}"
+  cat "$TEST_ENV_DIR/next_hint.log" "$TEST_ENV_DIR/next_hint_quiet.log" "$TEST_ENV_DIR/next_hint_empty.log" 2>/dev/null || true
+  exit 1
+fi
+
 setup_mock_env
 if run_test_case "Min Reclaim Dry Run Note" 0 "min_reclaim_dry.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --min-reclaim 1T \

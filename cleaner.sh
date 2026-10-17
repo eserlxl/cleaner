@@ -2711,11 +2711,23 @@ if [[ "$QUIET" != true ]]; then
   printf '%s\n\n' "$PLAN_REPORT_TEXT"
 fi
 
+# Whether any analyzed target is cleanable (user-level prune rows count even at 0 B).
+has_cleanable_target=false
+for i in "${!parsed_exists[@]}"; do
+  if [[ "${parsed_exists[$i]}" == true && "${parsed_safety[$i]}" -ne 1 ]]; then
+    has_cleanable_target=true
+    break
+  fi
+done
+
 # If dry-run is specified, we stop here
 if [[ "$DRY_RUN" = true ]]; then
   status_echo "${YELLOW}Dry-run mode active. No files were modified.${NC}"
   if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
     status_echo "Below --min-reclaim ${MIN_RECLAIM}: a cleanup run would skip."
+  fi
+  if [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
+    status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
   fi
   exit 0
 fi
@@ -2728,13 +2740,6 @@ if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]
 fi
 
 # Check if there is anything to clean
-has_cleanable_target=false
-for i in "${!parsed_exists[@]}"; do
-  if [[ "${parsed_exists[$i]}" == true && "${parsed_safety[$i]}" -ne 1 ]]; then
-    has_cleanable_target=true
-    break
-  fi
-done
 if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; then
   echo -e "${GREEN}No files need cleaning. Everything is already clean!${NC}"
   # Overwrite the previous report so --report never shows a stale run as the last one.

@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- A dry-run that found something to clean ends with a `Next:` line naming
+  `cleaner --clean` (and `--trash` for quarantine), hidden under `--quiet`.
 - `--init-config` copies the active config to the user config path (never overwriting) so it can be customized.
 - The systemd units set `SyslogIdentifier=linux-cleaner`, so their journal
   output reads `linux-cleaner[pid]` instead of `env[pid]` and
