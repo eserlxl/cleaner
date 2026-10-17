@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `AUR_PREP=1 make check-aur-ready` rejects quoted, unquoted, and multiline `SKIP`
+  checksum entries without executing package code; only literal SHA-256 arrays are accepted.
 - **Security:** restore creates missing destination directories with mode `0700`,
   including after sudo, so restoring an aged private directory cannot expose its
   files under a permissive umask. Existing directory permissions are preserved.

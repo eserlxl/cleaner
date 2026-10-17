@@ -68,4 +68,25 @@ pre-release:
 	bash test_cleaner.sh
 
 check-aur-ready:
-	@test "$${AUR_PREP:-0}" != 1 || ! grep -Eq "^[[:space:]]*sha256sums=.*'SKIP'" PKGBUILD
+	# Accept one nonempty array of bare or quoted 64-hex checksums.
+	# Reject other sha256sums uses without evaluating PKGBUILD.
+	@test "$${AUR_PREP:-0}" != 1 || awk '\
+		{ sub(/#.*/, "") } \
+		/^[[:space:]]*sha256sums[[:space:]]*=/ { \
+			if (seen++) bad = 1; reading = 1; sub(/^[^=]*=[[:space:]]*/, ""); \
+		} \
+		/(^|[^[:alnum:]_])sha256sums([^[:alnum:]_]|$$)/ { bad = 1 } \
+		reading { body = body " " $$0; if (/\)/) reading = 0 } \
+		END { \
+			if (!seen || reading || !sub(/^[[:space:]]*\(/, "", body) || \
+				!sub(/\)[[:space:]]*$$/, "", body)) exit 1; \
+			n = split(body, entries, /[[:space:]]+/); \
+			for (i = 1; i <= n; i++) { \
+				value = entries[i]; if (value == "") continue; count++; \
+				quote = substr(value, 1, 1); \
+				if ((quote == "\"" || quote == sprintf("%c", 39)) && \
+					substr(value, length(value)) == quote) value = substr(value, 2, length(value) - 2); \
+				if (length(value) != 64 || value ~ /[^[:xdigit:]]/) bad = 1; \
+			} \
+			exit (bad || !count); \
+		}' PKGBUILD

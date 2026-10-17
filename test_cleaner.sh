@@ -5342,23 +5342,48 @@ if [[ "$chown_ok" != true ]] \
 fi
 echo -e "${GREEN}PASS: aged quarantine chown failure is recorded and later targets still run.${NC}"
 
-# check-aur-ready must block a PKGBUILD whose checksum is still SKIP, pass a
-# pinned one, and stay a no-op without AUR_PREP.
+# check-aur-ready reads literal arrays without executing package code.
 setup_mock_env
-for aur_case in skip pinned; do
-  mkdir -p "$TEST_ENV_DIR/aur-$aur_case"
-  cp "$SCRIPT_DIR/Makefile" "$TEST_ENV_DIR/aur-$aur_case/"
+aur_hash=$(printf '%064d' 0)
+for aur_case in single-quoted-skip double-quoted-skip unquoted-skip multiline-skip \
+                pinned multiline-pinned append indexed dynamic empty unclosed missing; do
+  echo -e "\n${BOLD}Test Case: AUR Checksum Gate $aur_case${NC}"
+  aur_dir="$TEST_ENV_DIR/aur-$aur_case"
+  mkdir -p "$aur_dir"
+  cp "$SCRIPT_DIR/Makefile" "$aur_dir/"
+  aur_expect_failure=true
+  case "$aur_case" in
+    single-quoted-skip) printf "sha256sums=('SKIP')\n" > "$aur_dir/PKGBUILD" ;;
+    double-quoted-skip) printf 'sha256sums=("SKIP")\n' > "$aur_dir/PKGBUILD" ;;
+    unquoted-skip) printf 'sha256sums=(SKIP)\n' > "$aur_dir/PKGBUILD" ;;
+    multiline-skip) printf "sha256sums=(\n  '%s'\n  'SKIP' # placeholder\n)\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
+    pinned) cp "$SCRIPT_DIR/PKGBUILD" "$aur_dir/PKGBUILD"; aur_expect_failure=false ;;
+    multiline-pinned)
+      printf '# SKIP is forbidden\nsha256sums=(\n  %s\n  "%s" # pinned\n  '\''%s'\''\n)\n' \
+        "$aur_hash" "$aur_hash" "$aur_hash" > "$aur_dir/PKGBUILD"
+      aur_expect_failure=false ;;
+    append) printf "sha256sums=('%s')\nsha256sums+=('SKIP')\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
+    indexed) printf "sha256sums=('%s')\nsha256sums[0]='SKIP'\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
+    dynamic) printf 'sha256sums=("%s")\n' "\$CHECKSUM" > "$aur_dir/PKGBUILD" ;;
+    empty) printf 'sha256sums=()\n' > "$aur_dir/PKGBUILD" ;;
+    unclosed) printf "sha256sums=(\n  '%s'\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
+    missing) printf '# no checksum assignment\n' > "$aur_dir/PKGBUILD" ;;
+  esac
+  cat <<'EOF' >> "$aur_dir/PKGBUILD"
+printf executed > "$TEST_ENV_DIR/aur-package-executed"
+EOF
+  aur_rc=0
+  AUR_PREP=1 make -s -C "$aur_dir" check-aur-ready > "$aur_dir/check.log" 2>&1 || aur_rc=$?
+  if { [[ "$aur_expect_failure" == true && "$aur_rc" -eq 0 ]] \
+       || [[ "$aur_expect_failure" == false && "$aur_rc" -ne 0 ]]; } \
+     || ! env -u AUR_PREP make -s -C "$aur_dir" check-aur-ready > "$aur_dir/no-prep.log" 2>&1 \
+     || [[ -e "$TEST_ENV_DIR/aur-package-executed" ]]; then
+    echo -e "${RED}FAIL: AUR checksum gate $aur_case: exit=$aur_rc expected_failure=$aur_expect_failure, or no-prep/execution boundary failed.${NC}"
+    cat "$aur_dir/check.log" "$aur_dir/no-prep.log" 2>/dev/null || true
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: AUR checksum gate $aur_case preserves checksum and no-execution boundaries.${NC}"
 done
-sed "s/^sha256sums=.*/sha256sums=('SKIP')/" "$SCRIPT_DIR/PKGBUILD" > "$TEST_ENV_DIR/aur-skip/PKGBUILD"
-sed "s/^sha256sums=.*/sha256sums=('$(printf '%064d' 0)')/" "$SCRIPT_DIR/PKGBUILD" > "$TEST_ENV_DIR/aur-pinned/PKGBUILD"
-aur_skip_rc=0; AUR_PREP=1 make -s -C "$TEST_ENV_DIR/aur-skip" check-aur-ready >/dev/null 2>&1 || aur_skip_rc=$?
-aur_pinned_rc=0; AUR_PREP=1 make -s -C "$TEST_ENV_DIR/aur-pinned" check-aur-ready >/dev/null 2>&1 || aur_pinned_rc=$?
-aur_noprep_rc=0; make -s -C "$TEST_ENV_DIR/aur-skip" check-aur-ready >/dev/null 2>&1 || aur_noprep_rc=$?
-if [[ "$aur_skip_rc" -eq 0 || "$aur_pinned_rc" -ne 0 || "$aur_noprep_rc" -ne 0 ]]; then
-  echo -e "${RED}FAIL: check-aur-ready skip=$aur_skip_rc pinned=$aur_pinned_rc noprep=$aur_noprep_rc (want nonzero/0/0).${NC}"
-  exit 1
-fi
-echo -e "${GREEN}PASS: check-aur-ready rejects a SKIP checksum and accepts a pinned one.${NC}"
 
 # The pacman install scriptlet only prints an opt-in hint: it must never call
 # systemctl, and upgrades stay quiet (no post_upgrade).
