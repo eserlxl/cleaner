@@ -5,7 +5,7 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | Environment variable | CLI flag | Truthy values | Constraints | README vs man |
 |---------------------|----------|---------------|-------------|---------------|
 | `LINUX_CLEANER_CONFIG` | `-c`, `--config FILE` | non-empty path | Explicit `-c/--config` overrides; when unset, XDG/system/dev search order unchanged | aligned |
-| `LINUX_CLEANER_LOG` | `--log [FILE]` | non-empty path | Path must resolve under `$HOME`; tilde/`$HOME`/`$USER` expansion allowed | aligned |
+| `LINUX_CLEANER_LOG` | `--log [FILE]` | non-empty path | Path must resolve under `$HOME`; tilde/`$HOME`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` expansion allowed (relative XDG values fall back to the spec default) | aligned |
 | `LINUX_CLEANER_QUIET` | `-q`, `--quiet` | `1`, `true`, `yes` | CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_DEBUG` | `--debug` | `1`, `true`, `yes` | Shows per-target FOUND, CLEAN and PROTECTED lines; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Valid with dry-run (`--dry-run` or default), `--list-targets`, `--list-sessions`, or `--report`; CLI can only enable; set to 0 or unset to disable | aligned |

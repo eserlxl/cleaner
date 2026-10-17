@@ -33,7 +33,8 @@ Session age uses the quarantine session directory mtime (`find -mtime +DAYS`), n
 | No match (`Purge Older-Than No Match`) | 0 |
 | Successful selective purge | 0 |
 | Invalid day count | 1 |
-| Missing quarantine base (`Purge Missing Base`) | 1 |
+| `older-than:DAYS` or `max-size:SIZE` without a quarantine directory (`Retention Purge Without Quarantine Dir`) | 0 |
+| `latest` or a timestamp without a quarantine directory (`Purge Missing Base`) | 1 |
 
 Message on no match includes: `No quarantine sessions older than`
 

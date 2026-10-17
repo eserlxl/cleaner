@@ -66,7 +66,7 @@ To cap the disk quarantine holds instead of its age, keep the newest sessions wi
 0 */6 * * * cleaner --list-sessions --json
 ```
 
-Use this to watch session growth under trash mode before retention runs. `LINUX_CLEANER_JSON=1` is also valid with `--list-sessions` or `--list-targets` (not only dry-run).
+Use this to watch session growth under trash mode before retention runs. `LINUX_CLEANER_JSON=1` is also valid with `--list-sessions`, `--list-targets`, or `--report` (not only dry-run).
 
 Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) are allowed. They are medium risk, so the safe-tier timer does not select them; pass `--risk medium`. They need root, and a target is skipped when privileges are not available. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated and have no effect.
 
@@ -122,7 +122,7 @@ cleaner --clean --trash --force
 
 ## Env recipe: JSON monitoring
 
-`LINUX_CLEANER_JSON=1` enables `--json` for dry-run reclaim summaries, `--list-targets` inventories, or `--list-sessions` quarantine inventories. Examples:
+`LINUX_CLEANER_JSON=1` enables `--json` for dry-run reclaim summaries, `--list-targets` inventories, `--list-sessions` quarantine inventories, or the `--report` summary of the last cleanup. Examples:
 
 ```sh
 LINUX_CLEANER_JSON=1 cleaner --dry-run

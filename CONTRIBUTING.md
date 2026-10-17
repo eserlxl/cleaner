@@ -26,7 +26,8 @@ A change to `cleaner.sh` must preserve all of these:
    trashed, or acted on without first being classified by that function (defined
    in `cleaner.sh`). Do not add a deletion path that bypasses it.
 2. **No `eval` or shell glob expansion.** Placeholder expansion resolves only
-   `$HOME`, `~`, and `$USER`; bounded wildcard discovery uses `find`. Never
+   `$HOME`, `~`, `$USER`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`,
+   `$XDG_DATA_HOME`, and `$XDG_STATE_HOME`; bounded wildcard discovery uses `find`. Never
    introduce `eval` or unquoted glob expansion of config-supplied strings.
 3. **Privileged actions only via the whitelisted registry.** Predefined
    `action:*` commands run from a fixed, enumerated whitelist — never a
