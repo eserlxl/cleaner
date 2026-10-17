@@ -44,6 +44,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   a purge removed the last session.
 - A running Claude Code CLI (process `claude`) no longer blocks cleanup of the
   Claude Desktop caches; those rows are guarded by `claude-desktop` only.
+- Wildcard `PATH_EXPRESSION`s with a trailing slash or a doubled slash now expand
+  like their normalized form instead of silently matching nothing.
 
 ## [1.4.2] - 2026-10-16
 

@@ -3891,6 +3891,43 @@ else
   exit 1
 fi
 
+# Redundant slashes (trailing or doubled) in wildcard patterns must be collapsed and stripped.
+mkdir -p "$MOCK_HOME/slashproj/app/build"
+echo "artifact" > "$MOCK_HOME/slashproj/app/build/out.o"
+cat > "$TEST_ENV_DIR/glob_slashes.conf" <<'GLOBSLASHES'
+safe|Trailing Slash Glob|$HOME/slashproj/*/build*/|Trailing slash pattern|0||
+safe|Double Slash Glob|$HOME/slashproj//*/build*|Double slash pattern|0||
+GLOBSLASHES
+
+if run_test_case "Wildcard Redundant Slashes Dry Run" 0 "glob_slashes_dry.log" --debug \
+     --config "$TEST_ENV_DIR/glob_slashes.conf"; then
+  if grep -q "FOUND.*Trailing Slash Glob" "$TEST_ENV_DIR/glob_slashes_dry.log" \
+     && grep -q "FOUND.*Double Slash Glob" "$TEST_ENV_DIR/glob_slashes_dry.log"; then
+    echo -e "${GREEN}PASS: redundant slash wildcard patterns were analyzed in dry-run.${NC}"
+  else
+    echo -e "${RED}FAIL: dry-run did not find both redundant slash wildcard targets.${NC}"
+    cat "$TEST_ENV_DIR/glob_slashes_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Wildcard Redundant Slashes Listing" 0 "glob_slashes_list.log" \
+     --list-targets --config "$TEST_ENV_DIR/glob_slashes.conf"; then
+  slash_target="$(realpath -m "$MOCK_HOME/slashproj/app/build")"
+  if grep -qF "Trailing Slash Glob	safe	$slash_target	" "$TEST_ENV_DIR/glob_slashes_list.log" \
+     && grep -qF "Double Slash Glob	safe	$slash_target	" "$TEST_ENV_DIR/glob_slashes_list.log"; then
+    echo -e "${GREEN}PASS: redundant slash wildcard patterns listed expected target path.${NC}"
+  else
+    echo -e "${RED}FAIL: redundant slash wildcard patterns did not list expected target path.${NC}"
+    cat "$TEST_ENV_DIR/glob_slashes_list.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # A wildcard matching nothing is not an error — it simply contributes no target.
 cat > "$TEST_ENV_DIR/glob_empty.conf" <<'GLOBEMPTY'
 safe|Absent Builds|$HOME/projects/*/nosuchdir*|Nothing matches this|0||

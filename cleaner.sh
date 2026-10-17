@@ -682,6 +682,12 @@ expand_config_globs() {
     fi
 
     raw_path=$(expand_path_safe "$raw_path")
+    # Collapse redundant slashes and strip trailing slashes to match the literal-path
+    # pipeline, so a trailing or doubled slash cannot silently drop the line.
+    while [[ "$raw_path" == *//* ]]; do
+      raw_path="${raw_path//\/\//\/}"
+    done
+    raw_path=$(strip_trailing_slashes "$raw_path")
 
     # Split into the longest wildcard-free leading prefix and the depth of the
     # remaining pattern components, so find scans only below a literal root.
