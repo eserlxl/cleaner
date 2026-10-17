@@ -6286,5 +6286,94 @@ if [[ ! -f "$aged_unint_meta" ]] \
 fi
 echo -e "${GREEN}PASS: interrupted aged quarantine records metadata on the first moved file and stays restorable.${NC}"
 
+# A mutating run (--clean, --restore, --purge-sessions) takes an exclusive
+# non-blocking flock on $HOME/.cache/linux-cleaner/cleaner.lock and refuses a
+# concurrent mutating run with exit 1 and nothing deleted, while refusing a
+# symlinked lock path. Dry-run and read-only modes never take the lock.
+setup_mock_env
+# Seed a saved report before locking so --report has a report to read while locked.
+if ! run_test_case "Concurrent Run Lock Seed Report" 0 "concurrent_lock_seed.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target Aurman --clean --force; then
+  exit 1
+fi
+mkdir -p "$MOCK_HOME/.cache/aurman"
+echo "dummy aurman pkg" > "$MOCK_HOME/.cache/aurman/pkg1.tar.zst"
+
+lock_dir="$MOCK_HOME/.cache/linux-cleaner"
+lock_file="$lock_dir/cleaner.lock"
+(umask 077; mkdir -p "$lock_dir")
+q_lock_sess="$lock_dir/quarantine/2026-02-02_00-00-00"
+mkdir -p "$q_lock_sess/0_Lock_Target"
+printf 'quarantined-payload\n' > "$q_lock_sess/0_Lock_Target/item.txt"
+printf 'full|0_Lock_Target|%s/.cache/lock_restored|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$q_lock_sess/quarantine.meta"
+
+exec 8>"$lock_file"
+if ! flock -n 8; then
+  exec 8>&-
+  echo -e "${RED}FAIL: test could not acquire initial flock on '$lock_file'.${NC}"
+  exit 1
+fi
+
+lock_expected_msg="Error: another linux-cleaner run is in progress (lock: ${lock_file})."
+if ! run_test_case "Concurrent Run Lock" 1 "concurrent_lock_clean.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+   || ! grep -qF "$lock_expected_msg" "$TEST_ENV_DIR/concurrent_lock_clean.log" \
+   || [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+   || ! run_test_case "Concurrent Run Lock Restore" 1 "concurrent_lock_restore.log" \
+       --restore latest \
+   || ! grep -qF "$lock_expected_msg" "$TEST_ENV_DIR/concurrent_lock_restore.log" \
+   || [[ -e "$MOCK_HOME/.cache/lock_restored" ]] \
+   || [[ ! -f "$q_lock_sess/0_Lock_Target/item.txt" ]] \
+   || ! run_test_case "Concurrent Run Lock Purge" 1 "concurrent_lock_purge.log" \
+       --purge-sessions all --force \
+   || ! grep -qF "$lock_expected_msg" "$TEST_ENV_DIR/concurrent_lock_purge.log" \
+   || [[ ! -d "$q_lock_sess" ]]; then
+  exec 8>&-
+  echo -e "${RED}FAIL: concurrent mutating run did not exit 1 with the lock error or modified files.${NC}"
+  cat "$TEST_ENV_DIR"/concurrent_lock_*.log 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Concurrent Run Lock Dry Run Unaffected" 0 "concurrent_lock_dry.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+   || ! grep -q "Total potential space savings:" "$TEST_ENV_DIR/concurrent_lock_dry.log" \
+   || ! run_test_case "Concurrent Run Lock List Targets Unaffected" 0 "concurrent_lock_lt.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets \
+   || ! run_test_case "Concurrent Run Lock List Sessions Unaffected" 0 "concurrent_lock_ls.log" \
+       --list-sessions \
+   || ! run_test_case "Concurrent Run Lock Check Config Unaffected" 0 "concurrent_lock_cc.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --check-config \
+   || ! run_test_case "Concurrent Run Lock Report Unaffected" 0 "concurrent_lock_report.log" \
+       --report; then
+  exec 8>&-
+  echo -e "${RED}FAIL: dry-run or read-only modes failed while the lock was held.${NC}"
+  cat "$TEST_ENV_DIR"/concurrent_lock_*.log 2>/dev/null || true
+  exit 1
+fi
+
+# Release the lock and verify a mutating run now succeeds without contention.
+exec 8>&-
+if ! run_test_case "Concurrent Run Lock Released Clean Succeeds" 0 "concurrent_lock_after.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target Aurman --clean --force \
+   || [[ -e "$MOCK_HOME/.cache/aurman" ]]; then
+  echo -e "${RED}FAIL: cleanup did not succeed after the lock was released.${NC}"
+  cat "$TEST_ENV_DIR/concurrent_lock_after.log" 2>/dev/null || true
+  exit 1
+fi
+
+# A symlinked lock file is refused before any deletion.
+rm -f "$lock_file"
+ln -s "$TEST_ENV_DIR/lock_symlink_target" "$lock_file"
+if ! run_test_case "Concurrent Run Lock Refuses Symlink" 1 "concurrent_lock_sym.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+   || [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+   || [[ -e "$TEST_ENV_DIR/lock_symlink_target" ]]; then
+  echo -e "${RED}FAIL: symlinked lock path was not refused or followed the symlink.${NC}"
+  cat "$TEST_ENV_DIR/concurrent_lock_sym.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: concurrent mutating runs exit 1 on lock contention while dry-run and read-only modes remain unaffected.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

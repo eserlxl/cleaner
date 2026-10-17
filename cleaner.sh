@@ -2361,6 +2361,37 @@ if [[ "$CHECK_CONFIG" == true ]]; then
   exit 0
 fi
 
+# Serialize mutating runs (restore, purge, and non-dry-run cleanup) with an
+# exclusive non-blocking flock so overlapping timer and manual invocations
+# cannot race on the same files or quarantine sessions. Dry-run and read-only
+# modes never take the lock; if flock is not installed, continue unlocked.
+if [[ -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$DRY_RUN" != true ]]; then
+  if command -v flock >/dev/null 2>&1; then
+    lock_dir="$HOME/.cache/linux-cleaner"
+    lock_file="$lock_dir/cleaner.lock"
+    if [[ -L "$lock_dir" || -L "$lock_file" ]]; then
+      echo -e "${RED}Error: Refusing to open symlinked lock path '$lock_file'.${NC}" >&2
+      exit 1
+    fi
+    if ! (umask 077; mkdir -p -- "$lock_dir"); then
+      echo -e "${RED}Error: Failed to create lock directory '$lock_dir'.${NC}" >&2
+      exit 1
+    fi
+    if [[ -L "$lock_dir" || -L "$lock_file" || ! -d "$lock_dir" ]]; then
+      echo -e "${RED}Error: Refusing to open symlinked lock path '$lock_file'.${NC}" >&2
+      exit 1
+    fi
+    if ! (umask 077; : >> "$lock_file") 2>/dev/null || [[ -L "$lock_file" ]] || ! exec 9>"$lock_file"; then
+      echo -e "${RED}Error: Failed to open lock file '$lock_file'.${NC}" >&2
+      exit 1
+    fi
+    if ! flock -n 9; then
+      echo -e "${RED}Error: another linux-cleaner run is in progress (lock: ${lock_file}).${NC}" >&2
+      exit 1
+    fi
+  fi
+fi
+
 # Check if restore mode is active
 if [[ -n "${RESTORE_TARGET:-}" ]]; then
   restore_quarantine "$RESTORE_TARGET"

@@ -39,7 +39,17 @@ Use a custom configuration file instead of the resolved default.
 Calculate and display potential space savings without deleting anything (default).
 .TP
 .B \-\-clean
-Perform cleanup with a summary confirmation prompt.
+Perform cleanup with a summary confirmation prompt. When
+.BR flock (1)
+is available, mutating runs
+.RB ( \-\-clean / \-\-force / \-\-interactive ,
+.BR \-\-restore ,
+and
+.BR \-\-purge\-sessions )
+take a non-blocking exclusive lock on
+.I ~/.cache/linux\-cleaner/cleaner.lock
+and exit 1 if another mutating run is in progress; dry-run and read-only modes
+never take the lock.
 .TP
 .BR \-i ", " \-\-interactive
 Enable cleanup and prompt for confirmation before cleaning each target.
@@ -598,6 +608,16 @@ XDG user configuration.
 .I /etc/linux\-cleaner/cleaner.conf
 System configuration.
 .TP
+.I ~/.cache/linux\-cleaner/cleaner.lock
+Non-blocking exclusive
+.BR flock (1)
+lock held by mutating runs
+.RB ( \-\-clean / \-\-force / \-\-interactive ,
+.BR \-\-restore ,
+and
+.BR \-\-purge\-sessions ).
+The directory is created mode 0700 and symlinks are refused.
+.TP
 .I ~/.cache/linux\-cleaner/quarantine/
 Quarantine sessions for
 .BR \-\-trash / \-\-restore / \-\-purge\-sessions .
@@ -637,7 +657,10 @@ should run
 and, after removal,
 .BR "systemctl \-\-user daemon\-reload" .
 .SH EXIT STATUS
-Returns 0 on success and non-zero on a configuration error or a failed operation.
+Returns 0 on success and non-zero (1) on a configuration/usage error, a concurrent
+mutating run holding
+.IR ~/.cache/linux\-cleaner/cleaner.lock ,
+or a failed operation.
 .SH EXAMPLES
 .TP
 Preview what would be cleaned:

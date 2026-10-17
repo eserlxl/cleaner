@@ -249,7 +249,7 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 
 - **`-c, --config FILE`**: Use a custom configuration file instead of the default discovery order.
 - **`-d, --dry-run`**: Preview potential space savings without deleting anything (default).
-- **`--clean`**: Enable cleanup with a single summary confirmation prompt. Cleanup is also enabled by `-f/--force`, `-i/--interactive`, or a truthy `LINUX_CLEANER_FORCE` (the last of `--dry-run`, `--clean`, `--force`, or `--interactive` on the command line wins).
+- **`--clean`**: Enable cleanup with a single summary confirmation prompt. Cleanup is also enabled by `-f/--force`, `-i/--interactive`, or a truthy `LINUX_CLEANER_FORCE` (the last of `--dry-run`, `--clean`, `--force`, or `--interactive` on the command line wins). When `flock(1)` is available, mutating runs (`--clean`/`--force`/`--interactive`, `--restore`, and `--purge-sessions`) acquire a non-blocking exclusive lock on `~/.cache/linux-cleaner/cleaner.lock` (directory created mode `0700`, refusing symlinks) and exit `1` if another mutating run is already in progress; dry-run and read-only modes never take the lock.
 - **`-i, --interactive`**: Enable cleanup and prompt before cleaning each target individually.
 - **`-f, --force`**: Enable cleanup and skip confirmation prompts (except `danger` targets and non-forced session purges).
 - **`--yes-danger`**: Bypass the manual confirmation prompt for `danger` targets.
@@ -300,7 +300,7 @@ Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TAR
 
 ### Exit status
 
-Returns **`0`** on success and **`1` (non-zero)** on a configuration/usage error or a **failed operation** (an attempted delete, quarantine move, predefined action, restore, or session purge that did not succeed). When an operation fails during cleanup, `cleaner` reports the error on stderr, continues processing remaining targets, and exits `1`.
+Returns **`0`** on success and **`1` (non-zero)** on a configuration/usage error, a concurrent mutating run holding `~/.cache/linux-cleaner/cleaner.lock` (`Error: another linux-cleaner run is in progress (lock: <path>).`), or a **failed operation** (an attempted delete, quarantine move, predefined action, restore, or session purge that did not succeed). When an operation fails during cleanup, `cleaner` reports the error on stderr, continues processing remaining targets, and exits `1`.
 
 A **skip is not a failure** and exits **`0`**: a declined `danger` target, a target blocked by a running process, an `UNSAFE` or `protected` path, a git-tracked target, a root-requiring target when privileges are unavailable, or a predefined `action:*` whose package manager binary is not installed.
 
