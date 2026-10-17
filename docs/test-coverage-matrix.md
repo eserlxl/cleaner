@@ -80,6 +80,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-72 | `--min-reclaim SIZE` and `LINUX_CLEANER_MIN_RECLAIM` skip cleanup below threshold and validate size/mode combinations | Min Reclaim Above Total Skips / Min Reclaim Below Total Cleans / Min Reclaim Env / Min Reclaim Invalid Size / Min Reclaim With Restore Rejected |
 | U-73 | `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` whole-token config path placeholders with spec defaults for unset or relative values | XDG Cache Placeholder (absolute) / XDG Cache Placeholder (unset) / XDG Cache Placeholder (relative) |
 | U-74 | Every `examples/systemd/*.service` carries exactly one `SyslogIdentifier=linux-cleaner` line, so `journalctl --user -t linux-cleaner` finds all three units | inline drift check "every systemd service tags its journal output as linux-cleaner" |
+| U-75 | Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored for the config search and the saved cleanup report | Relative XDG_STATE_HOME Ignored / Relative XDG_CONFIG_HOME Ignored |
 
 ## Drift guards
 
