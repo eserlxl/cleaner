@@ -31,54 +31,6 @@ Cross-walk of `README.md` CLI sections, `cleaner.sh --help`, and `cleaner.1` on 
 
 No prose contradictions were listed in the findings above; no README, `cleaner.1`, or `cleaner.sh` edits were required.
 
-<!-- no-op stamp: Phase 1.5 — Wire checklist into release/contributo -->
-
 ## F2.2-02
 
 `Quarantine for Purge` passes on HEAD; no test repair required.
-
-<!-- no-op stamp: Phase 2.1 — Commit coverage matrix and link from C -->
-
-<!-- no-op stamp: Phase 2.2 — Publish drift guard catalog (qb) -->
-
-<!-- no-op stamp: Phase 4.2 — Maintainer decision: wrapper vs. docum -->
-
-<!-- no-op stamp: Phase 6.2 — Older-than semantics and mtime documen -->
-
-<!-- no-op stamp: Phase 6.2 — Retention sizing worked examples (qb) -->
-
-<!-- no-op stamp: Phase 6.2 — Invalid selector operator guidance (qb -->
-
-<!-- no-op stamp: Phase 6.3 — Selective restore incident playbook (q -->
-
-<!-- no-op stamp: Phase 6.3 — Restore exit-code and flag-combination -->
-
-<!-- no-op stamp: Phase 5.3 — Cleanup timer unit (qb) -->
-
-<!-- no-op stamp: Phase 6.5 — Create consolidated QUARANTINE-OPS run -->
-
-<!-- no-op stamp: Phase 6.5 — Test contract appendix (qb) -->
-
-<!-- no-op stamp: Phase 5.4 — Selective target and exclusion env rec -->
-
-<!-- no-op stamp: Phase 5.4 — Danger-tier env recipe with guardrails -->
-
-<!-- no-op stamp: Phase 5.4 — EnvironmentFile template for systemd/c -->
-
-<!-- no-op stamp: Phase 5.5 — RUNBOOK integration and table of conte -->
-
-<!-- no-op stamp: Phase 5.5 — README scheduling section consolidatio -->
-
-<!-- no-op stamp: Phase 5.5 — Example command flag crosswalk script  -->
-
-<!-- no-op stamp: Phase 6.1 — Quarantine on-disk layout reference (q -->
-
-<!-- no-op stamp: Phase 6.1 — Disk growth and bounded-trash primer ( -->
-
-<!-- no-op stamp: Phase 6.1 — Test contract cross-reference table (q -->
-
-<!-- no-op stamp: Phase 6.2 — Older-than semantics and mtime documen -->
-
-<!-- no-op stamp: Phase 6.2 — Exit-code automation matrix (qb) -->
-
-<!-- no-op stamp: Phase 6.2 — Retention sizing worked examples (qb) -->
