@@ -31,6 +31,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   tool is not installed, block while the tool is running, and credit the disk
   space actually freed rather than the pre-run directory `du`.
 
+### Changed
+
+- Antigravity Logs now follows the rotated-log rule (7 days, no process gate), so
+  it is no longer blocked whenever Antigravity IDE is running.
+
 ### Fixed
 
 - A target that contains `$HOME` (for example `$HOME/..` when `HOME` is not
