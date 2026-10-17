@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-17
+
 ### Added
 
 - `--purge-sessions max-size:SIZE` keeps the newest quarantine sessions within a byte budget (`SIZE` with optional `K`, `M`, `G`, or `T` 1024-based unit) and purges older sessions once the newest-first `du -sb` total exceeds `SIZE` (exiting `0` when nothing exceeds the budget or no quarantine directory exists).
@@ -72,7 +74,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   Claude Desktop caches; those rows are guarded by `claude-desktop` only.
 - Wildcard `PATH_EXPRESSION`s with a trailing slash or a doubled slash now expand
   like their normalized form instead of silently matching nothing.
-- relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are now ignored for the
+- Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are now ignored for the
   config search and the saved cleanup report, as the XDG spec requires, instead
   of resolving against the working directory.
 - An aged or excluded quarantine now writes its `quarantine.meta` record as soon
@@ -80,8 +82,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   interrupted mid-target stays restorable with `--restore`.
 - A retried `--restore` after an interrupted restore now treats a record whose
   quarantined payload is already gone and whose original path is present again as
-  already restored (whole-target records only), drops the stale record, and completes the session retirement
-  instead of failing forever on a missing source.
+  already restored (whole-target records only), drops the stale record, and
+  completes the session retirement instead of failing forever on a missing source.
 
 ## [1.4.2] - 2026-10-16
 
@@ -405,7 +407,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.5.0
 [1.4.2]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.2
 [1.4.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.1
 [1.4.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.0
