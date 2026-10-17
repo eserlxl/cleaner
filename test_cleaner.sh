@@ -3496,6 +3496,18 @@ else
   exit 1
 fi
 
+if run_test_case "Min Reclaim Too Large" 1 "min_reclaim_too_large.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 99999999999T --dry-run \
+   && grep -q "is too large" "$TEST_ENV_DIR/min_reclaim_too_large.log" \
+   && run_test_case "Min Reclaim Largest Fitting Size" 0 "min_reclaim_max.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 8388607T --dry-run; then
+  echo -e "${GREEN}PASS: --min-reclaim refuses a size that overflows 64-bit arithmetic and accepts the largest one that fits.${NC}"
+else
+  echo -e "${RED}FAIL: --min-reclaim overflow guard did not behave as expected.${NC}"
+  cat "$TEST_ENV_DIR/min_reclaim_too_large.log" "$TEST_ENV_DIR/min_reclaim_max.log" 2>/dev/null || true
+  exit 1
+fi
+
 if run_test_case "Min Reclaim With Restore Rejected" 1 "min_reclaim_norestore.log" \
      --min-reclaim 1G --restore latest; then
   if grep -q "min-reclaim applies only to cleanup" "$TEST_ENV_DIR/min_reclaim_norestore.log"; then
