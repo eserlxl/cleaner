@@ -52,6 +52,8 @@ At runtime, the configuration file is resolved in this order:
 4. `/etc/linux-cleaner/cleaner.conf`
 5. `cleaner.conf` beside the script (development checkout)
 
+Run `cleaner --init-config` to copy the active config to `${XDG_CONFIG_HOME:-~/.config}/linux-cleaner/cleaner.conf` (it never overwrites), then edit it.
+
 ### Supported platforms & requirements
 
 `cleaner` requires Linux with a **GNU userland** (`bash`, GNU `coreutils` for `du -sb`, `stat -c`, `realpath`, and GNU `findutils` for `find -print0`/`-quit`). On a non-GNU userland it refuses `--clean`/`--trash` with an error while still allowing a best-effort `--dry-run` preview.
@@ -258,7 +260,8 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 - **`--exclude-target PATTERN`**: With cleanup, skip targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if no targets remain. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 - **`--min-reclaim SIZE`**: With cleanup, skip the run when the planned reclaimable total is below `SIZE` (an integer with an optional `K`, `M`, `G`, or `T` 1024-based unit, e.g. `500M` or `2G`). User-level prune actions (`uv`/`pnpm`/`hf`) are sized at run time and do not count toward the threshold. In `--dry-run` mode, prints a note when a cleanup run would skip; in a cleanup run, prints why nothing was cleaned, records `Result: skipped below --min-reclaim SIZE` in `last-report.txt`, and exits `0`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 - **`--list-targets`**: List configured targets (`NAME`, `risk`, `path`, `description`) without disk analysis. Read-only; requires a config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--report`.
-- **`--check-config`**: Validate config syntax and exit without disk analysis. Prints `OK: N targets in <path>`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--report`.
+- **`--check-config`**: Validate config syntax and exit without disk analysis. Prints `OK: N targets in <path>`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, or `--init-config`.
+- **`--init-config`**: Copy the active config to `${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf` (mode `0644`, never overwriting an existing file or following symlinks) and exit. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--min-reclaim`, or `--json`.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date, and each item's `full`/`aged` type and original path). Read-only; requires no config file.
 - **`--restore SESSION`**: Restore files from a quarantine session (`latest` or an immediate child timestamp directory name; `/` and `.`/`..` are rejected). Rejects an explicit `--dry-run`.
 - **`--only PATTERN`**: Used with `--restore`: restore only targets whose original path contains `PATTERN`, keeping remaining targets and rewriting `quarantine.meta` so a later `--restore` succeeds. Exits `1` if nothing matches or if passed without `--restore`.

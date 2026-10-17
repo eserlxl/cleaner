@@ -56,6 +56,7 @@ Options:
   --report                   Print the saved last cleanup report and exit.
   --list-targets             List configured cleanup targets (read-only) and exit.
   --check-config             Validate the configuration file and exit (no disk analysis).
+  --init-config              Copy the active config to your user config path (never overwrites).
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
@@ -94,6 +95,7 @@ PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
 CHECK_CONFIG=false
+INIT_CONFIG=false
 REPORT=false
 PLAN_REPORT_TEXT=""
 RESULT_REPORT_TEXT=""
@@ -317,6 +319,10 @@ while [[ $# -gt 0 ]]; do
       CHECK_CONFIG=true
       shift
       ;;
+    --init-config)
+      INIT_CONFIG=true
+      shift
+      ;;
     -h|--help)
       show_usage
       exit 0
@@ -380,33 +386,38 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, or --report).${NC}" >&2
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, or --report).${NC}" >&2
+if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
-  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, or --report).${NC}" >&2
+if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
 fi
 
-if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true ) ]]; then
-  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, or --report.${NC}" >&2
+if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, --report, or --init-config.${NC}" >&2
   exit 1
 fi
 
-if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
-  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, or --report.${NC}" >&2
+if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config.${NC}" >&2
   exit 1
 fi
 
-if [[ "$REPORT" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true ) ]]; then
-  echo -e "${RED}Error: --report cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, or --check-config.${NC}" >&2
+if [[ "$REPORT" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --report cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, or --init-config.${NC}" >&2
+  exit 1
+fi
+
+if [[ "$INIT_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true ) ]]; then
+  echo -e "${RED}Error: --init-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, or --report.${NC}" >&2
   exit 1
 fi
 
@@ -426,7 +437,7 @@ if [[ -n "$MIN_RECLAIM" && "$CHECK_CONFIG" == true ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$REPORT" == true || \
+      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || \
       ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true ) \
     ) ]]; then
   echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, or --list-sessions.${NC}" >&2
@@ -449,6 +460,84 @@ _xdg_dir() {
     printf '%s' "$default"
   fi
 }
+
+# Copy the active configuration file to the user config path without overwriting.
+init_user_config() {
+  local xdg_parent dest_dir dest src="" candidate tmp
+  xdg_parent="$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config")"
+  dest_dir="$xdg_parent/linux-cleaner"
+  dest="$dest_dir/cleaner.conf"
+
+  if [[ -L "$xdg_parent" ]]; then
+    echo -e "${RED}Error: Refusing to initialize config; parent directory '$xdg_parent' is a symlink.${NC}" >&2
+    return 1
+  fi
+  if [[ -L "$dest_dir" ]]; then
+    echo -e "${RED}Error: Refusing to initialize config; directory '$dest_dir' is a symlink.${NC}" >&2
+    return 1
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
+    return 1
+  fi
+
+  if [[ -n "$CONFIG_FILE" ]]; then
+    if [[ -f "$CONFIG_FILE" && "$CONFIG_FILE" != "$dest" ]]; then
+      src="$CONFIG_FILE"
+    fi
+  else
+    for candidate in "/etc/linux-cleaner/cleaner.conf" "$SCRIPT_DIR/cleaner.conf"; do
+      if [[ -f "$candidate" && "$candidate" != "$dest" ]]; then
+        src="$candidate"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "$src" ]]; then
+    echo -e "${RED}Error: No source configuration file found to copy.${NC}" >&2
+    return 1
+  fi
+
+  if ! (umask 077; mkdir -p -- "$dest_dir"); then
+    echo -e "${RED}Error: Failed to create user config directory '$dest_dir'.${NC}" >&2
+    return 1
+  fi
+  if [[ -L "$xdg_parent" || -L "$dest_dir" || ! -d "$dest_dir" ]]; then
+    echo -e "${RED}Error: Refusing to initialize config; '$dest_dir' is not a real directory.${NC}" >&2
+    return 1
+  fi
+
+  tmp="$dest.tmp.$$"
+  if ! cp -- "$src" "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: Failed to copy '$src' to '$tmp'.${NC}" >&2
+    return 1
+  fi
+  if ! chmod 0644 "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: Failed to set permissions on '$tmp'.${NC}" >&2
+    return 1
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$dest"; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: Failed to move '$tmp' to '$dest'.${NC}" >&2
+    return 1
+  fi
+
+  echo "Created $dest from $src; edit it, then preview with: cleaner --dry-run"
+  return 0
+}
+
+if [[ "$INIT_CONFIG" == true ]]; then
+  init_user_config
+  exit $?
+fi
 
 # Check if config file exists (only if not restoring, purging, or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true ]]; then

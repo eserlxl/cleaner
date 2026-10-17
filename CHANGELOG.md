@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--init-config` copies the active config to the user config path (never overwriting) so it can be customized.
 - The systemd units set `SyslogIdentifier=linux-cleaner`, so their journal
   output reads `linux-cleaner[pid]` instead of `env[pid]` and
   `journalctl --user -t linux-cleaner` shows all three. Reinstall the units

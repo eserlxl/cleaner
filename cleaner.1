@@ -151,8 +151,28 @@ on success. Cannot be combined with
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,
+.BR \-\-report ,
 or
-.BR \-\-report .
+.BR \-\-init\-config .
+.TP
+.B \-\-init\-config
+Copy the active configuration file to
+.I ${XDG_CONFIG_HOME:\-$HOME/.config}/linux\-cleaner/cleaner.conf
+(mode
+.BR 0644 ,
+never overwriting an existing file or following symlinks) and exit. Cannot be
+combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+.BR \-\-min\-reclaim ,
+or
+.BR \-\-json .
 .TP
 .B \-\-only \fIPATTERN\fR
 Used with

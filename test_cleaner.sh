@@ -3849,6 +3849,80 @@ else
   exit 1
 fi
 
+setup_mock_env
+rm -rf "$TEST_ENV_DIR/xdg_cfg"
+if XDG_CONFIG_HOME="$TEST_ENV_DIR/xdg_cfg" run_test_case "Init Config Creates User Config" 0 "init_config_create.log" \
+     --init-config -c "$TEST_ENV_DIR/test_cleaner.conf"; then
+  if [[ -f "$TEST_ENV_DIR/xdg_cfg/linux-cleaner/cleaner.conf" ]] \
+     && cmp -s "$TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/xdg_cfg/linux-cleaner/cleaner.conf" \
+     && [[ "$(stat -c %a "$TEST_ENV_DIR/xdg_cfg/linux-cleaner/cleaner.conf")" == "644" ]] \
+     && grep -qF "Created " "$TEST_ENV_DIR/init_config_create.log"; then
+    echo -e "${GREEN}PASS: --init-config created user config with mode 644 and matching content.${NC}"
+  else
+    echo -e "${RED}FAIL: --init-config did not create expected user config file or output.${NC}"
+    cat "$TEST_ENV_DIR/init_config_create.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if XDG_CONFIG_HOME="$TEST_ENV_DIR/xdg_cfg" run_test_case "Init Config Refuses Overwrite" 1 "init_config_overwrite.log" \
+     --init-config -c "$TEST_ENV_DIR/test_cleaner.conf"; then
+  if cmp -s "$TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/xdg_cfg/linux-cleaner/cleaner.conf"; then
+    echo -e "${GREEN}PASS: --init-config refuses to overwrite an existing user config.${NC}"
+  else
+    echo -e "${RED}FAIL: --init-config modified existing user config on second run.${NC}"
+    cat "$TEST_ENV_DIR/init_config_overwrite.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Init Config Used By Next Run${NC}"
+init_next_ec=0
+env -u LINUX_CLEANER_CONFIG XDG_CONFIG_HOME="$TEST_ENV_DIR/xdg_cfg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --check-config < /dev/null > "$TEST_ENV_DIR/init_config_next.log" 2>&1 || init_next_ec=$?
+if [[ $init_next_ec -eq 0 ]] \
+   && grep -qE "^OK: [0-9]+ targets in $TEST_ENV_DIR/xdg_cfg/linux-cleaner/cleaner\\.conf$" "$TEST_ENV_DIR/init_config_next.log"; then
+  echo -e "${GREEN}PASS: --check-config discovers the user config created by --init-config.${NC}"
+else
+  echo -e "${RED}FAIL: --check-config did not use the created user config (ec=$init_next_ec).${NC}"
+  cat "$TEST_ENV_DIR/init_config_next.log"
+  exit 1
+fi
+
+rm -rf "$TEST_ENV_DIR/xdg_cfg" "$TEST_ENV_DIR/xdg_sym_target"
+mkdir -p "$TEST_ENV_DIR/xdg_cfg" "$TEST_ENV_DIR/xdg_sym_target"
+ln -s "$TEST_ENV_DIR/xdg_sym_target" "$TEST_ENV_DIR/xdg_cfg/linux-cleaner"
+if XDG_CONFIG_HOME="$TEST_ENV_DIR/xdg_cfg" run_test_case "Init Config Refuses Symlinked Directory" 1 "init_config_symlink.log" \
+     --init-config -c "$TEST_ENV_DIR/test_cleaner.conf"; then
+  if [[ -z "$(find "$TEST_ENV_DIR/xdg_sym_target" -mindepth 1 -print -quit)" ]]; then
+    echo -e "${GREEN}PASS: --init-config refuses a symlinked linux-cleaner directory and writes nothing into the target.${NC}"
+  else
+    echo -e "${RED}FAIL: --init-config wrote into the symlink target directory.${NC}"
+    cat "$TEST_ENV_DIR/init_config_symlink.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if XDG_CONFIG_HOME="$TEST_ENV_DIR/xdg_cfg" run_test_case "Init Config With List Targets Rejected" 1 "init_config_nolist.log" \
+     --init-config --list-targets; then
+  if grep -q "cannot be combined" "$TEST_ENV_DIR/init_config_nolist.log"; then
+    echo -e "${GREEN}PASS: --init-config with --list-targets is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --init-config with --list-targets did not print mutual exclusion error.${NC}"
+    cat "$TEST_ENV_DIR/init_config_nolist.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+rm -rf "$TEST_ENV_DIR/xdg_cfg" "$TEST_ENV_DIR/xdg_sym_target"
+
 echo -e "\n${BOLD}Test Case: List Targets Read-Only${NC}"
 if run_test_case "List Targets" 0 "list_targets.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets; then
