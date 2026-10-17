@@ -63,6 +63,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   Claude Desktop caches; those rows are guarded by `claude-desktop` only.
 - Wildcard `PATH_EXPRESSION`s with a trailing slash or a doubled slash now expand
   like their normalized form instead of silently matching nothing.
+- relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are now ignored for the
+  config search and the saved cleanup report, as the XDG spec requires, instead
+  of resolving against the working directory.
 
 ## [1.4.2] - 2026-10-16
 

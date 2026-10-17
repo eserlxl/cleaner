@@ -5406,6 +5406,40 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Relative XDG_STATE_HOME Ignored${NC}"
+setup_mock_env
+mkdir -p "$TEST_ENV_DIR/relcwd"
+ec=0
+( cd "$TEST_ENV_DIR/relcwd" && XDG_STATE_HOME=rel PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force < /dev/null > "$TEST_ENV_DIR/rel_state.log" 2>&1 ) || ec=$?
+report_ec=0
+( cd "$TEST_ENV_DIR/relcwd" && XDG_STATE_HOME=rel PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" --report < /dev/null > "$TEST_ENV_DIR/rel_report.log" 2>&1 ) || report_ec=$?
+if [[ $ec -eq 0 ]] \
+   && [[ -f "$MOCK_HOME/.local/state/linux-cleaner/last-report.txt" ]] \
+   && [[ ! -e "$TEST_ENV_DIR/relcwd/rel" ]] \
+   && [[ $report_ec -eq 0 ]] \
+   && grep -q '^Result:' "$TEST_ENV_DIR/rel_report.log"; then
+  echo -e "${GREEN}PASS: relative XDG_STATE_HOME was ignored in favor of \$HOME/.local/state.${NC}"
+else
+  echo -e "${RED}FAIL: relative XDG_STATE_HOME was not ignored or report missing.${NC}"
+  cat "$TEST_ENV_DIR/rel_state.log" 2>/dev/null || true
+  cat "$TEST_ENV_DIR/rel_report.log" 2>/dev/null || true
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Relative XDG_CONFIG_HOME Ignored${NC}"
+mkdir -p "$TEST_ENV_DIR/relcwd/rel/linux-cleaner"
+cat > "$TEST_ENV_DIR/relcwd/rel/linux-cleaner/cleaner.conf" <<'EOF'
+safe|Relative Config Marker|$HOME/rel_marker|relative config marker test|0||
+EOF
+( cd "$TEST_ENV_DIR/relcwd" && env -u LINUX_CLEANER_CONFIG XDG_CONFIG_HOME=rel PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" --list-targets < /dev/null > "$TEST_ENV_DIR/rel_config.log" 2>&1 ) || true
+if ! grep -q "Relative Config Marker" "$TEST_ENV_DIR/rel_config.log"; then
+  echo -e "${GREEN}PASS: relative XDG_CONFIG_HOME was ignored during config discovery.${NC}"
+else
+  echo -e "${RED}FAIL: relative XDG_CONFIG_HOME was used for config discovery.${NC}"
+  cat "$TEST_ENV_DIR/rel_config.log" 2>/dev/null || true
+  exit 1
+fi
+
 # User-defined protected paths via protect|PATH config lines: equal, under,
 # contains, and wildcard matches are skipped; whole-component sibling is cleaned;
 # --debug, --dry-run --json, --list-targets, and --check-config validation work.

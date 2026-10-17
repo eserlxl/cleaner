@@ -437,13 +437,26 @@ if [[ "$JSON_OUTPUT" == true ]]; then
   QUIET=true
 fi
 
+# Print the effective XDG base directory for variable NAME (arg 1), using its
+# environment value only when it is an absolute path (starts with /), or
+# DEFAULT (arg 2) when unset, empty, or relative (per XDG Base Directory spec).
+_xdg_dir() {
+  local name="$1" default="$2"
+  local val="${!name:-}"
+  if [[ "$val" == /* ]]; then
+    printf '%s' "$val"
+  else
+    printf '%s' "$default"
+  fi
+}
+
 # Check if config file exists (only if not restoring, purging, or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given:
   # XDG user config > system config > dev-checkout config beside the script.
   if [[ -z "$CONFIG_FILE" ]]; then
     for candidate in \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf" \
+        "$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config")/linux-cleaner/cleaner.conf" \
         "/etc/linux-cleaner/cleaner.conf" \
         "$SCRIPT_DIR/cleaner.conf"; do
       if [[ -f "$candidate" ]]; then
@@ -646,19 +659,6 @@ _expand_var_token() {
     rest="$after"
   done
   printf '%s' "$out$rest"
-}
-
-# Print the effective XDG base directory for variable NAME (arg 1), using its
-# environment value only when it is an absolute path (starts with /), or
-# DEFAULT (arg 2) when unset, empty, or relative (per XDG Base Directory spec).
-_xdg_dir() {
-  local name="$1" default="$2"
-  local val="${!name:-}"
-  if [[ "$val" == /* ]]; then
-    printf '%s' "$val"
-  else
-    printf '%s' "$default"
-  fi
 }
 
 # Expand standard environment variables in a safe way (avoiding eval):
@@ -2025,7 +2025,7 @@ print_result_report() {
 # Read-only print of the last saved cleanup report. A symlink is not followed.
 show_last_report() {
   local state_dir report_file
-  state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner"
+  state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
     echo "No cleanup report yet." >&2
@@ -2039,7 +2039,7 @@ show_last_report() {
 # untrusted, so a symlink is never followed and readers never see a partial file.
 save_last_cleanup_report() {
   local state_dir report_file tmp body
-  state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner"
+  state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" ]]; then
     echo "Warning: refusing to write the cleanup report; the state path is a symlink." >&2
