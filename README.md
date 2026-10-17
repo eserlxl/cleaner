@@ -116,7 +116,7 @@ Every target in `cleaner.conf` has a risk level (`safe`, `medium`, or `danger`),
 
 See [`cleaner.conf`](cleaner.conf) for the authoritative list of targets, age thresholds, and exclusions, or run `cleaner --list-targets` to inspect the active inventory. The shipped configuration covers:
 
-- **Developer & language caches (`safe`, `medium` for Cargo)**: npm, Yarn, pip, Aurman, Go build cache, clangd, TypeScript, Prettier, VSCode C++ extension cache, and Cargo registry cache.
+- **Developer & language caches (`safe`, `medium` for Cargo)**: npm, Yarn, Bun (files older than 30 days), pip, Aurman, Go build cache, clangd, TypeScript, Prettier, VSCode C++ extension cache, and Cargo registry cache.
 - **GPU & desktop caches (`safe`, `medium` for Trash)**: NVIDIA compute cache, Mesa shader cache, legacy and modern desktop thumbnails, and desktop Trash (>30 days).
 - **Web browser caches (`medium`)**: Chromium, Firefox, and Google Chrome caches under `$HOME/.cache`.
 - **AI assistant & editor caches, logs, and transcripts (`safe` for caches/logs, `medium` for transcripts/media/VM image)**: Gemini Temp, Cursor, Antigravity, Claude Desktop, Codex CLI/Desktop, Grok CLI, and Hermes caches/logs/sessions, plus per-project AI debug/log directories under `/opt` (`.gemini/model_debug_logs`, `.codex/logs`, `.remember/logs`). Durable configuration, rules, memory stores, SQLite state databases, and `$HOME/.claude/projects` are deliberately excluded.

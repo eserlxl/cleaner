@@ -15,6 +15,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- New `safe` target: the Bun install cache (`~/.bun/install/cache`), files
+  older than 30 days. It has no running-process check, because long-lived bun
+  servers (for example editor or agent plugins) would otherwise block it on
+  every run.
+
 ## [1.4.2] - 2026-10-16
 
 ### Added
