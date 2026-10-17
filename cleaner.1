@@ -757,8 +757,10 @@ itself or any target containing
 .BR $HOME .
 Paths outside
 .BR $HOME
-are allowed. Symlinked targets are refused, and paths are physically canonicalized to
-prevent traversal or symlink escapes. A target that needs root is skipped, with a
+are allowed. Symlinked targets are refused. Paths are physically canonicalized to
+identify their actual destinations before safety checks; a \fB..\fR component or
+symlinked parent may resolve to an eligible destination outside \fB$HOME\fR. A target
+that needs root is skipped, with a
 warning, when those privileges are not available; a run with no terminal on stdin
 never prompts for a password. User-defined
 .B protect|\fIPATH\fR
