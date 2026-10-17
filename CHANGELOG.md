@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--dry-run --json` targets carry `size_at_run_time`, `true` for user-level
+  prune actions whose size is only known when they run.
 - New `safe` target: the Bun install cache (`~/.bun/install/cache`), files
   older than 30 days. It has no running-process check, because long-lived bun
   servers (for example editor or agent plugins) would otherwise block it on

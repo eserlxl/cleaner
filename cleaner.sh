@@ -461,7 +461,7 @@ json_escape() {
 }
 
 emit_dry_run_json() {
-  local i first=true
+  local i first=true size_human
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
   printf '"total_reclaimable_bytes":%s,' "$total_reclaimable_bytes"
@@ -473,15 +473,18 @@ emit_dry_run_json() {
     else
       printf ','
     fi
-    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s","description":"%s","min_age_days":"%s"}' \
+    size_human=$(format_bytes "${json_bytes[$i]}")
+    [[ "${json_runtime_sized[$i]:-false}" == true ]] && size_human="size at run time"
+    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s","description":"%s","min_age_days":"%s","size_at_run_time":%s}' \
       "$(json_escape "${json_names[$i]}")" \
       "$(json_escape "${json_paths[$i]}")" \
       "$(json_escape "${json_risks[$i]}")" \
       "${json_bytes[$i]}" \
-      "$(json_escape "$(format_bytes "${json_bytes[$i]}")")" \
+      "$(json_escape "$size_human")" \
       "$(json_escape "${json_statuses[$i]}")" \
       "$(json_escape "${json_descs[$i]}")" \
-      "$(json_escape "${json_ages[$i]}")"
+      "$(json_escape "${json_ages[$i]}")" \
+      "${json_runtime_sized[$i]:-false}"
   done
   printf ']}'
   printf '\n'
@@ -2206,6 +2209,7 @@ json_names=()
 json_paths=()
 json_risks=()
 json_bytes=()
+json_runtime_sized=()
 json_statuses=()
 json_descs=()
 json_ages=()
@@ -2313,6 +2317,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   
   exists=false
   size_bytes=0
+  runtime_sized=false
   use_sudo=false
   target_status=""
   target_reason=""
@@ -2397,6 +2402,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           if path_present "$use_sudo" "$path"; then
             if action_is_user_level "$custom_clean_cmd"; then
               size_bytes=0
+              runtime_sized=true
               exists=true
               target_status=found
               outside_home_suffix=""
@@ -2458,6 +2464,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     json_paths+=("$path")
     json_risks+=("$risk")
     json_bytes+=("$size_bytes")
+    json_runtime_sized+=("$runtime_sized")
     json_statuses+=("${target_status:-skipped}")
     json_descs+=("$desc")
     json_ages+=("$min_age")

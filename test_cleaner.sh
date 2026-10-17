@@ -5689,6 +5689,49 @@ fi
 unset MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: --dry-run invokes none of the user-action mocks and contributes 0 B to planned savings.${NC}"
 
+# 4b. --dry-run --json marks user-level prune actions with size_at_run_time:true and size_human:"size at run time", while ordinary targets have size_at_run_time:false.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub" "$MOCK_HOME/.cache/plain_json"
+truncate -s 3M "$MOCK_HOME/.cache/uv/large.bin"
+printf 'plain-bytes\n' > "$MOCK_HOME/.cache/plain_json/data.txt"
+cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+EOF
+cat > "$TEST_ENV_DIR/user_actions_json_plain.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|Plain Cache|$HOME/.cache/plain_json|Plain target|0||
+EOF
+if ! run_test_case "User Actions Dry Run JSON Marks Run-Time Size" 0 "user_actions_dry_json.log" \
+       --config "$TEST_ENV_DIR/user_actions.conf" --dry-run --json \
+   || ! python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+by_name = {t["name"]: t for t in d.get("targets", [])}
+uv = by_name["UV Cache"]
+assert uv["size_at_run_time"] is True
+assert uv["size_human"] == "size at run time"
+assert uv["bytes"] == 0
+assert uv["status"] == "found"
+' "$TEST_ENV_DIR/user_actions_dry_json.log" 2>/dev/null \
+   || ! run_test_case "User Actions Dry Run JSON Plain Target False" 0 "user_actions_dry_json_plain.log" \
+       --config "$TEST_ENV_DIR/user_actions_json_plain.conf" --dry-run --json \
+   || ! python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+by_name = {t["name"]: t for t in d.get("targets", [])}
+uv = by_name["UV Cache"]
+plain = by_name["Plain Cache"]
+assert uv["size_at_run_time"] is True and uv["size_human"] == "size at run time" and uv["bytes"] == 0
+assert plain["size_at_run_time"] is False and plain["status"] == "found" and plain["bytes"] > 0
+' "$TEST_ENV_DIR/user_actions_dry_json_plain.log" 2>/dev/null; then
+  echo -e "${RED}FAIL: --dry-run --json did not mark run-time size on user actions or false on ordinary targets.${NC}"
+  cat "$TEST_ENV_DIR/user_actions_dry_json.log" "$TEST_ENV_DIR/user_actions_dry_json_plain.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --dry-run --json marks user-level prune actions with size_at_run_time=true and ordinary targets with false.${NC}"
+
 # 5. Result does not credit planned du; credits df free-space delta (clamped at 0) and warns under --trash.
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
