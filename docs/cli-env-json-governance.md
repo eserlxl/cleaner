@@ -4,7 +4,7 @@
 
 1. Add flag to `show_usage` / argument parser in `cleaner.sh`.
 2. Mirror in `cleaner.1` OPTIONS section.
-3. Document in README CLI section.
+3. Document in [cli-reference.md](cli-reference.md).
 4. Add `run_test_case` for behavior and mutex rules.
 5. Extend drift guards: `Man Page Option Consistency`, env mirror block if applicable.
 6. Classify SemVer via [contract-semver-taxonomy.md](contract-semver-taxonomy.md).

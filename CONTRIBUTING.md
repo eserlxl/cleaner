@@ -55,7 +55,7 @@ Field-change checklist (see [config-field-governance.md](docs/config-field-gover
 
 1. Update parser and line-numbered errors in `cleaner.sh`.
 2. Add malformed and positive `run_test_case` entries in `test_cleaner.sh`.
-3. Update README field table and shipped `cleaner.conf` if user-facing.
+3. Update the field list in `docs/configuration.md` and shipped `cleaner.conf` if user-facing.
 4. Classify SemVer bump via [contract-semver-taxonomy.md](docs/contract-semver-taxonomy.md).
 5. Roll CHANGELOG `[Unreleased]` under the correct heading.
 

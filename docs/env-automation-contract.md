@@ -1,8 +1,8 @@
 # Environment and automation contract
 
-Cross-walk of environment variables, CLI flags, truthy values, and constraints. Compared against `README.md` and `cleaner.1` on 2026-07-15.
+Cross-walk of environment variables, CLI flags, truthy values, and constraints. Compared against the environment table (now in `docs/cli-reference.md`) and `cleaner.1` on 2026-07-15.
 
-| Environment variable | CLI flag | Truthy values | Constraints | README vs man |
+| Environment variable | CLI flag | Truthy values | Constraints | Docs vs man |
 |---------------------|----------|---------------|-------------|---------------|
 | `LINUX_CLEANER_CONFIG` | `-c`, `--config FILE` | non-empty path | Explicit `-c/--config` overrides; when unset, XDG/system/dev search order unchanged | aligned |
 | `LINUX_CLEANER_LOG` | `--log [FILE]` | non-empty path | Path must resolve under `$HOME`; tilde/`$HOME`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` expansion allowed (relative XDG values fall back to the spec default) | aligned |
@@ -19,8 +19,8 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | `LINUX_CLEANER_FORCE` | `-f`, `--force` | `1`, `true`, `yes` | Enables real cleanup and skips normal prompts; danger still needs confirmation or `--yes-danger`. Explicit CLI `--dry-run` restores preview mode unless a later execution flag overrides it | aligned |
 | `LINUX_CLEANER_YES_DANGER` | `--yes-danger` | `1`, `true`, `yes` | Bypasses the danger-specific prompt whenever danger targets are selected for cleanup; does not require `--force`, enable cleanup, or suppress ordinary confirmation; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | `--allow-outside-home` | `1`, `true`, `yes` | Deprecated no-op; prints one warning per run; targets outside `$HOME` are always allowed | aligned |
-| `NO_COLOR` | (none) | any non-empty | Disables ANSI per no-color.org; not a `LINUX_CLEANER_*` mirror | aligned (README prose below env table; man ENVIRONMENT) |
+| `NO_COLOR` | (none) | any non-empty | Disables ANSI per no-color.org; not a `LINUX_CLEANER_*` mirror | aligned (cli-reference prose below env table; man ENVIRONMENT) |
 
 **Override rule:** `cleaner.sh` reads the environment before parsing CLI flags. Value mirrors (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `MIN_RECLAIM`, `TRASH_KEEP_DAYS`) are replaced by their CLI flag. On/off mirrors (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) can only be switched on from the CLI — no flag switches them off — so disable one for a single run by setting it to a non-truthy value (for example `LINUX_CLEANER_TRASH=0 cleaner --clean`) or unsetting it. For `FORCE`, an explicit `--dry-run` still restores preview mode. `ALLOW_OUTSIDE_HOME` is a deprecated no-op; the flag and the variable together print at most one warning.
 
-**Flagged divergence rows:** none — truthy lists, the JSON dry-run requirement, and the value/on-off override split match across README and `cleaner.1`.
+**Flagged divergence rows:** none — truthy lists, the JSON dry-run requirement, and the value/on-off override split match across `docs/cli-reference.md` and `cleaner.1`.

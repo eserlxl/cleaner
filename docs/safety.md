@@ -1,0 +1,29 @@
+# Risk levels and safety model
+
+What each risk level deletes, and the guards every cleanup passes through. The security threat model is in [threat-model.md](threat-model.md).
+
+## Risk levels
+
+Every target in `cleaner.conf` has a risk level (`safe`, `medium`, or `danger`), and `-r, --risk LEVEL` (or `LINUX_CLEANER_RISK`) sets the maximum tier to include (default: `safe`):
+
+- **`safe` (default)**: Purely regenerable caches, temporary scratch directories, rotated logs, and idle C/C++ build trees. Deleting them does not lose user work or history.
+- **`medium`**: Browser caches, package-manager caches, and **non-cache user records or artifacts that cannot be recovered after permanent deletion**. In the shipped `cleaner.conf`, `medium` rows are:
+  - **AI assistant transcripts and generated/downloaded artifacts**: Codex CLI conversation transcripts (`$HOME/.codex/sessions`, >7 days) and generated images (`$HOME/.codex/generated_images`, >7 days), Cursor chat transcripts (`$HOME/.cursor/chats`, >7 days), and Grok CLI session transcripts (`$HOME/.grok/sessions`, >30 days) and downloads (`$HOME/.grok/downloads`, >30 days).
+  - **Desktop Trash**: `$HOME/.local/share/Trash` items older than 30 days.
+  - **Browser caches**: Chromium (>3 days), Firefox (>7 days), and Google Chrome (>7 days) under `$HOME/.cache`.
+  - **Package and crate caches**: Cargo registry download cache (`$HOME/.cargo/registry/cache`, >30 days) and Pacman package cache (`action:paccache_keep1` on `/var/cache/pacman/pkg`), plus commented cross-distro package-cache actions (`apt`, `dnf`, `zypper`, `apk`).
+  - **Local VM image**: Claude Desktop local-agent VM image (`$HOME/.config/Claude/vm_bundles/claudevm.bundle/rootfs.img`, >30 days; rebuilds from `rootfs.img.zst` beside it).
+- **`danger`**: Targets that can cause significant state loss or aggressive system-wide purges. They always require an interactive confirmation prompt even under `--force`, unless `--yes-danger` (`LINUX_CLEANER_YES_DANGER=1`) is also passed. **The shipped `cleaner.conf` has no active `danger` rows** (only a commented `action:pacman_clean` example).
+
+## Safety model
+
+1. **Dry-run by default**: Running `cleaner` without `--clean`, `--force`, `--interactive`, or `LINUX_CLEANER_FORCE=1` never modifies the filesystem.
+2. **System directories are `UNSAFE`**: Targets resolving to `/`, `$HOME` itself, any target containing `$HOME` (an ancestor of it), `/home`, `/root`, `/usr`, `/var`, `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/bin`, `/sbin`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, or `/lib*` are flagged `[UNSAFE]` and skipped. Descendants outside `$HOME` (such as `/opt/...` or `/var/cache/...`) are allowed.
+3. **Symlink refusal & physical canonicalization**: If a target path is itself a symlink, it is flagged `[SYMLINK]` and refused. Target paths are physically canonicalized through their closest existing parent directory to prevent `..` traversal or symlink escapes.
+4. **No `eval`, no shell globbing**: Path expansion substitutes only whole-token `$HOME`, leading `~`, `$USER`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` (unset or relative XDG values fall back to their XDG Base Directory specification defaults). Wildcards are evaluated by `find` below a literal prefix, never by the shell or `eval`.
+5. **Running-process checks**: Targets with `CHECK_PROCESSES` are skipped (`[BLOCKED]`) while any listed process or `cmdline:<pattern>` is active.
+6. **Whole-directory idle check for C/C++ builds**: With `filter:cxx_build` and `MIN_AGE_DAYS > 0` (14 days in `cleaner.conf`), the cleaner checks whether **any** file inside the build tree was modified within the threshold. Active builds are left completely untouched; only build trees idle for the full 14 days are removed as a whole, preventing broken half-cleaned build directories.
+7. **Git-tracked file guard**: When `git` is available and the cleaner runs as a non-root user on a non-sudo target, any target inside a Git work tree that contains git-tracked files is skipped (`[SKIP]`).
+8. **Unprivileged root-target skip**: Targets that require `sudo` (unreadable paths, unwritable parent directories outside `$HOME`, or system package-cache `action:*` commands) are skipped with a stderr warning when root privileges are unavailable; non-interactive runs (no TTY on stdin) never prompt for a password.
+9. **User-defined `protect|PATH` directives**: Any target that equals, lies inside, or contains a configured `protect|PATH` directory is skipped before sizing or deletion.
+10. **Restore conflict guard**: Restoring a quarantine session never overwrites an existing destination file or directory; conflicts are reported and kept in quarantine.

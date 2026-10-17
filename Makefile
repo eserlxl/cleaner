@@ -1,5 +1,5 @@
 # Makefile for the Linux Cache and Temp File Cleaner.
-# Install paths derive from PREFIX and honor DESTDIR (see README "Installation").
+# Install paths derive from PREFIX and honor DESTDIR (see docs/installation.md).
 
 PREFIX             ?= /usr/local
 DESTDIR            ?=

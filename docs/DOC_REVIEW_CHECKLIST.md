@@ -11,7 +11,7 @@
 
 ## Env / automation
 - [ ] Env test block in `test_cleaner.sh` green
-- [ ] `docs/env-automation-contract.md` matches README and man
+- [ ] `docs/env-automation-contract.md` matches `docs/cli-reference.md` and man
 
 ## Changelog / coverage inventory
 - [ ] `docs/test-coverage-matrix.md` shipped-feature rows reviewed

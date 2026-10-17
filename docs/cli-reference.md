@@ -1,0 +1,64 @@
+# Command-line reference
+
+Every option, environment variable, and exit status of `cleaner`. The man page (`man cleaner`) carries the same reference.
+
+## Options
+
+- **`-c, --config FILE`**: Use a custom configuration file instead of the default discovery order.
+- **`-d, --dry-run`**: Preview potential space savings without deleting anything (default).
+- **`--clean`**: Enable cleanup with a single summary confirmation prompt. Cleanup is also enabled by `-f/--force`, `-i/--interactive`, or a truthy `LINUX_CLEANER_FORCE` (the last of `--dry-run`, `--clean`, `--force`, or `--interactive` on the command line wins). When `flock(1)` is available, mutating runs (`--clean`/`--force`/`--interactive`, `--restore`, and `--purge-sessions`) acquire a non-blocking exclusive lock on `~/.cache/linux-cleaner/cleaner.lock` (directory created mode `0700`, refusing symlinks) and exit `1` if another mutating run is already in progress; dry-run and read-only modes never take the lock.
+- **`-i, --interactive`**: Enable cleanup and prompt before cleaning each target individually.
+- **`-f, --force`**: Enable cleanup and skip confirmation prompts (except `danger` targets and non-forced session purges).
+- **`--yes-danger`**: Bypass the manual confirmation prompt for `danger` targets.
+- **`-t, --trash`**: Move cleaned files into a restorable quarantine session under `~/.cache/linux-cleaner/quarantine/<timestamp>/` instead of deleting permanently. Passing `--trash` alone keeps dry-run preview mode. Each target records one `UID`/`GID` pair in `quarantine.meta`, applied best-effort on restore (mixed ownership inside a tree is not preserved). When a target sits on a different filesystem from `~/.cache/linux-cleaner/quarantine`, the cleaner checks available space there before moving and refuses the target if its planned size exceeds free space, leaving it in place (same-filesystem moves are renames and need no check).
+- **`-r, --risk LEVEL`**: Maximum risk level to process: `safe`, `medium`, or `danger` (default: `safe`).
+- **`-e, --exclude PATTERNS`**: Comma-separated `find` glob/path patterns to exclude globally (e.g. `.git,*.log`). Verify exclusions with `--dry-run` first.
+- **`--only-target PATTERN`**: With cleanup, process only targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if none match. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, or `--init-config`.
+- **`--exclude-target PATTERN`**: With cleanup, skip targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if no targets remain. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, or `--init-config`.
+- **`--min-reclaim SIZE`**: With cleanup, skip the run when the planned reclaimable total is below `SIZE` (an integer with an optional `K`, `M`, `G`, or `T` 1024-based unit, e.g. `500M` or `2G`). User-level prune actions (`uv`/`pnpm`/`hf`) are sized at run time and do not count toward the threshold. In `--dry-run` mode, prints a note when a cleanup run would skip; in a cleanup run, prints why nothing was cleaned, records `Result: skipped below --min-reclaim SIZE` in `last-report.txt`, and exits `0`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, or `--init-config`.
+- **`--trash-keep-days DAYS`**: With cleanup, purge quarantine sessions older than `DAYS` days (a non-negative integer) at the end of a non-dry-run cleanup via `older-than:DAYS` retention (prompts for confirmation unless `-f/--force` is set, and exits `0` when no sessions match). A `--dry-run` purges nothing. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, or `--init-config`.
+- **`--list-targets`**: List configured targets (`NAME`, `risk`, `path`, `description`) without disk analysis. Read-only; requires a config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, or `--init-config`.
+- **`--check-config`**: Validate config syntax and exit without disk analysis. Prints `OK: N targets in <path>`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, or `--init-config`.
+- **`--init-config`**: Copy the active config to `${XDG_CONFIG_HOME:-$HOME/.config}/linux-cleaner/cleaner.conf` (mode `0644`, never overwriting an existing file or following symlinks) and exit. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--min-reclaim`, `--trash-keep-days`, or `--json`.
+- **`--list-sessions`**: List quarantine sessions (timestamp, size, date, and each item's `full`/`aged` type and original path). Read-only; requires no config file.
+- **`--restore SESSION`**: Restore files from a quarantine session (`latest` or an immediate child timestamp directory name; `/` and `.`/`..` are rejected). Rejects an explicit `--dry-run`.
+- **`--only PATTERN`**: Used with `--restore`: restore only targets whose original path contains `PATTERN`, keeping remaining targets and rewriting `quarantine.meta` so a later `--restore` succeeds. Exits `1` if nothing matches or if passed without `--restore`.
+- **`--purge-sessions SESSION`**: Permanently delete quarantine sessions (`latest`, `all`, `older-than:DAYS`, `max-size:SIZE`, or a timestamp directory name). Prompts for confirmation naming every target unless `-f/--force` is set. `older-than:DAYS` and `max-size:SIZE` exit `0` when no sessions match (or when no quarantine directory exists). `max-size:SIZE` walks sessions newest-first using `du -sb` and purges every session once the running total exceeds `SIZE` (same integer and optional `K`/`M`/`G`/`T` 1024-based unit grammar as `--min-reclaim`). Rejects an explicit `--dry-run`.
+- **`--report`**: Print the saved last cleanup report from `${XDG_STATE_HOME:-$HOME/.local/state}/linux-cleaner/last-report.txt` and exit (prints `No cleanup report yet.` on stderr and exits `1` if absent). With `--json`, emits a JSON object summarizing the saved report instead of the plain text (`saved`, `result`, `cleaned`, `skipped`, `failed`, `elapsed_seconds`, `failed_targets`, `quarantine_session`, `interrupted`). Read-only; requires no config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--init-config`.
+- **`--log [FILE]`**: Append an operation log under `$HOME` (default: `~/.cache/linux-cleaner/operations.log`).
+- **`-q, --quiet`**: Suppress headers, per-target status lines, and the on-screen plan report; keep errors, savings total, result report, and final summary.
+- **`--debug`**: Show per-target `[FOUND]`, `[CLEAN]`, and `[PROTECTED]` lines (hidden by default; overridden by `--quiet`).
+- **`--json`**: Emit machine-readable JSON (implies `--quiet`). Valid only with `--dry-run` (`config`, `total_reclaimable_bytes`, `total_reclaimable_human`, per-target `name`/`path`/`risk`/`bytes`/`size_human`/`status`/`description`/`min_age_days`/`size_at_run_time`/`reason`; `size_at_run_time` is `true` for user-level prune actions, whose size is measured only when they run, and `reason` holds the skip or block reason, empty when none), `--list-targets` (`config`, per-target `name`/`risk`/`path`/`description`/`min_age_days`/`check_processes`/`custom_action`), `--list-sessions` (`sessions` array of `timestamp`/`size_bytes`/`size_human`/`date`/`targets`), or `--report` (`saved`, `result` as `"completed"`/`"nothing_to_clean"`/`"skipped_below_min_reclaim"`, numeric `cleaned`/`skipped`/`failed`/`elapsed_seconds` or `null` when absent, `failed_targets` array, and string-or-`null` `quarantine_session` and `interrupted`). Consumers should tolerate unknown JSON keys for forward compatibility.
+- **`--allow-outside-home`**: Deprecated no-op (prints one warning on stderr; targets outside `$HOME` are always allowed).
+- **`-h, --help`**: Display help and exit.
+- **`-V, --version`**: Print version and exit.
+
+## Environment variables
+
+| Variable | Effect |
+|----------|--------|
+| `LINUX_CLEANER_CONFIG` | Non-empty path to the configuration file (same as `--config`; overridden by `-c/--config`). |
+| `LINUX_CLEANER_LOG` | Enable operation logging to the given path under `$HOME` (same as `--log`). |
+| `LINUX_CLEANER_QUIET` | When `1`, `true`, or `yes`, enables `--quiet`. |
+| `LINUX_CLEANER_DEBUG` | When `1`, `true`, or `yes`, enables `--debug`. |
+| `LINUX_CLEANER_JSON` | When `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, `--list-sessions`, or `--report`). |
+| `LINUX_CLEANER_ONLY_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--only-target` (overridden by CLI `--only-target`). |
+| `LINUX_CLEANER_EXCLUDE_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--exclude-target` (overridden by CLI `--exclude-target`). |
+| `LINUX_CLEANER_MIN_RECLAIM` | Non-empty size threshold (e.g. `500M`, `2G`) enabling `--min-reclaim` (overridden by CLI `--min-reclaim`). User-level prune actions (`uv`/`pnpm`/`hf`) are sized at run time and do not count toward the threshold. |
+| `LINUX_CLEANER_TRASH_KEEP_DAYS` | Non-empty non-negative integer day count enabling `--trash-keep-days` (overridden by CLI `--trash-keep-days`). |
+| `LINUX_CLEANER_RISK` | Sets the default `--risk` ceiling (`safe`, `medium`, or `danger`; overridden by `-r/--risk`). |
+| `LINUX_CLEANER_TRASH` | When `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
+| `LINUX_CLEANER_EXCLUDE` | Non-empty comma-separated glob list enabling `--exclude` (overridden by `-e/--exclude`). |
+| `LINUX_CLEANER_FORCE` | When `1`, `true`, or `yes`, enables `--force` and non-interactive cleanup (an explicit CLI `--dry-run` still restores preview mode). |
+| `LINUX_CLEANER_YES_DANGER` | When `1`, `true`, or `yes`, enables `--yes-danger`. |
+| `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | Deprecated no-op. When `1`, `true`, or `yes`, prints one warning on stderr; targets outside `$HOME` are always allowed. |
+
+Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
+
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `MIN_RECLAIM`, `TRASH_KEEP_DAYS`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
+
+## Exit status
+
+Returns **`0`** on success, **`130` (`SIGINT`)** or **`143` (`SIGTERM`)** when a cleanup is interrupted by a signal, and **`1` (non-zero)** on a configuration/usage error, a concurrent mutating run holding `~/.cache/linux-cleaner/cleaner.lock` (`Error: another linux-cleaner run is in progress (lock: <path>).`), or a **failed operation** (an attempted delete, quarantine move, predefined action, restore, or session purge that did not succeed). When an operation fails during cleanup, `cleaner` reports the error on stderr, continues processing remaining targets, and exits `1`.
+
+A **skip is not a failure** and exits **`0`**: a declined `danger` target, a target blocked by a running process, an `UNSAFE` or `protected` path, a git-tracked target, a root-requiring target when privileges are unavailable, or a predefined `action:*` whose package manager binary is not installed.

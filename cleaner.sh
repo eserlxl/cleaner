@@ -824,7 +824,7 @@ expand_path_safe() {
 
 # How many directory levels below the literal prefix a "**" pattern component may
 # span. Bounded on purpose: a mistyped recursive pattern must not walk an
-# arbitrarily deep tree. Documented in README.md and cleaner.1.
+# arbitrarily deep tree. Documented in docs/configuration.md and cleaner.1.
 GLOB_RECURSION_MAX_DEPTH=10
 
 # True when a directory looks like a C or C++ build tree. Checked by contents, not
