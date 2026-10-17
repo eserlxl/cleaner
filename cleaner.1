@@ -166,10 +166,14 @@ With
 emit a machine-readable inventory instead of human-formatted output.
 .TP
 .B \-\-list\-targets
-List every target defined in the configuration file
+List targets defined in the configuration file
 .RB ( NAME ", " risk ", " path ", " description )
-without analyzing disk usage or modifying anything. Read-only; requires a
-configuration file. Cannot be combined with
+without analyzing disk usage or modifying anything. NAME selection with
+.BR \-\-only\-target
+and
+.BR \-\-exclude\-target
+uses the same matching and empty-selection errors as cleanup. Inventory includes
+all risk levels. Read-only; requires a configuration file. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
@@ -226,11 +230,11 @@ is given without
 .BR \-\-restore .
 .TP
 .B \-\-only\-target \fIPATTERN\fR
-Used with cleanup: process only config targets whose
+Used with cleanup or configured-target inventory: process only config targets whose
 .B NAME
 contains
 .IR PATTERN
-(substring match;
+(case-sensitive literal substring match;
 .I PATTERN
 may be a comma-separated list: a target matches when its
 .B NAME
@@ -239,18 +243,17 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
-.BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 or
 .BR \-\-init\-config .
 .TP
 .B \-\-exclude\-target \fIPATTERN\fR
-Used with cleanup: skip config targets whose
+Used with cleanup or configured-target inventory: skip config targets whose
 .B NAME
 contains
 .IR PATTERN
-(substring match;
+(case-sensitive literal substring match;
 .I PATTERN
 may be a comma-separated list: a target matches when its
 .B NAME
@@ -261,7 +264,6 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
-.BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 or

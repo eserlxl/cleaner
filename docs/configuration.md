@@ -71,6 +71,16 @@ A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target 
 > [!WARNING]
 > One wildcard line can expand to many targets. Always preview with `cleaner --dry-run` and `cleaner --list-targets` before cleaning.
 
+Inspect the same NAME selection used by a selective cleanup without sizing caches or
+checking running processes. Inventory includes all risk levels; filters use
+case-sensitive literal substrings, trim comma-separated entries, and apply exclusions
+after inclusions. An unmatched inclusion or exclusions leaving no targets exits `1`.
+
+```sh
+cleaner --list-targets --only-target 'NPM,Yarn' --exclude-target Yarn
+cleaner --list-targets --only-target 'NPM,Yarn' --exclude-target Yarn --json
+```
+
 ## Protecting directories
 
 To keep the cleaner out of a directory tree entirely, add a two-field `protect|PATH` line to `cleaner.conf`:

@@ -11,6 +11,7 @@
 | U-90 | Both installers ship the environment template byte-for-byte with mode `0644`, honor custom `DATADIR`/`PKGNAME`, and uninstall only the shipped copy and empty directory while preserving config, user copies, and sibling files | Installer DESTDIR Smoke Test / Environment Template Custom Paths (sh) / Environment Template Custom Paths (make) |
 | U-91 | Session inventory refuses total or partial enumeration failure with nonzero status, an error, empty stdout, and unchanged metadata/payload in both human and JSON formats | List Sessions Enumeration Failure (human total) / List Sessions Enumeration Failure (human partial) / List Sessions Enumeration Failure (json total) / List Sessions Enumeration Failure (json partial) |
 | U-92 | JSON inventory and max-size purge reject first/late failed measurements, partial output with failure, and malformed successful output before stdout or deletion, preserving payload and metadata | Quarantine Size Failure (json first / late / partial / malformed) / Quarantine Size Failure (budget first / late / partial / malformed) |
+| U-93 | Configured-target inventories share cleanup NAME selection, comma/space and literal case-sensitive matching, exclusion/error precedence, environment/CLI overrides and wildcard expansion without analysis or mutation, preserving raw validation and all-risk inventory | Only Target With List Targets / Exclude Target With List Targets / Inventory NAME Selection (human/json) / Mode Flag Exclusion Docs Parity |
 
 ## 1.3.0 shipped feature inventory
 

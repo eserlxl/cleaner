@@ -17,6 +17,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Configured-target inventories support the existing `--only-target` and
+  `--exclude-target` NAME filters and environment mirrors, sharing cleanup matching
+  and empty-selection errors without disk or process analysis (MINOR-compatible capability).
 - Both installers ship the scheduled cleanup environment template under
   `$DATADIR/$PKGNAME/linux-cleaner.env.example` with mode `0644`; uninstall
   preserves user copies and unrelated files.

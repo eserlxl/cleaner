@@ -150,6 +150,15 @@ Package-cache `action:*` tokens include `action:apt_clean`, `action:dnf_clean`, 
 
 `LINUX_CLEANER_ONLY_TARGET=NPM` narrows by NAME; `LINUX_CLEANER_EXCLUDE_TARGET=Chromium` skips matching NAMEs; `LINUX_CLEANER_EXCLUDE=.git,*.log` excludes path globs. `LINUX_CLEANER_CONFIG=/path/to.conf` selects the config without `-c`.
 
+Inspect the same selection without disk or process analysis before scheduling cleanup:
+
+```sh
+LINUX_CLEANER_ONLY_TARGET=NPM,Yarn LINUX_CLEANER_EXCLUDE_TARGET=Yarn cleaner --list-targets --json
+```
+
+NAME filters also apply to human inventory. Inventory lists all risk levels; the
+cleanup risk ceiling still controls which selected targets a cleanup processes.
+
 ## danger tier (explicit opt-in)
 
 > WARNING: Never schedule `LINUX_CLEANER_YES_DANGER=1` by default. See CONTRIBUTING safety invariants.

@@ -29,8 +29,8 @@
 
 Documented mutual exclusions (enforced in code):
 
-- `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
-- `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
+- `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
+- `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, `--list-sessions`, or `--report` (saved report summary; not `--init-config`)

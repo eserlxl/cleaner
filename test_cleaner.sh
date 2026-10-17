@@ -3510,17 +3510,10 @@ else
   exit 1
 fi
 
-echo -e "\n${BOLD}Test Case: Only Target With List Targets Rejected${NC}"
-if run_test_case "Only Target With List Targets Rejected" 1 "only_target_nolist.log" \
-     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --list-targets; then
-  if grep -q "only-target applies only to cleanup" "$TEST_ENV_DIR/only_target_nolist.log"; then
-    echo -e "${GREEN}PASS: --only-target with --list-targets is rejected.${NC}"
-  else
-    echo -e "${RED}FAIL: --only-target with --list-targets was not rejected.${NC}"
-    cat "$TEST_ENV_DIR/only_target_nolist.log"
-    exit 1
-  fi
-else
+if ! run_test_case "Only Target With List Targets" 0 "only_target_list.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target NPM --list-targets \
+   || ! grep -q $'NPM Cache\tsafe\t' "$TEST_ENV_DIR/only_target_list.log"; then
+  echo -e "${RED}FAIL: --only-target did not filter configured inventory.${NC}"
   exit 1
 fi
 
@@ -3625,17 +3618,10 @@ else
   exit 1
 fi
 
-echo -e "\n${BOLD}Test Case: Exclude Target With List Targets Rejected${NC}"
-if run_test_case "Exclude Target With List Targets Rejected" 1 "exclude_target_nolist.log" \
-     --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target NPM --list-targets; then
-  if grep -q "exclude-target applies only to cleanup" "$TEST_ENV_DIR/exclude_target_nolist.log"; then
-    echo -e "${GREEN}PASS: --exclude-target with --list-targets is rejected.${NC}"
-  else
-    echo -e "${RED}FAIL: --exclude-target with --list-targets was not rejected.${NC}"
-    cat "$TEST_ENV_DIR/exclude_target_nolist.log"
-    exit 1
-  fi
-else
+if ! run_test_case "Exclude Target With List Targets" 0 "exclude_target_list.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target NPM --list-targets \
+   || grep -q $'NPM Cache\tsafe\t' "$TEST_ENV_DIR/exclude_target_list.log"; then
+  echo -e "${RED}FAIL: --exclude-target did not filter configured inventory.${NC}"
   exit 1
 fi
 
@@ -4153,6 +4139,96 @@ PY
 else
   exit 1
 fi
+
+# Inventory NAME Selection: share cleanup matching without disk or process analysis.
+setup_mock_env
+python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'INVENTORY_PY'
+import hashlib, json, os, pathlib, stat, subprocess, sys
+cleaner, test_dir = sys.argv[1:]
+root = pathlib.Path(test_dir) / "name-inventory"
+home = root / "home"
+(home / "cache").mkdir(parents=True)
+(home / "cache/payload").write_text("keep cache data\n")
+for child in ("a", "b"):
+    (home / "builds" / child).mkdir(parents=True)
+state = home / "state/linux-cleaner"
+state.mkdir(parents=True)
+(state / "last-report.txt").write_text("keep saved report\n")
+session = home / ".cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+session.mkdir(parents=True)
+(session / "quarantine.meta").write_text("keep metadata\n")
+(session / "payload").write_text("keep recovery data\n")
+config = root / "inventory.conf"
+config.write_text("""safe|NPM Cache|$HOME/cache|npm|0|node|action:uv_cache_prune
+medium|npm Lower|$HOME/cache|lower case|0|node|
+danger|Yarn Cache|$HOME/cache|yarn|0|node|
+medium|Literal[*?] Cache|$HOME/cache|literal patterns|0||
+safe|Literalabc Cache|$HOME/cache|ordinary letters|0||
+safe|Wild Builds|$HOME/builds/*|wildcard inventory|0||
+protect|$HOME/cache
+""")
+bindir = root / "bin"
+bindir.mkdir()
+trace = root / "forbidden-calls"
+for command in ("du", "pgrep", "df", "sudo", "rm", "mv", "flock", "uv", "pnpm", "hf", "paccache", "pacman"):
+    stub = bindir / command
+    stub.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$INVENTORY_TRACE"\nexit 99\n')
+    stub.chmod(0o755)
+env = {key: value for key, value in os.environ.items()
+       if not key.startswith(("LINUX_CLEANER_", "XDG_"))}
+env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"),
+           PATH=str(bindir) + ":" + env["PATH"], NO_COLOR="1", INVENTORY_TRACE=str(trace))
+def snapshot():
+    return {str(path.relative_to(home)): (stat.S_IMODE(path.stat().st_mode),
+            hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None)
+            for path in home.rglob("*")}
+before = snapshot()
+all_names = ["NPM Cache", "npm Lower", "Yarn Cache", "Literal[*?] Cache", "Literalabc Cache", "Wild Builds", "Wild Builds"]
+cases = [
+    ("include", ["--only-target", "NPM"], {}, ["NPM Cache"], None),
+    ("comma spaces", ["--only-target", " NPM , Yarn "], {}, ["NPM Cache", "Yarn Cache"], None),
+    ("exclude comma", ["--exclude-target", " NPM , Yarn "], {}, [n for n in all_names if n not in ("NPM Cache", "Yarn Cache")], None),
+    ("exclusion wins", ["--only-target", "NPM,Yarn", "--exclude-target", "Yarn"], {}, ["NPM Cache"], None),
+    ("case", ["--only-target", "npm"], {}, ["npm Lower"], None),
+    ("literal", ["--only-target", "[*?]"], {}, ["Literal[*?] Cache"], None),
+    ("wildcard", ["--only-target", "Wild"], {}, ["Wild Builds", "Wild Builds"], None),
+    ("no match", ["--only-target", "absent"], {}, [], "No config target NAME matches"),
+    ("priority", ["--only-target", "absent", "--exclude-target", "Cache"], {}, [], "No config target NAME matches"),
+    ("all excluded", ["--only-target", "NPM", "--exclude-target", "NPM"], {}, [], "left no config targets"),
+    ("empty include", ["--only-target", "NPM,,Yarn"], {}, [], "empty pattern"),
+    ("empty exclude", ["--exclude-target", "NPM,"], {}, [], "empty pattern"),
+    ("environment", [], {"LINUX_CLEANER_ONLY_TARGET": "NPM,Yarn", "LINUX_CLEANER_EXCLUDE_TARGET": "Yarn"}, ["NPM Cache"], None),
+    ("CLI overrides", ["--only-target", "Yarn", "--exclude-target", "NPM"], {"LINUX_CLEANER_ONLY_TARGET": "NPM", "LINUX_CLEANER_EXCLUDE_TARGET": "Yarn"}, ["Yarn Cache"], None),
+]
+for fmt in ("human", "json"):
+    for label, args, overrides, expected, error in cases:
+        result = subprocess.run([cleaner, "--config", str(config), "--list-targets"] + args
+                                + (["--json"] if fmt == "json" else []),
+                                env=env | overrides, capture_output=True, text=True)
+        assert result.returncode == (1 if error else 0), (fmt, label, result)
+        if error:
+            assert error in result.stderr, (fmt, label, result)
+            if fmt == "json":
+                assert result.stdout == "", (label, result.stdout)
+        else:
+            rows = json.loads(result.stdout)["targets"] if fmt == "json" else [
+                dict(zip(("name", "risk", "path", "description"), line.split("\t")))
+                for line in result.stdout.splitlines() if "\t" in line]
+            assert sorted(row["name"] for row in rows) == sorted(expected), (fmt, label, rows)
+            if label == "wildcard":
+                assert {row["path"] for row in rows} == {str(home / "builds/a"), str(home / "builds/b")}, rows
+        print("PASS: Inventory NAME Selection (" + fmt + " " + label + ")")
+    config.write_text(config.read_text() + "safe|Filtered Invalid|$HOME/cache|bad age|invalid||\n")
+    result = subprocess.run([cleaner, "--config", str(config), "--list-targets", "--only-target", "NPM"]
+                            + (["--json"] if fmt == "json" else []), env=env, capture_output=True, text=True)
+    assert result.returncode == 1 and "invalid MIN_AGE_DAYS" in result.stderr, result
+    assert result.stdout == "", result
+    config.write_text(config.read_text().split("safe|Filtered Invalid|")[0])
+    print("PASS: Inventory NAME Selection (" + fmt + " raw validation)")
+assert not trace.exists(), trace.read_text() if trace.exists() else ""
+assert snapshot() == before, "inventory changed cache, quarantine, report, lock, or permissions"
+print("PASS: Inventory NAME Selection leaves data unchanged without analysis or mutation commands")
+INVENTORY_PY
 
 if run_test_case "List Targets With Restore Rejected" 1 "list_targets_bad.log" \
      --restore latest --list-targets; then

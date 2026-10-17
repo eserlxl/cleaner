@@ -59,8 +59,8 @@ Options:
   --init-config              Copy the active config to your user config path (never overwrites).
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
-  --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
-  --exclude-target PATTERN   With cleanup: skip config targets whose NAME contains PATTERN (substring match).
+  --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
+  --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
@@ -419,13 +419,13 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --report, or --init-config).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
+if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --report, or --init-config).${NC}" >&2
   exit 1
 fi
 
@@ -460,12 +460,12 @@ if [[ "$INIT_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET
 fi
 
 if [[ -n "$ONLY_TARGET" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs (not --check-config).${NC}" >&2
+  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --check-config).${NC}" >&2
   exit 1
 fi
 
 if [[ -n "$EXCLUDE_TARGET" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --check-config).${NC}" >&2
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -652,6 +652,32 @@ ONLY_TARGET_PATTERNS=()
 EXCLUDE_TARGET_PATTERNS=()
 split_name_patterns --only-target "$ONLY_TARGET" ONLY_TARGET_PATTERNS
 split_name_patterns --exclude-target "$EXCLUDE_TARGET" EXCLUDE_TARGET_PATTERNS
+only_target_matched=false
+name_filter_kept=false
+
+select_target_name() {
+  local name="$1"
+  if [[ -n "$ONLY_TARGET" ]]; then
+    name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}" || return 1
+    only_target_matched=true
+  fi
+  if [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; then
+    return 1
+  fi
+  name_filter_kept=true
+}
+
+check_name_selection() {
+  if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
+    echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
+    return 1
+  fi
+  if [[ -n "$EXCLUDE_TARGET" && "$name_filter_kept" != true ]]; then
+    echo -e "${RED}Error: --exclude-target ${EXCLUDE_TARGET} left no config targets to process.${NC}" >&2
+    return 1
+  fi
+  return 0
+}
 
 # User-facing status lines (per-target progress, headers). Suppressed by --quiet;
 # errors and final summaries still print via echo/stderr.
@@ -734,6 +760,7 @@ emit_list_targets_json() {
     risk=$(trim "$risk")
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
     name=$(trim "$name")
+    select_target_name "$name" || continue
     raw_path=$(trim "$raw_path")
     desc=$(trim "$desc")
     min_age=$(trim "$min_age")
@@ -748,6 +775,7 @@ emit_list_targets_json() {
     lt_actions+=("$custom_clean_cmd")
   done < <(expand_config_globs)
 
+  check_name_selection || return 1
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
   printf '"targets":['
@@ -1158,7 +1186,7 @@ list_config_targets() {
 
   if [[ "$JSON_OUTPUT" == true ]]; then
     emit_list_targets_json
-    return 0
+    return $?
   fi
 
   echo -e "${BOLD}${BLUE}=== Configured Targets ===${NC}"
@@ -1172,10 +1200,12 @@ list_config_targets() {
     risk=$(trim "$risk")
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
     name=$(trim "$name")
+    select_target_name "$name" || continue
     raw_path=$(trim "$raw_path")
     desc=$(trim "$desc")
     printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
   done < <(expand_config_globs)
+  check_name_selection
 }
 
 # Validate every active config line with the same structural checks as the
@@ -2635,7 +2665,7 @@ if [[ -z "$RESTORE_TARGET" && -z "$PURGE_TARGET" && "$CHECK_CONFIG" != true ]]; 
 fi
 
 if [[ "$LIST_TARGETS" == true ]]; then
-  list_config_targets
+  list_config_targets || exit 1
   exit 0
 fi
 
@@ -2727,8 +2757,6 @@ json_descs=()
 json_ages=()
 
 total_reclaimable_bytes=0
-only_target_matched=false
-name_filter_kept=false
 
 # Collect canonical paths from protect|PATH config lines before target analysis.
 PROTECTED_PATHS=()
@@ -2783,18 +2811,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
   set_target_exclusions "$custom_clean_cmd"
 
-  if [[ -n "$ONLY_TARGET" ]]; then
-    if ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; then
-      continue
-    fi
-    only_target_matched=true
-  fi
-  if [[ -n "$EXCLUDE_TARGET" ]]; then
-    if name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; then
-      continue
-    fi
-  fi
-  name_filter_kept=true
+  select_target_name "$name" || continue
 
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: ") || exit 1
@@ -3000,15 +3017,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
 
 done < <(expand_config_globs)
 
-if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
-  echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$EXCLUDE_TARGET" && "$name_filter_kept" != true ]]; then
-  echo -e "${RED}Error: --exclude-target ${EXCLUDE_TARGET} left no config targets to process.${NC}" >&2
-  exit 1
-fi
+check_name_selection || exit 1
 
 if [[ "$JSON_OUTPUT" == true ]]; then
   emit_dry_run_json
