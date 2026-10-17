@@ -172,7 +172,11 @@ Used with cleanup: process only config targets whose
 .B NAME
 contains
 .IR PATTERN
-(substring match). Other targets are skipped. Exits 1 if no target name matches.
+(substring match;
+.I PATTERN
+may be a comma-separated list: a target matches when its
+.B NAME
+contains any listed substring, and empty entries are rejected). Other targets are skipped. Exits 1 if no target name matches.
 Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
@@ -187,7 +191,11 @@ Used with cleanup: skip config targets whose
 .B NAME
 contains
 .IR PATTERN
-(substring match). Combined with
+(substring match;
+.I PATTERN
+may be a comma-separated list: a target matches when its
+.B NAME
+contains any listed substring, and empty entries are rejected). Combined with
 .B \-\-only\-target ,
 both filters apply. Exits 1 if the filters leave no targets to process.
 Cannot be combined with
@@ -278,14 +286,14 @@ or
 No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_ONLY_TARGET
-When set to a non-empty pattern, enables
+When set to a non-empty pattern (or comma-separated list; empty entries are rejected), enables
 .BR \-\-only\-target
 (substring match on config target
 .BR NAME ).
 CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_EXCLUDE_TARGET
-When set to a non-empty pattern, enables
+When set to a non-empty pattern (or comma-separated list; empty entries are rejected), enables
 .BR \-\-exclude\-target
 (substring match on config target
 .BR NAME ).

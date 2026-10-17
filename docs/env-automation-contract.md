@@ -9,8 +9,8 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | `LINUX_CLEANER_QUIET` | `-q`, `--quiet` | `1`, `true`, `yes` | CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_DEBUG` | `--debug` | `1`, `true`, `yes` | Shows per-target FOUND, CLEAN and PROTECTED lines; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Valid with dry-run (`--dry-run` or default), `--list-targets`, or `--list-sessions`; CLI can only enable; set to 0 or unset to disable | aligned |
-| `LINUX_CLEANER_ONLY_TARGET` | `--only-target PATTERN` | non-empty pattern | Substring on config `NAME`; mutex with restore/purge/list modes | aligned |
-| `LINUX_CLEANER_EXCLUDE_TARGET` | `--exclude-target PATTERN` | non-empty pattern | Substring on config `NAME`; mutex with restore/purge/list modes | aligned |
+| `LINUX_CLEANER_ONLY_TARGET` | `--only-target PATTERN` | non-empty pattern | Substring (comma-separated list allowed) on config `NAME`; mutex with restore/purge/list modes | aligned |
+| `LINUX_CLEANER_EXCLUDE_TARGET` | `--exclude-target PATTERN` | non-empty pattern | Substring (comma-separated list allowed) on config `NAME`; mutex with restore/purge/list modes | aligned |
 | `LINUX_CLEANER_RISK` | `-r`, `--risk LEVEL` | `safe`, `medium`, `danger` | Invalid values error; CLI overrides | aligned |
 | `LINUX_CLEANER_TRASH` | `-t`, `--trash` | `1`, `true`, `yes` | Quarantine mode; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_EXCLUDE` | `-e`, `--exclude PATTERNS` | non-empty list | Comma-separated globs; CLI overrides | aligned |

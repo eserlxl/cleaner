@@ -423,6 +423,44 @@ trim() {
   echo -n "$var"
 }
 
+name_matches_any() {
+  local name="$1" p
+  shift
+  for p in "$@"; do
+    if [[ "$name" == *"$p"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Split a comma-separated --only-target / --exclude-target value into trimmed
+# substrings. An empty entry would match every NAME, so it is refused.
+split_name_patterns() {
+  local flag="$1" value="$2" pat
+  local -n patterns_out="$3"
+  local -a raw=() raw_fields=()
+  patterns_out=()
+  [[ -z "$value" ]] && return 0
+  # read -a drops a trailing empty field, so check for it explicitly.
+  [[ "$value" == *, ]] && raw=("")
+  IFS=',' read -r -a raw_fields <<< "$value"
+  raw=("${raw_fields[@]}" "${raw[@]}")
+  for pat in "${raw[@]}"; do
+    pat=$(trim "$pat")
+    if [[ -z "$pat" ]]; then
+      echo -e "${RED}Error: ${flag} contains an empty pattern in '${value}'.${NC}" >&2
+      exit 1
+    fi
+    patterns_out+=("$pat")
+  done
+}
+
+ONLY_TARGET_PATTERNS=()
+EXCLUDE_TARGET_PATTERNS=()
+split_name_patterns --only-target "$ONLY_TARGET" ONLY_TARGET_PATTERNS
+split_name_patterns --exclude-target "$EXCLUDE_TARGET" EXCLUDE_TARGET_PATTERNS
+
 # User-facing status lines (per-target progress, headers). Suppressed by --quiet;
 # errors and final summaries still print via echo/stderr.
 status_echo() {
@@ -2274,13 +2312,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   set_target_exclusions "$custom_clean_cmd"
 
   if [[ -n "$ONLY_TARGET" ]]; then
-    if [[ "$name" != *"$ONLY_TARGET"* ]]; then
+    if ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; then
       continue
     fi
     only_target_matched=true
   fi
   if [[ -n "$EXCLUDE_TARGET" ]]; then
-    if [[ "$name" == *"$EXCLUDE_TARGET"* ]]; then
+    if name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; then
       continue
     fi
   fi

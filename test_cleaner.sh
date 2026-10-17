@@ -3221,6 +3221,51 @@ else
   exit 1
 fi
 
+if run_test_case "Only Target Comma List Dry Run" 0 "only_target_comma_dry.log" \
+     --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target "NPM,Yarn" --dry-run; then
+  if grep -q "NPM Cache" "$TEST_ENV_DIR/only_target_comma_dry.log" \
+     && grep -q "Yarn Cache" "$TEST_ENV_DIR/only_target_comma_dry.log" \
+     && ! grep -q "Gemini Temp" "$TEST_ENV_DIR/only_target_comma_dry.log" \
+     && ! grep -q "Aurman Cache" "$TEST_ENV_DIR/only_target_comma_dry.log"; then
+    echo -e "${GREEN}PASS: --only-target NPM,Yarn shows NPM Cache and Yarn Cache only.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target NPM,Yarn did not filter to NPM Cache and Yarn Cache only.${NC}"
+    cat "$TEST_ENV_DIR/only_target_comma_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Only Target Comma List Env${NC}"
+setup_mock_env
+LINUX_CLEANER_ONLY_TARGET="NPM,Yarn" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/env_only_target_comma.log" 2>&1 || true
+if grep -q "NPM Cache" "$TEST_ENV_DIR/env_only_target_comma.log" \
+   && grep -q "Yarn Cache" "$TEST_ENV_DIR/env_only_target_comma.log" \
+   && ! grep -q "Gemini Temp" "$TEST_ENV_DIR/env_only_target_comma.log" \
+   && ! grep -q "Aurman Cache" "$TEST_ENV_DIR/env_only_target_comma.log"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_ONLY_TARGET=NPM,Yarn shows NPM Cache and Yarn Cache only.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_ONLY_TARGET=NPM,Yarn did not filter targets.${NC}"
+  cat "$TEST_ENV_DIR/env_only_target_comma.log"
+  exit 1
+fi
+
+if run_test_case "Only Target Empty Token Rejected" 1 "only_target_empty_token.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target "NPM,," --dry-run; then
+  if grep -q "empty pattern" "$TEST_ENV_DIR/only_target_empty_token.log"; then
+    echo -e "${GREEN}PASS: --only-target with an empty token exits 1 and reports empty pattern.${NC}"
+  else
+    echo -e "${RED}FAIL: --only-target empty token did not report empty pattern.${NC}"
+    cat "$TEST_ENV_DIR/only_target_empty_token.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: Only Target No Match${NC}"
 if run_test_case "Only Target No Match" 1 "only_target_nomatch.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --only-target no_such_target_xyz --dry-run; then
@@ -3315,6 +3360,21 @@ if run_test_case "Exclude Target Dry Run" 0 "exclude_target_dry.log" \
   else
     echo -e "${RED}FAIL: --exclude-target did not skip NPM Cache as expected.${NC}"
     cat "$TEST_ENV_DIR/exclude_target_dry.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Exclude Target Comma List Dry Run" 0 "exclude_target_comma_dry.log" \
+     --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude-target "NPM,Yarn" --dry-run; then
+  if ! grep -q "NPM Cache" "$TEST_ENV_DIR/exclude_target_comma_dry.log" \
+     && ! grep -q "Yarn Cache" "$TEST_ENV_DIR/exclude_target_comma_dry.log" \
+     && grep -q "Gemini Temp" "$TEST_ENV_DIR/exclude_target_comma_dry.log"; then
+    echo -e "${GREEN}PASS: --exclude-target NPM,Yarn skips NPM Cache and Yarn Cache and keeps Gemini Temp.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-target NPM,Yarn did not skip both targets as expected.${NC}"
+    cat "$TEST_ENV_DIR/exclude_target_comma_dry.log"
     exit 1
   fi
 else

@@ -253,8 +253,8 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 - **`-t, --trash`**: Move cleaned files into a restorable quarantine session under `~/.cache/linux-cleaner/quarantine/<timestamp>/` instead of deleting permanently. Passing `--trash` alone keeps dry-run preview mode. Each target records one `UID`/`GID` pair in `quarantine.meta`, applied best-effort on restore (mixed ownership inside a tree is not preserved).
 - **`-r, --risk LEVEL`**: Maximum risk level to process: `safe`, `medium`, or `danger` (default: `safe`).
 - **`-e, --exclude PATTERNS`**: Comma-separated `find` glob/path patterns to exclude globally (e.g. `.git,*.log`). Verify exclusions with `--dry-run` first.
-- **`--only-target PATTERN`**: With cleanup, process only targets whose `NAME` contains `PATTERN` (substring match); exits `1` if none match. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
-- **`--exclude-target PATTERN`**: With cleanup, skip targets whose `NAME` contains `PATTERN` (substring match); exits `1` if no targets remain. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
+- **`--only-target PATTERN`**: With cleanup, process only targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if none match. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
+- **`--exclude-target PATTERN`**: With cleanup, skip targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if no targets remain. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 - **`--list-targets`**: List configured targets (`NAME`, `risk`, `path`, `description`) without disk analysis. Read-only; requires a config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--report`.
 - **`--check-config`**: Validate config syntax and exit without disk analysis. Prints `OK: N targets in <path>`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--report`.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date, and each item's `full`/`aged` type and original path). Read-only; requires no config file.
@@ -279,8 +279,8 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 | `LINUX_CLEANER_QUIET` | When `1`, `true`, or `yes`, enables `--quiet`. |
 | `LINUX_CLEANER_DEBUG` | When `1`, `true`, or `yes`, enables `--debug`. |
 | `LINUX_CLEANER_JSON` | When `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
-| `LINUX_CLEANER_ONLY_TARGET` | Non-empty pattern enabling `--only-target` (overridden by CLI `--only-target`). |
-| `LINUX_CLEANER_EXCLUDE_TARGET` | Non-empty pattern enabling `--exclude-target` (overridden by CLI `--exclude-target`). |
+| `LINUX_CLEANER_ONLY_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--only-target` (overridden by CLI `--only-target`). |
+| `LINUX_CLEANER_EXCLUDE_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--exclude-target` (overridden by CLI `--exclude-target`). |
 | `LINUX_CLEANER_RISK` | Sets the default `--risk` ceiling (`safe`, `medium`, or `danger`; overridden by `-r/--risk`). |
 | `LINUX_CLEANER_TRASH` | When `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
 | `LINUX_CLEANER_EXCLUDE` | Non-empty comma-separated glob list enabling `--exclude` (overridden by `-e/--exclude`). |

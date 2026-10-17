@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--only-target` and `--exclude-target` (and their `LINUX_CLEANER_*` mirrors)
+  accept a comma-separated list of name substrings.
 - `--dry-run --json` targets carry `reason`, the same skip or block reason the
   plan report groups them by (empty when none).
 - `--dry-run --json` targets carry `size_at_run_time`, `true` for user-level
