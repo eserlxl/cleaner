@@ -5206,6 +5206,68 @@ if [[ "$aged_restore_ok" != true ]] \
 fi
 echo -e "${GREEN}PASS: sudo-owned aged restore moves files through sudo and keeps conflicts quarantined.${NC}"
 
+# Restore creates private directories even when sudo resets its command's umask.
+for restore_route in Direct Sudo; do
+  setup_mock_env
+  private_target="$MOCK_HOME/private restore"
+  mkdir -p "$private_target/private/deeper"
+  chmod 755 "$TEST_ENV_DIR" "$MOCK_HOME" "$private_target"
+  chmod 700 "$private_target/private" "$private_target/private/deeper"
+  printf 'private payload\n' > "$private_target/private/deeper/secret"
+  chmod 644 "$private_target/private/deeper/secret"
+  touch -d '10 days ago' "$private_target/private/deeper/secret"
+  cat > "$TEST_ENV_DIR/private_restore.conf" <<'PRIVATE_RESTORE'
+safe|Private Restore|$HOME/private restore|private aged directory|7||
+PRIVATE_RESTORE
+  if ! run_test_case "Trash For Private Restore ($restore_route)" 0 "private_restore_trash.log" \
+         --config "$TEST_ENV_DIR/private_restore.conf" --clean --trash --force \
+     || [[ -e "$private_target/private" ]]; then
+    echo -e "${RED}FAIL: private restore fixture did not quarantine its aged directory.${NC}"
+    exit 1
+  fi
+  private_session=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -mindepth 1 -maxdepth 1 -type d)
+  mkdir -p "$private_session/1_Aged" "$private_session/2_Full"
+  printf 'aged root\n' > "$private_session/1_Aged/item"
+  printf 'full payload\n' > "$private_session/2_Full/item"
+  chmod 750 "$private_session/2_Full"
+  printf 'aged|1_Aged|%s/new aged/root|false|%s|%s\nfull|2_Full|%s/new full/parent/target|false|%s|%s\n' \
+    "$MOCK_HOME" "$(id -u)" "$(id -g)" "$MOCK_HOME" "$(id -u)" "$(id -g)" >> "$private_session/quarantine.meta"
+  if [[ "$restore_route" == Sudo ]]; then
+    sed -i 's/|false|/|true|/' "$private_session/quarantine.meta"
+  fi
+  cat > "$TEST_ENV_DIR/bin/sudo" <<'PRIVATE_SUDO'
+#!/usr/bin/env bash
+[[ "${1:-}" == -n || "${1:-}" == -v ]] && exit 0
+umask 022
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/private_restore_sudo.calls"
+exec "$@"
+PRIVATE_SUDO
+  chmod +x "$TEST_ENV_DIR/bin/sudo"
+  if ! (umask 022; run_test_case "Restore Private Directories $restore_route" 0 "private_restore.log" --restore latest) \
+     || ! grep -qx 'private payload' "$private_target/private/deeper/secret" \
+     || ! grep -qx 'aged root' "$MOCK_HOME/new aged/root/item" \
+     || ! grep -qx 'full payload' "$MOCK_HOME/new full/parent/target/item" \
+     || [[ "$(stat -c %a "$private_target")" != 755 ]] \
+     || [[ "$(stat -c %a "$MOCK_HOME/new full/parent/target")" != 750 ]] \
+     || [[ -e "$private_session" ]]; then
+    echo -e "${RED}FAIL: private restore lost contents, changed existing modes, or kept its session.${NC}"
+    cat "$TEST_ENV_DIR/private_restore.log"
+    exit 1
+  fi
+  for private_dir in "$private_target/private" "$private_target/private/deeper" \
+      "$MOCK_HOME/new aged" "$MOCK_HOME/new aged/root" "$MOCK_HOME/new full" "$MOCK_HOME/new full/parent"; do
+    if [[ "$(stat -c %a "$private_dir")" != 700 ]]; then
+      echo -e "${RED}FAIL: $restore_route restore created a non-private directory: $private_dir${NC}"
+      exit 1
+    fi
+  done
+  if [[ "$restore_route" == Sudo ]] && [[ ! -s "$TEST_ENV_DIR/private_restore_sudo.calls" ]]; then
+    echo -e "${RED}FAIL: private restore did not exercise the sudo route.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: $restore_route restore creates private directories and preserves existing modes and contents.${NC}"
+done
+
 # A restore whose second record cannot create its destination parent must report
 # the failure, keep that record, and drop the record it already restored.
 setup_mock_env

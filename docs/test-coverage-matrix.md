@@ -1,5 +1,11 @@
 # Test coverage matrix
 
+## Unreleased
+
+| ID | Feature | Test case |
+|----|---------|-----------|
+| U-86 | Restore creates missing aged, nested, and full-target parent directories with mode `0700` under umask `022`, including a sudo shim that resets umask, while preserving existing directory modes and contents | Restore Private Directories Direct / Restore Private Directories Sudo |
+
 ## 1.3.0 shipped feature inventory
 
 Rows below moved here after the 1.3.0 release; add new unreleased rows only while `[Unreleased]` in `CHANGELOG.md` still holds entries.

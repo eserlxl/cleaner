@@ -15,6 +15,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Fixed
+
+- **Security:** restore creates missing destination directories with mode `0700`,
+  including after sudo, so restoring an aged private directory cannot expose its
+  files under a permissive umask. Existing directory permissions are preserved.
+
 ## [1.5.0] - 2026-10-17
 
 ### Added

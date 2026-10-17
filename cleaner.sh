@@ -1760,7 +1760,9 @@ restore_quarantine() {
       fi
 
       # A failed mkdir must reach the reconciliation below, not abort under set -e.
-      if ! with_sudo "$use_sudo" mkdir -p "$(dirname "$original_path")"; then
+      # Set umask after sudo; the child shell expands its positional path argument.
+      # shellcheck disable=SC2016
+      if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$(dirname "$original_path")"; then
         success=false
       elif with_sudo "$use_sudo" mv "$src_path" "$original_path"; then
         with_sudo "$use_sudo" chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
@@ -1774,7 +1776,8 @@ restore_quarantine() {
         log_restore_outcome "$restore_dir" "$original_path" conflict
         continue
       fi
-      if ! with_sudo "$use_sudo" mkdir -p "$original_path"; then
+      # shellcheck disable=SC2016
+      if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$original_path"; then
         success=false
       else
         while IFS= read -r -d '' file; do
@@ -1807,7 +1810,8 @@ restore_quarantine() {
             had_conflict=true
             continue
           fi
-          if ! with_sudo "$use_sudo" mkdir -p "$dest_parent"; then
+          # shellcheck disable=SC2016
+          if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$dest_parent"; then
             success=false
             continue
           fi
