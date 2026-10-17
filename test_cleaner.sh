@@ -5434,9 +5434,7 @@ if ! run_test_case "User Actions Clean Force Without Sudo" 0 "user_actions_clean
        --config "$TEST_ENV_DIR/user_actions.conf" --clean --force \
    || [[ -e "$TEST_ENV_DIR/sudo_unexpected.calls" ]] \
    || grep -qi "requires root" "$TEST_ENV_DIR/user_actions_clean.log" \
-   || ! grep -qF "[FOUND] UV Cache: size measured at run time (uv cache prune)" "$TEST_ENV_DIR/user_actions_clean.log" \
-   || ! grep -qF "[FOUND] PNPM Store: size measured at run time (pnpm store prune)" "$TEST_ENV_DIR/user_actions_clean.log" \
-   || ! grep -qF "[FOUND] Hugging Face Cache: size measured at run time (hf cache prune --yes)" "$TEST_ENV_DIR/user_actions_clean.log" \
+   || grep -qF "[FOUND] UV Cache" "$TEST_ENV_DIR/user_actions_clean.log" \
    || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'uv cache prune\npnpm store prune\nhf cache prune --yes\n') \
    || ! grep -q '^Result: cleaned=3 skipped=0 failed=0 ' "$TEST_ENV_DIR/user_actions_clean.log"; then
   echo -e "${RED}FAIL: user actions did not run with exact argv, invoked sudo, or reported requires root.${NC}"
@@ -5529,7 +5527,7 @@ EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_dry.calls"
 : > "$MOCK_USER_ACTION_LOG"
 if ! run_test_case "User Actions Dry Run Invokes No Mocks" 0 "user_actions_dry.log" \
-       --config "$TEST_ENV_DIR/user_actions.conf" --dry-run \
+       --config "$TEST_ENV_DIR/user_actions.conf" --dry-run --debug \
    || [[ -s "$MOCK_USER_ACTION_LOG" ]] \
    || ! grep -qF "[FOUND] UV Cache: size measured at run time (uv cache prune)" "$TEST_ENV_DIR/user_actions_dry.log" \
    || ! grep -qF "[FOUND] PNPM Store: size measured at run time (pnpm store prune)" "$TEST_ENV_DIR/user_actions_dry.log" \

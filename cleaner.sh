@@ -2386,7 +2386,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               target_status=found
               outside_home_suffix=""
               [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
-              status_echo "  [${GREEN}FOUND${NC}] $name: size measured at run time ($(action_display_command "$custom_clean_cmd"))$outside_home_suffix"
+              debug_echo "  [${GREEN}FOUND${NC}] $name: size measured at run time ($(action_display_command "$custom_clean_cmd"))$outside_home_suffix"
             elif has_positive_age "$idle_age" \
                && [[ -n $(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) ]]; then
               target_status=clean
