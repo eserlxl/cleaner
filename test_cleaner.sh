@@ -4187,6 +4187,99 @@ else
   exit 1
 fi
 
+# 58c. Test Case: every "Cannot be combined with" list for a mode flag, in README.md and
+# cleaner.1, names the partners cleaner.sh refuses. These lists have drifted
+# three times as guards gained partners; running every pair keeps them honest.
+# shortcut: --json is left out of the pair matrix (its gate depends on the mode, not on
+# a partner); extend the matrix if a mode-specific --json rule needs pinning.
+echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
+mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
+  --init-config --only-target --exclude-target --min-reclaim --trash-keep-days)
+mx_args() {
+  case "$1" in
+    --restore) echo "--restore 20200101_000000" ;;
+    --purge-sessions) echo "--purge-sessions all" ;;
+    --only-target|--exclude-target) echo "$1 NPM" ;;
+    --min-reclaim) echo "--min-reclaim 1G" ;;
+    --trash-keep-days) echo "--trash-keep-days 3" ;;
+    *) echo "$1" ;;
+  esac
+}
+mx_subjects=(--only-target --exclude-target --min-reclaim --trash-keep-days --list-targets
+  --check-config --init-config --report)
+: > "$TEST_ENV_DIR/mx_refused.txt"
+for mx_s in "${mx_subjects[@]}"; do
+  mx_refused=""
+  for mx_p in "${mx_flags[@]}"; do
+    [[ "$mx_p" == "$mx_s" ]] && continue
+    mx_ec=0
+    # shellcheck disable=SC2046  # mx_args output is intentionally word-split into flag + value
+    PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" XDG_CONFIG_HOME="$TEST_ENV_DIR/mx_xdg" \
+      "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" $(mx_args "$mx_s") $(mx_args "$mx_p") \
+      < /dev/null > "$TEST_ENV_DIR/mx_pair.log" 2>&1 || mx_ec=$?
+    if [[ $mx_ec -ne 0 ]] && grep -qiE 'cannot be combined|applies only to' "$TEST_ENV_DIR/mx_pair.log"; then
+      mx_refused+=" $mx_p"
+    fi
+  done
+  echo "$mx_s$mx_refused" >> "$TEST_ENV_DIR/mx_refused.txt"
+done
+if mx_drift=$(python3 - "$TEST_ENV_DIR/mx_refused.txt" "$SCRIPT_DIR/README.md" "$SCRIPT_DIR/cleaner.1" "${mx_flags[@]}" << 'MXPY'
+import re, sys
+refused_file, readme, man, *universe = sys.argv[1:]
+universe = set(universe)
+refused = {}
+for line in open(refused_file):
+    subj, *parts = line.split()
+    refused[subj] = set(parts)
+readme_text = open(readme).read()
+man_lines = open(man).read().splitlines()
+# A mode flag's own list must name every refused mode; it may also name the cleanup
+# filters (each filter documents its own restriction), but never a partner that works.
+modes = {'--restore', '--purge-sessions', '--list-sessions', '--list-targets',
+         '--check-config', '--report', '--init-config'}
+def ok(subj, got, want):
+    if got is None:
+        return False
+    need = want & modes if subj in modes else want
+    return need <= got <= want
+drift = []
+for subj, want in refused.items():
+    m = re.search(r'^- \*\*`' + re.escape(subj) + r'[ `].*?Cannot be combined with (.*)$', readme_text, re.M)
+    got = set(re.findall(r'`(--[a-z-]+)`', m.group(1))) & universe if m else None
+    if not ok(subj, got, want):
+        drift.append(f"README {subj}: documents {sorted(got) if got is not None else 'nothing'}, refuses {sorted(want)}")
+    man_flag = subj.replace('-', r'\-')
+    got = None
+    for i, l in enumerate(man_lines):
+        if l.startswith('.B ' + man_flag) and i > 0 and man_lines[i - 1] == '.TP':
+            j = i + 1
+            # The sentence may wrap as "... Cannot be" / "combined with".
+            while j < len(man_lines) and man_lines[j] != '.TP' and 'Cannot be combined with' not in man_lines[j] \
+                    and not man_lines[j].rstrip().endswith('Cannot be'):
+                j += 1
+            if j < len(man_lines) and man_lines[j] != '.TP':
+                got = set()
+                k = j + 1
+                while k < len(man_lines) and man_lines[k] != '.TP':
+                    mm = re.match(r'\.BR? (\\-\\-[a-z\\-]+)', man_lines[k])
+                    if mm:
+                        got.add(mm.group(1).replace('\\-', '-'))
+                    k += 1
+                got &= universe
+            break
+    if not ok(subj, got, want):
+        drift.append(f"cleaner.1 {subj}: documents {sorted(got) if got is not None else 'nothing'}, refuses {sorted(want)}")
+print("\n".join(drift))
+sys.exit(1 if drift else 0)
+MXPY
+); then
+  echo -e "${GREEN}PASS: README.md and cleaner.1 list only and all of the refused combinations for ${#mx_subjects[@]} mode flags.${NC}"
+else
+  echo -e "${RED}FAIL: documented mode-flag exclusions drifted from cleaner.sh:${NC}"
+  echo "$mx_drift"
+  exit 1
+fi
+
 # 59. Test Case: a wildcard PATH_EXPRESSION expands into one independently analyzed
 # target per matching directory, through find rather than a shell glob or eval, and
 # every match still passes the ordinary safety pipeline.

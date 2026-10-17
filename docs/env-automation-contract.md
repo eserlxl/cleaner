@@ -9,9 +9,9 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | `LINUX_CLEANER_QUIET` | `-q`, `--quiet` | `1`, `true`, `yes` | CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_DEBUG` | `--debug` | `1`, `true`, `yes` | Shows per-target FOUND, CLEAN and PROTECTED lines; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Valid with dry-run (`--dry-run` or default), `--list-targets`, `--list-sessions`, or `--report`; CLI can only enable; set to 0 or unset to disable | aligned |
-| `LINUX_CLEANER_ONLY_TARGET` | `--only-target PATTERN` | non-empty pattern | Substring (comma-separated list allowed) on config `NAME`; mutex with restore/purge/list modes | aligned |
-| `LINUX_CLEANER_EXCLUDE_TARGET` | `--exclude-target PATTERN` | non-empty pattern | Substring (comma-separated list allowed) on config `NAME`; mutex with restore/purge/list modes | aligned |
-| `LINUX_CLEANER_MIN_RECLAIM` | `--min-reclaim SIZE` | non-empty size (`^[0-9]+[KMGTkmgt]?$`) | Skips cleanup when planned reclaim is below `SIZE`; CLI overrides; mutex with restore/purge/list/check-config/report modes | aligned |
+| `LINUX_CLEANER_ONLY_TARGET` | `--only-target PATTERN` | non-empty pattern | Substring (comma-separated list allowed) on config `NAME`; mutex with restore/purge/list/check-config/report/init-config modes | aligned |
+| `LINUX_CLEANER_EXCLUDE_TARGET` | `--exclude-target PATTERN` | non-empty pattern | Substring (comma-separated list allowed) on config `NAME`; mutex with restore/purge/list/check-config/report/init-config modes | aligned |
+| `LINUX_CLEANER_MIN_RECLAIM` | `--min-reclaim SIZE` | non-empty size (`^[0-9]+[KMGTkmgt]?$`) | Skips cleanup when planned reclaim is below `SIZE`; CLI overrides; mutex with restore/purge/list/check-config/report/init-config modes | aligned |
 | `LINUX_CLEANER_TRASH_KEEP_DAYS` | `--trash-keep-days DAYS` | non-negative integer day count | Purges quarantine sessions older than `DAYS` at the end of a non-dry-run cleanup (including one with nothing to clean); CLI overrides; mutex with restore/purge/list/check-config/report/init-config modes | aligned |
 | `LINUX_CLEANER_RISK` | `-r`, `--risk LEVEL` | `safe`, `medium`, `danger` | Invalid values error; CLI overrides | aligned |
 | `LINUX_CLEANER_TRASH` | `-t`, `--trash` | `1`, `true`, `yes` | Quarantine mode; CLI can only enable; set to 0 or unset to disable | aligned |
