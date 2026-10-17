@@ -1146,6 +1146,23 @@ purge_quarantine_sessions() {
   local target="$1"
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
 
+  local days=""
+
+  if [[ "$target" == older-than:* ]]; then
+    # Age-based retention: what makes trash mode viable unattended. Without it a
+    # cron '--trash --force' accumulates one session per run forever, so the tool
+    # would hold the very space it claims to reclaim.
+    days="${target#older-than:}"
+    if [[ ! "$days" =~ ^[0-9]+$ ]]; then
+      echo -e "${RED}Error: Invalid day count in '$target'. Use older-than:<days>, e.g. older-than:30.${NC}" >&2
+      exit 1
+    fi
+    if [[ ! -d "$quarantine_base" ]]; then
+      echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      return 0
+    fi
+  fi
+
   if [[ ! -d "$quarantine_base" ]]; then
     echo -e "${RED}Error: No quarantine directory exists at '$quarantine_base'.${NC}" >&2
     exit 1
@@ -1178,14 +1195,6 @@ purge_quarantine_sessions() {
     fi
     targets+=("$latest")
   elif [[ "$target" == older-than:* ]]; then
-    # Age-based retention: what makes trash mode viable unattended. Without it a
-    # cron '--trash --force' accumulates one session per run forever, so the tool
-    # would hold the very space it claims to reclaim.
-    local days="${target#older-than:}"
-    if [[ ! "$days" =~ ^[0-9]+$ ]]; then
-      echo -e "${RED}Error: Invalid day count in '$target'. Use older-than:<days>, e.g. older-than:30.${NC}" >&2
-      exit 1
-    fi
     local s
     while IFS= read -r s; do
       [[ -n "$s" ]] && targets+=("$s")

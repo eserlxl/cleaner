@@ -39,6 +39,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - The operation log now records `outcome=failed` for a failed delete or
   quarantine move and `outcome=success` for a successful one, instead of
   `outcome=attempted`.
+- `--purge-sessions older-than:DAYS` now exits 0 when no quarantine directory
+  exists, so the weekly retention timer no longer fails in delete mode or after
+  a purge removed the last session.
 
 ## [1.4.2] - 2026-10-16
 

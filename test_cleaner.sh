@@ -3078,6 +3078,35 @@ else
   exit 1
 fi
 
+# Retention purge when no quarantine directory exists (initial clean state or delete mode).
+setup_mock_env
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+if run_test_case "Retention Purge Without Quarantine Dir" 0 "purge_older_no_quarantine.log" \
+     --purge-sessions older-than:30 --force; then
+  if grep -q "No quarantine sessions older than 30 day(s)." "$TEST_ENV_DIR/purge_older_no_quarantine.log"; then
+    echo -e "${GREEN}PASS: older-than retention succeeds when quarantine directory does not exist.${NC}"
+  else
+    echo -e "${RED}FAIL: older-than retention without quarantine dir did not report expected message.${NC}"
+    cat "$TEST_ENV_DIR/purge_older_no_quarantine.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Invalid Retention Days Without Quarantine Dir" 1 "purge_older_no_quarantine_bad.log" \
+     --purge-sessions older-than:abc --force; then
+  if grep -q "Invalid day count" "$TEST_ENV_DIR/purge_older_no_quarantine_bad.log"; then
+    echo -e "${GREEN}PASS: invalid retention days without quarantine dir exits 1 and rejects cleanly.${NC}"
+  else
+    echo -e "${RED}FAIL: invalid retention days without quarantine dir was not rejected cleanly.${NC}"
+    cat "$TEST_ENV_DIR/purge_older_no_quarantine_bad.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 56. Test Case: --restore --only PATTERN returns a single target and leaves the
 # rest quarantined with a consistent quarantine.meta -- so a later full restore of
 # the same session still succeeds (the invariant the failed-move fix established).
