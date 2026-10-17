@@ -63,6 +63,12 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-55 | Restore rejects symlink conflicts at the original path (full and aged) or any existing intermediate directory component under an aged target, logging `outcome=conflict` and keeping the session retryable | Restore Aged Subdir Symlink Conflict / Restore Aged Subdir Symlink Retry / Restore Aged Original Path Symlink Conflict / Restore Aged Original Path Symlink Retry / Restore Full Original Path Symlink Conflict |
 | U-56 | Wildcard patterns with `**` match non-`**` components (`*`, `?`, literals) within a single directory component only, without pruning deeper valid matches beneath rejected parents | Wildcard Component Matching Dry Run |
 | U-57 | The result report counts analysis-time skips (requires root) so `Result: skipped=` matches the plan's `skipped=`, and a declined interactive target is counted once | Root Skip Without Privileges / Interactive Per-Target Confirmation |
+| U-58 | User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo` and never report `requires root` | User Actions Clean Force Without Sudo |
+| U-59 | Missing user-action binary (`uv`, `pnpm`, `hf`) skips its row cleanly without failing the run or calling `sudo` | Action Required Binary Mapping / User Actions Missing Binary Skips Cleanly |
+| U-60 | Running `uv`, `pnpm`, or `hf` process blocks its user-action row via `CHECK_PROCESSES` | User Actions Blocked By Running Process |
+| U-61 | `--dry-run` never executes user-level prune actions and reports `0 B` reclaimable with run-time size notice | User Actions Dry Run Invokes No Mocks |
+| U-62 | User-level prune actions credit filesystem free-space delta (`df -B1 --output=avail`, clamped at 0) instead of planned directory `du`, and warn in `--trash` mode | User Actions Credit DF Delta Not Planned DU |
+| U-63 | System package-cache actions continue routing through `sudo` and crediting planned `du` alongside user-level actions | System Action Still Uses Sudo Alongside User Action |
 
 ## Drift guards
 

@@ -137,6 +137,21 @@ EOF
     chmod +x "$TEST_ENV_DIR/bin/$_mgr"
   done
 
+  # User-level prune action mocks (uv, pnpm, hf)
+  local _uact
+  for _uact in uv pnpm hf; do
+    cat > "$TEST_ENV_DIR/bin/$_uact" << EOF
+#!/usr/bin/env bash
+# Mock $_uact command
+if [[ -n "\${MOCK_USER_ACTION_LOG:-}" ]]; then
+  printf '%s %s\n' "$_uact" "\$*" >> "\$MOCK_USER_ACTION_LOG"
+fi
+echo "Mock $_uact called with: \$@"
+exit 0
+EOF
+    chmod +x "$TEST_ENV_DIR/bin/$_uact"
+  done
+
   # Create dummy files
   echo "dummy npm cache" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
   truncate -s 2M "$MOCK_HOME/.npm/_cacache/cache1.txt"
@@ -2337,6 +2352,9 @@ arb_ok=true
 [[ "$(arb action:dnf_clean)" == "dnf" ]] || arb_ok=false
 [[ "$(arb action:zypper_clean)" == "zypper" ]] || arb_ok=false
 [[ "$(arb action:apk_clean)" == "apk" ]] || arb_ok=false
+[[ "$(arb action:uv_cache_prune)" == "uv" ]] || arb_ok=false
+[[ "$(arb action:pnpm_store_prune)" == "pnpm" ]] || arb_ok=false
+[[ "$(arb action:hf_cache_prune)" == "hf" ]] || arb_ok=false
 [[ -z "$(arb action:bogus)" ]] || arb_ok=false
 if [[ "$arb_ok" == true ]]; then
   echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf/zypper/apk map to their real binaries.${NC}"
@@ -5385,6 +5403,216 @@ if ! run_test_case "Wildcard Component Matching Dry Run" 0 "glob_comp_dry.log" \
   exit 1
 fi
 echo -e "${GREEN}PASS: '**' spans multiple directory levels while '*' and '?' match single components only.${NC}"
+
+# User-level prune actions (uv, pnpm, hf): run directly as the user without sudo,
+# skip when the binary is absent, block when the process is running, never run in
+# dry-run, credit df free-space delta instead of planned du, and keep system
+# actions routed through sudo.
+echo -e "\n${BOLD}Test Case: User-Level Prune Actions${NC}"
+
+# 1. --clean --force runs each user action with exact argv, zero sudo calls, no "requires root".
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+printf 'uv-entry\n' > "$MOCK_HOME/.cache/uv/entry.bin"
+printf 'pnpm-entry\n' > "$MOCK_HOME/.local/share/pnpm/store/entry.bin"
+printf 'hf-entry\n' > "$MOCK_HOME/.cache/huggingface/hub/entry.bin"
+cat > "$TEST_ENV_DIR/bin/sudo" <<'FAIL_SUDO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/sudo_unexpected.calls"
+exit 1
+FAIL_SUDO
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+EOF
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_action.calls"
+: > "$MOCK_USER_ACTION_LOG"
+rm -f "$TEST_ENV_DIR/sudo_unexpected.calls"
+if ! run_test_case "User Actions Clean Force Without Sudo" 0 "user_actions_clean.log" \
+       --config "$TEST_ENV_DIR/user_actions.conf" --clean --force \
+   || [[ -e "$TEST_ENV_DIR/sudo_unexpected.calls" ]] \
+   || grep -qi "requires root" "$TEST_ENV_DIR/user_actions_clean.log" \
+   || ! grep -qF "[FOUND] UV Cache: size measured at run time (uv cache prune)" "$TEST_ENV_DIR/user_actions_clean.log" \
+   || ! grep -qF "[FOUND] PNPM Store: size measured at run time (pnpm store prune)" "$TEST_ENV_DIR/user_actions_clean.log" \
+   || ! grep -qF "[FOUND] Hugging Face Cache: size measured at run time (hf cache prune --yes)" "$TEST_ENV_DIR/user_actions_clean.log" \
+   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'uv cache prune\npnpm store prune\nhf cache prune --yes\n') \
+   || ! grep -q '^Result: cleaned=3 skipped=0 failed=0 ' "$TEST_ENV_DIR/user_actions_clean.log"; then
+  echo -e "${RED}FAIL: user actions did not run with exact argv, invoked sudo, or reported requires root.${NC}"
+  cat "$TEST_ENV_DIR/user_actions_clean.log" "$MOCK_USER_ACTION_LOG" "$TEST_ENV_DIR/sudo_unexpected.calls" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_USER_ACTION_LOG
+echo -e "${GREEN}PASS: user-level prune actions run with exact argv, zero sudo calls, and no 'requires root'.${NC}"
+
+# 2. Missing binary skips its row cleanly (no failure, exits 0, no sudo calls).
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+user_missing_bin="$TEST_ENV_DIR/user_missing_bin"
+mkdir -p "$user_missing_bin"
+for tool in bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp pgrep; do
+  ln -s "$(command -v "$tool")" "$user_missing_bin/$tool"
+done
+ln -s "$TEST_ENV_DIR/bin/uv" "$user_missing_bin/uv"
+ln -s "$TEST_ENV_DIR/bin/hf" "$user_missing_bin/hf"
+# pnpm intentionally omitted from user_missing_bin
+cat > "$user_missing_bin/sudo" <<'FAIL_SUDO2'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/sudo_missing_unexpected.calls"
+exit 1
+FAIL_SUDO2
+chmod +x "$user_missing_bin/sudo"
+cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+EOF
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_missing.calls"
+: > "$MOCK_USER_ACTION_LOG"
+echo -e "\n${BOLD}Test Case: User Actions Missing Binary Skips Cleanly${NC}"
+missing_ec=0
+PATH="$user_missing_bin" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/user_actions.conf" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/user_actions_missing.log" 2>&1 || missing_ec=$?
+unset MOCK_USER_ACTION_LOG
+if [[ "$missing_ec" -ne 0 ]] \
+   || [[ -e "$TEST_ENV_DIR/sudo_missing_unexpected.calls" ]] \
+   || ! grep -q "PNPM Store: skipped: 'pnpm' not available on this platform." "$TEST_ENV_DIR/user_actions_missing.log" \
+   || ! cmp -s "$TEST_ENV_DIR/user_missing.calls" <(printf 'uv cache prune\nhf cache prune --yes\n') \
+   || ! grep -q '^Result: cleaned=2 skipped=1 failed=0 ' "$TEST_ENV_DIR/user_actions_missing.log"; then
+  echo -e "${RED}FAIL: missing user-action binary did not skip cleanly (ec=$missing_ec).${NC}"
+  cat "$TEST_ENV_DIR/user_actions_missing.log" "$TEST_ENV_DIR/user_missing.calls" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: a missing user-action binary skips its row cleanly and exits 0.${NC}"
+
+# 3. A running process of that name blocks the row via CHECK_PROCESSES.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+cat > "$TEST_ENV_DIR/bin/pgrep" <<'PGREP_UV'
+#!/usr/bin/env bash
+if [[ "$1" == "-x" && "$2" == "uv" ]]; then
+  exit 0
+fi
+exit 1
+PGREP_UV
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+EOF
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_blocked.calls"
+: > "$MOCK_USER_ACTION_LOG"
+if ! run_test_case "User Actions Blocked By Running Process" 0 "user_actions_blocked.log" \
+       --config "$TEST_ENV_DIR/user_actions.conf" --clean --force \
+   || ! grep -q "BLOCKED.*UV Cache: Skip cleanup because process 'uv' is active." "$TEST_ENV_DIR/user_actions_blocked.log" \
+   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'pnpm store prune\nhf cache prune --yes\n') \
+   || ! grep -q '^Targets: found=2 .* blocked=1 ' "$TEST_ENV_DIR/user_actions_blocked.log"; then
+  echo -e "${RED}FAIL: running 'uv' process did not block UV Cache row.${NC}"
+  cat "$TEST_ENV_DIR/user_actions_blocked.log" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_USER_ACTION_LOG
+echo -e "${GREEN}PASS: running process blocks its user-action row while siblings still run.${NC}"
+
+# 4. --dry-run invokes none of the mocks and reports 0 B reclaimable with run-time size message.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+truncate -s 3M "$MOCK_HOME/.cache/uv/large.bin"
+cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+EOF
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_dry.calls"
+: > "$MOCK_USER_ACTION_LOG"
+if ! run_test_case "User Actions Dry Run Invokes No Mocks" 0 "user_actions_dry.log" \
+       --config "$TEST_ENV_DIR/user_actions.conf" --dry-run \
+   || [[ -s "$MOCK_USER_ACTION_LOG" ]] \
+   || ! grep -qF "[FOUND] UV Cache: size measured at run time (uv cache prune)" "$TEST_ENV_DIR/user_actions_dry.log" \
+   || ! grep -qF "[FOUND] PNPM Store: size measured at run time (pnpm store prune)" "$TEST_ENV_DIR/user_actions_dry.log" \
+   || ! grep -qF "[FOUND] Hugging Face Cache: size measured at run time (hf cache prune --yes)" "$TEST_ENV_DIR/user_actions_dry.log" \
+   || ! grep -q "Total potential space savings: .*0 B" "$TEST_ENV_DIR/user_actions_dry.log" \
+   || ! grep -q "^Reclaimable by risk: safe=0 B medium=0 B danger=0 B$" "$TEST_ENV_DIR/user_actions_dry.log" \
+   || ! grep -q "^  (size at run time) safe UV Cache " "$TEST_ENV_DIR/user_actions_dry.log" \
+   || grep -q "^  0 B safe UV Cache " "$TEST_ENV_DIR/user_actions_dry.log"; then
+  echo -e "${RED}FAIL: --dry-run invoked user-action mocks or credited directory du to potential space savings.${NC}"
+  cat "$TEST_ENV_DIR/user_actions_dry.log" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_USER_ACTION_LOG
+echo -e "${GREEN}PASS: --dry-run invokes none of the user-action mocks and contributes 0 B to planned savings.${NC}"
+
+# 5. Result does not credit planned du; credits df free-space delta (clamped at 0) and warns under --trash.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+# Create a real 4 MB file that the mock does NOT delete; planned du would be >= 4 MB.
+dd if=/dev/zero of="$MOCK_HOME/.cache/uv/hardlinked_blob.bin" bs=1M count=4 status=none
+# Mock df with deterministic before/after available bytes so the test is immune to background FS noise:
+# First call (before uv) -> 10000000, second call (after uv) -> 10000000 (0 B freed, despite 4 MB du).
+# Third call (before pnpm) -> 20000000, fourth call (after pnpm) -> 21048576 (1 MB = 1048576 B freed).
+# Fifth call (before hf) -> 30000000, sixth call (after hf) -> 29000000 (negative delta -> clamped to 0 B).
+cat > "$TEST_ENV_DIR/bin/df" <<'MOCK_DF'
+#!/usr/bin/env bash
+count_file="$TEST_ENV_DIR/df_call_count"
+n=0
+[[ -f "$count_file" ]] && n=$(cat "$count_file")
+n=$((n + 1))
+echo "$n" > "$count_file"
+case "$n" in
+  1) avail=10000000 ;;
+  2) avail=10000000 ;;
+  3) avail=20000000 ;;
+  4) avail=21048576 ;;
+  5) avail=30000000 ;;
+  *) avail=29000000 ;;
+esac
+printf 'Avail\n%s\n' "$avail"
+MOCK_DF
+chmod +x "$TEST_ENV_DIR/bin/df"
+cat > "$TEST_ENV_DIR/user_actions_size.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+EOF
+if ! run_test_case "User Actions Credit DF Delta Not Planned DU" 0 "user_actions_size.log" \
+       --config "$TEST_ENV_DIR/user_actions_size.conf" --clean --force --trash \
+   || [[ ! -f "$MOCK_HOME/.cache/uv/hardlinked_blob.bin" ]] \
+   || ! grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/user_actions_size.log" \
+   || ! grep -q '^Reclaimed: quarantined=0 B permanent=1 MB$' "$TEST_ENV_DIR/user_actions_size.log" \
+   || grep -q '4 MB' "$TEST_ENV_DIR/user_actions_size.log"; then
+  echo -e "${RED}FAIL: user action credited planned du instead of df delta, failed negative clamping, or missed trash warning.${NC}"
+  cat "$TEST_ENV_DIR/user_actions_size.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: user actions credit df free-space delta (clamped at 0), never planned du, and warn under --trash.${NC}"
+
+# 6. A system action (paccache) still goes through sudo and credits planned du alongside a user action.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv" "$OUTSIDE_DIR/paccache_pkg"
+dd if=/dev/zero of="$OUTSIDE_DIR/paccache_pkg/pkg.tar.zst" bs=1M count=2 status=none
+export MOCK_SUDO_LOG="$TEST_ENV_DIR/sudo_system.calls"
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_system.calls"
+: > "$MOCK_SUDO_LOG"
+: > "$MOCK_USER_ACTION_LOG"
+cat > "$TEST_ENV_DIR/mixed_actions.conf" <<EOF
+safe|UV Cache|\$HOME/.cache/uv|uv cache|0|uv|action:uv_cache_prune
+medium|Pacman Cache (Keep 1)|$OUTSIDE_DIR/paccache_pkg|pacman cache|0||action:paccache_keep1
+EOF
+if ! run_test_case "System Action Still Uses Sudo Alongside User Action" 0 "mixed_actions.log" \
+       --config "$TEST_ENV_DIR/mixed_actions.conf" --clean --force --risk medium \
+   || ! grep -qx "paccache -rk1" "$MOCK_SUDO_LOG" \
+   || grep -q "uv" "$MOCK_SUDO_LOG" \
+   || ! grep -qx "uv cache prune" "$MOCK_USER_ACTION_LOG" \
+   || ! grep -q '^Result: cleaned=2 skipped=0 failed=0 ' "$TEST_ENV_DIR/mixed_actions.log"; then
+  echo -e "${RED}FAIL: system action did not route through sudo or user action leaked into sudo.${NC}"
+  cat "$TEST_ENV_DIR/mixed_actions.log" "$MOCK_SUDO_LOG" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_SUDO_LOG MOCK_USER_ACTION_LOG
+echo -e "${GREEN}PASS: system action still routes through sudo while user action runs directly as the user.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

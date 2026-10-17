@@ -1003,7 +1003,7 @@ validate_config_file() {
             exit 1
           fi
           ;;
-        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|filter:cxx_build)
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|filter:cxx_build)
           ;;
         *)
           echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -1800,7 +1800,7 @@ print_plan_report() {
   local i status bytes mode=dry-run shown=0
   local found=0 clean_missing=0 skipped=0 blocked=0 unsafe_symlink=0 root_n=0 protected_n=0
   local safe_b=0 med_b=0 dang_b=0
-  local reason name age_note protected_names=""
+  local reason name age_note size_label protected_names=""
   local -a rank=()
   local -A skip_groups=() block_groups=()
   [[ "$DRY_RUN" != true ]] && mode=clean
@@ -1859,7 +1859,10 @@ print_plan_report() {
       elif has_positive_age "${parsed_ages[$i]}"; then
         age_note=" (files > ${parsed_ages[$i]} days)"
       fi
-      printf '%s\n' "  $(format_bytes "${parsed_sizes[$i]}") ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
+      size_label=$(format_bytes "${parsed_sizes[$i]}")
+      # User-level prune actions are not sized in advance; 0 B would mislead.
+      action_is_user_level "${parsed_cmds[$i]:-}" && size_label="(size at run time)"
+      printf '%s\n' "  ${size_label} ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
       shown=$((shown + 1))
     done
   fi
@@ -2064,8 +2067,34 @@ action_required_binary() {
     dnf_clean) echo "dnf" ;;
     zypper_clean) echo "zypper" ;;
     apk_clean) echo "apk" ;;
+    uv_cache_prune) echo "uv" ;;
+    pnpm_store_prune) echo "pnpm" ;;
+    hf_cache_prune) echo "hf" ;;
     *) echo "" ;;
   esac
+}
+
+# True when a predefined action runs as the invoking user without sudo and
+# measures reclaimed bytes from filesystem free-space delta at run time.
+action_is_user_level() {
+  case "${1:-}" in
+    action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+action_display_command() {
+  case "${1:-}" in
+    action:uv_cache_prune) echo "uv cache prune" ;;
+    action:pnpm_store_prune) echo "pnpm store prune" ;;
+    action:hf_cache_prune) echo "hf cache prune --yes" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Free space in bytes on the filesystem holding PATH.
+get_fs_avail_bytes() {
+  { df -B1 --output=avail -- "$1" 2>/dev/null || true; } | awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {print v+0}'
 }
 
 # Preflight: probe the GNU-coreutils behaviors this tool depends on (du -sb,
@@ -2305,7 +2334,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         # never prompts. A real run skips the target when privileges are unavailable.
         requires_sudo=false
         root_unavailable=false
-        if [[ "$custom_clean_cmd" == action:* ]] || \
+        if { [[ "$custom_clean_cmd" == action:* ]] && ! action_is_user_level "$custom_clean_cmd"; } || \
            [[ -e "$path" && ! -r "$path" ]] || \
            { [[ ! -e "$path" ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; }; then
           requires_sudo=true
@@ -2351,7 +2380,14 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           exists=true
         else
           if path_present "$use_sudo" "$path"; then
-            if has_positive_age "$idle_age" \
+            if action_is_user_level "$custom_clean_cmd"; then
+              size_bytes=0
+              exists=true
+              target_status=found
+              outside_home_suffix=""
+              [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
+              status_echo "  [${GREEN}FOUND${NC}] $name: size measured at run time ($(action_display_command "$custom_clean_cmd"))$outside_home_suffix"
+            elif has_positive_age "$idle_age" \
                && [[ -n $(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) ]]; then
               target_status=clean
               debug_echo "  [${BLUE}CLEAN${NC}] $name: active within $idle_age days."
@@ -2461,7 +2497,14 @@ if [[ "$DRY_RUN" = true ]]; then
 fi
 
 # Check if there is anything to clean
-if [[ "$total_reclaimable_bytes" -eq 0 ]]; then
+has_cleanable_target=false
+for i in "${!parsed_exists[@]}"; do
+  if [[ "${parsed_exists[$i]}" == true && "${parsed_safety[$i]}" -ne 1 ]]; then
+    has_cleanable_target=true
+    break
+  fi
+done
+if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; then
   echo -e "${GREEN}No files need cleaning. Everything is already clean!${NC}"
   # Overwrite the previous report so --report never shows a stale run as the last one.
   RESULT_REPORT_TEXT="Result: nothing to clean"
@@ -2582,6 +2625,10 @@ for i in "${!parsed_names[@]}"; do
     else
       status_echo "  Executing action for ${YELLOW}$name${NC}..."
     fi
+    avail_before=0
+    if action_is_user_level "$custom_clean_cmd"; then
+      avail_before=$(get_fs_avail_bytes "$path")
+    fi
     action_success=false
     case "$custom_clean_cmd" in
       action:paccache_keep1)
@@ -2624,10 +2671,33 @@ for i in "${!parsed_names[@]}"; do
           action_success=true
         fi
         ;;
+      action:uv_cache_prune)
+        if uv cache prune; then
+          action_success=true
+        fi
+        ;;
+      action:pnpm_store_prune)
+        if pnpm store prune; then
+          action_success=true
+        fi
+        ;;
+      action:hf_cache_prune)
+        if hf cache prune --yes; then
+          action_success=true
+        fi
+        ;;
     esac
     if [[ "$action_success" = true ]]; then
-      total_deleted_bytes=$((total_deleted_bytes + size))
-      total_action_bytes=$((total_action_bytes + size))
+      credited_bytes="$size"
+      if action_is_user_level "$custom_clean_cmd"; then
+        avail_after=$(get_fs_avail_bytes "$path")
+        credited_bytes=$((avail_after - avail_before))
+        if [[ "$credited_bytes" -lt 0 ]]; then
+          credited_bytes=0
+        fi
+      fi
+      total_deleted_bytes=$((total_deleted_bytes + credited_bytes))
+      total_action_bytes=$((total_action_bytes + credited_bytes))
       result_cleaned=$((result_cleaned + 1))
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=success"
     else

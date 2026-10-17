@@ -62,7 +62,7 @@ At runtime, the configuration file is resolved in this order:
 | `findutils` | `PKGBUILD depends` | Age filter and bounded wildcard discovery |
 | `coreutils` | `PKGBUILD depends` | `du`, `stat`, `realpath`, `rm`, etc. |
 | `pacman-contrib` | `PKGBUILD optdepends` | Required for `action:paccache_keep*` (`paccache` binary) |
-| `sudo` | runtime | Required for root-owned paths and predefined `action:*` package-cache commands |
+| `sudo` | runtime | Required for root-owned paths and predefined `action:*` system package-cache commands |
 
 ---
 
@@ -116,7 +116,7 @@ Every target in `cleaner.conf` has a risk level (`safe`, `medium`, or `danger`),
 
 See [`cleaner.conf`](cleaner.conf) for the authoritative list of targets, age thresholds, and exclusions, or run `cleaner --list-targets` to inspect the active inventory. The shipped configuration covers:
 
-- **Developer & language caches (`safe`, `medium` for Cargo)**: npm, Yarn, Bun (files older than 30 days), pip, Aurman, Go build cache, clangd, TypeScript, Prettier, VSCode C++ extension cache, and Cargo registry cache.
+- **Developer & language caches (`safe`, `medium` for Cargo)**: npm, Yarn, Bun (files older than 30 days), pnpm (`pnpm store prune`), pip, uv (`uv cache prune`), Hugging Face hub (`hf cache prune --yes`), Aurman, Go build cache, clangd, TypeScript, Prettier, VSCode C++ extension cache, and Cargo registry cache.
 - **GPU & desktop caches (`safe`, `medium` for Trash)**: NVIDIA compute cache, Mesa shader cache, legacy and modern desktop thumbnails, and desktop Trash (>30 days).
 - **Web browser caches (`medium`)**: Chromium, Firefox, and Google Chrome caches under `$HOME/.cache`.
 - **AI assistant & editor caches, logs, and transcripts (`safe` for caches/logs, `medium` for transcripts/media/VM image)**: Gemini Temp, Cursor, Antigravity, Claude Desktop, Codex CLI/Desktop, Grok CLI, and Hermes caches/logs/sessions, plus per-project AI debug/log directories under `/opt` (`.gemini/model_debug_logs`, `.codex/logs`, `.remember/logs`). Durable configuration, rules, memory stores, SQLite state databases, and `$HOME/.claude/projects` are deliberately excluded.
@@ -136,7 +136,7 @@ Security threat model: [docs/threat-model.md](docs/threat-model.md).
 5. **Running-process checks**: Targets with `CHECK_PROCESSES` are skipped (`[BLOCKED]`) while any listed process or `cmdline:<pattern>` is active.
 6. **Whole-directory idle check for C/C++ builds**: With `filter:cxx_build` and `MIN_AGE_DAYS > 0` (14 days in `cleaner.conf`), the cleaner checks whether **any** file inside the build tree was modified within the threshold. Active builds are left completely untouched; only build trees idle for the full 14 days are removed as a whole, preventing broken half-cleaned build directories.
 7. **Git-tracked file guard**: When `git` is available and the cleaner runs as a non-root user on a non-sudo target, any target inside a Git work tree that contains git-tracked files is skipped (`[SKIP]`).
-8. **Unprivileged root-target skip**: Targets that require `sudo` (unreadable paths, unwritable parent directories outside `$HOME`, or `action:*` commands) are skipped with a stderr warning when root privileges are unavailable; non-interactive runs (no TTY on stdin) never prompt for a password.
+8. **Unprivileged root-target skip**: Targets that require `sudo` (unreadable paths, unwritable parent directories outside `$HOME`, or system package-cache `action:*` commands) are skipped with a stderr warning when root privileges are unavailable; non-interactive runs (no TTY on stdin) never prompt for a password.
 9. **User-defined `protect|PATH` directives**: Any target that equals, lies inside, or contains a configured `protect|PATH` directory is skipped before sizing or deletion.
 10. **Restore conflict guard**: Restoring a quarantine session never overwrites an existing destination file or directory; conflicts are reported and kept in quarantine.
 
@@ -163,11 +163,12 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   - `action:dnf_clean` (`sudo dnf clean all`)
   - `action:zypper_clean` (`sudo zypper clean -a`)
   - `action:apk_clean` (`sudo apk cache clean`)
+  - `action:uv_cache_prune` (`uv cache prune`), `action:pnpm_store_prune` (`pnpm store prune`), `action:hf_cache_prune` (`hf cache prune --yes`)
   - `filter:cxx_build`: Keeps a literal path or wildcard match only if it contains a C/C++ build-system marker (`CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json`, or `.qmake.stash`) directly or one level below.
   - `exclude:NAME[,NAME...]`: Adds comma-separated `find` glob/path exclusions for this row only (merging with `-e/--exclude` / `LINUX_CLEANER_EXCLUDE`). Preserves matching files and directories during dry-run sizing, deletion, quarantine, and empty-directory pruning, and processes files individually even when `MIN_AGE_DAYS` is `0`.
 
 > [!WARNING]
-> Predefined `action:*` package-cache commands bypass quarantine (`--trash`) and run directly via `sudo`, resulting in irreversible deletion. See [docs/action-registry-governance.md](docs/action-registry-governance.md).
+> Predefined `action:*` commands bypass quarantine (`--trash`) and run directly, resulting in irreversible deletion. System package-cache actions run via `sudo`; user-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo` and measure their freed size on disk at run time. See [docs/action-registry-governance.md](docs/action-registry-governance.md).
 
 ### Action cross-walk
 
@@ -181,6 +182,11 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 | `action:dnf_clean` | `sudo dnf clean all` | `DNF Cache Clean` (commented) | CONFIGURATION |
 | `action:zypper_clean` | `sudo zypper clean -a` | `Zypper Cache Clean` (commented) | CONFIGURATION |
 | `action:apk_clean` | `sudo apk cache clean` | `APK Cache Clean` (commented) | CONFIGURATION |
+| `action:uv_cache_prune` | `uv cache prune` | `UV Cache` | CONFIGURATION |
+| `action:pnpm_store_prune` | `pnpm store prune` | `PNPM Store` | CONFIGURATION |
+| `action:hf_cache_prune` | `hf cache prune --yes` | `Hugging Face Cache` | CONFIGURATION |
+
+User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo`, and their freed size is measured on disk from the filesystem free-space change rather than directory `du`.
 
 ### Wildcard paths
 
@@ -215,7 +221,7 @@ Validate a configuration file without scanning disk usage:
 
 ```sh
 cleaner --check-config --config cleaner.conf
-# -> OK: 41 targets in cleaner.conf
+# -> OK: 44 targets in cleaner.conf
 ```
 
 Malformed lines fail with a line-numbered error (`Error: <config-file>:<lineno>: ...` or `<config-file>:<lineno>: Error: ...`).

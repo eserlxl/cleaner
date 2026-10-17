@@ -21,6 +21,13 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   older than 30 days. It has no running-process check, because long-lived bun
   servers (for example editor or agent plugins) would otherwise block it on
   every run.
+- New `safe` user-level prune actions and default targets for `uv` (`UV Cache`,
+  `action:uv_cache_prune` running `uv cache prune`), `pnpm` (`PNPM Store`,
+  `action:pnpm_store_prune` running `pnpm store prune`), and Hugging Face Hub
+  (`Hugging Face Cache`, `action:hf_cache_prune` running `hf cache prune --yes`).
+  These actions run as the invoking user without `sudo`, skip cleanly when the
+  tool is not installed, block while the tool is running, and credit the disk
+  space actually freed rather than the pre-run directory `du`.
 
 ## [1.4.2] - 2026-10-16
 
