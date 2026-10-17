@@ -1191,9 +1191,13 @@ build_exclude_find_args() {
     return
   fi
   
-  local IFS=','
-  local -a pats
-  read -r -a pats <<< "$patterns"
+  local rest="$patterns"
+  local -a pats=()
+  while [[ "$rest" == *,* ]]; do
+    pats+=("${rest%%,*}")
+    rest="${rest#*,}"
+  done
+  pats+=("$rest")
   
   if [[ ${#pats[@]} -eq 0 ]]; then
     return

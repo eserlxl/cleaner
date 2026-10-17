@@ -41,6 +41,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Global exclusion lists preserve patterns after line feeds and appended per-target
+  exclusions, while continuing to ignore empty global entries.
+
 - Preserve literal NAME filters and configuration values equal to `echo` options
   when trimming whitespace.
 

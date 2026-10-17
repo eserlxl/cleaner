@@ -370,6 +370,77 @@ for row_age in 7 0; do
   echo -e "${GREEN}PASS: row exclusion dry-run size counts only eligible jsonl bytes.${NC}"
 done
 
+# Complete global lists must retain later patterns and appended row protection.
+python3 - "$CLEANER_SH" <<'EXCLUSION_LIST_PY'
+import hashlib, json, os, pathlib, stat, subprocess, sys, tempfile, time
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory(prefix="cleaner-exclusion-list-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home = root / "home"
+    first, second = home / "first", home / "second"
+    first.mkdir(parents=True)
+    second.mkdir()
+    for parent, files in ((first, {"keep-a": 19, "keep-b": 29, "row.keep": 41, "eligible": 7,
+                                  "keep-a\nkeep-b": 13, "fresh": 5}),
+                          (second, {"row.keep": 43, "eligible": 3})):
+        for name, size in files.items():
+            path = parent / name
+            path.write_bytes(b"p" * size)
+            if name != "fresh":
+                os.utime(path, (time.time() - 30 * 86400,) * 2)
+    state = home / "state/linux-cleaner"
+    state.mkdir(parents=True)
+    (state / "last-report.txt").write_text("keep report metadata\n")
+    quarantine = home / ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00"
+    quarantine.mkdir(parents=True)
+    (quarantine / "quarantine.meta").write_text("keep recovery metadata\n")
+    (quarantine / "payload").write_text("keep recovery payload\n")
+    config = root / "exclusion.conf"
+    bindir = root / "bin"
+    bindir.mkdir()
+    trace = root / "forbidden-calls"
+    for command in ("rm", "mv", "flock", "sudo", "uv", "pnpm", "hf", "pacman"):
+        stub = bindir / command
+        stub.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$EXCLUSION_TRACE"\nexit 99\n')
+        stub.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1",
+               PATH=str(bindir) + ":" + env["PATH"], EXCLUSION_TRACE=str(trace))
+    def snapshot():
+        return {str(p.relative_to(home)): (stat.S_IMODE(p.stat().st_mode), p.stat().st_mtime_ns,
+                hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None)
+                for p in home.rglob("*")}
+    before = snapshot()
+    # Expected first-target sizes include the fresh 5 bytes only at age zero.
+    cases = [
+        ("CLI control", ["--exclude", "keep-a,keep-b"], {}, 20),
+        ("CLI comma LF", ["--exclude", "keep-a,\nkeep-b"], {}, 20),
+        ("environment comma LF", [], {"LINUX_CLEANER_EXCLUDE": "keep-a,\nkeep-b"}, 20),
+        ("CLI internal LF literal", ["--exclude", "keep-a\nkeep-b"], {}, 55),
+        ("environment internal LF literal", [], {"LINUX_CLEANER_EXCLUDE": "keep-a\nkeep-b"}, 55),
+        ("later comma fields", ["--exclude", "absent,\nkeep-a,keep-b"], {}, 20),
+        ("empty entries ignored", ["--exclude", ",keep-a,\n,,keep-b,,"], {}, 20),
+        ("all empty entries ignored", ["--exclude", ",\n,,"], {}, 68),
+        ("CLI overrides environment", ["--exclude", "keep-a,\nkeep-b"], {"LINUX_CLEANER_EXCLUDE": "keep-a\nkeep-b"}, 20),
+    ]
+    for age in (0, 7):
+        config.write_text("safe|Row Protected|$HOME/first|row composition|" + str(age) + "||exclude:row.keep\n"
+                          "safe|Next Target|$HOME/second|row reset|" + str(age) + "||\n")
+        for label, args, overrides, old_bytes in cases:
+            print("Test Case: Complete Exclusion List " + label + " age " + str(age), flush=True)
+            result = subprocess.run([cleaner, "--config", str(config), "--dry-run", "--json"] + args,
+                                    env=env | overrides, capture_output=True, text=True, timeout=20)
+            assert result.returncode == 0, (label, age, result)
+            data = json.loads(result.stdout)
+            expected = old_bytes + (5 if age == 0 else 0)
+            targets = data["targets"]
+            assert [(t["name"], t["bytes"], t["status"]) for t in targets] == [
+                ("Row Protected", expected, "found"), ("Next Target", 46, "found")], (label, age, targets)
+            assert data["total_reclaimable_bytes"] == expected + 46, (label, age, data)
+            assert snapshot() == before and not trace.exists(), "preview changed data/metadata or invoked mutation tools"
+            print("PASS: Complete Exclusion List " + label + " age " + str(age), flush=True)
+EXCLUSION_LIST_PY
+
 # Wildcard inventory must retain the token and ordinary ancestor pruning.
 mkdir -p "$MOCK_HOME/projects/p1/nested"
 printf "medium|T|\$HOME/projects/**|inventory|7||exclude:memory\n" > "$TEST_ENV_DIR/row_inventory.conf"

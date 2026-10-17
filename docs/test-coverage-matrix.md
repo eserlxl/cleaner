@@ -19,6 +19,7 @@
 | U-98 | Config discovery/init and report reads/writes preserve one or multiple trailing LF in absolute XDG storage directories, exact siblings, defaults and explicit config precedence; private modes, symlink/overwrite guards and nonfatal writer failures remain intact | XDG Storage report human/json / XDG Storage config discovery/check / XDG Storage initialize exact config / XDG Storage save exact report / XDG Storage helper failure |
 | U-99 | NAME filters preserve complete comma-separated CLI/environment values, trim boundary LF, retain internal LF literally, honor later fields and CLI overrides, and reject leading/consecutive/trailing hidden empty fields consistently without read-only side effects | Inventory NAME Selection (human/json LF) / NAME LF Dry Run |
 | U-100 | Trimming preserves literal values that match `echo` options across NAME filters and configuration, including whitespace, exact JSON names/descriptions, percent/backslash bytes, check-config, dry-run, and empty-pattern rejection | NAME Trim Echo Options |
+| U-101 | Complete CLI/environment global exclusions preserve LF whitespace, literal internal LF, later fields and appended row protection without leaking row exclusions; empty entries and CLI precedence retain exact eligible sizes at age zero and positive ages without state changes | Complete Exclusion List |
 
 ## 1.3.0 shipped feature inventory
 
