@@ -55,7 +55,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Scenario | Control | Test |
 |----------|---------|------|
 | Malformed lines | Parser rejection | Malformed Too Few Fields |
-| Path traversal in PATH_EXPRESSION | `check_path_safety` rejects dotdot/symlink escape | Canonicalization Dotdot Escape |
+| Path traversal in PATH_EXPRESSION | Physical canonicalization resolves `..` and symlinked parents to the actual destination; eligible paths outside HOME are allowed. Direct-target symlinks, HOME and its ancestors, protected system directories, and configured protected paths remain guarded. | Canonicalization Dotdot Escape |
 | Unknown action | Enumerated whitelist | Predefined Action |
 | Compromised /etc/linux-cleaner/cleaner.conf | Root-owned config + dry-run before clean | Operator mitigations (below) |
 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
