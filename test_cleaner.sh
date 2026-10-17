@@ -6519,5 +6519,98 @@ if ! run_test_case "Restore Missing Aged Source Still Fails" 1 "restore_missing_
   exit 1
 fi
 
+# Cross-filesystem quarantine checks available space on the quarantine base
+# before moving: refuses a target larger than free space (leaving it in place
+# with no session record and exiting 1), while a fitting cross-filesystem target
+# quarantines normally.
+setup_mock_env
+xfs_target="$OUTSIDE_DIR/xfs_build"
+mkdir -p "$xfs_target"
+printf 'cross-fs-payload\n' > "$xfs_target/artifact.bin"
+xfs_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+cat > "$TEST_ENV_DIR/xfs_trash.conf" <<EOF
+safe|XFS Build|$xfs_target|Cross-filesystem build target|0||
+EOF
+
+cat > "$TEST_ENV_DIR/bin/stat" <<'MOCK_XFS_STAT'
+#!/usr/bin/env bash
+real_stat=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v stat)
+if [[ "${1:-}" == "-c" && "${2:-}" == "%d" ]]; then
+  case "${3:-}" in
+    *xfs_build*)
+      echo 999991
+      exit 0
+      ;;
+    */.cache/linux-cleaner/quarantine*)
+      echo 999992
+      exit 0
+      ;;
+  esac
+fi
+exec "$real_stat" "$@"
+MOCK_XFS_STAT
+chmod +x "$TEST_ENV_DIR/bin/stat"
+
+cat > "$TEST_ENV_DIR/bin/df" <<'MOCK_XFS_DF_LOW'
+#!/usr/bin/env bash
+real_df=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v df)
+for arg in "$@"; do
+  case "$arg" in
+    */.cache/linux-cleaner/quarantine*)
+      # Reject flags the real df would reject, so the mock cannot hide them.
+      "$real_df" "$@" > /dev/null 2>&1 || exit 1
+      printf 'Avail\n1\n'
+      exit 0
+      ;;
+  esac
+done
+exec "$real_df" "$@"
+MOCK_XFS_DF_LOW
+chmod +x "$TEST_ENV_DIR/bin/df"
+
+if ! run_test_case "Trash Cross Filesystem Space Guard" 1 "xfs_trash_low.log" \
+       --config "$TEST_ENV_DIR/xfs_trash.conf" --clean --trash --force \
+   || ! grep -q "Error: Not enough free space to quarantine 'XFS Build' (needs .*, 1 B free); left in place\." "$TEST_ENV_DIR/xfs_trash_low.log" \
+   || ! grep -q '^Result: cleaned=0 skipped=0 failed=1 ' "$TEST_ENV_DIR/xfs_trash_low.log" \
+   || ! grep -qx 'Failed targets: XFS Build' "$TEST_ENV_DIR/xfs_trash_low.log" \
+   || ! grep -qx 'cross-fs-payload' "$xfs_target/artifact.bin" \
+   || [[ -n "$(find "$xfs_qbase" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ]] \
+   || [[ -n "$(find "$xfs_qbase" -name quarantine.meta -print -quit 2>/dev/null)" ]]; then
+  rm -f "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
+  echo -e "${RED}FAIL: cross-filesystem quarantine with 1 B free did not fail cleanly or modified the target/session.${NC}"
+  cat "$TEST_ENV_DIR/xfs_trash_low.log" 2>/dev/null || true
+  exit 1
+fi
+
+cat > "$TEST_ENV_DIR/bin/df" <<'MOCK_XFS_DF_PLENTY'
+#!/usr/bin/env bash
+real_df=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v df)
+for arg in "$@"; do
+  case "$arg" in
+    */.cache/linux-cleaner/quarantine*)
+      # Reject flags the real df would reject, so the mock cannot hide them.
+      "$real_df" "$@" > /dev/null 2>&1 || exit 1
+      printf 'Avail\n1073741824\n'
+      exit 0
+      ;;
+  esac
+done
+exec "$real_df" "$@"
+MOCK_XFS_DF_PLENTY
+chmod +x "$TEST_ENV_DIR/bin/df"
+
+if ! run_test_case "Trash Cross Filesystem Space Guard Fits" 0 "xfs_trash_fits.log" \
+       --config "$TEST_ENV_DIR/xfs_trash.conf" --clean --trash --force \
+   || [[ -e "$xfs_target" ]] \
+   || ! grep -q '^Result: cleaned=1 skipped=0 failed=0 ' "$TEST_ENV_DIR/xfs_trash_fits.log" \
+   || [[ -z "$(find "$xfs_qbase" -name quarantine.meta -print -quit 2>/dev/null)" ]]; then
+  rm -f "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
+  echo -e "${RED}FAIL: cross-filesystem quarantine that fits did not succeed.${NC}"
+  cat "$TEST_ENV_DIR/xfs_trash_fits.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
+echo -e "${GREEN}PASS: cross-filesystem quarantine refuses targets larger than free space and allows fitting ones.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

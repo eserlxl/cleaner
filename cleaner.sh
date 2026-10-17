@@ -1513,6 +1513,23 @@ quarantine_move_full() {
   [[ "$ok" = true ]]
 }
 
+# True unless TARGET sits on another filesystem than the quarantine base and is
+# larger than the base's free space. A same-filesystem move is a rename and needs
+# no room; a cross-filesystem one copies, and running out mid-copy would fill
+# $HOME. An unreadable device or free-space figure falls back to trying the move.
+quarantine_has_room() {
+  local target="$1" use_sudo="$2" bytes="$3" base target_dev base_dev avail
+  base="$HOME/.cache/linux-cleaner/quarantine"
+  (umask 077; mkdir -p "$base") || return 0
+  target_dev=$(with_sudo "$use_sudo" stat -c '%d' "$target" 2>/dev/null) || return 0
+  base_dev=$(stat -c '%d' "$base" 2>/dev/null) || return 0
+  [[ "$target_dev" == "$base_dev" ]] && return 0
+  avail=$(df -B1 --output=avail "$base" 2>/dev/null | awk 'NR == 2 { print $1 }') || return 0
+  [[ "$avail" =~ ^[0-9]+$ ]] || return 0
+  QUARANTINE_AVAIL_BYTES=$avail
+  [[ "$bytes" -le "$avail" ]]
+}
+
 # Permanently delete a whole target and account for it. Sets OPERATION_FAILED on a
 # failed delete so an unattended run exits non-zero, per cleaner.1's EXIT STATUS
 # contract. Adds the target's size to the running total only when the delete worked.
@@ -2998,7 +3015,11 @@ for i in "${!parsed_names[@]}"; do
     continue
   fi
 
-  if [[ "$TRASH_MODE" = true ]]; then
+  if [[ "$TRASH_MODE" = true ]] && ! quarantine_has_room "$path" "$use_sudo" "$size"; then
+    echo -e "  ${RED}Error: Not enough free space to quarantine '$name' (needs $(format_bytes "$size"), $(format_bytes "$QUARANTINE_AVAIL_BYTES") free); left in place.${NC}" >&2
+    OPERATION_FAILED=true
+    target_failed=true
+  elif [[ "$TRASH_MODE" = true ]]; then
     # Allocate one session lazily, after confirmation and only for a target
     # that will actually be moved to quarantine.
     if [[ -z "$QUARANTINE_DIR" ]]; then

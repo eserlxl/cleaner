@@ -62,7 +62,12 @@ Bypass the manual confirmation prompt for danger-risk targets.
 .TP
 .BR \-t ", " \-\-trash
 Select quarantine instead of permanent deletion. This flag alone keeps the
-default preview mode.
+default preview mode. When a target sits on a different filesystem from the
+quarantine directory,
+.B cleaner
+checks free space on the quarantine filesystem first and refuses the target
+when its planned size exceeds available space, leaving it in place;
+same-filesystem moves are renames and need no check.
 .TP
 .BR \-r ", " \-\-risk " " \fILEVEL\fR
 Maximum risk level to clean: safe, medium, or danger (default: safe).
