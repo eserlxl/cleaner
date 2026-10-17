@@ -314,7 +314,7 @@ are rejected.
 .TP
 .B \-\-purge\-sessions \fISESSION\fR
 Permanently delete quarantine session(s) to reclaim space:
-.IR latest ", " all ", " older\-than:DAYS ", or a specific timestamp."
+.IR latest ", " all ", " older\-than:DAYS ", " max\-size:SIZE ", or a specific timestamp."
 A named timestamp must likewise be an immediate child name (no path separators or
 .BR . / .. ).
 The
@@ -323,6 +323,20 @@ selector purges every session last modified more than
 .I DAYS
 days ago, and exits 0 when none match, so it is safe to run from cron as a
 retention policy that keeps quarantine bounded. A malformed day count is an error.
+The
+.I max\-size:SIZE
+selector walks sessions newest-first summing apparent byte sizes
+.RB ( "du \-sb" )
+and purges every session once the running total exceeds
+.I SIZE
+(an integer with an optional
+.BR K ", " M ", " G ", or " T
+1024-based unit, as for
+.BR \-\-min\-reclaim ),
+keeping the newest sessions within the budget; it exits 0 when no sessions
+exceed the budget (or when no quarantine directory exists) and exits 1 on a
+malformed or overflowing
+.IR SIZE .
 Irreversible; the confirmation prompt names every target it would destroy, and is
 skipped only when
 .B \-\-force

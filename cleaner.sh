@@ -63,7 +63,7 @@ Options:
   --exclude-target PATTERN   With cleanup: skip config targets whose NAME contains PATTERN (substring match).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
-  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
+  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
@@ -289,7 +289,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
-        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
+        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, max-size:SIZE, or timestamp).${NC}" >&2
         exit 1
       fi
       PURGE_TARGET="$2"
@@ -361,27 +361,40 @@ if [[ -z "${HOME:-}" ]]; then
 fi
 USER="${USER:-$(id -un 2>/dev/null || true)}"
 
-if [[ -n "$MIN_RECLAIM" ]]; then
-  if [[ ! "$MIN_RECLAIM" =~ ^([0-9]+)([KMGTkmgt]?)$ ]]; then
-    echo -e "${RED}Error: --min-reclaim expects a size such as 500M or 2G, got '${MIN_RECLAIM}'.${NC}" >&2
-    exit 1
+# Parse a human-friendly SIZE token (integer with optional 1024-based K/M/G/T unit)
+# into a byte count on stdout. Returns 1 on bad syntax, 2 on 64-bit overflow.
+parse_size_bytes() {
+  local raw="$1" num unit mult
+  if [[ ! "$raw" =~ ^([0-9]+)([KMGTkmgt]?)$ ]]; then
+    return 1
   fi
-  min_reclaim_num="${BASH_REMATCH[1]}"
-  min_reclaim_unit="${BASH_REMATCH[2]}"
-  case "$min_reclaim_unit" in
-    "") min_reclaim_mult=1 ;;
-    k|K) min_reclaim_mult=1024 ;;
-    m|M) min_reclaim_mult=$((1024 * 1024)) ;;
-    g|G) min_reclaim_mult=$((1024 * 1024 * 1024)) ;;
-    t|T) min_reclaim_mult=$((1024 * 1024 * 1024 * 1024)) ;;
+  num="${BASH_REMATCH[1]}"
+  unit="${BASH_REMATCH[2]}"
+  case "$unit" in
+    "") mult=1 ;;
+    k|K) mult=1024 ;;
+    m|M) mult=$((1024 * 1024)) ;;
+    g|G) mult=$((1024 * 1024 * 1024)) ;;
+    t|T) mult=$((1024 * 1024 * 1024 * 1024)) ;;
   esac
   # Refuse values whose byte count would overflow 64-bit shell arithmetic.
-  if [[ ${#min_reclaim_num} -gt 18 ]] \
-     || (( 10#$min_reclaim_num > 9223372036854775807 / min_reclaim_mult )); then
+  if [[ ${#num} -gt 18 ]] \
+     || (( 10#$num > 9223372036854775807 / mult )); then
+    return 2
+  fi
+  printf '%s\n' "$((10#$num * mult))"
+}
+
+if [[ -n "$MIN_RECLAIM" ]]; then
+  min_reclaim_rc=0
+  MIN_RECLAIM_BYTES=$(parse_size_bytes "$MIN_RECLAIM") || min_reclaim_rc=$?
+  if [[ "$min_reclaim_rc" -eq 1 ]]; then
+    echo -e "${RED}Error: --min-reclaim expects a size such as 500M or 2G, got '${MIN_RECLAIM}'.${NC}" >&2
+    exit 1
+  elif [[ "$min_reclaim_rc" -ne 0 ]]; then
     echo -e "${RED}Error: --min-reclaim size '${MIN_RECLAIM}' is too large.${NC}" >&2
     exit 1
   fi
-  MIN_RECLAIM_BYTES=$((10#$min_reclaim_num * min_reclaim_mult))
 fi
 
 if [[ -n "$TRASH_KEEP_DAYS" ]]; then
@@ -1383,6 +1396,7 @@ purge_quarantine_sessions() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
 
   local days=""
+  local max_size_spec="" max_size_bytes=0 max_size_rc=0
 
   if [[ "$target" == older-than:* ]]; then
     # Age-based retention: what makes trash mode viable unattended. Without it a
@@ -1395,6 +1409,20 @@ purge_quarantine_sessions() {
     fi
     if [[ ! -d "$quarantine_base" ]]; then
       echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      return 0
+    fi
+  elif [[ "$target" == max-size:* ]]; then
+    max_size_spec="${target#max-size:}"
+    max_size_bytes=$(parse_size_bytes "$max_size_spec") || max_size_rc=$?
+    if [[ "$max_size_rc" -eq 1 ]]; then
+      echo -e "${RED}Error: Invalid size in '$target'. Use max-size:<size>, e.g. max-size:5G.${NC}" >&2
+      exit 1
+    elif [[ "$max_size_rc" -ne 0 ]]; then
+      echo -e "${RED}Error: max-size '${max_size_spec}' in '$target' is too large.${NC}" >&2
+      exit 1
+    fi
+    if [[ ! -d "$quarantine_base" ]]; then
+      echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
       return 0
     fi
   fi
@@ -1444,6 +1472,32 @@ purge_quarantine_sessions() {
       echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
       return 0
     fi
+  elif [[ "$target" == max-size:* ]]; then
+    local s sess_bytes running_bytes=0
+    local -a all_sessions=() over_budget=()
+    while IFS= read -r s; do
+      [[ -n "$s" ]] && all_sessions+=("$s")
+    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
+    if ! wait "$!"; then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
+    for s in "${all_sessions[@]}"; do
+      sess_bytes=$({ du -sb "$s" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}')
+      [[ -z "$sess_bytes" ]] && sess_bytes=0
+      running_bytes=$((running_bytes + sess_bytes))
+      if (( running_bytes > max_size_bytes )); then
+        over_budget+=("$s")
+      fi
+    done
+    if [[ ${#over_budget[@]} -eq 0 ]]; then
+      echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
+      return 0
+    fi
+    local idx
+    for (( idx=${#over_budget[@]}-1; idx>=0; idx-- )); do
+      targets+=("${over_budget[idx]}")
+    done
   else
     # A named session must be an immediate child of the base.
     validate_quarantine_session_name "$target"

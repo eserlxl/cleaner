@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--purge-sessions max-size:SIZE` keeps the newest quarantine sessions within a byte budget (`SIZE` with optional `K`, `M`, `G`, or `T` 1024-based unit) and purges older sessions once the newest-first `du -sb` total exceeds `SIZE` (exiting `0` when nothing exceeds the budget or no quarantine directory exists).
 - `--report --json` prints the saved last cleanup report as a machine-readable JSON object (`saved`, `result`, `cleaned`, `skipped`, `failed`, `elapsed_seconds`, `failed_targets`, `quarantine_session`, `interrupted`).
 - `--trash-keep-days DAYS` (and `LINUX_CLEANER_TRASH_KEEP_DAYS`) purges quarantine sessions older than `DAYS` days at the end of a non-dry-run cleanup.
 - `--trash` now checks free space on `~/.cache/linux-cleaner/quarantine` before a cross-filesystem quarantine move and refuses the target when its planned size exceeds available space (`Error: Not enough free space to quarantine '<name>' (needs X, Y free); left in place.`), leaving it in place; same-filesystem moves are renames and need no check.

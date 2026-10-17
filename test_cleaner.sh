@@ -4877,7 +4877,7 @@ printf '%s/2000-01-01_00-00-00\n' "$1"
 exit 1
 PURGE_FIND
 chmod +x "$TEST_ENV_DIR/bin/find"
-for purge_selector in all latest older-than:30; do
+for purge_selector in all latest older-than:30 max-size:1G; do
   if ! run_test_case "Purge Enumeration Failure ($purge_selector)" 1 "purge_find_failure.log" \
        --purge-sessions "$purge_selector" --force \
      || ! grep -q 'Failed to enumerate' "$TEST_ENV_DIR/purge_find_failure.log" \
@@ -6831,6 +6831,62 @@ then
   exit 1
 fi
 echo -e "${GREEN}PASS: --report --json emits valid JSON matching the saved report and exits 1 when absent.${NC}"
+
+# --purge-sessions max-size:SIZE: keep newest sessions within a byte budget
+# and purge older ones; exit 0 when within budget or when no quarantine base
+# exists; exit 1 on malformed or overflowing SIZE.
+setup_mock_env
+ms_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+ms_s1="$ms_qbase/2026-01-01_00-00-00"
+ms_s2="$ms_qbase/2026-01-02_00-00-00"
+ms_s3="$ms_qbase/2026-01-03_00-00-00"
+mkdir -p "$ms_s1" "$ms_s2" "$ms_s3"
+dd if=/dev/zero of="$ms_s1/payload.bin" bs=1048576 count=2 status=none
+dd if=/dev/zero of="$ms_s2/payload.bin" bs=1048576 count=2 status=none
+dd if=/dev/zero of="$ms_s3/payload.bin" bs=1048576 count=2 status=none
+
+if ! run_test_case "Purge Sessions Max Size Keeps Newest" 0 "purge_max_size_keep.log" \
+       --purge-sessions max-size:5M --force \
+   || [[ -d "$ms_s1" ]] \
+   || [[ ! -d "$ms_s2" ]] \
+   || [[ ! -d "$ms_s3" ]] \
+   || ! grep -q "Purged 2026-01-01_00-00-00" "$TEST_ENV_DIR/purge_max_size_keep.log" \
+   || ! grep -q "Purged 1 session(s)." "$TEST_ENV_DIR/purge_max_size_keep.log"; then
+  echo -e "${RED}FAIL: --purge-sessions max-size:5M did not keep the two newest sessions and purge the oldest.${NC}"
+  cat "$TEST_ENV_DIR/purge_max_size_keep.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Purge Sessions Max Size Nothing To Purge" 0 "purge_max_size_none.log" \
+       --purge-sessions max-size:5M --force \
+   || ! grep -qF "No quarantine sessions beyond the max-size:5M budget." "$TEST_ENV_DIR/purge_max_size_none.log" \
+   || [[ ! -d "$ms_s2" ]] \
+   || [[ ! -d "$ms_s3" ]]; then
+  echo -e "${RED}FAIL: --purge-sessions max-size:5M when within budget did not report nothing to purge and keep sessions.${NC}"
+  cat "$TEST_ENV_DIR/purge_max_size_none.log" 2>/dev/null || true
+  exit 1
+fi
+
+rm -rf "$ms_qbase"
+if ! run_test_case "Purge Sessions Max Size Missing Base" 0 "purge_max_size_missing_base.log" \
+       --purge-sessions max-size:5M --force \
+   || ! grep -qF "No quarantine sessions beyond the max-size:5M budget." "$TEST_ENV_DIR/purge_max_size_missing_base.log"; then
+  echo -e "${RED}FAIL: --purge-sessions max-size:5M without quarantine base did not exit 0 with nothing-to-purge message.${NC}"
+  cat "$TEST_ENV_DIR/purge_max_size_missing_base.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Purge Sessions Max Size Invalid" 1 "purge_max_size_invalid.log" \
+       --purge-sessions max-size:10X --force \
+   || ! grep -qF "Error: Invalid size in 'max-size:10X'. Use max-size:<size>, e.g. max-size:5G." "$TEST_ENV_DIR/purge_max_size_invalid.log" \
+   || ! run_test_case "Purge Sessions Max Size Too Large" 1 "purge_max_size_overflow.log" \
+       --purge-sessions max-size:99999999999T --force \
+   || ! grep -qF "Error: max-size '99999999999T' in 'max-size:99999999999T' is too large." "$TEST_ENV_DIR/purge_max_size_overflow.log"; then
+  echo -e "${RED}FAIL: --purge-sessions max-size did not reject malformed or overflowing SIZE.${NC}"
+  cat "$TEST_ENV_DIR/purge_max_size_invalid.log" "$TEST_ENV_DIR/purge_max_size_overflow.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --purge-sessions max-size:SIZE keeps newest sessions within budget and validates SIZE.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
