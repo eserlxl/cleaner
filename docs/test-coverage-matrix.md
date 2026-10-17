@@ -77,6 +77,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-69 | `--dry-run --json` marks user-level prune actions with `size_at_run_time: true` and `size_human: "size at run time"`, and every other target with `size_at_run_time: false` | User Actions Dry Run JSON Marks Run-Time Size / User Actions Dry Run JSON Plain Target False |
 | U-70 | `--dry-run --json` carries `reason` per target: empty for found targets, the plan-report reason for blocked and skipped ones | Dry Run JSON Reports Skip Reasons / JSON Dry Run |
 | U-71 | Comma-separated `--only-target` / `--exclude-target` patterns select/skip the union and reject empty tokens | Only Target Comma List Dry Run / Exclude Target Comma List Dry Run / Only Target Comma List Env / Only Target Empty Token Rejected |
+| U-72 | `--min-reclaim SIZE` and `LINUX_CLEANER_MIN_RECLAIM` skip cleanup below threshold and validate size/mode combinations | Min Reclaim Above Total Skips / Min Reclaim Below Total Cleans / Min Reclaim Env / Min Reclaim Invalid Size / Min Reclaim With Restore Rejected |
 
 ## Drift guards
 

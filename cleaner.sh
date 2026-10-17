@@ -60,6 +60,7 @@ Options:
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
   --exclude-target PATTERN   With cleanup: skip config targets whose NAME contains PATTERN (substring match).
+  --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
@@ -87,6 +88,8 @@ RESTORE_TARGET=""
 RESTORE_ONLY=""
 ONLY_TARGET=""
 EXCLUDE_TARGET=""
+MIN_RECLAIM=""
+MIN_RECLAIM_BYTES=0
 PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
@@ -132,6 +135,9 @@ if [[ -n "${LINUX_CLEANER_ONLY_TARGET:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET:-}" ]]; then
   EXCLUDE_TARGET="$LINUX_CLEANER_EXCLUDE_TARGET"
+fi
+if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
+  MIN_RECLAIM="$LINUX_CLEANER_MIN_RECLAIM"
 fi
 if [[ -n "${LINUX_CLEANER_RISK:-}" ]]; then
   MAX_RISK="$LINUX_CLEANER_RISK"
@@ -258,6 +264,14 @@ while [[ $# -gt 0 ]]; do
       EXCLUDE_TARGET="$2"
       shift 2
       ;;
+    --min-reclaim)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --min-reclaim requires a size argument.${NC}" >&2
+        exit 1
+      fi
+      MIN_RECLAIM="$2"
+      shift 2
+      ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
@@ -328,6 +342,29 @@ if [[ -z "${HOME:-}" ]]; then
 fi
 USER="${USER:-$(id -un 2>/dev/null || true)}"
 
+if [[ -n "$MIN_RECLAIM" ]]; then
+  if [[ ! "$MIN_RECLAIM" =~ ^([0-9]+)([KMGTkmgt]?)$ ]]; then
+    echo -e "${RED}Error: --min-reclaim expects a size such as 500M or 2G, got '${MIN_RECLAIM}'.${NC}" >&2
+    exit 1
+  fi
+  min_reclaim_num="${BASH_REMATCH[1]}"
+  min_reclaim_unit="${BASH_REMATCH[2]}"
+  case "$min_reclaim_unit" in
+    "") min_reclaim_mult=1 ;;
+    k|K) min_reclaim_mult=1024 ;;
+    m|M) min_reclaim_mult=$((1024 * 1024)) ;;
+    g|G) min_reclaim_mult=$((1024 * 1024 * 1024)) ;;
+    t|T) min_reclaim_mult=$((1024 * 1024 * 1024 * 1024)) ;;
+  esac
+  # Refuse values whose byte count would overflow 64-bit shell arithmetic.
+  if [[ ${#min_reclaim_num} -gt 18 ]] \
+     || (( 10#$min_reclaim_num > 9223372036854775807 / min_reclaim_mult )); then
+    echo -e "${RED}Error: --min-reclaim size '${MIN_RECLAIM}' is too large.${NC}" >&2
+    exit 1
+  fi
+  MIN_RECLAIM_BYTES=$((10#$min_reclaim_num * min_reclaim_mult))
+fi
+
 # Restore and purge are mutating modes that bypass the cleanup dry-run exit.
 # Distinguish an explicit active --dry-run from the default DRY_RUN=true so
 # ordinary restore/purge requests keep their established behavior.
@@ -353,6 +390,11 @@ if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-
   exit 1
 fi
 
+if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true ) ]]; then
+  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, or --report).${NC}" >&2
+  exit 1
+fi
+
 if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true ) ]]; then
   echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, or --report.${NC}" >&2
   exit 1
@@ -375,6 +417,11 @@ fi
 
 if [[ -n "$EXCLUDE_TARGET" && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --exclude-target applies only to cleanup runs (not --check-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$MIN_RECLAIM" && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -2556,6 +2603,16 @@ fi
 # If dry-run is specified, we stop here
 if [[ "$DRY_RUN" = true ]]; then
   status_echo "${YELLOW}Dry-run mode active. No files were modified.${NC}"
+  if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
+    status_echo "Below --min-reclaim ${MIN_RECLAIM}: a cleanup run would skip."
+  fi
+  exit 0
+fi
+
+if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
+  echo "Planned reclaim $(format_bytes "$total_reclaimable_bytes") is below --min-reclaim ${MIN_RECLAIM}; nothing was cleaned."
+  RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
+  save_last_cleanup_report
   exit 0
 fi
 

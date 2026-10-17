@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--min-reclaim SIZE` (and `LINUX_CLEANER_MIN_RECLAIM`) skips a cleanup whose planned reclaim is below SIZE.
 - `--only-target` and `--exclude-target` (and their `LINUX_CLEANER_*` mirrors)
   accept a comma-separated list of name substrings.
 - `--dry-run --json` targets carry `reason`, the same skip or block reason the

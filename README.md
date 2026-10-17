@@ -255,6 +255,7 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 - **`-e, --exclude PATTERNS`**: Comma-separated `find` glob/path patterns to exclude globally (e.g. `.git,*.log`). Verify exclusions with `--dry-run` first.
 - **`--only-target PATTERN`**: With cleanup, process only targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if none match. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 - **`--exclude-target PATTERN`**: With cleanup, skip targets whose `NAME` contains `PATTERN` (substring match; `PATTERN` may be a comma-separated list: a target matches when its `NAME` contains any listed substring, and empty entries are rejected); exits `1` if no targets remain. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
+- **`--min-reclaim SIZE`**: With cleanup, skip the run when the planned reclaimable total is below `SIZE` (an integer with an optional `K`, `M`, `G`, or `T` 1024-based unit, e.g. `500M` or `2G`). User-level prune actions (`uv`/`pnpm`/`hf`) are sized at run time and do not count toward the threshold. In `--dry-run` mode, prints a note when a cleanup run would skip; in a cleanup run, prints why nothing was cleaned, records `Result: skipped below --min-reclaim SIZE` in `last-report.txt`, and exits `0`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, or `--report`.
 - **`--list-targets`**: List configured targets (`NAME`, `risk`, `path`, `description`) without disk analysis. Read-only; requires a config file. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, or `--report`.
 - **`--check-config`**: Validate config syntax and exit without disk analysis. Prints `OK: N targets in <path>`. Cannot be combined with `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, or `--report`.
 - **`--list-sessions`**: List quarantine sessions (timestamp, size, date, and each item's `full`/`aged` type and original path). Read-only; requires no config file.
@@ -281,6 +282,7 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 | `LINUX_CLEANER_JSON` | When `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, or `--list-sessions`). |
 | `LINUX_CLEANER_ONLY_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--only-target` (overridden by CLI `--only-target`). |
 | `LINUX_CLEANER_EXCLUDE_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--exclude-target` (overridden by CLI `--exclude-target`). |
+| `LINUX_CLEANER_MIN_RECLAIM` | Non-empty size threshold (e.g. `500M`, `2G`) enabling `--min-reclaim` (overridden by CLI `--min-reclaim`). User-level prune actions (`uv`/`pnpm`/`hf`) are sized at run time and do not count toward the threshold. |
 | `LINUX_CLEANER_RISK` | Sets the default `--risk` ceiling (`safe`, `medium`, or `danger`; overridden by `-r/--risk`). |
 | `LINUX_CLEANER_TRASH` | When `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
 | `LINUX_CLEANER_EXCLUDE` | Non-empty comma-separated glob list enabling `--exclude` (overridden by `-e/--exclude`). |
@@ -290,7 +292,7 @@ danger|Chromium IndexedDB|$HOME/.config/chromium/Default/IndexedDB|Site-specific
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `MIN_RECLAIM`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
 
 ### Exit status
 

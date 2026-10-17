@@ -3437,6 +3437,78 @@ else
   exit 1
 fi
 
+# --min-reclaim / LINUX_CLEANER_MIN_RECLAIM: skip cleanup when planned reclaim is below threshold.
+setup_mock_env
+if run_test_case "Min Reclaim Above Total Skips" 0 "min_reclaim_skip.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-reclaim 1T; then
+  if grep -q "is below --min-reclaim 1T; nothing was cleaned." "$TEST_ENV_DIR/min_reclaim_skip.log" \
+     && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+    echo -e "${GREEN}PASS: --min-reclaim 1T skips cleanup and keeps files intact.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-reclaim 1T did not skip cleanup or deleted files.${NC}"
+    cat "$TEST_ENV_DIR/min_reclaim_skip.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Min Reclaim Below Total Cleans" 0 "min_reclaim_clean.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-reclaim 1K; then
+  if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+    echo -e "${GREEN}PASS: --min-reclaim 1K proceeds with cleanup when threshold is met.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-reclaim 1K did not clean files.${NC}"
+    cat "$TEST_ENV_DIR/min_reclaim_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Min Reclaim Env${NC}"
+setup_mock_env
+min_reclaim_env_ec=0
+LINUX_CLEANER_MIN_RECLAIM=1T PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/env_min_reclaim.log" 2>&1 || min_reclaim_env_ec=$?
+if [[ "$min_reclaim_env_ec" -eq 0 ]] \
+   && grep -q "is below --min-reclaim 1T; nothing was cleaned." "$TEST_ENV_DIR/env_min_reclaim.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_MIN_RECLAIM=1T skips cleanup and keeps files intact.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_MIN_RECLAIM=1T did not skip cleanup (ec=$min_reclaim_env_ec).${NC}"
+  cat "$TEST_ENV_DIR/env_min_reclaim.log"
+  exit 1
+fi
+
+if run_test_case "Min Reclaim Invalid Size" 1 "min_reclaim_invalid.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 10X --dry-run; then
+  if grep -q -- "--min-reclaim expects a size" "$TEST_ENV_DIR/min_reclaim_invalid.log"; then
+    echo -e "${GREEN}PASS: --min-reclaim 10X is rejected with a clear error.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-reclaim 10X did not report expected size error.${NC}"
+    cat "$TEST_ENV_DIR/min_reclaim_invalid.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Min Reclaim With Restore Rejected" 1 "min_reclaim_norestore.log" \
+     --min-reclaim 1G --restore latest; then
+  if grep -q "min-reclaim applies only to cleanup" "$TEST_ENV_DIR/min_reclaim_norestore.log"; then
+    echo -e "${GREEN}PASS: --min-reclaim with --restore is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-reclaim with --restore was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/min_reclaim_norestore.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # --quiet: minimal output for unattended cron runs.
 echo -e "\n${BOLD}Test Case: Quiet Dry Run Output${NC}"
 if run_test_case "Quiet Dry Run" 0 "quiet_dry.log" \

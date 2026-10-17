@@ -207,6 +207,32 @@ Cannot be combined with
 or
 .BR \-\-report .
 .TP
+.B \-\-min\-reclaim \fISIZE\fR
+Used with cleanup: skip the run when the planned reclaimable total is below
+.IR SIZE
+(an integer with an optional
+.BR K ", " M ", " G ", or " T
+1024-based unit, such as
+.B 500M
+or
+.BR 2G ).
+User-level prune actions
+.RB ( uv / pnpm / hf )
+are sized at run time and do not count toward the threshold. In dry-run mode,
+prints a note when a cleanup run would skip; in a cleanup run, prints why
+nothing was cleaned, saves
+.BI "Result: skipped below \-\-min\-reclaim " SIZE
+in the last cleanup report, and exits 0. Exits 1 on a malformed
+.IR SIZE .
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+or
+.BR \-\-report .
+.TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
 Each target records one UID/GID pair, applied on a best-effort basis during
@@ -297,6 +323,15 @@ When set to a non-empty pattern (or comma-separated list; empty entries are reje
 .BR \-\-exclude\-target
 (substring match on config target
 .BR NAME ).
+CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_MIN_RECLAIM
+When set to a non-empty size threshold (such as
+.B 500M
+or
+.BR 2G ),
+enables
+.BR \-\-min\-reclaim .
 CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_RISK
