@@ -49,5 +49,5 @@ When adding CLI/env/JSON surface:
 
 - `Man Page Option Consistency`
 - Environment mirror block (`LINUX_CLEANER_*` tests)
-- JSON output cases (`JSON Dry Run`, `List Targets JSON`, `List Sessions JSON`, `List Sessions JSON Empty`)
+- JSON output cases (`JSON Dry Run`, `List Targets JSON`, `List Sessions JSON`, `List Sessions JSON Empty`, `Report JSON After Cleanup`, `Report JSON After Interrupted Cleanup`, `Report JSON Without Report`)
 - `List Targets JSON` must assert additive inventory keys (`description`, `min_age_days`, `check_processes`, `custom_action`) when those fields ship
