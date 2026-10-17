@@ -628,7 +628,8 @@ emit_list_targets_json() {
 # Replace every whole-token occurrence of $NAME (arg 2) with VALUE (arg 3) in
 # STRING (arg 1). "Whole token" means the $NAME is not immediately followed by
 # an identifier character, so $HOMEDATA / $USERNAME are left literal -- only the
-# explicit $HOME / $USER placeholders are resolved (no eval, no substring creep).
+# explicit $HOME / $USER / $XDG_*_HOME placeholders are resolved (no eval, no
+# substring creep).
 _expand_var_token() {
   local str="$1" name="$2" value="$3"
   local token="\$$name"
@@ -647,7 +648,23 @@ _expand_var_token() {
   printf '%s' "$out$rest"
 }
 
-# Expand standard environment variables in a safe way (avoiding eval)
+# Print the effective XDG base directory for variable NAME (arg 1), using its
+# environment value only when it is an absolute path (starts with /), or
+# DEFAULT (arg 2) when unset, empty, or relative (per XDG Base Directory spec).
+_xdg_dir() {
+  local name="$1" default="$2"
+  local val="${!name:-}"
+  if [[ "$val" == /* ]]; then
+    printf '%s' "$val"
+  else
+    printf '%s' "$default"
+  fi
+}
+
+# Expand standard environment variables in a safe way (avoiding eval):
+# leading ~, $HOME, $USER, $XDG_CACHE_HOME, $XDG_CONFIG_HOME, $XDG_DATA_HOME,
+# and $XDG_STATE_HOME (XDG variables fall back to their spec default when unset
+# or relative).
 expand_path_safe() {
   local raw_path="$1"
   local expanded="$raw_path"
@@ -660,10 +677,15 @@ expand_path_safe() {
     expanded="$HOME/${expanded:2}"
   fi
 
-  # Replace $HOME and $USER only as whole tokens (so $HOMEDATA / $USERNAME stay
-  # literal, matching the documented "explicit placeholders only" contract).
-  expanded=$(_expand_var_token "$expanded" "HOME" "$HOME")
-  expanded=$(_expand_var_token "$expanded" "USER" "$USER")
+  # Replace $HOME, $USER, and the four XDG base-directory variables only as
+  # whole tokens (so $HOMEDATA / $USERNAME / $XDG_CACHE_HOMEX stay literal,
+  # matching the documented "explicit placeholders only" contract).
+  expanded=$(_expand_var_token "$expanded" "HOME" "${HOME:-}")
+  expanded=$(_expand_var_token "$expanded" "USER" "${USER:-}")
+  expanded=$(_expand_var_token "$expanded" "XDG_CACHE_HOME" "$(_xdg_dir "XDG_CACHE_HOME" "${HOME:-}/.cache")")
+  expanded=$(_expand_var_token "$expanded" "XDG_CONFIG_HOME" "$(_xdg_dir "XDG_CONFIG_HOME" "${HOME:-}/.config")")
+  expanded=$(_expand_var_token "$expanded" "XDG_DATA_HOME" "$(_xdg_dir "XDG_DATA_HOME" "${HOME:-}/.local/share")")
+  expanded=$(_expand_var_token "$expanded" "XDG_STATE_HOME" "$(_xdg_dir "XDG_STATE_HOME" "${HOME:-}/.local/state")")
 
   echo "$expanded"
 }

@@ -2436,6 +2436,59 @@ else
   exit 1
 fi
 
+# 44b. Test Case: XDG base-directory placeholders ($XDG_CACHE_HOME, $XDG_CONFIG_HOME,
+# $XDG_DATA_HOME, $XDG_STATE_HOME) expand as whole tokens when absolute, fall back
+# to spec defaults when unset or relative, and leave longer token names literal.
+# The dry-run JSON reports each target's expanded, canonical path.
+xdg_target_path() {
+  python3 -c 'import json, sys
+d = json.load(open(sys.argv[1]))
+print([t["path"] for t in d["targets"] if t["name"] == sys.argv[2]][0])' "$1" "$2"
+}
+setup_mock_env
+mkdir -p "$TEST_ENV_DIR/xdg_cache_dir/xdg_probe"
+printf 'probe\n' > "$TEST_ENV_DIR/xdg_cache_dir/xdg_probe/f.txt"
+cat << 'XDGCONF' > "$TEST_ENV_DIR/xdg_probe.conf"
+safe|XDG Probe|$XDG_CACHE_HOME/xdg_probe|xdg placeholder|0||
+safe|XDG Longer|$HOME/$XDG_CACHE_HOMEX/zz|longer token stays literal|0||
+XDGCONF
+xdg_def_expected="$(realpath -m "$MOCK_HOME/.cache/xdg_probe")"
+for xdg_case in absolute unset relative; do
+  echo -e "\n${BOLD}Test Case: XDG Cache Placeholder ($xdg_case)${NC}"
+  xdg_log="$TEST_ENV_DIR/xdg_${xdg_case}.json"
+  xdg_ec=0
+  case "$xdg_case" in
+    absolute)
+      xdg_expected="$(realpath -m "$TEST_ENV_DIR/xdg_cache_dir/xdg_probe")"
+      XDG_CACHE_HOME="$TEST_ENV_DIR/xdg_cache_dir" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+        "$CLEANER_SH" --config "$TEST_ENV_DIR/xdg_probe.conf" --dry-run --json \
+        < /dev/null > "$xdg_log" 2>&1 || xdg_ec=$?
+      ;;
+    unset)
+      xdg_expected="$xdg_def_expected"
+      env -u XDG_CACHE_HOME PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+        "$CLEANER_SH" --config "$TEST_ENV_DIR/xdg_probe.conf" --dry-run --json \
+        < /dev/null > "$xdg_log" 2>&1 || xdg_ec=$?
+      ;;
+    relative)
+      xdg_expected="$xdg_def_expected"
+      XDG_CACHE_HOME=rel PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+        "$CLEANER_SH" --config "$TEST_ENV_DIR/xdg_probe.conf" --dry-run --json \
+        < /dev/null > "$xdg_log" 2>&1 || xdg_ec=$?
+      ;;
+  esac
+  # shellcheck disable=SC2016  # the literal $XDG_CACHE_HOMEX must not expand
+  if [[ $xdg_ec -eq 0 ]] \
+     && [[ "$(xdg_target_path "$xdg_log" "XDG Probe")" == "$xdg_expected" ]] \
+     && [[ "$(xdg_target_path "$xdg_log" "XDG Longer")" == *'/$XDG_CACHE_HOMEX/zz' ]]; then
+    echo -e "${GREEN}PASS: \$XDG_CACHE_HOME ($xdg_case) resolved to '$xdg_expected' and \$XDG_CACHE_HOMEX stayed literal.${NC}"
+  else
+    echo -e "${RED}FAIL: \$XDG_CACHE_HOME ($xdg_case) did not resolve to '$xdg_expected' (ec=$xdg_ec).${NC}"
+    cat "$xdg_log"
+    exit 1
+  fi
+done
+
 # 45. Test Case: --interactive per-target confirmation (y cleans, n skips)
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/interactive.conf"

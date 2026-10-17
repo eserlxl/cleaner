@@ -279,9 +279,11 @@ If set to a path under
 enables the operation log without
 .BR \-\-log .
 The path accepts the same
-.BR $HOME ", " ~
+.BR $HOME ", " ~ ", " $USER ,
+.BR $XDG_CACHE_HOME ", " $XDG_CONFIG_HOME ,
+.BR $XDG_DATA_HOME ,
 and
-.B $USER
+.B $XDG_STATE_HOME
 placeholders as configuration targets. A path outside
 .BR $HOME
 is refused and logging is disabled.
@@ -392,9 +394,20 @@ rejected with a line-numbered error.
 resolves the
 .BR $HOME ,
 .BR ~ ,
+.BR $USER ,
+.BR $XDG_CACHE_HOME ,
+.BR $XDG_CONFIG_HOME ,
+.BR $XDG_DATA_HOME ,
 and
-.B $USER
-placeholders, and may also contain
+.B $XDG_STATE_HOME
+placeholders (when an XDG variable is unset or set to a relative path, it falls
+back to its XDG Base Directory specification default:
+.IR $HOME/.cache ,
+.IR $HOME/.config ,
+.IR $HOME/.local/share ,
+or
+.IR $HOME/.local/state ),
+and may also contain
 .B *
 or
 .B ?
@@ -480,8 +493,13 @@ case-sensitive) protects a directory tree from cleanup.
 expands
 .BR $HOME ,
 .BR ~ ,
-and
 .BR $USER ,
+.BR $XDG_CACHE_HOME ,
+.BR $XDG_CONFIG_HOME ,
+.BR $XDG_DATA_HOME ,
+and
+.BR $XDG_STATE_HOME
+(relative XDG values fall back to the spec default),
 is physically canonicalized, and need not exist; an empty path, a relative path
 after expansion, a path containing glob characters
 .RB ( * ", " ? ", " [ ),

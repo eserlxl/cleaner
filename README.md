@@ -132,7 +132,7 @@ Security threat model: [docs/threat-model.md](docs/threat-model.md).
 1. **Dry-run by default**: Running `cleaner` without `--clean`, `--force`, `--interactive`, or `LINUX_CLEANER_FORCE=1` never modifies the filesystem.
 2. **System directories are `UNSAFE`**: Targets resolving to `/`, `$HOME` itself, any target containing `$HOME` (an ancestor of it), `/home`, `/root`, `/usr`, `/var`, `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/bin`, `/sbin`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, or `/lib*` are flagged `[UNSAFE]` and skipped. Descendants outside `$HOME` (such as `/opt/...` or `/var/cache/...`) are allowed.
 3. **Symlink refusal & physical canonicalization**: If a target path is itself a symlink, it is flagged `[SYMLINK]` and refused. Target paths are physically canonicalized through their closest existing parent directory to prevent `..` traversal or symlink escapes.
-4. **No `eval`, no shell globbing**: Path expansion substitutes only whole-token `$HOME`, leading `~`, and `$USER`. Wildcards are evaluated by `find` below a literal prefix, never by the shell or `eval`.
+4. **No `eval`, no shell globbing**: Path expansion substitutes only whole-token `$HOME`, leading `~`, `$USER`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` (unset or relative XDG values fall back to their XDG Base Directory specification defaults). Wildcards are evaluated by `find` below a literal prefix, never by the shell or `eval`.
 5. **Running-process checks**: Targets with `CHECK_PROCESSES` are skipped (`[BLOCKED]`) while any listed process or `cmdline:<pattern>` is active.
 6. **Whole-directory idle check for C/C++ builds**: With `filter:cxx_build` and `MIN_AGE_DAYS > 0` (14 days in `cleaner.conf`), the cleaner checks whether **any** file inside the build tree was modified within the threshold. Active builds are left completely untouched; only build trees idle for the full 14 days are removed as a whole, preventing broken half-cleaned build directories.
 7. **Git-tracked file guard**: When `git` is available and the cleaner runs as a non-root user on a non-sudo target, any target inside a Git work tree that contains git-tracked files is skipped (`[SKIP]`).
@@ -152,7 +152,7 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 
 - **`RISK_LEVEL`**: `safe`, `medium`, or `danger`.
 - **`NAME`**: Non-empty human-readable target name (e.g. `NPM Cache`).
-- **`PATH_EXPRESSION`**: Non-empty path to clean. Supports `$HOME`, leading `~`, and `$USER` whole-token expansion, plus `*`, `?`, and `**` directory wildcards.
+- **`PATH_EXPRESSION`**: Non-empty path to clean. Supports `$HOME`, leading `~`, `$USER`, `$XDG_CACHE_HOME` (default `$HOME/.cache`), `$XDG_CONFIG_HOME` (default `$HOME/.config`), `$XDG_DATA_HOME` (default `$HOME/.local/share`), and `$XDG_STATE_HOME` (default `$HOME/.local/state`) whole-token expansion (unset or relative XDG values fall back to the spec default), plus `*`, `?`, and `**` directory wildcards.
 - **`DESCRIPTION`**: Brief explanation of what the target cleans.
 - **`MIN_AGE_DAYS`**: Numeric minimum age in days (`find -mtime +N`), or `0`/empty to clean the target regardless of age. When paired with `filter:cxx_build`, `MIN_AGE_DAYS > 0` is an idle threshold for the directory as a whole.
 - **`CHECK_PROCESSES`**: (Optional) Comma-separated process names (`pgrep -x`, comparing the first 15 characters for longer plain names) or `cmdline:<pattern>` tokens matching the full command line. Use `cmdline:<install-path>` (e.g. `cmdline:/usr/share/cursor`) for Electron or Node apps that do not run under their own binary name. The cleaner excludes its own process ancestry, descendants, and exited PIDs so its own invocation never self-blocks.
@@ -195,7 +195,7 @@ A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target 
 - **Fixed depth by default**: Matches must sit at the exact depth after the literal prefix (e.g. `$HOME/src/*/build*` matches `~/src/app/build` but not `~/src/a/b/build`).
 - **`**` spans nesting levels**: A `**` component matches one or more directory levels, bounded at **10 levels** (`GLOB_RECURSION_MAX_DEPTH=10`) below the literal prefix.
 - **Directories only**: Wildcard expansion matches directories (`-type d`), never individual files.
-- **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing newlines, `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER` tokens are skipped with a warning; a pattern with no matches is not an error.
+- **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing newlines, `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` tokens are skipped with a warning; a pattern with no matches is not an error.
 
 > [!WARNING]
 > One wildcard line can expand to many targets. Always preview with `cleaner --dry-run` and `cleaner --list-targets` before cleaning.
@@ -211,7 +211,7 @@ protect|/opt/important
 
 Any target whose canonical path equals `PATH`, lies inside `PATH`, or contains `PATH` (matched on whole path components, so `protect|/opt/a` does not match `/opt/ab`) is skipped as a whole. For example, `protect|/opt/work/app/build` prevents the `/opt/**/build*` row from cleaning that build directory while leaving sibling projects eligible.
 
-- `PATH` supports `$HOME`, `$USER`, and leading `~`, must be absolute after expansion, cannot contain wildcards (`*`, `?`, `[`), and does not need to exist yet. Symlinks are resolved physically.
+- `PATH` supports `$HOME`, `$USER`, leading `~`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` (relative XDG values fall back to the spec default), must be absolute after expansion, cannot contain wildcards (`*`, `?`, `[`), and does not need to exist yet. Symlinks are resolved physically.
 - `protect` lines are not listed by `--list-targets` or counted as targets by `--check-config`.
 - Skipped targets appear under `Protected (by config):` in the plan report, as `[PROTECTED]` under `--debug`, and with `"status": "protected"` in `--dry-run --json`.
 
@@ -319,7 +319,7 @@ cleaner --clean --log                                      # logs to ~/.cache/li
 LINUX_CLEANER_LOG=$HOME/.cache/linux-cleaner/ops.log cleaner --clean
 ```
 
-- The log path supports `$HOME`, `~`, and `$USER` placeholders and **must resolve inside `$HOME`** (paths outside `$HOME` are refused and logging is disabled).
+- The log path supports `$HOME`, `~`, `$USER`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` placeholders (relative XDG values fall back to the spec default) and **must resolve inside `$HOME`** (paths outside `$HOME` are refused and logging is disabled).
 - Records one line per real cleanup target (`mode=delete|quarantine|action`), per restored target (`mode=restore`, outcome `success`/`failed`/`conflict`/`missing`), or per purged session (`mode=purge`), and never logs file contents or secrets:
 
 ```text
