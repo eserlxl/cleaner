@@ -2820,6 +2820,18 @@ result_failed_names=""
 
 QUARANTINE_DIR=""
 
+handle_cleanup_signal() {
+  local sig="$1" code="$2"
+  trap - INT TERM
+  RESULT_REPORT_TEXT="$(print_result_report)"$'\n'"Interrupted: ${sig} before all targets finished"
+  printf '%s\n' "$RESULT_REPORT_TEXT"
+  save_last_cleanup_report
+  log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=run outcome=interrupted signal=${sig}"
+  exit "$code"
+}
+trap 'handle_cleanup_signal SIGINT 130' INT
+trap 'handle_cleanup_signal SIGTERM 143' TERM
+
 for i in "${!parsed_names[@]}"; do
   name="${parsed_names[$i]}"
   target_failed=false
@@ -3124,6 +3136,7 @@ for i in "${!parsed_names[@]}"; do
     result_cleaned=$((result_cleaned + 1))
   fi
 done
+trap - INT TERM
 
 RESULT_REPORT_TEXT=$(print_result_report)
 printf '%s\n' "$RESULT_REPORT_TEXT"

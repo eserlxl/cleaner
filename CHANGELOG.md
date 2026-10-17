@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- A cleanup interrupted by `SIGINT` or `SIGTERM` prints and saves its partial result report (ending with `Interrupted: SIGINT|SIGTERM before all targets finished`) to `last-report.txt`, logs `mode=run outcome=interrupted` when `--log` is enabled, and exits `130` (`SIGINT`) or `143` (`SIGTERM`).
 - Mutating runs (`--clean`/`--force`/`--interactive`, `--restore`, and `--purge-sessions`) acquire a non-blocking `flock` lock on `~/.cache/linux-cleaner/cleaner.lock` (refusing symlinks) and exit `1` when another mutating run is already in progress; dry-run and read-only modes never take the lock.
 - A dry-run that found something to clean ends with a `Next:` line naming
   `cleaner --clean` (and `--trash` for quarantine), hidden under `--quiet`.

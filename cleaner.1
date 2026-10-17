@@ -657,7 +657,16 @@ should run
 and, after removal,
 .BR "systemctl \-\-user daemon\-reload" .
 .SH EXIT STATUS
-Returns 0 on success and non-zero (1) on a configuration/usage error, a concurrent
+Returns 0 on success, 130
+.RB ( SIGINT )
+or 143
+.RB ( SIGTERM )
+when a cleanup is interrupted by a signal (after printing and saving the partial
+result report with an
+.B "Interrupted: SIGINT|SIGTERM before all targets finished"
+line and logging
+.B "mode=run outcome=interrupted"
+when logging is enabled), and non-zero (1) on a configuration/usage error, a concurrent
 mutating run holding
 .IR ~/.cache/linux\-cleaner/cleaner.lock ,
 or a failed operation.

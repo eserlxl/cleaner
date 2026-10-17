@@ -6375,5 +6375,82 @@ if ! run_test_case "Concurrent Run Lock Refuses Symlink" 1 "concurrent_lock_sym.
 fi
 echo -e "${GREEN}PASS: concurrent mutating runs exit 1 on lock contention while dry-run and read-only modes remain unaffected.${NC}"
 
+# An interrupted cleanup (SIGINT/SIGTERM) saves a partial result report with
+# "Interrupted: SIGINT|SIGTERM before all targets finished", logs one
+# mode=run outcome=interrupted line when --log is enabled, and exits 130/143;
+# an uninterrupted run has no "Interrupted:" line.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/int_first" "$MOCK_HOME/.cache/int_second" "$MOCK_HOME/.cache/int_third"
+printf 'first-payload\n' > "$MOCK_HOME/.cache/int_first/a.txt"
+printf 'second-payload\n' > "$MOCK_HOME/.cache/int_second/b.txt"
+printf 'third-payload\n' > "$MOCK_HOME/.cache/int_third/c.txt"
+cat > "$TEST_ENV_DIR/interrupted_clean.conf" <<'EOF'
+safe|Int First|$HOME/.cache/int_first|First target cleaned before signal|0||
+safe|Int Second|$HOME/.cache/int_second|Second target triggers SIGTERM|0||
+safe|Int Third|$HOME/.cache/int_third|Third target never reached|0||
+EOF
+cat > "$TEST_ENV_DIR/bin/rm" <<'TERM_RM'
+#!/usr/bin/env bash
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+for arg in "$@"; do
+  case "$arg" in
+    *int_second*)
+      "$real_rm" "$@"
+      kill -TERM "$PPID"
+      exit 0
+      ;;
+  esac
+done
+exec "$real_rm" "$@"
+TERM_RM
+chmod +x "$TEST_ENV_DIR/bin/rm"
+int_ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$int_ops_log"
+int_report_file="$XDG_STATE_HOME/linux-cleaner/last-report.txt"
+rm -f "$int_report_file"
+
+if ! run_test_case "Interrupted Cleanup Saves Report" 143 "interrupted_clean.log" \
+       --config "$TEST_ENV_DIR/interrupted_clean.conf" --clean --force --log; then
+  rm -f "$TEST_ENV_DIR/bin/rm"
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/bin/rm"
+
+if [[ -e "$MOCK_HOME/.cache/int_first" ]] \
+   || [[ ! -f "$MOCK_HOME/.cache/int_third/c.txt" ]] \
+   || [[ ! -f "$int_report_file" ]] \
+   || ! grep -q '^Result: cleaned=1 skipped=0 failed=0 ' "$int_report_file" \
+   || ! grep -qx 'Interrupted: SIGTERM before all targets finished' "$int_report_file" \
+   || ! grep -qx 'Interrupted: SIGTERM before all targets finished' "$TEST_ENV_DIR/interrupted_clean.log" \
+   || ! grep -q 'mode=run outcome=interrupted' "$int_ops_log"; then
+  echo -e "${RED}FAIL: SIGTERM-interrupted cleanup did not save partial report, print Interrupted line, or log outcome=interrupted.${NC}"
+  cat "$TEST_ENV_DIR/interrupted_clean.log" "$int_report_file" "$int_ops_log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Interrupted Cleanup Report Command" 0 "interrupted_report_cmd.log" --report \
+   || ! grep -qx 'Interrupted: SIGTERM before all targets finished' "$TEST_ENV_DIR/interrupted_report_cmd.log" \
+   || ! cmp -s "$int_report_file" "$TEST_ENV_DIR/interrupted_report_cmd.log"; then
+  echo -e "${RED}FAIL: --report did not print the saved interrupted cleanup report.${NC}"
+  cat "$TEST_ENV_DIR/interrupted_report_cmd.log" 2>/dev/null || true
+  exit 1
+fi
+
+# Uninterrupted cleanup has no "Interrupted:" line in stdout or last-report.txt.
+mkdir -p "$MOCK_HOME/.cache/int_first" "$MOCK_HOME/.cache/int_second" "$MOCK_HOME/.cache/int_third"
+printf 'first-payload\n' > "$MOCK_HOME/.cache/int_first/a.txt"
+printf 'second-payload\n' > "$MOCK_HOME/.cache/int_second/b.txt"
+printf 'third-payload\n' > "$MOCK_HOME/.cache/int_third/c.txt"
+if ! run_test_case "Uninterrupted Cleanup Report Has No Interrupted Line" 0 "uninterrupted_clean.log" \
+       --config "$TEST_ENV_DIR/interrupted_clean.conf" --clean --force \
+   || grep -q 'Interrupted:' "$TEST_ENV_DIR/uninterrupted_clean.log" \
+   || grep -q 'Interrupted:' "$int_report_file" \
+   || ! grep -q '^Result: cleaned=3 skipped=0 failed=0 ' "$int_report_file"; then
+  echo -e "${RED}FAIL: uninterrupted cleanup report contained an unexpected Interrupted: line.${NC}"
+  cat "$TEST_ENV_DIR/uninterrupted_clean.log" "$int_report_file" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: interrupted cleanup saves partial report and logs outcome=interrupted; uninterrupted run has no Interrupted line.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
