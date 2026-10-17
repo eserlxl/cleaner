@@ -2592,6 +2592,8 @@ for i in "${!parsed_names[@]}"; do
   # Interactive mode confirmation (ask for each target)
   if [[ "$INTERACTIVE" = true && "$proceed_all" = false && "$danger_prompted" != true ]]; then
     readable_size=$(format_bytes "$size")
+    # User-level prune actions are not sized in advance; 0 B would mislead.
+    action_is_user_level "${parsed_cmds[$i]:-}" && readable_size="size at run time"
     if has_positive_age "$age"; then
       echo -n -e "Clean old files (> $age days) in '$name' ($readable_size) at '$path'? [y/N]: "
     else

@@ -5612,5 +5612,27 @@ fi
 unset MOCK_SUDO_LOG MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: system action still routes through sudo while user action runs directly as the user.${NC}"
 
+# 7. --interactive shows "size at run time" rather than 0 B for user-level prune actions.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv"
+printf 'uv-entry\n' > "$MOCK_HOME/.cache/uv/entry.bin"
+cat > "$TEST_ENV_DIR/user_action_interactive.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+EOF
+echo -e "\n${BOLD}Test Case: User Action Interactive Shows Run-Time Size${NC}"
+inter_log="$TEST_ENV_DIR/user_action_interactive.log"
+inter_ec=0
+printf 'y\n' | PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/user_action_interactive.conf" --interactive > "$inter_log" 2>&1 || inter_ec=$?
+if [[ $inter_ec -eq 0 ]] \
+   && grep -q "Clean target 'UV Cache' (size at run time) at" "$inter_log" \
+   && ! grep -q "Clean target 'UV Cache' (0 B)" "$inter_log"; then
+  echo -e "${GREEN}PASS: --interactive shows 'size at run time' for user-level prune actions.${NC}"
+else
+  echo -e "${RED}FAIL: --interactive did not show 'size at run time' for user-level prune action (ec=$inter_ec).${NC}"
+  cat "$inter_log"
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
