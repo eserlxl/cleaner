@@ -64,7 +64,7 @@ Options:
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
-  --debug                    Show per-target FOUND and CLEAN lines (suppressed by default; overridden by --quiet).
+  --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, or --list-sessions inventory).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.

@@ -79,7 +79,7 @@ Suppress per-target status lines and the decorative header; errors, total
 savings, and the final summary still print.
 .TP
 .B \-\-debug
-Show per-target FOUND and CLEAN lines (suppressed by default; overridden by
+Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by
 .BR \-\-quiet ).
 .TP
 .B \-\-json
@@ -264,7 +264,7 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-debug
-(show per-target FOUND and CLEAN lines). No CLI flag disables it; set it to 0 or unset it.
+(show per-target FOUND, CLEAN and PROTECTED lines). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to
@@ -584,7 +584,7 @@ Enable quiet mode via environment (same as
 .BR \-\-quiet ):
 .B LINUX_CLEANER_QUIET=1 cleaner \-\-dry\-run
 .TP
-Show per-target FOUND and CLEAN lines via environment (same as
+Show per-target FOUND, CLEAN and PROTECTED lines via environment (same as
 .BR \-\-debug ):
 .B LINUX_CLEANER_DEBUG=1 cleaner \-\-dry\-run
 .TP

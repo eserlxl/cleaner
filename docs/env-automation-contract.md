@@ -7,7 +7,7 @@ Cross-walk of environment variables, CLI flags, truthy values, and constraints. 
 | `LINUX_CLEANER_CONFIG` | `-c`, `--config FILE` | non-empty path | Explicit `-c/--config` overrides; when unset, XDG/system/dev search order unchanged | aligned |
 | `LINUX_CLEANER_LOG` | `--log [FILE]` | non-empty path | Path must resolve under `$HOME`; tilde/`$HOME`/`$USER` expansion allowed | aligned |
 | `LINUX_CLEANER_QUIET` | `-q`, `--quiet` | `1`, `true`, `yes` | CLI can only enable; set to 0 or unset to disable | aligned |
-| `LINUX_CLEANER_DEBUG` | `--debug` | `1`, `true`, `yes` | Shows per-target FOUND and CLEAN lines; CLI can only enable; set to 0 or unset to disable | aligned |
+| `LINUX_CLEANER_DEBUG` | `--debug` | `1`, `true`, `yes` | Shows per-target FOUND, CLEAN and PROTECTED lines; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_JSON` | `--json` | `1`, `true`, `yes` | Valid with dry-run (`--dry-run` or default), `--list-targets`, or `--list-sessions`; CLI can only enable; set to 0 or unset to disable | aligned |
 | `LINUX_CLEANER_ONLY_TARGET` | `--only-target PATTERN` | non-empty pattern | Substring on config `NAME`; mutex with restore/purge/list modes | aligned |
 | `LINUX_CLEANER_EXCLUDE_TARGET` | `--exclude-target PATTERN` | non-empty pattern | Substring on config `NAME`; mutex with restore/purge/list modes | aligned |
