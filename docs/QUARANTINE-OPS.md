@@ -57,7 +57,7 @@ Selective restore: `--restore latest --only PATTERN` (`Restore Only One Target`,
 
 ### Conflict and partial failure
 
-If destination exists, restore skips (`Restore with Conflict`). If the original path (full or aged) or any existing intermediate directory component up to the destination file's parent (aged) is a symlink, restore treats it as a conflict without following the link (`Restore Aged Subdir Symlink Conflict`, `Restore Aged Original Path Symlink Conflict`, `Restore Full Original Path Symlink Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry.
+If destination exists, restore skips (`Restore with Conflict`). If the original path (full or aged) or any existing intermediate directory component up to the destination file's parent (aged) is a symlink, restore treats it as a conflict without following the link (`Restore Aged Subdir Symlink Conflict`, `Restore Aged Original Path Symlink Conflict`, `Restore Full Original Path Symlink Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry. A retry after an interrupted restore finishes the job: a whole-target record whose payload is gone while its original path is back is treated as already restored and dropped (`Restore Retry After Interrupted Restore`); a payload missing with the original also absent still fails (`Restore Missing Source Still Fails`). A cleanup killed during an aged quarantine already wrote that target's record, so its moved files restore normally (`Trash Aged Interrupted Keeps Metadata`).
 
 If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; the inventory lists recorded targets only.
 
@@ -69,6 +69,7 @@ If restore reports `Unrecorded quarantine payload`, the session contains data no
 | `--only PATTERN` without `--restore` | 1 | Only Without Restore Rejected |
 | `--restore SESSION --dry-run` | 1 | Dry Run With Restore Rejected |
 | `--restore SESSION --json` | 1 | JSON With Restore Rejected |
+| `--restore SESSION` while another cleanup, restore or purge holds `~/.cache/linux-cleaner/cleaner.lock` | 1 | Concurrent Run Lock Restore |
 
 Restore and purge have no dry-run mode. An active explicit `--dry-run` with either is rejected before mutation (`Dry Run With Restore Rejected`, `Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`.
 
@@ -88,14 +89,15 @@ Troubleshooting: missing timestamp exits 1 (`Purge Missing Session`); distinguis
 
 ```
 file missing after cron? → list-sessions → restore latest [--only PATH]
-quarantine disk full? → older-than retention or selective purge latest
+quarantine disk full? → older-than retention, purge-sessions max-size:SIZE budget, or selective purge latest
+cross-filesystem target refused? → free space in HOME, or clean it without --trash
 wrong target cleaned? → selective restore --only
 retention too aggressive? → increase DAYS; restore from remaining sessions if any
 ```
 
 ## Test contract appendix
 
-Purge Older-Than Retention, Purge Older-Than No Match, Purge Older-Than Invalid Days, Restore Only One Target, Full Restore After Selective Restore, Restore with Conflict, Restore with Partial Failure, Failed Quarantine Move Not Recorded, Trash Action Warning, Purge Missing Session, Only Target With Restore Rejected, Only Without Restore Rejected, Only Target With List Targets Rejected, Only Target With List Sessions Rejected, Only Target With Purge Rejected.
+Purge Older-Than Retention, Purge Older-Than No Match, Purge Older-Than Invalid Days, Restore Only One Target, Full Restore After Selective Restore, Restore with Conflict, Restore with Partial Failure, Failed Quarantine Move Not Recorded, Trash Action Warning, Purge Missing Session, Only Target With Restore Rejected, Only Without Restore Rejected, Only Target With List Targets Rejected, Only Target With List Sessions Rejected, Only Target With Purge Rejected, Restore Retry After Interrupted Restore, Restore Missing Source Still Fails, Trash Aged Interrupted Keeps Metadata, Concurrent Run Lock Restore, Concurrent Run Lock Purge, Purge Sessions Max Size Keeps Newest, Trash Keep Days Purges Old Sessions, Trash Cross Filesystem Space Guard.
 
 ## Maintainer sign-off
 
