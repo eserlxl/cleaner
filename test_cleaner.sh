@@ -2832,6 +2832,47 @@ else
   exit 1
 fi
 
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/rmfail_test"
+echo "undeletable" > "$MOCK_HOME/.cache/rmfail_test/data.txt"
+: > "$MOCK_HOME/.cache/zero_byte.bin"
+cat << 'EOF' > "$TEST_ENV_DIR/outcome.conf"
+safe|Rmfail Target|$HOME/.cache/rmfail_test|Target whose delete fails|0||
+safe|Zero Byte Target|$HOME/.cache/zero_byte.bin|Empty file target|0||
+EOF
+cat << 'EOF' > "$TEST_ENV_DIR/bin/rm"
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *rmfail_test*) exit 1 ;;
+  esac
+done
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+exec "$real_rm" "$@"
+EOF
+chmod +x "$TEST_ENV_DIR/bin/rm"
+if run_test_case "Log Records Failed And Zero-Byte Outcomes" 1 "outcome_log.log" \
+     --config "$TEST_ENV_DIR/outcome.conf" --clean --force \
+     --log "$MOCK_HOME/.cache/linux-cleaner/outcome.log"; then
+  rm -f "$TEST_ENV_DIR/bin/rm"
+  outcome_log="$MOCK_HOME/.cache/linux-cleaner/outcome.log"
+  if [[ -f "$outcome_log" ]] \
+     && grep -q "mode=delete .*target='Rmfail Target'.* outcome=failed" "$outcome_log" \
+     && grep -q "mode=delete .*target='Zero Byte Target'.* outcome=success" "$outcome_log" \
+     && ! grep -q "outcome=attempted" "$outcome_log"; then
+    echo -e "${GREEN}PASS: log records failed and zero-byte delete outcomes as failed/success.${NC}"
+  else
+    echo -e "${RED}FAIL: log did not record the expected failed and zero-byte delete outcomes.${NC}"
+    cat "$TEST_ENV_DIR/outcome_log.log"
+    cat "$outcome_log" 2>/dev/null
+    exit 1
+  fi
+else
+  rm -f "$TEST_ENV_DIR/bin/rm"
+  echo -e "${RED}FAIL: log records failed and zero-byte outcomes run did not exit 1 (silent failure).${NC}"
+  exit 1
+fi
+
 # Control: the same config with a working rm must still exit 0.
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/rmfail_test"

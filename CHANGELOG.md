@@ -36,6 +36,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   together with `HOME`.
 - User-level prune actions now prune the configured target path instead of the
   tool's default cache location.
+- The operation log now records `outcome=failed` for a failed delete or
+  quarantine move and `outcome=success` for a successful one, instead of
+  `outcome=attempted`.
 
 ## [1.4.2] - 2026-10-16
 

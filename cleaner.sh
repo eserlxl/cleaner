@@ -2610,7 +2610,6 @@ for i in "${!parsed_names[@]}"; do
   # Handle Cleanup
   custom_clean_cmd="${parsed_cmds[$i]:-}"
   set_target_exclusions "$custom_clean_cmd"
-  cleanup_bytes_before=$total_deleted_bytes
 
   if [[ "$custom_clean_cmd" == action:* ]]; then
     # Safe degradation: skip an action whose actual binary is absent, before any
@@ -2841,10 +2840,10 @@ for i in "${!parsed_names[@]}"; do
   # action path logs and continues before reaching here). Records only
   # path/metadata the tool already prints -- never file contents.
   if [[ "$LOG_ENABLED" == true ]]; then
-    if [[ "$total_deleted_bytes" -gt "$cleanup_bytes_before" ]]; then
-      op_outcome=success
+    if [[ "$target_failed" == true ]]; then
+      op_outcome=failed
     else
-      op_outcome=attempted
+      op_outcome=success
     fi
     if [[ "$TRASH_MODE" = true ]]; then
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=quarantine risk=${risk_level} target='${name}' path='${path}' outcome=${op_outcome}"
