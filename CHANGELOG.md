@@ -42,6 +42,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `--purge-sessions older-than:DAYS` now exits 0 when no quarantine directory
   exists, so the weekly retention timer no longer fails in delete mode or after
   a purge removed the last session.
+- A running Claude Code CLI (process `claude`) no longer blocks cleanup of the
+  Claude Desktop caches; those rows are guarded by `claude-desktop` only.
 
 ## [1.4.2] - 2026-10-16
 
