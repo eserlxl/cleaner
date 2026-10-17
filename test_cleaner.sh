@@ -4622,6 +4622,153 @@ with tempfile.TemporaryDirectory(prefix="cleaner-canonical-path-", dir="/tmp") a
     assert "logging disabled" in result.stderr, result
 CANONICAL_PATH_PY
 
+# XDG storage paths may contain LF; preserve their identity instead of trimming it.
+setup_mock_env
+python3 - "$CLEANER_SH" <<'XDG_STORAGE_PY'
+import hashlib, json, os, pathlib, stat, subprocess, sys, tempfile
+cleaner = sys.argv[1]
+source = pathlib.Path(cleaner).read_text()
+def body(name):
+    start = source.index(name + "() {")
+    return source[start:source.index("\n}", start) + 2]
+with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home = root / "home"
+    home.mkdir()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), NO_COLOR="1")
+    cache = home / "cache"
+    cache.mkdir()
+    (cache / "payload").write_text("keep cache payload\n")
+    def config_text(marker):
+        return "safe|" + marker + "|" + str(cache) + "|fixture|0||\n"
+    def report_text(marker):
+        return "Saved: " + marker + "\nResult: cleaned=1 skipped=0 failed=0 elapsed=2s\n"
+    def seed(parent, filename, text):
+        destination = parent / "linux-cleaner" / filename
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(text)
+        return destination
+    def snapshot():
+        return {str(p.relative_to(root)): (stat.S_IMODE(p.lstat().st_mode),
+                os.readlink(p) if p.is_symlink() else hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None)
+                for p in root.rglob("*")}
+    def run(label, args, overrides=None, status=0, readonly=True):
+        print("Test Case: XDG Storage " + label, flush=True)
+        before = snapshot()
+        result = subprocess.run([cleaner] + args, env=env | (overrides or {}), capture_output=True, text=True, timeout=20)
+        assert result.returncode == status, (label, result)
+        if readonly:
+            assert snapshot() == before, (label, "read-only operation changed fixture")
+        return result
+    def passed(label):
+        print("PASS: XDG Storage " + label, flush=True)
+    for suffix, marker in (("", "PLAIN"), ("\n", "LF"), ("\n\n", "MULTIPLE_LF")):
+        state, config_parent = root / ("state" + suffix), root / ("config" + suffix)
+        report = seed(state, "last-report.txt", report_text(marker))
+        config = seed(config_parent, "cleaner.conf", config_text(marker))
+        for fmt in ("human", "json"):
+            label = marker + " report " + fmt
+            result = run(label, ["--report"] + (["--json"] if fmt == "json" else []), {"XDG_STATE_HOME": str(state)})
+            assert (json.loads(result.stdout)["saved"] == marker if fmt == "json" else result.stdout == report.read_text()), result
+            passed(label)
+        label = marker + " config discovery"
+        result = run(label, ["--list-targets", "--json"], {"XDG_CONFIG_HOME": str(config_parent)})
+        inventory = json.loads(result.stdout)
+        assert inventory["config"] == str(config) and inventory["targets"][0]["name"] == marker, inventory
+        passed(label)
+        label = marker + " config check"
+        result = run(label, ["--check-config"], {"XDG_CONFIG_HOME": str(config_parent)})
+        assert result.stdout == "OK: 1 targets in " + str(config) + "\n", result
+        passed(label)
+    default_report = seed(home / ".local/state", "last-report.txt", report_text("DEFAULT"))
+    default_config = seed(home / ".config", "cleaner.conf", config_text("DEFAULT"))
+    for label, value in (("unset", None), ("empty", ""), ("relative", "relative/path")):
+        overrides = {} if value is None else {"XDG_STATE_HOME": value, "XDG_CONFIG_HOME": value}
+        result = run(label + " report default", ["--report"], overrides)
+        assert result.stdout == default_report.read_text(), result
+        passed(label + " report default")
+        result = run(label + " config default", ["--list-targets", "--json"], overrides)
+        assert json.loads(result.stdout)["config"] == str(default_config), result
+        passed(label + " config default")
+    explicit = root / "explicit.conf"
+    explicit.write_text(config_text("EXPLICIT"))
+    result = run("explicit config precedence", ["--config", str(explicit), "--list-targets", "--json"],
+                 {"XDG_CONFIG_HOME": str(root / "config\n\n")})
+    assert json.loads(result.stdout)["targets"][0]["name"] == "EXPLICIT", result
+    passed("explicit config precedence")
+    if os.environ.get("XDG_STORAGE_READ_ONLY") != "1":
+        # Never execute these writers on a buggy baseline comparison.
+        for suffix in ("\n", "\n\n"):
+            parent = root / ("init" + suffix)
+            sibling = seed(root / "init", "sentinel", "keep config sibling\n")
+            label = "initialize exact config " + repr(suffix)
+            run(label, ["--config", str(explicit), "--init-config"], {"XDG_CONFIG_HOME": str(parent)}, readonly=False)
+            destination = parent / "linux-cleaner/cleaner.conf"
+            assert destination.read_bytes() == explicit.read_bytes()
+            assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+            assert stat.S_IMODE(destination.parent.stat().st_mode) == 0o700
+            assert stat.S_IMODE(destination.stat().st_mode) == 0o644
+            assert sibling.read_text() == "keep config sibling\n" and not sibling.with_name("cleaner.conf").exists()
+            passed(label)
+            label = "exact overwrite refused " + repr(suffix)
+            run(label, ["--config", str(explicit), "--init-config"], {"XDG_CONFIG_HOME": str(parent)}, status=1)
+            passed(label)
+        link_parent = root / "init-link\n"
+        link_parent.symlink_to(root / "init", target_is_directory=True)
+        result = run("exact init symlink refused", ["--config", str(explicit), "--init-config"], {"XDG_CONFIG_HOME": str(link_parent)}, status=1)
+        assert "is a symlink" in result.stderr, result
+        passed("exact init symlink refused")
+        writer = root / "writer.sh"
+        writer.write_text("#!/bin/bash\nset -euo pipefail\n" + body("_xdg_dir") + "\n" + body("save_last_cleanup_report") +
+                          '\nPLAN_REPORT_TEXT="Plan: exact storage"\nRESULT_REPORT_TEXT="Result: cleaned=1 skipped=0 failed=0 elapsed=2s"\nRESULT_FAILED_TARGETS=()\numask 022\nsave_last_cleanup_report\n')
+        for suffix in ("\n", "\n\n"):
+            parent = root / ("written" + suffix)
+            sibling = seed(root / "written", "last-report.txt", "keep report sibling\n")
+            label = "save exact report " + repr(suffix)
+            print("Test Case: XDG Storage " + label, flush=True)
+            result = subprocess.run(["bash", str(writer)], env=env | {"XDG_STATE_HOME": str(parent)}, capture_output=True, text=True, timeout=20)
+            assert result.returncode == 0 and not result.stderr, result
+            destination = parent / "linux-cleaner/last-report.txt"
+            assert "Plan: exact storage" in destination.read_text()
+            assert stat.S_IMODE(destination.parent.stat().st_mode) == 0o700 and stat.S_IMODE(destination.stat().st_mode) == 0o600
+            assert sibling.read_text() == "keep report sibling\n"
+            passed(label)
+            result = run("read written report " + repr(suffix), ["--report", "--json"], {"XDG_STATE_HOME": str(parent)})
+            assert json.loads(result.stdout)["cleaned"] == 1, result
+            passed("read written report " + repr(suffix))
+        protected = root / "writer-link\n/linux-cleaner"
+        protected.parent.mkdir()
+        protected.symlink_to(root / "written/linux-cleaner", target_is_directory=True)
+        before = snapshot()
+        print("Test Case: XDG Storage exact report symlink refused", flush=True)
+        result = subprocess.run(["bash", str(writer)], env=env | {"XDG_STATE_HOME": str(protected.parent)}, capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0 and "symlink" in result.stderr and snapshot() == before, result
+        passed("exact report symlink refused")
+        result = run("exact reader symlink refused", ["--report"], {"XDG_STATE_HOME": str(protected.parent)}, status=1)
+        assert "No cleanup report yet" in result.stderr, result
+        passed("exact reader symlink refused")
+        # Inject a failing stdout helper only around the actual consumers, keeping
+        # failure propagation observable without changing the executable under test.
+        failure = '_xdg_dir() { printf "%s" "$HOME/partial\\n"; return 23; }\n'
+        discovery_start = source.index('if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true ]]; then')
+        discovery = source[discovery_start:source.index("\n# Trim whitespace", discovery_start)]
+        for label, code, status in (("init helper failure", body("init_user_config") + "\ninit_user_config", 1),
+                                    ("reader helper failure", body("show_last_report") + "\nshow_last_report", 1),
+                                    ("writer helper failure best effort", body("save_last_cleanup_report") + "\nsave_last_cleanup_report", 0),
+                                    ("discovery helper failure", discovery, 1),
+                                    ("explicit config skips discovery helper", 'CONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
+            probe = root / "helper-failure.sh"
+            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\n' + failure + code + "\n")
+            before = snapshot()
+            print("Test Case: XDG Storage " + label, flush=True)
+            result = subprocess.run(["bash", str(probe)], env=env | {"EXPLICIT": str(explicit)}, capture_output=True, text=True, timeout=20)
+            assert result.returncode == status and result.stdout == "" and snapshot() == before, (label, result)
+            if label.startswith("writer"):
+                assert "could not resolve the cleanup report directory" in result.stderr, result
+            passed(label)
+XDG_STORAGE_PY
+
 if run_test_case "List Targets With Restore Rejected" 1 "list_targets_bad.log" \
      --restore latest --list-targets; then
   if grep -q "list-targets cannot be combined" "$TEST_ENV_DIR/list_targets_bad.log"; then

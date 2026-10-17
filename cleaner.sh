@@ -524,7 +524,8 @@ _xdg_dir() {
 # Copy the active configuration file to the user config path without overwriting.
 init_user_config() {
   local xdg_parent dest_dir dest src="" candidate tmp
-  xdg_parent="$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config")"
+  xdg_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || return 1
+  xdg_parent=${xdg_parent%.}
   dest_dir="$xdg_parent/linux-cleaner"
   dest="$dest_dir/cleaner.conf"
 
@@ -604,8 +605,10 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != 
   # Resolve the default config by search order when -c/--config was not given:
   # XDG user config > system config > dev-checkout config beside the script.
   if [[ -z "$CONFIG_FILE" ]]; then
+    xdg_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || exit 1
+    xdg_config_parent=${xdg_config_parent%.}
     for candidate in \
-        "$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config")/linux-cleaner/cleaner.conf" \
+        "$xdg_config_parent/linux-cleaner/cleaner.conf" \
         "/etc/linux-cleaner/cleaner.conf" \
         "$SCRIPT_DIR/cleaner.conf"; do
       if [[ -f "$candidate" ]]; then
@@ -2440,7 +2443,8 @@ print_result_report() {
 # Read-only print of the last saved cleanup report. A symlink is not followed.
 show_last_report() {
   local state_dir report_file
-  state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
+  state_dir=$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state" && printf '.') || return 1
+  state_dir="${state_dir%.}/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
     echo "No cleanup report yet." >&2
@@ -2545,7 +2549,11 @@ show_last_report() {
 # untrusted, so a symlink is never followed and readers never see a partial file.
 save_last_cleanup_report() {
   local state_dir report_file tmp body failed_name
-  state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
+  if ! state_dir=$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state" && printf '.'); then
+    echo "Warning: could not resolve the cleanup report directory." >&2
+    return 0
+  fi
+  state_dir="${state_dir%.}/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" ]]; then
     echo "Warning: refusing to write the cleanup report; the state path is a symlink." >&2

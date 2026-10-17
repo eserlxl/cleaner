@@ -41,6 +41,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Configuration discovery/initialization and saved reports preserve exact absolute
+  XDG directory names, including trailing line feeds, instead of selecting a sibling.
+
 - Physical path resolution preserves component identity and fails closed on line
   feeds or resolver errors across cleanup, protection, safety checks, and logging.
 
