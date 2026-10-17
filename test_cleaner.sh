@@ -3491,6 +3491,88 @@ else
   exit 1
 fi
 
+python3 - "$CLEANER_SH" <<'RESTORE_EXACT_PY'
+import hashlib, json, os, pathlib, subprocess, sys, tempfile
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory(prefix="cleaner-restore-exact-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home, bindir, guards = root / "home", root / "bin", root / "guards"
+    short, sibling = home / "caches/cache", home / "caches/cache-copy"
+    literal = home / "literal/space [*?], comma/cache"
+    for path in (short, sibling, literal):
+        path.mkdir(parents=True)
+        (path / "payload").write_text(str(path) + "\n")
+    config = root / "fixture.conf"
+    config.write_text("safe|Short|$HOME/caches/cache|short|0||\n"
+                      "safe|Sibling|$HOME/caches/cache-copy|sibling|0||\n"
+                      "safe|Literal|$HOME/literal/*/cache|literal path|0||\n")
+    bindir.mkdir()
+    guards.mkdir()
+    trace = root / "forbidden-calls"
+    for name in ("sudo", "uv", "pnpm", "hf"):
+        path = bindir / name
+        path.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$RESTORE_TRACE"\nexit 99\n')
+        path.chmod(0o755)
+    (guards / "flock").write_text('#!/bin/sh\nprintf "flock\\n" >> "$RESTORE_TRACE"\nexit 99\n')
+    (guards / "flock").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1",
+               PATH=str(bindir) + ":" + env["PATH"], RESTORE_TRACE=str(trace))
+    def snapshot():
+        return {str(p.relative_to(home)): (p.lstat().st_mode, os.readlink(p) if p.is_symlink()
+                else hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None) for p in home.rglob("*")}
+    def run(label, args, error=None, prelock=False):
+        print("Test Case: Restore Exact " + label, flush=True)
+        before = snapshot()
+        current = env | ({"PATH": str(guards) + ":" + env["PATH"]} if prelock else {})
+        result = subprocess.run([cleaner, "--config", str(config)] + args, env=current, cwd=home,
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == (1 if error else 0), (label, result)
+        if error:
+            assert error in result.stderr and snapshot() == before, (label, result)
+        assert not trace.exists(), (label, "privilege/action/early-lock call")
+        print("PASS: Restore Exact " + label, flush=True)
+        return result
+    for label, args, error in [
+        ("missing argument", ["--restore", "latest", "--only-exact"], "requires a path argument"),
+        ("empty argument", ["--restore", "latest", "--only-exact", ""], "requires a path argument"),
+        ("requires restore", ["--only-exact", str(short), "--clean", "--force"], "--only-exact requires --restore"),
+        ("mixed substring first", ["--restore", "latest", "--only", "cache", "--only-exact", str(short)], "cannot be combined"),
+        ("mixed exact first", ["--restore", "latest", "--only-exact", str(short), "--only", "cache"], "cannot be combined"),
+    ]:
+        run(label, args, error, prelock=True)
+    run("quarantine prefix siblings", ["--clean", "--trash", "--force"])
+    inventory = json.loads(run("inventory paths", ["--list-sessions", "--json"]).stdout)
+    session = home / ".cache/linux-cleaner/quarantine" / inventory["sessions"][0]["timestamp"]
+    assert {t["path"] for t in inventory["sessions"][0]["targets"]} == {str(short), str(sibling), str(literal)}
+    for label, value in (("no match", str(home / "missing")), ("argument not trimmed", str(short) + " "),
+                         ("no normalization", str(short) + "/"), ("no expansion", "$HOME/caches/cache"),
+                         ("no wildcards", str(short) + "*"), ("no comma list", str(short) + "," + str(sibling))):
+        run(label, ["--restore", "latest", "--only-exact", value], "matches '--only-exact ")
+    run("shorter original path", ["--restore", "latest", "--only-exact", str(short)])
+    assert (short / "payload").read_text() == str(short) + "\n" and not sibling.exists() and not literal.exists()
+    meta = session / "quarantine.meta"
+    pending = [line.split("|") for line in meta.read_text().splitlines()]
+    assert {r[2] for r in pending} == {str(sibling), str(literal)}
+    assert all((session / r[1] / "payload").read_text() == r[2] + "\n" for r in pending)
+    run("full after shorter path", ["--restore", "latest"])
+    assert not session.exists() and all((p / "payload").read_text() == str(p) + "\n" for p in (short, sibling, literal))
+    run("quarantine literal path", ["--clean", "--trash", "--force"])
+    run("literal and repeated exact last wins", ["--restore", "latest", "--only-exact", str(short), "--only-exact", str(literal)])
+    assert (literal / "payload").is_file() and not short.exists() and not sibling.exists()
+    run("full after literal path", ["--restore", "latest"])
+    run("quarantine substring compatibility", ["--clean", "--trash", "--force"])
+    run("substring and repeated last wins", ["--restore", "latest", "--only", "absent", "--only", str(short)])
+    assert (short / "payload").is_file() and (sibling / "payload").is_file() and not literal.exists()
+    run("full after substring", ["--restore", "latest"])
+    relative_session = home / ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00"
+    relative_session.mkdir(parents=True)
+    (relative_session / "payload").write_text("relative fixture\n")
+    (relative_session / "quarantine.meta").write_text(f"full|payload|relative-cache|false|{os.getuid()}|{os.getgid()}\n")
+    run("literal relative stored path", ["--restore", "latest", "--only-exact", "relative-cache"])
+    assert (home / "relative-cache").read_text() == "relative fixture\n" and not relative_session.exists()
+RESTORE_EXACT_PY
+
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_JSON Requires Dry Run${NC}"
 LINUX_CLEANER_JSON=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
   "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --force --clean \
@@ -7992,6 +8074,25 @@ if ! run_test_case "Aged Restore Marker Selective" 0 "checkpoint_only.log" --res
    || [[ -e "$checkpoint_session" ]]; then
   exit 1
 fi
+# Exact selection shares aged checkpoint retirement and leaves siblings retryable.
+for exact_layout in aged aged-restored; do
+  setup_restore_checkpoint none
+  if [[ "$exact_layout" == aged-restored ]]; then
+    mv "$checkpoint_session/0_First/item" "$checkpoint_first/item"
+    sed -i 's/^aged|0_First|/aged-restored|0_First|/' "$checkpoint_session/quarantine.meta"
+  fi
+  if ! run_test_case "Restore Exact Aged Selection ($exact_layout)" 0 "checkpoint_exact.log" \
+       --restore latest --only-exact "$checkpoint_first" \
+     || ! grep -qx first "$checkpoint_first/item" || [[ -e "$checkpoint_session/0_First" ]] \
+     || [[ "$(wc -l < "$checkpoint_session/quarantine.meta")" -ne 2 ]] \
+     || ! grep -qx second "$checkpoint_session/1_Second/item" || ! grep -qx sibling "$checkpoint_session/2_Sibling" \
+     || ! run_test_case "Restore Exact Aged Followup ($exact_layout)" 0 "checkpoint_exact_retry.log" --restore latest \
+     || [[ -e "$checkpoint_session" ]] || ! grep -qx second "$checkpoint_second/item" \
+     || ! grep -qx sibling "$checkpoint_sibling"; then
+    echo -e "${RED}FAIL: exact aged selection did not preserve pending sibling recovery.${NC}"
+    exit 1
+  fi
+done
 unset MOCK_RESTORE_SESSION MOCK_RESTORE_HOOK
 echo -e "${GREEN}PASS: completed aged checkpoints survive interruptions and metadata failures without discarding pending payload.${NC}"
 

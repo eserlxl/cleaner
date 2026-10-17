@@ -239,6 +239,25 @@ of that session still succeeds. Exits 1 if no target matches, or if
 .B \-\-only
 is given without
 .BR \-\-restore .
+Cannot be mixed with
+.BR \-\-only\-exact ;
+repeating the same selector uses its last value.
+.TP
+.B \-\-only\-exact \fIPATH\fR
+Used with
+.BR \-\-restore :
+select records whose original path equals the nonempty literal
+.IR PATH .
+Copy the path shown by session inventory (or its JSON targets[].path).
+The argument is not trimmed, expanded or normalized and need not be absolute
+or exist. Wildcards, descendants and comma lists have no special meaning.
+Unselected targets stay quarantined for a later restore. Exits 1 on no match
+or without
+.BR \-\-restore .
+Cannot be mixed with
+.B \-\-only
+in either order; repeating the same selector uses its last value.
+This option has no environment mirror.
 .TP
 .B \-\-only\-target \fIPATTERN\fR
 Used with cleanup or configured-target inventory: process only config targets whose

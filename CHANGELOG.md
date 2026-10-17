@@ -21,6 +21,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--restore --only-exact PATH` selects records by their literal original path,
+  preserving prefix siblings and their recovery metadata for later restoration.
+
 - The installed monitor accepts an optional independent `monitor.env` profile for
   scoped JSON previews; explicit dry-run/JSON flags preserve preview-only behavior.
 

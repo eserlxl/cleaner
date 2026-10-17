@@ -59,6 +59,7 @@ Options:
   --init-config              Copy the active config to your user config path (never overwrites).
   --restore SESSION          Restore files from quarantine session (latest or timestamp).
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
+  --only-exact PATH          With --restore: match a literal original path from session inventory; excludes --only.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
@@ -89,6 +90,7 @@ MAX_RISK="safe"
 EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
 RESTORE_ONLY=""
+RESTORE_ONLY_MODE="--only"
 ONLY_TARGET=""
 EXCLUDE_TARGET=""
 ONLY_PATH=""
@@ -254,11 +256,20 @@ while [[ $# -gt 0 ]]; do
       RESTORE_TARGET="$2"
       shift 2
       ;;
-    --only)
+    --only|--only-exact)
       if [[ -z "${2:-}" ]]; then
-        echo -e "${RED}Error: --only requires a pattern argument.${NC}" >&2
+        if [[ "$1" == --only ]]; then
+          echo -e "${RED}Error: --only requires a pattern argument.${NC}" >&2
+        else
+          echo -e "${RED}Error: --only-exact requires a path argument.${NC}" >&2
+        fi
         exit 1
       fi
+      if [[ -n "$RESTORE_ONLY" && "$RESTORE_ONLY_MODE" != "$1" ]]; then
+        echo "Error: --only and --only-exact cannot be combined." >&2
+        exit 1
+      fi
+      RESTORE_ONLY_MODE="$1"
       RESTORE_ONLY="$2"
       shift 2
       ;;
@@ -432,10 +443,10 @@ if [[ "$DRY_RUN_EXPLICIT" == true && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET
   exit 1
 fi
 
-# --only only means anything as a filter on --restore; silently ignoring it would
+# Restore selectors only mean anything as filters on --restore; ignoring one would
 # let a user believe a cleanup or purge was narrowed when it was not.
 if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
-  echo -e "${RED}Error: --only requires --restore (it filters which quarantined targets are restored).${NC}" >&2
+  echo -e "${RED}Error: ${RESTORE_ONLY_MODE} requires --restore (it filters which quarantined targets are restored).${NC}" >&2
   exit 1
 fi
 
@@ -1897,9 +1908,13 @@ restore_quarantine() {
     [[ -z "$type" || "$type" =~ ^# ]] && continue
 
     original_path=$(trim "$original_path")
-    # --only: leave every non-matching target quarantined, untouched.
-    if [[ -n "${RESTORE_ONLY:-}" && "$original_path" != *"$RESTORE_ONLY"* ]]; then
-      continue
+    # Leave every non-matching target quarantined, untouched.
+    if [[ -n "${RESTORE_ONLY:-}" ]]; then
+      if [[ "$RESTORE_ONLY_MODE" == --only-exact ]]; then
+        [[ "$original_path" == "$RESTORE_ONLY" ]] || continue
+      else
+        [[ "$original_path" == *"$RESTORE_ONLY"* ]] || continue
+      fi
     fi
     matched_any=true
 
@@ -2069,9 +2084,9 @@ restore_quarantine() {
     fi
   done < "$meta_file"
 
-  # A --only pattern that matched nothing restored nothing: say so, don't succeed silently.
+  # A selector that matched nothing restored nothing: fail instead of succeeding silently.
   if [[ -n "${RESTORE_ONLY:-}" && "$matched_any" != true ]]; then
-    echo -e "${RED}Error: No quarantined target in this session matches '--only ${RESTORE_ONLY}'.${NC}" >&2
+    echo -e "${RED}Error: No quarantined target in this session matches '${RESTORE_ONLY_MODE} ${RESTORE_ONLY}'.${NC}" >&2
     exit 1
   fi
 

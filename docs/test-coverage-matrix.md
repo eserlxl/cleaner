@@ -23,6 +23,7 @@
 | U-102 | Environment project scope shares human/JSON inventory, dry-run and isolated cleanup selection; literal paths, CLI overrides, empty defaults, invalid effective scopes, mode/retention exclusions and read-only state/probe guards remain enforced | Only Path human/json environment / Only Path CLI overrides / Only Path environment mutex / Only Path environment dry-run parity / Only Path environment clean one shared-NAME project |
 | U-103 | Installed monitor command previews default, independent and explicitly shared profiles; config/risk/NAME/path/exclusion selection, inherited execution/JSON overrides and invalid combinations preserve payload and all report/log/quarantine/lock state | Monitor Profile |
 | U-104 | Config initialization preserves regular, directory, symlink and dangling destinations appearing at final publication, reports refusal without success or temporary leaks, and preserves true move-failure cleanup and normal mode `0644` | Init Config Publication |
+| U-105 | Exact restore selects literal inventory paths without prefix-sibling matches, preserves pending metadata and aged checkpoints, supports later full restore and repeated selectors, and rejects mixed/invalid usage before locking | Restore Exact |
 
 ## 1.3.0 shipped feature inventory
 

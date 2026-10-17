@@ -65,7 +65,22 @@ Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does n
 
 A named `SESSION` (anything other than `latest`) must be an immediate child of the quarantine base: path separators and `.`/`..` are rejected (`Restore Invalid Session`). The same rule applies to named `--purge-sessions` arguments (`Purge Invalid Session`).
 
-Selective restore: `--restore latest --only PATTERN` (`Restore Only One Target`, `Full Restore After Selective Restore`).
+Selective substring restore: `--restore latest --only PATTERN` (`Restore Only One Target`, `Full Restore After Selective Restore`).
+
+To recover `/cache` without also recovering `/cache-copy`, copy the exact original
+path from `--list-sessions` or JSON `sessions[].targets[].path`:
+
+```sh
+cleaner --restore latest --only-exact "/absolute/path/cache"
+```
+
+`--only-exact` compares its nonempty argument byte-for-byte with the trimmed stored
+path shown by inventory, selecting every record with that exact path. It does not trim, expand, normalize, require an absolute
+or existing path, or interpret wildcards, descendants or comma lists. Unselected
+payload and metadata stay available for a later full restore; no match exits `1`
+without changing payload or metadata. Both selectors require `--restore`, cannot
+be mixed in either order, and use the last value when the same option repeats.
+There is no environment mirror for `--only-exact`.
 
 ### Conflict and partial failure
 
