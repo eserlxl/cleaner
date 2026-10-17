@@ -6704,5 +6704,133 @@ if ! run_test_case "Trash Keep Days Nothing To Clean" 0 "tkd_idle.log" \
 fi
 echo -e "${GREEN}PASS: --trash-keep-days also runs when there is nothing to clean.${NC}"
 
+# --report --json: emit machine-readable JSON for the saved cleanup report
+# (completed, nothing_to_clean, skipped_below_min_reclaim, and interrupted runs),
+# or exit 1 when no report exists yet.
+setup_mock_env
+rjson_state_dir="$XDG_STATE_HOME/linux-cleaner"
+rjson_report_file="$rjson_state_dir/last-report.txt"
+rm -rf "$XDG_STATE_HOME"
+
+if ! run_test_case "Report JSON Without Report" 1 "report_json_missing.log" \
+       --report --json \
+   || ! grep -qx 'No cleanup report yet.' "$TEST_ENV_DIR/report_json_missing.log"; then
+  echo -e "${RED}FAIL: --report --json did not exit 1 with 'No cleanup report yet.' when no report exists.${NC}"
+  cat "$TEST_ENV_DIR/report_json_missing.log" 2>/dev/null || true
+  exit 1
+fi
+
+mkdir -p "$MOCK_HOME/.cache/rjson_target"
+printf 'payload\n' > "$MOCK_HOME/.cache/rjson_target/file.txt"
+cat > "$TEST_ENV_DIR/rjson.conf" <<'EOF'
+safe|Report JSON Target|$HOME/.cache/rjson_target|Report JSON test target|0||
+EOF
+
+if ! run_test_case "Report JSON Seed Cleanup" 0 "report_json_seed.log" \
+       --config "$TEST_ENV_DIR/rjson.conf" --clean --trash --force; then
+  exit 1
+fi
+
+if ! run_test_case "Report JSON After Cleanup" 0 "report_json_clean.log" \
+       --report --json \
+   || ! python3 -m json.tool < "$TEST_ENV_DIR/report_json_clean.log" > "$TEST_ENV_DIR/report_json_clean_parsed.out" 2>"$TEST_ENV_DIR/report_json_clean.err" \
+   || ! python3 - "$TEST_ENV_DIR/report_json_clean_parsed.out" <<'PY'
+import json, re, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    d = json.load(fh)
+assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$", d["saved"]), d
+assert d["result"] == "completed", d
+assert d["cleaned"] == 1 and isinstance(d["cleaned"], int), d
+assert d["skipped"] == 0 and isinstance(d["skipped"], int), d
+assert d["failed"] == 0 and isinstance(d["failed"], int), d
+assert isinstance(d["elapsed_seconds"], int) and d["elapsed_seconds"] >= 0, d
+assert d["failed_targets"] == [], d
+assert isinstance(d["quarantine_session"], str) and "/quarantine/" in d["quarantine_session"], d
+assert d["interrupted"] is None, d
+PY
+then
+  echo -e "${RED}FAIL: --report --json after cleanup did not emit valid expected JSON.${NC}"
+  cat "$TEST_ENV_DIR/report_json_clean.log" "$TEST_ENV_DIR/report_json_clean.err" 2>/dev/null || true
+  exit 1
+fi
+
+# Verify nothing_to_clean and skipped_below_min_reclaim result variants as well.
+if ! run_test_case "Report JSON Seed Nothing To Clean" 0 "report_json_empty_seed.log" \
+       --config "$TEST_ENV_DIR/rjson.conf" --clean --force \
+   || ! "$CLEANER_SH" --report --json > "$TEST_ENV_DIR/report_json_empty.log" 2>&1 \
+   || ! python3 -m json.tool < "$TEST_ENV_DIR/report_json_empty.log" > "$TEST_ENV_DIR/report_json_empty_parsed.out" \
+   || ! python3 - "$TEST_ENV_DIR/report_json_empty_parsed.out" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    d = json.load(fh)
+assert d["result"] == "nothing_to_clean", d
+assert d["cleaned"] is None and d["skipped"] is None and d["failed"] is None and d["elapsed_seconds"] is None, d
+assert d["failed_targets"] == [] and d["quarantine_session"] is None and d["interrupted"] is None, d
+PY
+then
+  echo -e "${RED}FAIL: --report --json after nothing-to-clean run did not match schema.${NC}"
+  cat "$TEST_ENV_DIR/report_json_empty.log" 2>/dev/null || true
+  exit 1
+fi
+
+mkdir -p "$MOCK_HOME/.cache/rjson_target"
+printf 'tiny\n' > "$MOCK_HOME/.cache/rjson_target/file.txt"
+if ! run_test_case "Report JSON Seed Min Reclaim" 0 "report_json_min_seed.log" \
+       --config "$TEST_ENV_DIR/rjson.conf" --clean --force --min-reclaim 10M \
+   || ! "$CLEANER_SH" --report --json > "$TEST_ENV_DIR/report_json_min.log" 2>&1 \
+   || ! python3 -m json.tool < "$TEST_ENV_DIR/report_json_min.log" > "$TEST_ENV_DIR/report_json_min_parsed.out" \
+   || ! python3 - "$TEST_ENV_DIR/report_json_min_parsed.out" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    d = json.load(fh)
+assert d["result"] == "skipped_below_min_reclaim", d
+assert d["cleaned"] is None and d["skipped"] is None and d["failed"] is None and d["elapsed_seconds"] is None, d
+assert d["failed_targets"] == [] and d["quarantine_session"] is None and d["interrupted"] is None, d
+PY
+then
+  echo -e "${RED}FAIL: --report --json after --min-reclaim skip did not match schema.${NC}"
+  cat "$TEST_ENV_DIR/report_json_min.log" 2>/dev/null || true
+  exit 1
+fi
+
+# Interrupted cleanup report with failed_targets populated: verify --report --json.
+cat > "$rjson_report_file" <<'EOF'
+Saved: 2026-10-17T12:34:56
+Plan: mode=clean risk=safe config=/tmp/rjson.conf
+Targets: found=3 clean/missing=0 skipped=1 blocked=0 protected=0 unsafe/symlink=0 root=0
+Reclaimable by risk: safe=12.00 KB medium=0 B danger=0 B
+
+Result: cleaned=1 skipped=1 failed=2 elapsed=4s
+Failed targets: Alpha Cache, Beta Build
+Reclaimed: quarantined=0 B permanent=4.00 KB
+Interrupted: SIGTERM before all targets finished
+EOF
+
+if ! run_test_case "Report JSON After Interrupted Cleanup" 0 "report_json_interrupted.log" \
+       --report --json \
+   || ! python3 -m json.tool < "$TEST_ENV_DIR/report_json_interrupted.log" > "$TEST_ENV_DIR/report_json_interrupted_parsed.out" 2>"$TEST_ENV_DIR/report_json_interrupted.err" \
+   || ! python3 - "$TEST_ENV_DIR/report_json_interrupted_parsed.out" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    d = json.load(fh)
+assert d == {
+    "saved": "2026-10-17T12:34:56",
+    "result": "completed",
+    "cleaned": 1,
+    "skipped": 1,
+    "failed": 2,
+    "elapsed_seconds": 4,
+    "failed_targets": ["Alpha Cache", "Beta Build"],
+    "quarantine_session": None,
+    "interrupted": "SIGTERM",
+}, d
+PY
+then
+  echo -e "${RED}FAIL: --report --json after interrupted cleanup did not emit expected JSON.${NC}"
+  cat "$TEST_ENV_DIR/report_json_interrupted.log" "$TEST_ENV_DIR/report_json_interrupted.err" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --report --json emits valid JSON matching the saved report and exits 1 when absent.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

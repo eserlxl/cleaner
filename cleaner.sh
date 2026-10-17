@@ -68,7 +68,7 @@ Options:
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
   --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
-  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, or --list-sessions inventory).
+  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -467,10 +467,10 @@ if [[ -n "$TRASH_KEEP_DAYS" && "$CHECK_CONFIG" == true ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || \
-      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true ) \
+      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true || \
+      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true ) \
     ) ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, or --list-sessions.${NC}" >&2
+  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, --list-sessions, or --report.${NC}" >&2
   exit 1
 fi
 
@@ -2184,6 +2184,78 @@ show_last_report() {
   if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
     echo "No cleanup report yet." >&2
     exit 1
+  fi
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    local line saved="" result="" cleaned="null" skipped="null" failed="null" elapsed_seconds="null"
+    local failed_raw="" rest item first=true quarantine_session="" interrupted=""
+    local -a failed_targets=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      case "$line" in
+        "Saved: "*)
+          saved="${line#Saved: }"
+          ;;
+        "Result: nothing to clean")
+          result="nothing_to_clean"
+          ;;
+        "Result: skipped below --min-reclaim"*)
+          result="skipped_below_min_reclaim"
+          ;;
+        "Result: cleaned="*)
+          result="completed"
+          if [[ "$line" =~ ^Result:\ cleaned=([0-9]+)\ skipped=([0-9]+)\ failed=([0-9]+)\ elapsed=([0-9]+)s$ ]]; then
+            cleaned="${BASH_REMATCH[1]}"
+            skipped="${BASH_REMATCH[2]}"
+            failed="${BASH_REMATCH[3]}"
+            elapsed_seconds="${BASH_REMATCH[4]}"
+          fi
+          ;;
+        "Failed targets: "*)
+          failed_raw="${line#Failed targets: }"
+          rest="$failed_raw"
+          while [[ -n "$rest" ]]; do
+            if [[ "$rest" == *", "* ]]; then
+              item="${rest%%, *}"
+              rest="${rest#*, }"
+            else
+              item="$rest"
+              rest=""
+            fi
+            failed_targets+=("$item")
+          done
+          ;;
+        "Quarantine session: "*)
+          quarantine_session="${line#Quarantine session: }"
+          ;;
+        "Interrupted: "*)
+          interrupted="${line#Interrupted: }"
+          interrupted="${interrupted%% *}"
+          ;;
+      esac
+    done < "$report_file"
+    printf '{"saved":"%s","result":"%s","cleaned":%s,"skipped":%s,"failed":%s,"elapsed_seconds":%s,"failed_targets":[' \
+      "$(json_escape "$saved")" "$(json_escape "$result")" "$cleaned" "$skipped" "$failed" "$elapsed_seconds"
+    for item in "${failed_targets[@]}"; do
+      if [[ "$first" == true ]]; then
+        first=false
+      else
+        printf ','
+      fi
+      printf '"%s"' "$(json_escape "$item")"
+    done
+    printf '],"quarantine_session":'
+    if [[ -n "$quarantine_session" ]]; then
+      printf '"%s"' "$(json_escape "$quarantine_session")"
+    else
+      printf 'null'
+    fi
+    printf ',"interrupted":'
+    if [[ -n "$interrupted" ]]; then
+      printf '"%s"' "$(json_escape "$interrupted")"
+    else
+      printf 'null'
+    fi
+    printf '}\n'
+    return 0
   fi
   cat -- "$report_file"
 }

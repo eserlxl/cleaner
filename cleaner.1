@@ -118,6 +118,17 @@ emit a JSON inventory of quarantine sessions
 .RB ( sessions
 array of
 .BR timestamp / size_bytes / size_human / date / targets ).
+With
+.BR \-\-report ,
+emit a JSON summary of the saved last cleanup report
+.RB ( saved ,
+.BR result
+as
+.BR completed ", " nothing_to_clean ", or " skipped_below_min_reclaim ,
+.BR cleaned / skipped / failed / elapsed_seconds ,
+.BR failed_targets ,
+.BR quarantine_session ,
+.BR interrupted ).
 Implies
 .BR \-\-quiet .
 .TP
@@ -125,13 +136,16 @@ Implies
 Print the saved last cleanup report and exit. Read-only; requires no
 configuration file. Prints
 .B "No cleanup report yet."
-on stderr and exits 1 when the file is absent. Cannot be combined with
+on stderr and exits 1 when the file is absent. With
+.BR \-\-json ,
+emit a machine-readable JSON summary instead of plain text. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,
+.BR \-\-check\-config ,
 or
-.BR \-\-check\-config .
+.BR \-\-init\-config .
 .TP
 .B \-\-list\-sessions
 List quarantine sessions (read-only) and exit. Each session is shown with its
@@ -365,8 +379,9 @@ enables
 .BR \-\-json .
 Valid with dry-run,
 .BR \-\-list\-targets ,
+.BR \-\-list\-sessions ,
 or
-.BR \-\-list\-sessions ;
+.BR \-\-report ;
 No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_ONLY_TARGET

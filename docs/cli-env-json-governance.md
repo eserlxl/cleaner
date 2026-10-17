@@ -32,13 +32,14 @@ Documented mutual exclusions (enforced in code):
 - `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
-- `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, or `--list-sessions` (not `--report` or `--init-config`)
+- `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
+- `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, `--list-sessions`, or `--report` (saved report summary; not `--init-config`)
 - `--only` requires `--restore`
 - `--only-target` and `--exclude-target` vs `--check-config`
 - `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--report`, `--init-config`
 - `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`
-- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--min-reclaim`, `--json`
+- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--min-reclaim`, `--trash-keep-days`, `--json`
 
 See `test_cleaner.sh` mutex rejection cases.
 

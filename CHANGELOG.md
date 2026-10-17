@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--report --json` prints the saved last cleanup report as a machine-readable JSON object (`saved`, `result`, `cleaned`, `skipped`, `failed`, `elapsed_seconds`, `failed_targets`, `quarantine_session`, `interrupted`).
 - `--trash-keep-days DAYS` (and `LINUX_CLEANER_TRASH_KEEP_DAYS`) purges quarantine sessions older than `DAYS` days at the end of a non-dry-run cleanup.
 - `--trash` now checks free space on `~/.cache/linux-cleaner/quarantine` before a cross-filesystem quarantine move and refuses the target when its planned size exceeds available space (`Error: Not enough free space to quarantine '<name>' (needs X, Y free); left in place.`), leaving it in place; same-filesystem moves are renames and need no check.
 - A cleanup interrupted by `SIGINT` or `SIGTERM` prints and saves its partial result report (ending with `Interrupted: SIGINT|SIGTERM before all targets finished`) to `last-report.txt`, logs `mode=run outcome=interrupted` when `--log` is enabled, and exits `130` (`SIGINT`) or `143` (`SIGTERM`).
