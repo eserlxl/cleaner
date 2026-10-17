@@ -1299,6 +1299,7 @@ print_session_contents() {
   fi
   while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
     mtype=$(trim "$mtype")
+    [[ "$mtype" == aged-restored ]] && mtype=aged
     [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
     morig=$(trim "${morig:-}")
     echo -e "      ${mtype}  ${morig}"
@@ -1341,6 +1342,7 @@ emit_list_sessions_json() {
     if [[ -f "$meta" ]]; then
       while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
         mtype=$(trim "$mtype")
+        [[ "$mtype" == aged-restored ]] && mtype=aged
         [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
         morig=$(trim "${morig:-}")
         if [[ "$tgt_first" == true ]]; then
@@ -1647,6 +1649,30 @@ log_restore_outcome() {
   log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=restore session='$(basename "$1")' path='$2' outcome=$3"
 }
 
+# Scratch stays beside the session so an interrupted rewrite is not payload.
+write_quarantine_metadata() {
+  local meta="$1" tmp
+  shift
+  tmp=$(mktemp "$(dirname "$(dirname "$meta")")/.restore-meta.XXXXXX") || return 1
+  if { if [[ $# -gt 0 ]]; then printf '%s\n' "$@"; fi; } > "$tmp" \
+     && mv -f -- "$tmp" "$meta"; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
+}
+
+# A completed checkpoint authorizes only empty-directory removal, never payload.
+retire_aged_staging() {
+  local src="$1"
+  [[ -L "$src" ]] && return 1
+  if [[ -e "$src" ]]; then
+    [[ -d "$src" ]] || return 1
+    find "$src" -depth -type d -empty -delete 2>/dev/null || return 1
+  fi
+  [[ ! -e "$src" && ! -L "$src" ]]
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1"
@@ -1694,6 +1720,8 @@ restore_quarantine() {
   # rewritten from this so every remaining record still points at a file that is
   # present in quarantine -- the same invariant the failed-move fix established.
   local -a restored_rels=()
+  # Checkpoints atomically replace the pathname; this loop keeps its old inode.
+  # shellcheck disable=SC2094
   while IFS= read -r meta_line || [[ -n "$meta_line" ]]; do
     IFS='|' read -r type rel_path original_path use_sudo uid gid _ <<< "$meta_line"
     type=$(trim "$type")
@@ -1723,6 +1751,17 @@ restore_quarantine() {
     fi
     
     local src_path="$restore_dir/$rel_path"
+    if [[ "$type" == aged-restored ]]; then
+      if retire_aged_staging "$src_path"; then
+        restored_rels+=("$rel_path")
+        log_restore_outcome "$restore_dir" "$original_path" success
+      else
+        echo -e "${RED}Error: Completed restore staging '$src_path' still contains payload or could not be removed. Keeping its recovery record.${NC}" >&2
+        overall_success=false
+        log_restore_outcome "$restore_dir" "$original_path" failed
+      fi
+      continue
+    fi
     if [[ ! -e "$src_path" ]]; then
       # A whole-target payload that is gone while its original path is back was
       # restored by an interrupted earlier run. An aged target's directory always
@@ -1830,6 +1869,23 @@ restore_quarantine() {
       continue
     fi
     
+    if [[ "$success" == true && "$type" == aged ]]; then
+      local -a checkpoint=()
+      local checkpoint_line checkpoint_rel
+      # Earlier checkpoints replaced the inode still read by the outer loop.
+      while IFS= read -r checkpoint_line || [[ -n "$checkpoint_line" ]]; do
+        IFS='|' read -r _ checkpoint_rel _ <<< "$checkpoint_line"
+        if [[ "$(trim "$checkpoint_rel")" == "$rel_path" ]]; then
+          checkpoint_line="aged-restored|${checkpoint_line#*|}"
+        fi
+        checkpoint+=("$checkpoint_line")
+      done < "$meta_file"
+      if ! write_quarantine_metadata "$meta_file" "${checkpoint[@]}" \
+         || ! retire_aged_staging "$src_path"; then
+        success=false
+      fi
+    fi
+
     if [[ "$success" = false ]]; then
       echo -e "${RED}Error: Failed to restore '$original_path'.${NC}" >&2
       overall_success=false
@@ -1841,9 +1897,6 @@ restore_quarantine() {
     else
       restored_rels+=("$rel_path")
       log_restore_outcome "$restore_dir" "$original_path" success
-      if [[ "$type" == "aged" ]]; then
-        find "$src_path" -depth -type d -empty -delete 2>/dev/null || true
-      fi
     fi
   done < "$meta_file"
 
@@ -1873,12 +1926,9 @@ restore_quarantine() {
       [[ "$keep" == true ]] && retained+=("$line")
     done < "$meta_file"
 
-    if [[ ${#retained[@]} -eq 0 ]]; then
-      if [[ "$overall_success" != true ]]; then
-        : > "$meta_file"
-      fi
-    else
-      printf '%s\n' "${retained[@]}" > "$meta_file"
+    if ! write_quarantine_metadata "$meta_file" "${retained[@]}"; then
+      echo -e "${RED}Error: Failed to reconcile restore metadata; recovery records have been kept.${NC}" >&2
+      overall_success=false
     fi
   fi
 

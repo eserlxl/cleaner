@@ -6,6 +6,17 @@ Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine
 
 Restore trusts this metadata for source and destination paths, privilege use, and ownership. Keep the quarantine tree private and restore only sessions you trust; metadata is not authenticated or comprehensively validated against tampering.
 
+An aged record whose files have finished moving back is atomically changed to
+`aged-restored` before empty staging directories are removed, retaining the same
+six fields. A retry uses this internal checkpoint to remove only empty directories;
+remaining files, FIFOs, symlinks, or other payload keep the record for recovery.
+Human and JSON inventories still show this layout as `aged`. Older cleaner versions
+do not understand the checkpoint; finish recovery with the version that created it.
+Metadata rewrites use private scratch files beside the session, outside its payload
+directory. Process interruption preserves a complete old or new metadata file;
+this is not a power-loss durability guarantee. An interrupted rewrite can leave a
+`.restore-meta.*` scratch file in the quarantine base; it is not session payload.
+
 ## Session inventory workflow
 
 `cleaner --list-sessions` lists timestamp, size, and per-target paths (tests: `List Sessions`, `List Sessions Empty`, `List Sessions Shows Contents`).

@@ -6654,6 +6654,171 @@ if ! run_test_case "Uninterrupted Cleanup Report Has No Interrupted Line" 0 "uni
 fi
 echo -e "${GREEN}PASS: interrupted cleanup saves partial report and logs outcome=interrupted; uninterrupted run has no Interrupted line.${NC}"
 
+# Completed aged records remain retryable across metadata replacement and cleanup.
+setup_restore_checkpoint() {
+  setup_mock_env
+  checkpoint_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-03-02_00-00-00"
+  checkpoint_first="$MOCK_HOME/.cache/checkpoint_first"
+  checkpoint_second="$MOCK_HOME/.cache/checkpoint_second"
+  checkpoint_sibling="$MOCK_HOME/.cache/checkpoint_sibling"
+  mkdir -p "$checkpoint_session/0_First" "$checkpoint_session/1_Second" "$checkpoint_first" "$checkpoint_second"
+  printf 'first\n' > "$checkpoint_session/0_First/item"
+  printf 'second\n' > "$checkpoint_session/1_Second/item"
+  printf 'sibling\n' > "$checkpoint_session/2_Sibling"
+  printf 'aged|0_First|%s|false|%s|%s\naged|1_Second|%s|false|%s|%s\nfull|2_Sibling|%s|false|%s|%s\n' \
+    "$checkpoint_first" "$(id -u)" "$(id -g)" "$checkpoint_second" "$(id -u)" "$(id -g)" \
+    "$checkpoint_sibling" "$(id -u)" "$(id -g)" > "$checkpoint_session/quarantine.meta"
+  export MOCK_RESTORE_SESSION="$checkpoint_session" MOCK_RESTORE_HOOK="$1"
+  cat > "$TEST_ENV_DIR/bin/mv" <<'CHECKPOINT_MV'
+#!/usr/bin/env bash
+src="${@: -2:1}" dest="${@: -1}"
+if [[ "$dest" == "$MOCK_RESTORE_SESSION/quarantine.meta" ]]; then
+  case "$MOCK_RESTORE_HOOK" in
+    before-marker|checkpoint-fail)
+      if grep -q '^aged-restored|0_First|' "$src"; then
+        [[ "$MOCK_RESTORE_HOOK" == before-marker ]] && kill -TERM "$PPID"
+        exit 1
+      fi
+      ;;
+    before-reconcile|reconcile-fail)
+      if ! grep -q '^aged-restored|' "$src"; then
+        [[ "$MOCK_RESTORE_HOOK" == before-reconcile ]] && kill -TERM "$PPID"
+        exit 1
+      fi
+      ;;
+  esac
+fi
+real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
+"$real_mv" "$@" || exit $?
+if [[ "$dest" == "$MOCK_RESTORE_SESSION/quarantine.meta" && "$MOCK_RESTORE_HOOK" == after-marker ]] \
+   && grep -q '^aged-restored|1_Second|' "$dest"; then
+  kill -TERM "$PPID"
+fi
+CHECKPOINT_MV
+  cat > "$TEST_ENV_DIR/bin/find" <<'CHECKPOINT_FIND'
+#!/usr/bin/env bash
+real_find=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v find)
+if [[ "$MOCK_RESTORE_HOOK" == after-root && "${1:-}" == "$MOCK_RESTORE_SESSION/0_First" && "${2:-}" == -depth ]]; then
+  "$real_find" "$@" || exit $?
+  kill -TERM "$PPID"
+  exit 1
+fi
+exec "$real_find" "$@"
+CHECKPOINT_FIND
+  chmod +x "$TEST_ENV_DIR/bin/mv" "$TEST_ENV_DIR/bin/find"
+}
+
+for checkpoint_hook in after-root before-marker after-marker before-reconcile; do
+  setup_restore_checkpoint "$checkpoint_hook"
+  checkpoint_args=()
+  [[ "$checkpoint_hook" == before-reconcile ]] && checkpoint_args=(--only checkpoint_first)
+  if ! run_test_case "Aged Restore Interrupted ($checkpoint_hook)" 143 "checkpoint_killed.log" --restore latest "${checkpoint_args[@]}" \
+     || ! grep -qx first "$checkpoint_first/item"; then
+    echo -e "${RED}FAIL: aged restore interruption did not leave its restored file intact.${NC}"
+    exit 1
+  fi
+  case "$checkpoint_hook" in
+    before-marker)
+      [[ -d "$checkpoint_session/0_First" ]] && grep -q '^aged|0_First|' "$checkpoint_session/quarantine.meta" || exit 1
+      checkpoint_scratch=$(find "$(dirname "$checkpoint_session")" -maxdepth 1 -name '.restore-meta.*' -print -quit)
+      [[ -f "$checkpoint_scratch" && "$(stat -c %a "$checkpoint_scratch")" == 600 ]] || exit 1
+      ;;
+    after-marker)
+      [[ "$(grep -c '^aged-restored|' "$checkpoint_session/quarantine.meta")" -eq 2 \
+         && ! -e "$checkpoint_session/0_First" && -d "$checkpoint_session/1_Second" ]] || exit 1
+      ;;
+    *)
+      [[ ! -e "$checkpoint_session/0_First" ]] && grep -q '^aged-restored|0_First|' "$checkpoint_session/quarantine.meta" || exit 1
+      ;;
+  esac
+  rm -f "$TEST_ENV_DIR/bin/mv" "$TEST_ENV_DIR/bin/find"
+  if ! run_test_case "Aged Restore Interrupted Retry ($checkpoint_hook)" 0 "checkpoint_retry.log" --restore latest \
+     || ! grep -qx first "$checkpoint_first/item" || ! grep -qx second "$checkpoint_second/item" \
+     || ! grep -qx sibling "$checkpoint_sibling" || [[ -e "$checkpoint_session" ]]; then
+    echo -e "${RED}FAIL: checkpointed aged restore could not finish after $checkpoint_hook.${NC}"
+    exit 1
+  fi
+done
+
+for checkpoint_hook in checkpoint-fail reconcile-fail; do
+  setup_restore_checkpoint "$checkpoint_hook"
+  checkpoint_args=()
+  [[ "$checkpoint_hook" == reconcile-fail ]] && checkpoint_args=(--only checkpoint_first)
+  if ! run_test_case "Aged Restore Metadata Failure ($checkpoint_hook)" 1 "checkpoint_failure.log" --restore latest "${checkpoint_args[@]}" \
+     || ! grep -qx first "$checkpoint_first/item"; then
+    exit 1
+  fi
+  if [[ "$checkpoint_hook" == checkpoint-fail ]]; then
+    [[ -d "$checkpoint_session/0_First" && "$(wc -l < "$checkpoint_session/quarantine.meta")" -eq 1 ]] \
+      && grep -q '^aged|0_First|' "$checkpoint_session/quarantine.meta" \
+      && grep -qx second "$checkpoint_second/item" && grep -qx sibling "$checkpoint_sibling" || exit 1
+  else
+    [[ ! -e "$checkpoint_session/0_First" && "$(wc -l < "$checkpoint_session/quarantine.meta")" -eq 3 ]] \
+      && grep -q '^aged-restored|0_First|' "$checkpoint_session/quarantine.meta" \
+      && [[ -f "$checkpoint_session/1_Second/item" && -f "$checkpoint_session/2_Sibling" ]] || exit 1
+  fi
+  rm -f "$TEST_ENV_DIR/bin/mv" "$TEST_ENV_DIR/bin/find"
+  if ! run_test_case "Aged Restore Metadata Failure Retry ($checkpoint_hook)" 0 "checkpoint_failure_retry.log" --restore latest \
+     || [[ -e "$checkpoint_session" ]]; then
+    exit 1
+  fi
+done
+
+for checkpoint_payload in file fifo symlink dangling root-symlink root-dangling; do
+  setup_restore_checkpoint none
+  rm "$checkpoint_session/0_First/item"
+  sed -i 's/^aged|0_First|/aged-restored|0_First|/' "$checkpoint_session/quarantine.meta"
+  protected_payload="$checkpoint_session/0_First/payload"
+  case "$checkpoint_payload" in
+    file) printf 'keep\n' > "$protected_payload" ;;
+    fifo) mkfifo "$protected_payload" ;;
+    symlink) ln -s "$checkpoint_session/1_Second" "$protected_payload" ;;
+    dangling) ln -s "$checkpoint_session/absent" "$protected_payload" ;;
+    root-*)
+      rmdir "$checkpoint_session/0_First"
+      protected_payload="$checkpoint_session/0_First"
+      if [[ "$checkpoint_payload" == root-symlink ]]; then
+        ln -s "$checkpoint_session/1_Second" "$protected_payload"
+      else
+        ln -s "$checkpoint_session/absent" "$protected_payload"
+      fi
+      ;;
+  esac
+  if ! run_test_case "Aged Restore Marked Payload Kept ($checkpoint_payload)" 1 "checkpoint_payload.log" --restore latest --only checkpoint_first \
+     || [[ ! -e "$protected_payload" && ! -L "$protected_payload" ]] \
+     || ! grep -q '^aged-restored|0_First|' "$checkpoint_session/quarantine.meta" \
+     || ! grep -qx second "$checkpoint_session/1_Second/item"; then
+    echo -e "${RED}FAIL: completed marker discarded remaining $checkpoint_payload payload.${NC}"
+    exit 1
+  fi
+done
+
+setup_restore_checkpoint none
+rm "$checkpoint_session/0_First/item"
+sed -i 's/^aged|0_First|/aged-restored|0_First|/' "$checkpoint_session/quarantine.meta"
+if ! run_test_case "Aged Restore Marker Human Inventory" 0 "checkpoint_inventory.log" --list-sessions \
+   || ! grep -q "aged  $checkpoint_first" "$TEST_ENV_DIR/checkpoint_inventory.log" \
+   || grep -q aged-restored "$TEST_ENV_DIR/checkpoint_inventory.log" \
+   || ! run_test_case "Aged Restore Marker JSON Inventory" 0 "checkpoint_inventory.json" --list-sessions --json \
+   || ! python3 - "$TEST_ENV_DIR/checkpoint_inventory.json" "$checkpoint_first" <<'CHECKPOINT_JSON'
+import json, sys
+targets = json.load(open(sys.argv[1]))["sessions"][0]["targets"]
+assert all(t["type"] in ("full", "aged") for t in targets), targets
+assert any(t == {"type": "aged", "path": sys.argv[2]} for t in targets), targets
+CHECKPOINT_JSON
+then
+  exit 1
+fi
+if ! run_test_case "Aged Restore Marker Selective" 0 "checkpoint_only.log" --restore latest --only checkpoint_first \
+   || [[ -e "$checkpoint_session/0_First" || "$(wc -l < "$checkpoint_session/quarantine.meta")" -ne 2 ]] \
+   || ! grep -qx second "$checkpoint_session/1_Second/item" || ! grep -qx sibling "$checkpoint_session/2_Sibling" \
+   || ! run_test_case "Aged Restore Marker Selective Retry" 0 "checkpoint_only_retry.log" --restore latest \
+   || [[ -e "$checkpoint_session" ]]; then
+  exit 1
+fi
+unset MOCK_RESTORE_SESSION MOCK_RESTORE_HOOK
+echo -e "${GREEN}PASS: completed aged checkpoints survive interruptions and metadata failures without discarding pending payload.${NC}"
+
 # A retried --restore after an interrupted restore treats a missing payload
 # whose original path is already present as already restored, drops its stale
 # record, restores remaining targets, and retires the session; a missing payload

@@ -6,6 +6,7 @@
 |----|---------|-----------|
 | U-86 | Restore creates missing aged, nested, and full-target parent directories with mode `0700` under umask `022`, including a sudo shim that resets umask, while preserving existing directory modes and contents | Restore Private Directories Direct / Restore Private Directories Sudo |
 | U-87 | AUR preparation rejects literal `SKIP` regardless of quoting or multiline formatting and rejects unsupported/nonliteral arrays without executing package code; pinned checksums with comments pass, and absent `AUR_PREP` remains a no-op | AUR Checksum Gate single-quoted-skip / double-quoted-skip / unquoted-skip / multiline-skip / pinned / multiline-pinned / append / indexed / dynamic / empty / unclosed / missing |
+| U-88 | Completed aged restores checkpoint atomically before staging cleanup, survive process interruption and metadata failures, preserve marked payload and pending siblings, and keep public inventory types unchanged | Aged Restore Interrupted / Aged Restore Interrupted Retry / Aged Restore Metadata Failure / Aged Restore Metadata Failure Retry / Aged Restore Marked Payload Kept / Aged Restore Marker Human Inventory / Aged Restore Marker JSON Inventory / Aged Restore Marker Selective / Aged Restore Marker Selective Retry |
 
 ## 1.3.0 shipped feature inventory
 

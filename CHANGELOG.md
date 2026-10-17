@@ -17,6 +17,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Interrupted aged restores remain retryable after their emptied staging
+  directories are removed. Completion checkpoints and partial-restore metadata
+  updates replace metadata atomically, preserving recovery records on failure.
 - `AUR_PREP=1 make check-aur-ready` rejects quoted, unquoted, and multiline `SKIP`
   checksum entries without executing package code; only literal SHA-256 arrays are accepted.
 - **Security:** restore creates missing destination directories with mode `0700`,
