@@ -3407,6 +3407,9 @@ if run_test_case "JSON Dry Run" 0 "json_dry.log" \
        && grep -q '"min_age_days": "0"' "$TEST_ENV_DIR/json_parsed.out" \
        && grep -q '"NPM Cache"' "$TEST_ENV_DIR/json_parsed.out" \
        && grep -q '"status": "found"' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"size_at_run_time": false' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -q '"reason": ""' "$TEST_ENV_DIR/json_parsed.out" \
+       && grep -qF '"reason": "process '"'"'mock_running_proc'"'"' is active"' "$TEST_ENV_DIR/json_parsed.out" \
        && ! grep -q '\[FOUND\]' "$TEST_ENV_DIR/json_dry.log"; then
       echo -e "${GREEN}PASS: --json --dry-run emits valid JSON with target metadata.${NC}"
     else
