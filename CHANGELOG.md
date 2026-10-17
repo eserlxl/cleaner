@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Changed
+
+- Correct stale configuration guidance for the Claude Desktop VM image target.
+
 ### Added
 
 - Saved-report JSON exposes nullable `quarantined_bytes` and `permanent_bytes`
