@@ -63,6 +63,7 @@ Options:
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
+  --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
@@ -98,6 +99,7 @@ ONLY_PATH_CANONICAL=""
 MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
 TRASH_KEEP_DAYS=""
+LOCK_WAIT="${LINUX_CLEANER_LOCK_WAIT:-0}"
 PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
@@ -297,6 +299,14 @@ while [[ $# -gt 0 ]]; do
       ONLY_PATH="$2"
       shift 2
       ;;
+    --lock-wait)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --lock-wait requires a seconds argument." >&2
+        exit 1
+      fi
+      LOCK_WAIT="$2"
+      shift 2
+      ;;
     --min-reclaim)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --min-reclaim requires a size argument.${NC}" >&2
@@ -376,6 +386,20 @@ done
 
 if [[ -n "$ONLY_PATH" && ( "$ONLY_PATH" != /* || "$ONLY_PATH" == *$'\n'* ) ]]; then
   echo "Error: --only-path requires a literal absolute path without line feeds." >&2
+  exit 1
+fi
+
+# Validate only the effective value, so CLI can replace malformed inherited input.
+if [[ ! "$LOCK_WAIT" =~ ^[0-9]+$ ]]; then
+  echo "Error: --lock-wait must be an integer from 0 to 2147483647 seconds." >&2
+  exit 1
+fi
+LOCK_WAIT=${LOCK_WAIT#"${LOCK_WAIT%%[!0]*}"}
+LOCK_WAIT=${LOCK_WAIT:-0}
+# Compare normalized decimal text before any numeric conversion.
+# shellcheck disable=SC2071
+if [[ ${#LOCK_WAIT} -gt 10 || ( ${#LOCK_WAIT} -eq 10 && "$LOCK_WAIT" > 2147483647 ) ]]; then
+  echo "Error: --lock-wait must be an integer from 0 to 2147483647 seconds." >&2
   exit 1
 fi
 
@@ -2866,9 +2890,9 @@ if [[ "$CHECK_CONFIG" == true ]]; then
 fi
 
 # Serialize mutating runs (restore, purge, and non-dry-run cleanup) with an
-# exclusive non-blocking flock so overlapping timer and manual invocations
-# cannot race on the same files or quarantine sessions. Dry-run and read-only
-# modes never take the lock; if flock is not installed, continue unlocked.
+# exclusive flock so overlapping timer and manual invocations cannot race on
+# the same files or quarantine sessions. Zero waits fail fast and permit missing
+# flock; positive waits require flock. Nonlocking modes ignore valid wait values.
 if [[ -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$DRY_RUN" != true ]]; then
   if command -v flock >/dev/null 2>&1; then
     lock_dir="$HOME/.cache/linux-cleaner"
@@ -2889,10 +2913,19 @@ if [[ -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$DRY_RUN" != true ]
       echo -e "${RED}Error: Failed to open lock file '$lock_file'.${NC}" >&2
       exit 1
     fi
-    if ! flock -n 9; then
-      echo -e "${RED}Error: another linux-cleaner run is in progress (lock: ${lock_file}).${NC}" >&2
+    lock_args=(-n)
+    [[ "$LOCK_WAIT" == 0 ]] || lock_args=(-w "$LOCK_WAIT")
+    if ! flock "${lock_args[@]}" 9; then
+      if [[ "$LOCK_WAIT" == 0 ]]; then
+        echo -e "${RED}Error: another linux-cleaner run is in progress (lock: ${lock_file}).${NC}" >&2
+      else
+        echo "Error: Failed to acquire linux-cleaner lock within ${LOCK_WAIT} second(s) (lock: ${lock_file})." >&2
+      fi
       exit 1
     fi
+  elif [[ "$LOCK_WAIT" != 0 ]]; then
+    echo "Error: --lock-wait requires flock for mutating runs." >&2
+    exit 1
   fi
 fi
 

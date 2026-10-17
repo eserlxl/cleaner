@@ -7929,6 +7929,138 @@ if ! run_test_case "Concurrent Run Lock Refuses Symlink" 1 "concurrent_lock_sym.
 fi
 echo -e "${GREEN}PASS: concurrent mutating runs exit 1 on lock contention while dry-run and read-only modes remain unaffected.${NC}"
 
+# Bounded waits use the same real flock and fd lifetime, with explicit handshakes.
+python3 - "$CLEANER_SH" <<'LOCK_WAIT_PY'
+import hashlib, os, pathlib, select, shutil, signal, stat, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix="cleaner-lock-wait-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    cleaner, real_flock, real_rm = sys.argv[1], shutil.which("flock"), shutil.which("rm")
+    home, bindir = root / "home", root / "bin"
+    home.mkdir(); bindir.mkdir()
+    payload = home / "cache"
+    config = root / "fixture.conf"
+    config.write_text("safe|Fixture|$HOME/cache|Fixture payload|0||\n")
+    lock = home / ".cache/linux-cleaner/cleaner.lock"
+    lock.parent.mkdir(parents=True)
+    lock.touch()
+    report = home / "state/linux-cleaner/last-report.txt"
+    report.parent.mkdir(parents=True); report.write_text("prior report\n")
+    log = home / "operations.log"; log.write_text("prior log\n")
+    session = lock.parent / "quarantine/2026-01-01_00-00-00"
+    session.mkdir(parents=True); (session / "payload").write_text("quarantined\n")
+    (session / "quarantine.meta").write_text(f"full|payload|{home}/restored|false|{os.getuid()}|{os.getgid()}\n")
+    trace = root / "removals"
+    (bindir / "rm").write_text('#!/usr/bin/env bash\nfor arg in "$@"; do\n'
+        ' [[ "$arg" != "$LOCK_TEST_PAYLOAD" ]] || printf "remove\\n" >> "$LOCK_TEST_TRACE"\n'
+        'done\nexec "' + real_rm + '" "$@"\n')
+    (bindir / "flock").write_text('#!/usr/bin/env bash\n'
+        'printf "%s\\n" "$*" >&"$LOCK_TEST_NOTIFY_FD"\nexec "' + real_flock + '" "$@"\n')
+    for p in bindir.iterdir(): p.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1",
+               PATH=str(bindir) + ":" + env["PATH"], LOCK_TEST_PAYLOAD=str(payload), LOCK_TEST_TRACE=str(trace))
+    def snapshot():
+        return {str(p.relative_to(home)): (p.lstat().st_mode, os.readlink(p) if p.is_symlink()
+                else hashlib.sha256(p.read_bytes()).hexdigest() if stat.S_ISREG(p.lstat().st_mode) else None)
+                for p in home.rglob("*")}
+    def run(label, args, current=env, expected=0):
+        print("Test Case: Lock Wait " + label, flush=True)
+        r = subprocess.run([cleaner, "--config", str(config)] + args, env=current,
+                           capture_output=True, text=True, timeout=10)
+        assert r.returncode == expected, (label, r)
+        print("PASS: Lock Wait " + label, flush=True)
+        return r
+    # Baseline comparison stops here, on a read-only unsupported-option failure.
+    run("valid setting on inventory", ["--list-targets", "--json", "--lock-wait", "1"])
+    for value in ("-1", "+1", " 1", "1 ", "1\n", "1.5", "1s", "2147483648", "9" * 100):
+        before = snapshot()
+        r = run("invalid effective CLI " + repr(value), ["--init-config", "--lock-wait", value], expected=1)
+        assert "--lock-wait must be an integer" in r.stderr and snapshot() == before
+    for args in (["--lock-wait"], ["--lock-wait", ""]):
+        before = snapshot()
+        r = run("missing or empty CLI", args, expected=1)
+        assert "requires a seconds argument" in r.stderr and snapshot() == before
+    for value in ("bad", "-1", "2147483648"):
+        before = snapshot()
+        r = run("invalid inherited input " + value, ["--init-config"], env | {"LINUX_CLEANER_LOCK_WAIT": value}, 1)
+        assert "--lock-wait must be an integer" in r.stderr and snapshot() == before
+    for value in ("", "0", "000000", "0002147483647", "0" * 100 + "1"):
+        before = snapshot()
+        run("valid inherited bound " + repr(value), ["--list-targets", "--json"], env | {"LINUX_CLEANER_LOCK_WAIT": value})
+        assert snapshot() == before
+    run("CLI overrides malformed environment and earlier CLI", ["--list-targets", "--lock-wait", "bad", "--lock-wait", "0002"], env | {"LINUX_CLEANER_LOCK_WAIT": "bad"})
+    holder = subprocess.Popen([real_flock, str(lock), sys.executable, "-u", "-c",
+        'print("held", flush=True); input()'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, start_new_session=True)
+    processes = [holder]
+    try:
+        assert select.select([holder.stdout], [], [], 5)[0] and holder.stdout.readline() == "held\n"
+        def locked(label, args, expected_args, current=env, release=False):
+            print("Test Case: Lock Wait " + label, flush=True)
+            read_fd, write_fd = os.pipe()
+            before = snapshot()
+            try:
+                child = subprocess.Popen([cleaner, "--config", str(config)] + args,
+                    env=current | {"LOCK_TEST_NOTIFY_FD": str(write_fd)}, pass_fds=(write_fd,),
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+                processes.append(child); os.close(write_fd); write_fd = None
+                assert select.select([read_fd], [], [], 5)[0], label
+                assert os.read(read_fd, 128).decode().strip() == expected_args, label
+                if release:
+                    assert child.poll() is None and snapshot() == before
+                    holder.communicate("release\n", timeout=5)
+                stdout, stderr = child.communicate(timeout=8)
+                assert child.returncode == (0 if release else 1), (label, stdout, stderr)
+                if not release:
+                    assert holder.poll() is None and snapshot() == before
+                    assert ("another linux-cleaner run is in progress" if expected_args == "-n 9"
+                            else "Failed to acquire linux-cleaner lock within 1 second(s)") in stderr, stderr
+                print("PASS: Lock Wait " + label, flush=True)
+            finally:
+                os.close(read_fd)
+                if write_fd is not None: os.close(write_fd)
+        payload.mkdir(); (payload / "item").write_text("cleanup once\n")
+        for label, extra, current in (("default zero", [], env), ("explicit zero overrides env", ["--lock-wait", "000"], env | {"LINUX_CLEANER_LOCK_WAIT": "3"})):
+            locked(label, ["--clean", "--force"] + extra, "-n 9", current)
+        for label, args in (("cleanup timeout", ["--clean", "--force"]), ("restore timeout", ["--restore", "latest"]),
+                            ("purge timeout", ["--purge-sessions", "all", "--force"])):
+            locked(label, args + ["--lock-wait", "01", "--log", str(log)], "-w 1 9")
+        before = snapshot()
+        for args in (["--dry-run", "--json"], ["--list-targets", "--json"], ["--list-sessions", "--json"], ["--report"], ["--check-config"]):
+            run("held lock ignored " + args[0], args + ["--lock-wait", "2147483647"])
+            assert snapshot() == before
+        locked("release before deadline cleans once", ["--clean", "--force", "--lock-wait", "0005"], "-w 5 9", env | {"LINUX_CLEANER_LOCK_WAIT": "bad"}, True)
+        assert not payload.exists() and trace.read_text() == "remove\n"
+        holder = subprocess.Popen([real_flock, str(lock), sys.executable, "-u", "-c",
+            'print("held", flush=True); input()'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, start_new_session=True)
+        processes.append(holder)
+        assert select.select([holder.stdout], [], [], 5)[0] and holder.stdout.readline() == "held\n"
+        locked("environment wait restores after release", ["--restore", "latest"], "-w 3 9",
+               env | {"LINUX_CLEANER_LOCK_WAIT": "0003"}, True)
+        assert (home / "restored").read_text() == "quarantined\n" and not session.exists()
+    finally:
+        for child in processes:
+            if child.poll() is None:
+                os.killpg(child.pid, signal.SIGTERM)
+                child.communicate(timeout=5)
+    # Removing only flock from PATH proves positive refusal and zero fallback.
+    missing = root / "without-flock"; missing.mkdir()
+    for tool in "bash basename cat dirname realpath sed du awk tr id sort find stat date rm mktemp mkdir mv cp chmod rmdir cut grep df".split():
+        (missing / tool).symlink_to(shutil.which(tool))
+    current = env | {"PATH": str(missing)}
+    lock.unlink(); lock.parent.rmdir()
+    payload.mkdir(); (payload / "item").write_text("fallback payload\n")
+    before = snapshot()
+    r = run("positive requires installed flock before state", ["--clean", "--force", "--lock-wait", "1"], current, 1)
+    assert "requires flock" in r.stderr and snapshot() == before
+    run("zero retains optional-flock fallback", ["--clean", "--force", "--lock-wait", "0"], current)
+    assert not payload.exists()
+    run("init ignores valid wait without flock", ["--init-config", "--lock-wait", "1"], current)
+    assert (home / ".config/linux-cleaner/cleaner.conf").read_bytes() == config.read_bytes()
+    assert stat.S_IMODE((home / ".config/linux-cleaner/cleaner.conf").stat().st_mode) == 0o644
+LOCK_WAIT_PY
+
 # An interrupted cleanup (SIGINT/SIGTERM) saves a partial result report with
 # "Interrupted: SIGINT|SIGTERM before all targets finished", logs one
 # mode=run outcome=interrupted line when --log is enabled, and exits 130/143;

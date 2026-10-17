@@ -46,10 +46,11 @@ is available, mutating runs
 .BR \-\-restore ,
 and
 .BR \-\-purge\-sessions )
-take a non-blocking exclusive lock on
+take an exclusive lock on
 .I ~/.cache/linux\-cleaner/cleaner.lock
-and exit 1 if another mutating run is in progress; dry-run and read-only modes
-never take the lock.
+and fail immediately on contention by default.
+.B \-\-lock\-wait
+opts in to bounded waiting; dry-run and read-only modes never take the lock.
 .TP
 .BR \-i ", " \-\-interactive
 Enable cleanup and prompt for confirmation before cleaning each target.
@@ -335,6 +336,15 @@ or
 .BR \-\-trash\-keep\-days
 (including its environment mirror).
 .TP
+.B \-\-lock\-wait \fISECONDS\fR
+Wait up to a literal decimal 0..2147483647 seconds for the existing mutation lock
+(default 0; leading zeros normalized). Zero retains immediate contention failure
+and allows missing flock. Positive waits require flock and exit 1 on acquisition
+failure before target, session, report or log effects; lock-file opening may occur.
+Valid values are ignored by dry-run, inventories, report, check-config and init-config.
+Last CLI value overrides inherited input. Missing/empty CLI and invalid effective
+values fail before initialization or state creation. No retry loop is used.
+.TP
 .B \-\-min\-reclaim \fISIZE\fR
 Used with cleanup: skip the run when the planned reclaimable total is below
 .IR SIZE
@@ -500,6 +510,12 @@ expansion is performed. CLI overrides even malformed inherited values. Excludes
 action:* rows and cannot combine with session/config/report modes or global
 retention (including
 .BR LINUX_CLEANER_TRASH_KEEP_DAYS ).
+.TP
+.B LINUX_CLEANER_LOCK_WAIT
+Literal decimal 0..2147483647 seconds for
+.BR \-\-lock\-wait .
+Unset/empty means zero; leading zeros are normalized. Last CLI overrides even
+malformed inherited input. Valid settings do not lock nonlocking modes.
 .TP
 .B LINUX_CLEANER_MIN_RECLAIM
 When set to a non-empty size threshold (such as
@@ -758,7 +774,8 @@ XDG user configuration.
 System configuration.
 .TP
 .I ~/.cache/linux\-cleaner/cleaner.lock
-Non-blocking exclusive
+Exclusive (non-blocking by default, or bounded by
+.BR \-\-lock\-wait )
 .BR flock (1)
 lock held by mutating runs
 .RB ( \-\-clean / \-\-force / \-\-interactive ,

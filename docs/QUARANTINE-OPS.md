@@ -106,7 +106,14 @@ purge before confirmation/deletion, including inline retention.
 | `--only PATTERN` without `--restore` | 1 | Only Without Restore Rejected |
 | `--restore SESSION --dry-run` | 1 | Dry Run With Restore Rejected |
 | `--restore SESSION --json` | 1 | JSON With Restore Rejected |
-| `--restore SESSION` while another cleanup, restore or purge holds `~/.cache/linux-cleaner/cleaner.lock` | 1 | Concurrent Run Lock Restore |
+| `--restore SESSION` with default `--lock-wait 0` while another cleanup, restore or purge holds `~/.cache/linux-cleaner/cleaner.lock` | 1 | Concurrent Run Lock Restore |
+
+Restore and purge share the cleanup lock. `--lock-wait SECONDS` or
+`LINUX_CLEANER_LOCK_WAIT` may opt in to bounded waiting (`0..2147483647` literal
+decimal seconds, leading zeros allowed; last CLI overrides; unset/empty env is
+zero). Zero keeps fail-fast behavior and optional `flock`; a positive wait requires
+`flock` and exits `1` on acquisition failure before session/report/log effects.
+Read-only inventory never locks or waits. Lock-file opening can precede timeout.
 
 Restore and purge have no dry-run mode. An active explicit `--dry-run` with either is rejected before mutation (`Dry Run With Restore Rejected`, `Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`.
 

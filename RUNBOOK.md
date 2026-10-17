@@ -24,7 +24,15 @@ Validate a config without disk analysis (CI / packager gate):
 cleaner --check-config --config /path/to/cleaner.conf
 ```
 
-Exit codes: skips exit 0; failed operations exit 1, as does a mutating run refused because another one holds the lock; an interrupted cleanup exits 130 (SIGINT) or 143 (SIGTERM) after saving its partial report (see [Exit status](docs/cli-reference.md#exit-status)).
+Exit codes: skips exit 0; failed operations exit 1, as does a mutating run that cannot acquire the lock within its configured wait (zero by default); an interrupted cleanup exits 130 (SIGINT) or 143 (SIGTERM) after saving its partial report (see [Exit status](docs/cli-reference.md#exit-status)).
+
+Scheduled mutations may opt in to bounded lock contention waiting with
+`LINUX_CLEANER_LOCK_WAIT=30` in their existing environment profile, or
+`--lock-wait 30` on a command. Unset/empty means `0`, preserving fail-fast behavior.
+Use literal decimal seconds `0..2147483647` (leading zeros allowed); last CLI
+value overrides inherited input. A positive wait requires `flock`. Timeout exits
+`1` before target/session/report/log effects; lock-file opening may still occur.
+Dry-run, inventory, report, check-config and init-config never acquire or wait.
 
 ## Cron: daily cleanup
 

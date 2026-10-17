@@ -21,6 +21,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--lock-wait SECONDS` and `LINUX_CLEANER_LOCK_WAIT` let scheduled mutations wait
+  for the existing exclusive lock, preserving fail-fast defaults and read-only modes.
+
 - Session inventory adds `unrecorded_entry_count` and human warnings for immediate
   entries absent from metadata accounting; failed reads stop inventory and purge.
 
