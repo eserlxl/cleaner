@@ -62,6 +62,7 @@ Options:
   --only-target PATTERN      With cleanup: process only config targets whose NAME contains PATTERN (substring match).
   --exclude-target PATTERN   With cleanup: skip config targets whose NAME contains PATTERN (substring match).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
+  --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
@@ -91,6 +92,7 @@ ONLY_TARGET=""
 EXCLUDE_TARGET=""
 MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
+TRASH_KEEP_DAYS=""
 PURGE_TARGET=""
 LIST_SESSIONS=false
 LIST_TARGETS=false
@@ -140,6 +142,9 @@ if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
   MIN_RECLAIM="$LINUX_CLEANER_MIN_RECLAIM"
+fi
+if [[ -n "${LINUX_CLEANER_TRASH_KEEP_DAYS:-}" ]]; then
+  TRASH_KEEP_DAYS="$LINUX_CLEANER_TRASH_KEEP_DAYS"
 fi
 if [[ -n "${LINUX_CLEANER_RISK:-}" ]]; then
   MAX_RISK="$LINUX_CLEANER_RISK"
@@ -274,6 +279,14 @@ while [[ $# -gt 0 ]]; do
       MIN_RECLAIM="$2"
       shift 2
       ;;
+    --trash-keep-days)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --trash-keep-days requires a day count argument.${NC}" >&2
+        exit 1
+      fi
+      TRASH_KEEP_DAYS="$2"
+      shift 2
+      ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, or timestamp).${NC}" >&2
@@ -371,6 +384,13 @@ if [[ -n "$MIN_RECLAIM" ]]; then
   MIN_RECLAIM_BYTES=$((10#$min_reclaim_num * min_reclaim_mult))
 fi
 
+if [[ -n "$TRASH_KEEP_DAYS" ]]; then
+  if [[ ! "$TRASH_KEEP_DAYS" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: --trash-keep-days expects a non-negative integer day count, got '${TRASH_KEEP_DAYS}'.${NC}" >&2
+    exit 1
+  fi
+fi
+
 # Restore and purge are mutating modes that bypass the cleanup dry-run exit.
 # Distinguish an explicit active --dry-run from the default DRY_RUN=true so
 # ordinary restore/purge requests keep their established behavior.
@@ -398,6 +418,11 @@ fi
 
 if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
   echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
 fi
 
@@ -433,6 +458,11 @@ fi
 
 if [[ -n "$MIN_RECLAIM" && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --check-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$TRASH_KEEP_DAYS" && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -1465,6 +1495,15 @@ purge_quarantine_sessions() {
   rmdir "$quarantine_base" 2>/dev/null || true
 
   echo -e "${BOLD}Purged ${purged} session(s).${NC}"
+}
+
+# --trash-keep-days: retire old quarantine sessions at the end of every cleanup
+# run, including one that had nothing to clean, so a skipped day still purges.
+# A failed purge sets OPERATION_FAILED like any other failed operation.
+apply_trash_keep_days() {
+  if [[ -n "$TRASH_KEEP_DAYS" ]]; then
+    purge_quarantine_sessions "older-than:$TRASH_KEEP_DAYS"
+  fi
 }
 
 # Run CMD directly, or through sudo when USE_SUDO (arg 1) is true. Every
@@ -2792,6 +2831,8 @@ if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]
   echo "Planned reclaim $(format_bytes "$total_reclaimable_bytes") is below --min-reclaim ${MIN_RECLAIM}; nothing was cleaned."
   RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
   save_last_cleanup_report
+  apply_trash_keep_days
+  [[ "$OPERATION_FAILED" = true ]] && exit 1
   exit 0
 fi
 
@@ -2801,6 +2842,8 @@ if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; th
   # Overwrite the previous report so --report never shows a stale run as the last one.
   RESULT_REPORT_TEXT="Result: nothing to clean"
   save_last_cleanup_report
+  apply_trash_keep_days
+  [[ "$OPERATION_FAILED" = true ]] && exit 1
   exit 0
 fi
 
@@ -3171,6 +3214,8 @@ trap - INT TERM
 RESULT_REPORT_TEXT=$(print_result_report)
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
+
+apply_trash_keep_days
 
 echo
 if [[ "$TRASH_MODE" = true ]]; then

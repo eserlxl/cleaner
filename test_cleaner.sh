@@ -6620,5 +6620,89 @@ fi
 rm -f "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
 echo -e "${GREEN}PASS: cross-filesystem quarantine refuses targets larger than free space and allows fitting ones.${NC}"
 
+# --trash-keep-days / LINUX_CLEANER_TRASH_KEEP_DAYS: purge quarantine sessions
+# older than DAYS at the end of a non-dry-run cleanup, never the newly created
+# session, and never in dry-run mode.
+setup_mock_env
+tkd_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+tkd_old_sess="$tkd_qbase/2020-01-01_00-00-00"
+mkdir -p "$tkd_old_sess/0_Old_Target"
+printf 'old-quarantined\n' > "$tkd_old_sess/0_Old_Target/old.txt"
+printf 'full|0_Old_Target|%s/.cache/old_target|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$tkd_old_sess/quarantine.meta"
+touch -d "10 days ago" "$tkd_old_sess"
+
+# Dry-run purges nothing even when --trash-keep-days is passed.
+if ! run_test_case "Trash Keep Days Dry Run Purges Nothing" 0 "tkd_dry.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --trash --trash-keep-days 7 \
+   || [[ ! -d "$tkd_old_sess" ]]; then
+  echo -e "${RED}FAIL: --dry-run with --trash-keep-days removed the old quarantine session.${NC}"
+  cat "$TEST_ENV_DIR/tkd_dry.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Trash Keep Days Purges Old Sessions" 0 "tkd_purge.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --trash --force --trash-keep-days 7 \
+   || [[ -d "$tkd_old_sess" ]] \
+   || [[ "$(find "$tkd_qbase" -mindepth 1 -maxdepth 1 -type d | wc -l)" -ne 1 ]] \
+   || ! grep -q "Purged 2020-01-01_00-00-00" "$TEST_ENV_DIR/tkd_purge.log"; then
+  echo -e "${RED}FAIL: --trash-keep-days 7 did not purge the 10-day-old session or lost the newly created session.${NC}"
+  cat "$TEST_ENV_DIR/tkd_purge.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --trash-keep-days 7 purged the old session and kept the newly created one.${NC}"
+
+setup_mock_env
+tkd_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+tkd_recent_sess="$tkd_qbase/2026-01-01_00-00-00"
+mkdir -p "$tkd_recent_sess/0_Recent_Target"
+printf 'recent-quarantined\n' > "$tkd_recent_sess/0_Recent_Target/recent.txt"
+printf 'full|0_Recent_Target|%s/.cache/recent_target|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$tkd_recent_sess/quarantine.meta"
+touch -d "2 days ago" "$tkd_recent_sess"
+
+if ! LINUX_CLEANER_TRASH_KEEP_DAYS=1 LINUX_CLEANER_TRASH=1 \
+     run_test_case "Trash Keep Days Keeps Recent Sessions" 0 "tkd_recent.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --trash-keep-days 7 \
+   || [[ ! -d "$tkd_recent_sess" ]] \
+   || [[ "$(find "$tkd_qbase" -mindepth 1 -maxdepth 1 -type d | wc -l)" -ne 2 ]] \
+   || ! grep -q "No quarantine sessions older than 7 day(s)." "$TEST_ENV_DIR/tkd_recent.log"; then
+  echo -e "${RED}FAIL: --trash-keep-days 7 (overriding LINUX_CLEANER_TRASH_KEEP_DAYS=1) did not keep the 2-day-old session and the new session.${NC}"
+  cat "$TEST_ENV_DIR/tkd_recent.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --trash-keep-days keeps recent sessions and overrides LINUX_CLEANER_TRASH_KEEP_DAYS.${NC}"
+
+if ! run_test_case "Trash Keep Days Rejected With Restore" 1 "tkd_norestore.log" \
+       --trash-keep-days 7 --restore latest \
+   || ! grep -q "trash-keep-days applies only to cleanup" "$TEST_ENV_DIR/tkd_norestore.log" \
+   || ! run_test_case "Trash Keep Days Invalid Value Rejected" 1 "tkd_invalid.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --trash-keep-days -5 --dry-run \
+   || ! grep -q -- "--trash-keep-days expects a non-negative integer" "$TEST_ENV_DIR/tkd_invalid.log"; then
+  echo -e "${RED}FAIL: --trash-keep-days validation or mutual exclusion with --restore did not behave as expected.${NC}"
+  cat "$TEST_ENV_DIR/tkd_norestore.log" "$TEST_ENV_DIR/tkd_invalid.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --trash-keep-days rejects invalid day counts and non-cleanup modes.${NC}"
+
+# A run with nothing to clean still retires old sessions, so a quiet day (or a
+# --min-reclaim skip) cannot let quarantine grow.
+setup_mock_env
+tkd_idle_sess="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-02-02_00-00-00"
+mkdir -p "$tkd_idle_sess"
+touch -d "10 days ago" "$tkd_idle_sess"
+cat > "$TEST_ENV_DIR/tkd_idle.conf" <<'EOF'
+safe|Absent Target|$HOME/.cache/tkd_absent|Never exists|0||
+EOF
+if ! run_test_case "Trash Keep Days Nothing To Clean" 0 "tkd_idle.log" \
+       --config "$TEST_ENV_DIR/tkd_idle.conf" --clean --trash --force --trash-keep-days 7 \
+   || ! grep -q "Everything is already clean" "$TEST_ENV_DIR/tkd_idle.log" \
+   || [[ -d "$tkd_idle_sess" ]]; then
+  echo -e "${RED}FAIL: a cleanup with nothing to clean did not apply --trash-keep-days.${NC}"
+  cat "$TEST_ENV_DIR/tkd_idle.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --trash-keep-days also runs when there is nothing to clean.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

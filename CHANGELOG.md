@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--trash-keep-days DAYS` (and `LINUX_CLEANER_TRASH_KEEP_DAYS`) purges quarantine sessions older than `DAYS` days at the end of a non-dry-run cleanup.
 - `--trash` now checks free space on `~/.cache/linux-cleaner/quarantine` before a cross-filesystem quarantine move and refuses the target when its planned size exceeds available space (`Error: Not enough free space to quarantine '<name>' (needs X, Y free); left in place.`), leaving it in place; same-filesystem moves are renames and need no check.
 - A cleanup interrupted by `SIGINT` or `SIGTERM` prints and saves its partial result report (ending with `Interrupted: SIGINT|SIGTERM before all targets finished`) to `last-report.txt`, logs `mode=run outcome=interrupted` when `--log` is enabled, and exits `130` (`SIGINT`) or `143` (`SIGTERM`).
 - Mutating runs (`--clean`/`--force`/`--interactive`, `--restore`, and `--purge-sessions`) acquire a non-blocking `flock` lock on `~/.cache/linux-cleaner/cleaner.lock` (refusing symlinks) and exit `1` when another mutating run is already in progress; dry-run and read-only modes never take the lock. The example retention unit is ordered `After=linux-cleaner-clean.service` so a catch-up start at boot waits instead of failing on the lock.

@@ -186,6 +186,7 @@ combined with
 .BR \-\-only\-target ,
 .BR \-\-exclude\-target ,
 .BR \-\-min\-reclaim ,
+.BR \-\-trash\-keep\-days ,
 or
 .BR \-\-json .
 .TP
@@ -267,6 +268,26 @@ Cannot be combined with
 .BR \-\-check\-config ,
 or
 .BR \-\-report .
+.TP
+.B \-\-trash\-keep\-days \fIDAYS\fR
+Used with cleanup: purge quarantine sessions older than
+.IR DAYS
+days (a non-negative integer) at the end of a non-dry-run cleanup via
+.BI older\-than: DAYS
+retention (confirming unless
+.B \-\-force
+is set, and exiting 0 when no sessions match). A dry-run purges nothing. Exits 1
+on a malformed
+.IR DAYS
+or if any session purge fails. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
@@ -369,6 +390,11 @@ or
 .BR 2G ),
 enables
 .BR \-\-min\-reclaim .
+CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_TRASH_KEEP_DAYS
+When set to a non-empty non-negative integer day count, enables
+.BR \-\-trash\-keep\-days .
 CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_RISK
