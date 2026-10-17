@@ -41,6 +41,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Physical path resolution preserves component identity and fails closed on line
+  feeds or resolver errors across cleanup, protection, safety checks, and logging.
+
 - Saved-report JSON preserves exact failed target names, including punctuation,
   through completed, interrupted, and retention-updated reports.
 - JSON session inventory and budgeted purge reject unavailable or invalid session

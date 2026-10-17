@@ -4507,6 +4507,121 @@ with tempfile.TemporaryDirectory(prefix="cleaner-path-expansion-", dir="/tmp") a
     passed(label)
 PATH_EXPANSION_PY
 
+# Physical resolution must preserve identity and fail before any cleanup execution.
+setup_mock_env
+python3 - "$CLEANER_SH" <<'CANONICAL_PATH_PY'
+import hashlib, json, os, pathlib, shutil, subprocess, sys, tempfile
+cleaner = sys.argv[1]
+source = pathlib.Path(cleaner).read_text()
+def body(name):
+    start = source.index(name + "() {")
+    return source[start:source.index("\n}", start) + 2]
+with tempfile.TemporaryDirectory(prefix="cleaner-canonical-path-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home = root / "home"
+    home.mkdir()
+    normal, physical = home / "project", home / "project\n"
+    for parent in (normal, physical):
+        (parent / "sub").mkdir(parents=True)
+        (parent / "sub/payload").write_text("keep exact physical identity\n")
+    alias = home / "alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    good = home / "good"
+    good.mkdir()
+    (good / "payload").write_text("keep unrelated target\n")
+    config = root / "canonical.conf"
+    bindir = root / "bin"
+    bindir.mkdir()
+    # Only these exact fixture paths can trigger producer failures. Partial
+    # stdout must never become a successful canonical path.
+    for command, variable, code in (("realpath", "CANON_REALPATH_FAIL", 23), ("dirname", "CANON_DIRNAME_FAIL", 24)):
+        executable = shutil.which(command)
+        (bindir / command).write_text('#!/bin/bash\nif [[ "${!#}" == "${' + variable + ':-}" ]]; then printf "%s\\n" "$CANON_PARTIAL"; exit ' + str(code) + '; fi\nexec "' + executable + '" "$@"\n')
+        (bindir / command).chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(root / "state"), NO_COLOR="1",
+               PATH=str(bindir) + ":" + env["PATH"], CANON_PARTIAL=str(normal / "sub"))
+    def row(path):
+        return "safe|Fixture|" + str(path) + "|canonical identity|0||"
+    def snapshot():
+        return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in root.rglob("*") if p.is_file() and not p.is_symlink()
+                and p != config and p.name != "cleaner.lock"}
+    def run(label, rows, args, status=0, diagnostic=None, overrides=None):
+        print("Test Case: Canonical Path " + label, flush=True)
+        config.write_text("\n".join(rows) + "\n")
+        before = snapshot()
+        result = subprocess.run([cleaner, "--config", str(config)] + args,
+                                env=env | (overrides or {}), capture_output=True, text=True, timeout=20)
+        assert result.returncode == status, (label, result)
+        if diagnostic:
+            assert diagnostic in result.stderr, (label, result)
+        if status and "--json" in args:
+            assert result.stdout == "", (label, result)
+        assert snapshot() == before, (label, "fixture payload or metadata changed")
+        print("PASS: Canonical Path " + label, flush=True)
+        return result
+    # Old/fixed comparison uses only dry-run output; never delete on the baseline.
+    run("resolved LF alias dry run", [row(alias / "sub")], ["--dry-run", "--json"], 1, "could not resolve target PATH")
+    failures = [("partial realpath", good, {"CANON_REALPATH_FAIL": str(good)}),
+                ("dirname", str(good) + "/../project/sub", {"CANON_DIRNAME_FAIL": str(good)})]
+    for label, path, overrides in failures:
+        run(label + " dry run", [row(path)], ["--dry-run", "--json"], 1, "could not resolve target PATH", overrides)
+    if os.environ.get("CANONICAL_PREVIEW_ONLY") != "1":
+        for label, path, overrides in [("resolved LF alias", alias / "sub", {})] + failures:
+            run(label + " aborts cleanup", [row(good), row(path)], ["--clean", "--force"], 1, "could not resolve target PATH", overrides)
+    run("extra protection fails closed", [row(good), "protect|" + str(alias / "sub")],
+        ["--dry-run", "--json"], 1, "could not resolve protect PATH")
+    home_failure = run("HOME resolution fails unsafe", [row(good)], ["--dry-run", "--json"],
+                       overrides={"HOME": str(alias)})
+    assert [t["status"] for t in json.loads(home_failure.stdout)["targets"]] == ["unsafe"]
+    for label, path, expected in (("missing tail", good / "missing/deeper", good / "missing/deeper"),
+                                  ("dot dot", str(good) + "/../project/sub", normal / "sub"),
+                                  ("root", "/", pathlib.Path("/")), ("HOME", home, home)):
+        result = run(label, [row(path)], ["--dry-run", "--json"])
+        target = json.loads(result.stdout)["targets"][0]
+        assert target["path"] == str(expected), (label, target)
+        if label in ("root", "HOME"):
+            assert target["status"] == "unsafe", target
+    for label, destination in (("valid", good), ("dangling", home / "absent/leaf"), ("unrepresentable", physical)):
+        link = home / (label + "-link")
+        link.symlink_to(destination, target_is_directory=True)
+        result = run(label + " final symlink", [row(link)], ["--dry-run", "--json"])
+        target = json.loads(result.stdout)["targets"][0]
+        assert target["status"] == "symlink", target
+        if label == "valid":
+            assert target["path"] == str(good), target
+    # Exercise the actual helper bodies for inputs unavailable in line records
+    # and for each consumer's failure return without a full-script side effect.
+    probe = root / "probe.sh"
+    probe.write_text("#!/bin/bash\nset -euo pipefail\n" + "\n".join(body(n) for n in
+                     ("canonicalize_physical", "check_path_safety", "log_operation")) + '\n"$@"\n')
+    def probe_run(label, command, status, output=None, overrides=None, cwd=None):
+        print("Test Case: Canonical Path " + label, flush=True)
+        before = snapshot()
+        result = subprocess.run(["bash", str(probe)] + command, cwd=cwd, env=env | (overrides or {}), capture_output=True, text=True, timeout=20)
+        assert result.returncode == status, (label, result)
+        if output is not None:
+            assert result.stdout == output, (label, result)
+        assert snapshot() == before, (label, "probe mutated fixture")
+        print("PASS: Canonical Path " + label, flush=True)
+        return result
+    probe_run("raw LF rejected", ["canonicalize_physical", str(physical)], 1, "")
+    probe_run("relative path", ["canonicalize_physical", "good/missing/../tail"], 0, str(good / "tail"), cwd=home)
+    probe_run("relative LF PWD rejected", ["canonicalize_physical", "sub"], 1, "", cwd=physical)
+    probe_run("target safety failure", ["check_path_safety", str(good)], 1, "", {"CANON_REALPATH_FAIL": str(good)})
+    probe_run("HOME safety failure", ["check_path_safety", str(good)], 1, "", {"HOME": str(alias)})
+    probe_run("system safety", ["check_path_safety", "/etc/.."], 1, "")
+    for path in (normal / "log", physical / "log"):
+        path.write_text("keep log sentinel\n")
+    result = probe_run("failed log resolution writes nothing", ["log_operation", "must not append"], 0, "",
+                       {"LOG_ENABLED": "true", "LOG_FILE": str(alias / "log")})
+    assert "logging disabled" in result.stderr, result
+    result = probe_run("partial log resolution writes nothing", ["log_operation", "must not append"], 0, "",
+                       {"LOG_ENABLED": "true", "LOG_FILE": str(normal / "log"), "CANON_REALPATH_FAIL": str(normal)})
+    assert "logging disabled" in result.stderr, result
+CANONICAL_PATH_PY
+
 if run_test_case "List Targets With Restore Rejected" 1 "list_targets_bad.log" \
      --restore latest --list-targets; then
   if grep -q "list-targets cannot be combined" "$TEST_ENV_DIR/list_targets_bad.log"; then

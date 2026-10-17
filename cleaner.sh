@@ -1141,6 +1141,8 @@ canonicalize_physical() {
     target="$PWD/$target"
   fi
   
+  [[ "$target" != *$'\n'* ]] || return 1
+
   # Split the path by '/' using IFS
   local IFS='/'
   local parts
@@ -1154,9 +1156,12 @@ canonicalize_physical() {
     fi
     if [[ "$comp" == ".." ]]; then
       if [[ -e "$resolved" || -L "$resolved" ]]; then
-        resolved=$(realpath "$resolved" 2>/dev/null || echo "$resolved")
+        resolved=$(realpath -- "$resolved" 2>/dev/null && printf '.') || return 1
+        resolved=${resolved%.}
+        resolved=${resolved%$'\n'}
+        [[ "$resolved" == /* && "$resolved" != *$'\n'* ]] || return 1
       fi
-      resolved=$(dirname "$resolved")
+      resolved=$(dirname -- "$resolved") || return 1
     else
       local next
       if [[ "$resolved" == "/" ]]; then
@@ -1165,13 +1170,16 @@ canonicalize_physical() {
         next="$resolved/$comp"
       fi
       if [[ -e "$next" || -L "$next" ]]; then
-        resolved=$(realpath "$next" 2>/dev/null || echo "$next")
+        resolved=$(realpath -- "$next" 2>/dev/null && printf '.') || return 1
+        resolved=${resolved%.}
+        resolved=${resolved%$'\n'}
+        [[ "$resolved" == /* && "$resolved" != *$'\n'* ]] || return 1
       else
         resolved="$next"
       fi
     fi
   done
-  echo "$resolved"
+  printf '%s' "$resolved"
 }
 
 # Build find arguments using the same patterns for global and per-target exclusions.
@@ -1235,10 +1243,13 @@ log_operation() {
   local target="${LOG_FILE:-}"
   [[ -z "$target" ]] && target="$HOME/.cache/linux-cleaner/operations.log"
   local literal_dir resolved_target
-  literal_dir=$(dirname "$target")
   # Canonicalize the FULL target (not just its parent) so a symlinked leaf that
   # resolves outside $HOME is refused, not silently followed by the append.
-  resolved_target=$(canonicalize_physical "$target")
+  if ! resolved_target=$(canonicalize_physical "$target") || ! literal_dir=$(dirname -- "$target"); then
+    echo "Warning: could not resolve log path; logging disabled." >&2
+    LOG_ENABLED=false
+    return 0
+  fi
   if [[ "$resolved_target" != "$HOME" && "$resolved_target" != "$HOME"/* ]]; then
     echo -e "  [${YELLOW}LOG${NC}] Refusing to write log outside \$HOME ('$target'); logging disabled." >&2
     LOG_ENABLED=false
@@ -2156,8 +2167,8 @@ check_path_safety() {
   fi
   
   local normalized normalized_home
-  normalized=$(canonicalize_physical "$target_path")
-  normalized_home=$(canonicalize_physical "$HOME")
+  normalized=$(canonicalize_physical "$target_path") || return 1
+  normalized_home=$(canonicalize_physical "$HOME") || return 1
 
   # Never clean HOME itself or any ancestor of HOME, including trailing-slash and dot-dot aliases.
   if [[ "$normalized" == "$normalized_home" || "$normalized_home" == "$normalized"/* ]]; then
@@ -2865,7 +2876,7 @@ total_reclaimable_bytes=0
 # Collect canonical paths from protect|PATH config lines before target analysis.
 PROTECTED_PATHS=()
 collect_protected_paths() {
-  local line f1 f2 expanded stripped
+  local line f1 f2 expanded stripped canonical
   PROTECTED_PATHS=()
   while IFS= read -r line || [[ -n "$line" ]]; do
     IFS='|' read -r f1 f2 _ <<< "$line"
@@ -2875,7 +2886,11 @@ collect_protected_paths() {
       return 1
     fi
     stripped=$(strip_trailing_slashes "$expanded")
-    PROTECTED_PATHS+=("$(canonicalize_physical "$stripped")")
+    if ! canonical=$(canonicalize_physical "$stripped"); then
+      echo "Error: could not resolve protect PATH" >&2
+      return 1
+    fi
+    PROTECTED_PATHS+=("$canonical")
   done < "$CONFIG_FILE"
 }
 
@@ -2944,19 +2959,27 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   fi
   stripped_path=$(strip_trailing_slashes "$expanded_path")
   
-  # Resolve to canonical
+  # Resolve to canonical; a failed final symlink stays display-only and refused.
+  safety_status=0
   if [[ -n "$ONLY_PATH" ]]; then
     path="$SELECTED_TARGET_PATH"
-  else
-    path=$(canonicalize_physical "$stripped_path")
+  elif ! path=$(canonicalize_physical "$stripped_path"); then
+    if [[ -L "$stripped_path" ]]; then
+      path="$stripped_path"
+      safety_status=3
+    else
+      echo "Error: ${CONFIG_FILE}:${config_lineno}: could not resolve target PATH" >&2
+      exit 1
+    fi
   fi
-  
-  # Run safety check
-  safety_status=0
-  if [[ -L "$stripped_path" ]]; then
-    safety_status=3
-  else
-    check_path_safety "$path" || safety_status=$?
+
+  # Keep a failed-resolution symlink refused even if the leaf changes afterward.
+  if [[ "$safety_status" -ne 3 ]]; then
+    if [[ -L "$stripped_path" ]]; then
+      safety_status=3
+    else
+      check_path_safety "$path" || safety_status=$?
+    fi
   fi
   
   exists=false

@@ -119,6 +119,7 @@ protect|/opt/important
 Any target whose canonical path equals `PATH`, lies inside `PATH`, or contains `PATH` (matched on whole path components, so `protect|/opt/a` does not match `/opt/ab`) is skipped as a whole. For example, `protect|/opt/work/app/build` prevents the `/opt/**/build*` row from cleaning that build directory while leaving sibling projects eligible.
 
 - `PATH` supports `$HOME`, `$USER`, leading `~`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` (relative XDG values fall back to the spec default), must be absolute after expansion, cannot contain wildcards (`*`, `?`, `[`), and does not need to exist yet. Symlinks are resolved physically.
+- Physical resolution rejects line feeds and failed existing-component resolution; a protection path that cannot be safely resolved aborts cleanup instead of weakening protection. Genuinely missing path tails remain supported.
 - `protect` lines are not listed by `--list-targets` or counted as targets by `--check-config`.
 - Skipped targets appear under `Protected (by config):` in the plan report, as `[PROTECTED]` under `--debug`, and with `"status": "protected"` in `--dry-run --json`.
 
