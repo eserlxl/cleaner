@@ -649,22 +649,19 @@ name_matches_any() {
 # Split a comma-separated --only-target / --exclude-target value into trimmed
 # substrings. An empty entry would match every NAME, so it is refused.
 split_name_patterns() {
-  local flag="$1" value="$2" pat
+  local flag="$1" value="$2" pat rest="$2"
   local -n patterns_out="$3"
-  local -a raw=() raw_fields=()
   patterns_out=()
   [[ -z "$value" ]] && return 0
-  # read -a drops a trailing empty field, so check for it explicitly.
-  [[ "$value" == *, ]] && raw=("")
-  IFS=',' read -r -a raw_fields <<< "$value"
-  raw=("${raw_fields[@]}" "${raw[@]}")
-  for pat in "${raw[@]}"; do
-    pat=$(trim "$pat")
+  while :; do
+    pat=$(trim "${rest%%,*}")
     if [[ -z "$pat" ]]; then
       echo -e "${RED}Error: ${flag} contains an empty pattern in '${value}'.${NC}" >&2
       exit 1
     fi
     patterns_out+=("$pat")
+    [[ "$rest" == *,* ]] || break
+    rest="${rest#*,}"
   done
 }
 

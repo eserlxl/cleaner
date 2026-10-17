@@ -41,6 +41,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- NAME filters split the complete CLI/environment value only at commas, preserving
+  internal line feeds and rejecting empty fields even after line feeds.
+
 - Configuration discovery/initialization and saved reports preserve exact absolute
   XDG directory names, including trailing line feeds, instead of selecting a sibling.
 

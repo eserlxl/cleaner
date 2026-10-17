@@ -4213,8 +4213,33 @@ cases = [
     ("environment", [], {"LINUX_CLEANER_ONLY_TARGET": "NPM,Yarn", "LINUX_CLEANER_EXCLUDE_TARGET": "Yarn"}, ["NPM Cache"], None),
     ("CLI overrides", ["--only-target", "Yarn", "--exclude-target", "NPM"], {"LINUX_CLEANER_ONLY_TARGET": "NPM", "LINUX_CLEANER_EXCLUDE_TARGET": "Yarn"}, ["Yarn Cache"], None),
 ]
+# Commas are the only separators; LF is either trimmed field whitespace or a
+# literal internal character, never a reason to discard the rest of the value.
+for route in ("CLI", "environment"):
+    for flag in ("only", "exclude"):
+        for label, value, expected, error in (
+            ("comma whitespace", "NPM,\nYarn", ["NPM Cache", "Yarn Cache"] if flag == "only" else [], None if flag == "only" else "left no config targets"),
+            ("internal literal", "NPM\nYarn", [] if flag == "only" else ["NPM Cache"], "No config target NAME matches" if flag == "only" else None),
+            ("later fields", "absent,\nNPM,Yarn", ["NPM Cache", "Yarn Cache"] if flag == "only" else [], None if flag == "only" else "left no config targets"),
+            ("leading empty", ",\nNPM", [], "empty pattern"),
+            ("hidden consecutive empty", "NPM,\n,Yarn", [], "empty pattern"),
+            ("hidden trailing empty", "NPM,\nYarn,", [], "empty pattern"),
+            ("hidden whitespace empty", "NPM,\n", [], "empty pattern"),
+        ):
+            args, overrides = [], {}
+            if flag == "exclude":
+                args = ["--only-target", "NPM" if label == "internal literal" else "NPM,Yarn"]
+            if route == "CLI":
+                args += ["--" + flag + "-target", value]
+            else:
+                overrides["LINUX_CLEANER_" + flag.upper() + "_TARGET"] = value
+            cases.append(("LF " + route + " " + flag + " " + label, args, overrides, expected, error))
+cases.append(("LF CLI overrides complete environment", ["--only-target", "NPM,\nYarn", "--exclude-target", "Yarn"],
+              {"LINUX_CLEANER_ONLY_TARGET": "NPM\nYarn", "LINUX_CLEANER_EXCLUDE_TARGET": "NPM,\nYarn"}, ["NPM Cache"], None))
 for fmt in ("human", "json"):
     for label, args, overrides, expected, error in cases:
+        if label.startswith("LF "):
+            print("Test Case: Inventory NAME Selection (" + fmt + " " + label + ")", flush=True)
         result = subprocess.run([cleaner, "--config", str(config), "--list-targets"] + args
                                 + (["--json"] if fmt == "json" else []),
                                 env=env | overrides, capture_output=True, text=True)
@@ -4241,6 +4266,26 @@ for fmt in ("human", "json"):
 assert not trace.exists(), trace.read_text() if trace.exists() else ""
 assert snapshot() == before, "inventory changed cache, quarantine, report, lock, or permissions"
 print("PASS: Inventory NAME Selection leaves data unchanged without analysis or mutation commands")
+# These selected targets are protected, so dry-run parity needs no sizing,
+# process, action, privilege, or mutation probes either.
+for label, args, overrides, expected, error in (
+    ("comma whitespace", ["--only-target", "NPM,\nYarn"], {}, ["NPM Cache", "Yarn Cache"], None),
+    ("internal exclusion", ["--only-target", "NPM", "--exclude-target", "NPM\nYarn"], {}, ["NPM Cache"], None),
+    ("later fields", ["--only-target", "absent,\nNPM,Yarn"], {}, ["NPM Cache", "Yarn Cache"], None),
+    ("environment composition", [], {"LINUX_CLEANER_ONLY_TARGET": "NPM,\nYarn", "LINUX_CLEANER_EXCLUDE_TARGET": "Yarn"}, ["NPM Cache"], None),
+    ("hidden empty", ["--only-target", "NPM,\n,Yarn"], {}, [], "empty pattern"),
+):
+    print("Test Case: NAME LF Dry Run " + label, flush=True)
+    result = subprocess.run([cleaner, "--config", str(config), "--dry-run", "--json", "--risk", "danger"] + args,
+                            env=env | overrides, capture_output=True, text=True)
+    assert result.returncode == (1 if error else 0), (label, result)
+    if error:
+        assert error in result.stderr and result.stdout == "", (label, result)
+    else:
+        targets = json.loads(result.stdout)["targets"]
+        assert [t["name"] for t in targets] == expected and all(t["status"] == "protected" for t in targets), (label, targets)
+    assert snapshot() == before and not trace.exists(), "preview changed state or probed analysis/mutation tools"
+    print("PASS: NAME LF Dry Run " + label, flush=True)
 INVENTORY_PY
 
 # Positive PATH scope narrows shared wildcard NAMEs without widening side effects.
