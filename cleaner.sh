@@ -1320,6 +1320,10 @@ emit_list_sessions_json() {
     while IFS= read -r s; do
       [[ -n "$s" ]] && sessions+=("$s")
     done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+    if ! wait "$!"; then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
   fi
 
   printf '{'
@@ -1362,7 +1366,7 @@ emit_list_sessions_json() {
 list_quarantine_sessions() {
   if [[ "$JSON_OUTPUT" == true ]]; then
     emit_list_sessions_json
-    return 0
+    return "$?"
   fi
 
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
@@ -1372,6 +1376,10 @@ list_quarantine_sessions() {
     while IFS= read -r s; do
       [[ -n "$s" ]] && sessions+=("$s")
     done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+    if ! wait "$!"; then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
   fi
   # Empty/missing quarantine is not an error for an informational query.
   if [[ ${#sessions[@]} -eq 0 ]]; then

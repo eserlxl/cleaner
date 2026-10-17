@@ -26,6 +26,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Session inventory exits with an error instead of printing a successful empty or
+  partial list when directory enumeration fails, in both human and JSON output.
 - Update saved reports after inline retention, including nothing-to-clean and
   minimum-reclaim exits, so failed retention remains visible to monitoring.
 - Interrupted aged restores remain retryable after their emptied staging

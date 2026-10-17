@@ -1701,6 +1701,47 @@ else
   exit 1
 fi
 
+# A failed inventory scan must not publish a successful empty or partial list.
+for inventory_format in human json; do
+  for inventory_failure in total partial; do
+    echo -e "\n${BOLD}Test Case: List Sessions Enumeration Failure ($inventory_format $inventory_failure)${NC}"
+    setup_mock_env
+    inventory_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+    for inventory_session in 2026-01-01_00-00-00 2026-01-02_00-00-00; do
+      mkdir -p "$inventory_base/$inventory_session"
+      printf 'keep payload\n' > "$inventory_base/$inventory_session/payload"
+      printf 'full|payload|%s/original|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" \
+        > "$inventory_base/$inventory_session/quarantine.meta"
+    done
+    sha256sum "$inventory_base/"*/payload "$inventory_base/"*/quarantine.meta > "$TEST_ENV_DIR/inventory.sha256"
+    export MOCK_INVENTORY_BASE="$inventory_base" MOCK_INVENTORY_FAILURE="$inventory_failure"
+    cat > "$TEST_ENV_DIR/bin/find" <<'INVENTORY_FIND'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "$MOCK_INVENTORY_BASE" ]]; then
+  [[ "$MOCK_INVENTORY_FAILURE" == partial ]] && printf '%s\n' "$MOCK_INVENTORY_BASE/2026-01-01_00-00-00"
+  exit 23
+fi
+real_find=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v find)
+exec "$real_find" "$@"
+INVENTORY_FIND
+    chmod +x "$TEST_ENV_DIR/bin/find"
+    inventory_args=(--list-sessions)
+    [[ "$inventory_format" == json ]] && inventory_args+=(--json)
+    inventory_exit=0
+    PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" "${inventory_args[@]}" \
+      < /dev/null > "$TEST_ENV_DIR/inventory.out" 2> "$TEST_ENV_DIR/inventory.err" || inventory_exit=$?
+    if [[ "$inventory_exit" -ne 1 || -s "$TEST_ENV_DIR/inventory.out" ]] \
+       || ! grep -qx 'Error: Failed to enumerate quarantine sessions.' "$TEST_ENV_DIR/inventory.err" \
+       || ! sha256sum -c "$TEST_ENV_DIR/inventory.sha256" > "$TEST_ENV_DIR/inventory_check.log" 2>&1; then
+      echo -e "${RED}FAIL: failed $inventory_format inventory emitted success, lost its error, or changed payload (exit=$inventory_exit).${NC}"
+      cat "$TEST_ENV_DIR/inventory.out" "$TEST_ENV_DIR/inventory.err"
+      exit 1
+    fi
+  done
+done
+unset MOCK_INVENTORY_BASE MOCK_INVENTORY_FAILURE
+echo -e "${GREEN}PASS: total and partial inventory scans fail safely in human and JSON formats.${NC}"
+
 # 31. Test Case: Opt-in operation logging (default-off, opt-in-on, no-leak, $HOME-confined)
 setup_mock_env
 log_path="$MOCK_HOME/.cache/linux-cleaner/operations.log"
