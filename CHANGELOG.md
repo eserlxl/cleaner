@@ -15,8 +15,16 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- Saved cleanup reports expose inline retention failures separately from target
+  counts, including the additive nullable `retention_failed` JSON field
+  (MINOR-compatible capability).
+
 ### Fixed
 
+- Update saved reports after inline retention, including nothing-to-clean and
+  minimum-reclaim exits, so failed retention remains visible to monitoring.
 - Interrupted aged restores remain retryable after their emptied staging
   directories are removed. Completion checkpoints and partial-restore metadata
   updates replace metadata atomically, preserving recovery records on failure.

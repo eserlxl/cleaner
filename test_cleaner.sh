@@ -7106,6 +7106,7 @@ assert isinstance(d["elapsed_seconds"], int) and d["elapsed_seconds"] >= 0, d
 assert d["failed_targets"] == [], d
 assert isinstance(d["quarantine_session"], str) and "/quarantine/" in d["quarantine_session"], d
 assert d["interrupted"] is None, d
+assert d["retention_failed"] is None, d
 PY
 then
   echo -e "${RED}FAIL: --report --json after cleanup did not emit valid expected JSON.${NC}"
@@ -7182,6 +7183,7 @@ assert d == {
     "failed_targets": ["Alpha Cache", "Beta Build"],
     "quarantine_session": None,
     "interrupted": "SIGTERM",
+    "retention_failed": None,
 }, d
 PY
 then
@@ -7190,6 +7192,117 @@ then
   exit 1
 fi
 echo -e "${GREEN}PASS: --report --json emits valid JSON matching the saved report and exits 1 when absent.${NC}"
+
+# Inline retention outcomes are saved independently of cleanup-target failures.
+setup_retention_report() {
+  setup_mock_env
+  retention_old="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+  retention_target="$MOCK_HOME/.cache/retention_target"
+  mkdir -p "$retention_old" "$retention_target"
+  printf 'old payload\n' > "$retention_old/payload"
+  printf 'full|payload|%s/prior|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$retention_old/quarantine.meta"
+  touch -d '10 days ago' "$retention_old"
+  printf 'target payload\n' > "$retention_target/file"
+  printf 'safe|Retention Target|%s|retention report fixture|0||\n' "$retention_target" > "$TEST_ENV_DIR/retention_report.conf"
+  export MOCK_RETENTION_MODE="$1" MOCK_RETENTION_OLD="$retention_old" MOCK_RETENTION_TARGET="$retention_target"
+  cat > "$TEST_ENV_DIR/bin/rm" <<'RETENTION_RM'
+#!/usr/bin/env bash
+for arg; do
+  case "$MOCK_RETENTION_MODE" in
+    completed|nothing|min-reclaim|standalone)
+      [[ "$arg" == "$MOCK_RETENTION_OLD" ]] && exit 1 ;;
+    target-failed)
+      [[ "$arg" == "$MOCK_RETENTION_TARGET" ]] && exit 1 ;;
+    interrupted)
+      if [[ "$arg" == "$MOCK_RETENTION_OLD" ]]; then kill -TERM "$PPID"; exit 1; fi ;;
+  esac
+done
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+exec "$real_rm" "$@"
+RETENTION_RM
+  cat > "$TEST_ENV_DIR/bin/find" <<'RETENTION_FIND'
+#!/usr/bin/env bash
+if [[ "$MOCK_RETENTION_MODE" == enumeration && "${1:-}" == "${MOCK_RETENTION_OLD%/*}" ]]; then
+  exit 1
+fi
+real_find=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v find)
+exec "$real_find" "$@"
+RETENTION_FIND
+  chmod +x "$TEST_ENV_DIR/bin/rm" "$TEST_ENV_DIR/bin/find"
+}
+
+for retention_case in completed nothing min-reclaim enumeration target-failed cancelled; do
+  setup_retention_report "$retention_case"
+  retention_args=(--force)
+  retention_exit=1
+  retention_failed=true
+  case "$retention_case" in
+    nothing|cancelled) rm -rf "$retention_target" ;;
+    min-reclaim) retention_args+=(--min-reclaim 1G) ;;
+  esac
+  if [[ "$retention_case" == cancelled ]]; then
+    retention_args=()
+    retention_exit=0
+  fi
+  [[ "$retention_case" == target-failed || "$retention_case" == cancelled ]] && retention_failed=false
+  if ! run_test_case "Retention Report ($retention_case)" "$retention_exit" "retention_run.log" \
+       --config "$TEST_ENV_DIR/retention_report.conf" --clean --trash-keep-days 7 "${retention_args[@]}" \
+     || ! grep -qx "Retention failed: $retention_failed" "$TEST_ENV_DIR/retention_run.log" \
+     || ! grep -qx "Retention failed: $retention_failed" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+     || ! run_test_case "Retention Report JSON ($retention_case)" 0 "retention_report.json" --report --json \
+     || ! python3 - "$TEST_ENV_DIR/retention_report.json" "$retention_case" <<'RETENTION_JSON'
+import json, sys
+d = json.load(open(sys.argv[1]))
+case = sys.argv[2]
+assert d["retention_failed"] is (case not in ("target-failed", "cancelled")), d
+expected = {"nothing": "nothing_to_clean", "cancelled": "nothing_to_clean", "min-reclaim": "skipped_below_min_reclaim"}.get(case, "completed")
+assert d["result"] == expected, d
+if expected == "completed":
+    assert d["failed"] == (1 if case == "target-failed" else 0), d
+    assert d["cleaned"] == (0 if case == "target-failed" else 1), d
+else:
+    assert d["failed"] is None and d["cleaned"] is None, d
+assert d["failed_targets"] == (["Retention Target"] if case == "target-failed" else []), d
+RETENTION_JSON
+  then
+    echo -e "${RED}FAIL: inline retention outcome was lost or changed target counts ($retention_case).${NC}"
+    cat "$TEST_ENV_DIR/retention_run.log" "$TEST_ENV_DIR/retention_report.json" 2>/dev/null || true
+    exit 1
+  fi
+  if [[ "$retention_case" == target-failed ]]; then
+    [[ ! -e "$retention_old" && -f "$retention_target/file" ]] || exit 1
+  else
+    grep -qx 'old payload' "$retention_old/payload" || exit 1
+  fi
+done
+
+setup_retention_report interrupted
+mkdir -p "$XDG_STATE_HOME/linux-cleaner"
+printf 'Saved: 2000-01-01T00:00:00\nResult: nothing to clean\n' > "$XDG_STATE_HOME/linux-cleaner/last-report.txt"
+if ! run_test_case "Retention Interrupted Keeps Current Report" 143 "retention_interrupted.log" \
+       --config "$TEST_ENV_DIR/retention_report.conf" --clean --force --trash-keep-days 7 \
+   || ! run_test_case "Retention Interrupted Report JSON" 0 "retention_interrupted.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/retention_interrupted.json" <<'RETENTION_INTERRUPTED'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["result"] == "completed" and d["cleaned"] == 1 and d["failed"] == 0, d
+assert d["saved"] != "2000-01-01T00:00:00" and d["retention_failed"] is None, d
+RETENTION_INTERRUPTED
+then
+  echo -e "${RED}FAIL: interruption during retention lost the current cleanup report.${NC}"
+  exit 1
+fi
+grep -qx 'old payload' "$retention_old/payload" || exit 1
+
+setup_retention_report standalone
+if ! run_test_case "Retention Standalone Purge Failure" 1 "retention_standalone.log" --purge-sessions older-than:7 --force \
+   || ! grep -qx 'old payload' "$retention_old/payload" \
+   || [[ -e "$XDG_STATE_HOME/linux-cleaner/last-report.txt" ]]; then
+  echo -e "${RED}FAIL: standalone purge failure lost payload, changed status, or wrote a cleanup report.${NC}"
+  exit 1
+fi
+unset MOCK_RETENTION_MODE MOCK_RETENTION_OLD MOCK_RETENTION_TARGET
+echo -e "${GREEN}PASS: retention outcomes survive cleanup exits without changing target counters or historical reports.${NC}"
 
 # --purge-sessions max-size:SIZE: keep newest sessions within a byte budget
 # and purge older ones; exit 0 when within budget or when no quarantine base

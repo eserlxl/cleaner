@@ -1534,7 +1534,7 @@ purge_quarantine_sessions() {
     fi
   fi
 
-  local purged=0
+  local purged=0 purge_status=0
   for d in "${targets[@]}"; do
     if rm -rf "$d"; then
       echo -e "${GREEN}Purged $(basename "$d")${NC}"
@@ -1543,6 +1543,7 @@ purge_quarantine_sessions() {
     else
       echo -e "${RED}Error: Failed to purge '$d'.${NC}" >&2
       OPERATION_FAILED=true
+      purge_status=1
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=purge session='$(basename "$d")' outcome=failed"
     fi
   done
@@ -1551,6 +1552,7 @@ purge_quarantine_sessions() {
   rmdir "$quarantine_base" 2>/dev/null || true
 
   echo -e "${BOLD}Purged ${purged} session(s).${NC}"
+  return "$purge_status"
 }
 
 # --trash-keep-days: retire old quarantine sessions at the end of every cleanup
@@ -1558,7 +1560,14 @@ purge_quarantine_sessions() {
 # A failed purge sets OPERATION_FAILED like any other failed operation.
 apply_trash_keep_days() {
   if [[ -n "$TRASH_KEEP_DAYS" ]]; then
-    purge_quarantine_sessions "older-than:$TRASH_KEEP_DAYS"
+    local failed=false
+    if ! purge_quarantine_sessions "older-than:$TRASH_KEEP_DAYS"; then
+      failed=true
+      OPERATION_FAILED=true
+    fi
+    RESULT_REPORT_TEXT+=$'\n'"Retention failed: $failed"
+    printf 'Retention failed: %s\n' "$failed"
+    save_last_cleanup_report
   fi
 }
 
@@ -2295,7 +2304,7 @@ show_last_report() {
   fi
   if [[ "$JSON_OUTPUT" == true ]]; then
     local line saved="" result="" cleaned="null" skipped="null" failed="null" elapsed_seconds="null"
-    local failed_raw="" rest item first=true quarantine_session="" interrupted=""
+    local failed_raw="" rest item first=true quarantine_session="" interrupted="" retention_failed=null
     local -a failed_targets=()
     while IFS= read -r line || [[ -n "$line" ]]; do
       case "$line" in
@@ -2338,6 +2347,9 @@ show_last_report() {
           interrupted="${line#Interrupted: }"
           interrupted="${interrupted%% *}"
           ;;
+        "Retention failed: true"|"Retention failed: false")
+          retention_failed="${line#Retention failed: }"
+          ;;
       esac
     done < "$report_file"
     printf '{"saved":"%s","result":"%s","cleaned":%s,"skipped":%s,"failed":%s,"elapsed_seconds":%s,"failed_targets":[' \
@@ -2362,7 +2374,7 @@ show_last_report() {
     else
       printf 'null'
     fi
-    printf '}\n'
+    printf ',"retention_failed":%s}\n' "$retention_failed"
     return 0
   fi
   cat -- "$report_file"
@@ -3394,7 +3406,6 @@ trap - INT TERM
 RESULT_REPORT_TEXT=$(print_result_report)
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
-
 apply_trash_keep_days
 
 echo

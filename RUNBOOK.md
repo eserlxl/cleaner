@@ -130,7 +130,7 @@ cleaner --list-sessions --json
 cleaner --report --json
 ```
 
-`cleaner --report --json` summarizes the last saved cleanup (`result`, `failed`, `failed_targets`, `interrupted`), so a monitor can alert on a failed or interrupted nightly run:
+`cleaner --report --json` summarizes the last saved cleanup (`result`, `failed`, `failed_targets`, `interrupted`, `retention_failed`), so a monitor can alert on a failed or interrupted nightly run. Check `retention_failed` separately from target failures: it is `true` on inline retention failure, `false` when retention did not fail (including cancellation), and `null` for historical reports, runs without retention, or retention interrupted before its outcome is known:
 
 ```cron
 30 3 * * * cleaner --report --json

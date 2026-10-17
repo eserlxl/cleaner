@@ -128,7 +128,13 @@ as
 .BR cleaned / skipped / failed / elapsed_seconds ,
 .BR failed_targets ,
 .BR quarantine_session ,
-.BR interrupted ).
+.BR interrupted ,
+.BR retention_failed ).
+The additive
+.B retention_failed
+field is true when inline retention failed, false when it did not fail
+(including cancellation), and null when no retention outcome was saved.
+Cleanup-target counts are unchanged.
 Implies
 .BR \-\-quiet .
 .TP
