@@ -79,7 +79,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Root required, privileges unavailable | Skipped (`requires root`); the rest of the run continues and the exit status stays 0 | Root Skip Without Privileges |
 | TOCTOU on live paths | residual | manual VM review |
 
-Targets outside HOME are allowed. `check_path_safety` still returns 1 for protected system directories and 3 for a symlink target. Return 2 (outside HOME) is cleaned like an in-HOME target. User-defined `protect|PATH` config directives protect arbitrary directory trees: each `PATH` is expanded and physically canonicalized, and any target whose canonical path equals a protected path, lies under one, or contains one (whole path components only) is skipped before sizing or deletion.
+Targets outside HOME are allowed. `check_path_safety` still returns 1 for protected system directories, HOME, and any ancestor of HOME, and 3 for a symlink target. Return 2 (outside HOME) is cleaned like an in-HOME target. User-defined `protect|PATH` config directives protect arbitrary directory trees: each `PATH` is expanded and physically canonicalized, and any target whose canonical path equals a protected path, lies under one, or contains one (whole path components only) is skipped before sizing or deletion.
 
 A target that needs root and cannot obtain it is skipped with a warning and an operation-log record (`outcome=skipped reason=requires-root`). An unattended run (no TTY on stdin) never prompts. A failed or cancelled prompt is remembered, and every later root-requiring target of that run is skipped without asking again. A dry-run never prompts.
 

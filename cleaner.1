@@ -497,7 +497,9 @@ Deletions are blocked for the filesystem root, system directories
 .RI ( /usr ", " /etc ", " /var ", " /lib ", " /opt ", " /srv ", " /tmp ", " /run ", " /mnt ", " /media ", "
 and similar), and for
 .BR $HOME
-itself. Paths outside
+itself or any target containing
+.BR $HOME .
+Paths outside
 .BR $HOME
 are allowed. Symlinked targets are refused, and paths are physically canonicalized to
 prevent traversal or symlink escapes. A target that needs root is skipped, with a

@@ -1344,6 +1344,38 @@ else
   exit 1
 fi
 
+# Test Case: Ancestor of HOME is classified UNSAFE and never deleted.
+setup_mock_env
+nested_parent="$TEST_ENV_DIR/home_ancestor"
+nested_home="$nested_parent/svc/home"
+mkdir -p "$nested_home/.cache"
+echo "keep" > "$nested_home/.cache/keep.txt"
+cat << 'EOF' > "$TEST_ENV_DIR/home_ancestor.conf"
+safe|Parent Of Home|$HOME/..|ancestor of HOME|0||
+EOF
+echo -e "\n${BOLD}Test Case: Ancestor of HOME UNSAFE${NC}"
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$nested_home" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/home_ancestor.conf" --dry-run --debug < /dev/null \
+  > "$TEST_ENV_DIR/home_ancestor_dry.log" 2>&1
+if grep -q "UNSAFE.*Parent Of Home" "$TEST_ENV_DIR/home_ancestor_dry.log" && \
+   ! grep -q "FOUND.*Parent Of Home" "$TEST_ENV_DIR/home_ancestor_dry.log"; then
+  echo -e "${GREEN}PASS: Ancestor of HOME was classified UNSAFE in dry-run.${NC}"
+else
+  echo -e "${RED}FAIL: Ancestor of HOME was not classified UNSAFE (or was FOUND) in dry-run.${NC}"
+  cat "$TEST_ENV_DIR/home_ancestor_dry.log"
+  exit 1
+fi
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$nested_home" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/home_ancestor.conf" --clean --force < /dev/null \
+  > "$TEST_ENV_DIR/home_ancestor_clean.log" 2>&1
+if [[ -f "$nested_home/.cache/keep.txt" ]]; then
+  echo -e "${GREEN}PASS: Ancestor of HOME survived --clean --force.${NC}"
+else
+  echo -e "${RED}FAIL: Ancestor of HOME was deleted by --clean --force.${NC}"
+  cat "$TEST_ENV_DIR/home_ancestor_clean.log"
+  exit 1
+fi
+
 # 20. Test Case: --force cleans an outside-HOME target with no extra flag
 setup_mock_env
 if run_test_case "Actual Outside HOME Clean" 0 "outside_clean.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --force; then

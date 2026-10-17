@@ -31,6 +31,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- A target that contains `$HOME` (for example `$HOME/..` when `HOME` is not
+  directly under `/home`) is now refused as `UNSAFE` instead of being deleted
+  together with `HOME`.
 - User-level prune actions now prune the configured target path instead of the
   tool's default cache location.
 

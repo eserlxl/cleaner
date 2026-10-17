@@ -1630,8 +1630,8 @@ check_path_safety() {
   normalized=$(canonicalize_physical "$target_path")
   normalized_home=$(canonicalize_physical "$HOME")
 
-  # Never clean HOME itself, including trailing-slash and dot-dot aliases.
-  if [[ "$normalized" == "$normalized_home" ]]; then
+  # Never clean HOME itself or any ancestor of HOME, including trailing-slash and dot-dot aliases.
+  if [[ "$normalized" == "$normalized_home" || "$normalized_home" == "$normalized"/* ]]; then
     return 1
   fi
   

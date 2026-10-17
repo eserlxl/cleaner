@@ -130,7 +130,7 @@ See [`cleaner.conf`](cleaner.conf) for the authoritative list of targets, age th
 Security threat model: [docs/threat-model.md](docs/threat-model.md).
 
 1. **Dry-run by default**: Running `cleaner` without `--clean`, `--force`, `--interactive`, or `LINUX_CLEANER_FORCE=1` never modifies the filesystem.
-2. **System directories are `UNSAFE`**: Targets resolving to `/`, `$HOME` itself, `/home`, `/root`, `/usr`, `/var`, `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/bin`, `/sbin`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, or `/lib*` are flagged `[UNSAFE]` and skipped. Descendants outside `$HOME` (such as `/opt/...` or `/var/cache/...`) are allowed.
+2. **System directories are `UNSAFE`**: Targets resolving to `/`, `$HOME` itself, any target containing `$HOME` (an ancestor of it), `/home`, `/root`, `/usr`, `/var`, `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/bin`, `/sbin`, `/opt`, `/srv`, `/tmp`, `/run`, `/mnt`, `/media`, or `/lib*` are flagged `[UNSAFE]` and skipped. Descendants outside `$HOME` (such as `/opt/...` or `/var/cache/...`) are allowed.
 3. **Symlink refusal & physical canonicalization**: If a target path is itself a symlink, it is flagged `[SYMLINK]` and refused. Target paths are physically canonicalized through their closest existing parent directory to prevent `..` traversal or symlink escapes.
 4. **No `eval`, no shell globbing**: Path expansion substitutes only whole-token `$HOME`, leading `~`, and `$USER`. Wildcards are evaluated by `find` below a literal prefix, never by the shell or `eval`.
 5. **Running-process checks**: Targets with `CHECK_PROCESSES` are skipped (`[BLOCKED]`) while any listed process or `cmdline:<pattern>` is active.
