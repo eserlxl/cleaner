@@ -484,10 +484,13 @@ values (enumerated whitelist only):
 .BR action:apk_clean
 .IP \(bu 3
 .BR action:uv_cache_prune
+runs \fBuv cache prune \-\-cache\-dir\fR against the target's configured path
 .IP \(bu 3
 .BR action:pnpm_store_prune
+runs \fBpnpm store prune \-\-store\-dir\fR against the target's configured path
 .IP \(bu 3
 .BR action:hf_cache_prune
+runs \fBhf cache prune \-\-yes \-\-cache\-dir\fR against the target's configured path
 .RE
 .SH SAFETY
 Deletions are blocked for the filesystem root, system directories

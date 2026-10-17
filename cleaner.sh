@@ -2674,17 +2674,17 @@ for i in "${!parsed_names[@]}"; do
         fi
         ;;
       action:uv_cache_prune)
-        if uv cache prune; then
+        if uv cache prune --cache-dir "$path"; then
           action_success=true
         fi
         ;;
       action:pnpm_store_prune)
-        if pnpm store prune; then
+        if pnpm store prune --store-dir "$path"; then
           action_success=true
         fi
         ;;
       action:hf_cache_prune)
-        if hf cache prune --yes; then
+        if hf cache prune --yes --cache-dir "$path"; then
           action_success=true
         fi
         ;;

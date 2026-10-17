@@ -29,6 +29,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   tool is not installed, block while the tool is running, and credit the disk
   space actually freed rather than the pre-run directory `du`.
 
+### Fixed
+
+- User-level prune actions now prune the configured target path instead of the
+  tool's default cache location.
+
 ## [1.4.2] - 2026-10-16
 
 ### Added

@@ -5435,7 +5435,10 @@ if ! run_test_case "User Actions Clean Force Without Sudo" 0 "user_actions_clean
    || [[ -e "$TEST_ENV_DIR/sudo_unexpected.calls" ]] \
    || grep -qi "requires root" "$TEST_ENV_DIR/user_actions_clean.log" \
    || grep -qF "[FOUND] UV Cache" "$TEST_ENV_DIR/user_actions_clean.log" \
-   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'uv cache prune\npnpm store prune\nhf cache prune --yes\n') \
+   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'uv cache prune --cache-dir %s\npnpm store prune --store-dir %s\nhf cache prune --yes --cache-dir %s\n' \
+          "$(realpath "$MOCK_HOME/.cache/uv")" \
+          "$(realpath "$MOCK_HOME/.local/share/pnpm/store")" \
+          "$(realpath "$MOCK_HOME/.cache/huggingface/hub")") \
    || ! grep -q '^Result: cleaned=3 skipped=0 failed=0 ' "$TEST_ENV_DIR/user_actions_clean.log"; then
   echo -e "${RED}FAIL: user actions did not run with exact argv, invoked sudo, or reported requires root.${NC}"
   cat "$TEST_ENV_DIR/user_actions_clean.log" "$MOCK_USER_ACTION_LOG" "$TEST_ENV_DIR/sudo_unexpected.calls" 2>/dev/null || true
@@ -5477,7 +5480,9 @@ unset MOCK_USER_ACTION_LOG
 if [[ "$missing_ec" -ne 0 ]] \
    || [[ -e "$TEST_ENV_DIR/sudo_missing_unexpected.calls" ]] \
    || ! grep -q "PNPM Store: skipped: 'pnpm' not available on this platform." "$TEST_ENV_DIR/user_actions_missing.log" \
-   || ! cmp -s "$TEST_ENV_DIR/user_missing.calls" <(printf 'uv cache prune\nhf cache prune --yes\n') \
+   || ! cmp -s "$TEST_ENV_DIR/user_missing.calls" <(printf 'uv cache prune --cache-dir %s\nhf cache prune --yes --cache-dir %s\n' \
+          "$(realpath "$MOCK_HOME/.cache/uv")" \
+          "$(realpath "$MOCK_HOME/.cache/huggingface/hub")") \
    || ! grep -q '^Result: cleaned=2 skipped=1 failed=0 ' "$TEST_ENV_DIR/user_actions_missing.log"; then
   echo -e "${RED}FAIL: missing user-action binary did not skip cleanly (ec=$missing_ec).${NC}"
   cat "$TEST_ENV_DIR/user_actions_missing.log" "$TEST_ENV_DIR/user_missing.calls" 2>/dev/null || true
@@ -5506,7 +5511,9 @@ export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_blocked.calls"
 if ! run_test_case "User Actions Blocked By Running Process" 0 "user_actions_blocked.log" \
        --config "$TEST_ENV_DIR/user_actions.conf" --clean --force \
    || ! grep -q "BLOCKED.*UV Cache: Skip cleanup because process 'uv' is active." "$TEST_ENV_DIR/user_actions_blocked.log" \
-   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'pnpm store prune\nhf cache prune --yes\n') \
+   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'pnpm store prune --store-dir %s\nhf cache prune --yes --cache-dir %s\n' \
+          "$(realpath "$MOCK_HOME/.local/share/pnpm/store")" \
+          "$(realpath "$MOCK_HOME/.cache/huggingface/hub")") \
    || ! grep -q '^Targets: found=2 .* blocked=1 ' "$TEST_ENV_DIR/user_actions_blocked.log"; then
   echo -e "${RED}FAIL: running 'uv' process did not block UV Cache row.${NC}"
   cat "$TEST_ENV_DIR/user_actions_blocked.log" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true
@@ -5603,7 +5610,7 @@ if ! run_test_case "System Action Still Uses Sudo Alongside User Action" 0 "mixe
        --config "$TEST_ENV_DIR/mixed_actions.conf" --clean --force --risk medium \
    || ! grep -qx "paccache -rk1" "$MOCK_SUDO_LOG" \
    || grep -q "uv" "$MOCK_SUDO_LOG" \
-   || ! grep -qx "uv cache prune" "$MOCK_USER_ACTION_LOG" \
+   || ! grep -qx "uv cache prune --cache-dir $(realpath "$MOCK_HOME/.cache/uv")" "$MOCK_USER_ACTION_LOG" \
    || ! grep -q '^Result: cleaned=2 skipped=0 failed=0 ' "$TEST_ENV_DIR/mixed_actions.log"; then
   echo -e "${RED}FAIL: system action did not route through sudo or user action leaked into sudo.${NC}"
   cat "$TEST_ENV_DIR/mixed_actions.log" "$MOCK_SUDO_LOG" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true

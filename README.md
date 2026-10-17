@@ -182,11 +182,11 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 | `action:dnf_clean` | `sudo dnf clean all` | `DNF Cache Clean` (commented) | CONFIGURATION |
 | `action:zypper_clean` | `sudo zypper clean -a` | `Zypper Cache Clean` (commented) | CONFIGURATION |
 | `action:apk_clean` | `sudo apk cache clean` | `APK Cache Clean` (commented) | CONFIGURATION |
-| `action:uv_cache_prune` | `uv cache prune` | `UV Cache` | CONFIGURATION |
-| `action:pnpm_store_prune` | `pnpm store prune` | `PNPM Store` | CONFIGURATION |
-| `action:hf_cache_prune` | `hf cache prune --yes` | `Hugging Face Cache` | CONFIGURATION |
+| `action:uv_cache_prune` | `uv cache prune --cache-dir PATH` | `UV Cache` | CONFIGURATION |
+| `action:pnpm_store_prune` | `pnpm store prune --store-dir PATH` | `PNPM Store` | CONFIGURATION |
+| `action:hf_cache_prune` | `hf cache prune --yes --cache-dir PATH` | `Hugging Face Cache` | CONFIGURATION |
 
-User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo`, and their freed size is measured on disk from the filesystem free-space change rather than directory `du`.
+User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo` against the target's configured PATH (`uv --cache-dir`, `pnpm --store-dir`, `hf --cache-dir`), and their freed size is measured on disk from the filesystem free-space change rather than directory `du`.
 
 ### Wildcard paths
 
