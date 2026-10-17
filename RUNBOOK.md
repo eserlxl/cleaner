@@ -71,7 +71,7 @@ Outside-HOME package-cache targets (e.g. `/var/cache/pacman/pkg`) are allowed. T
 
 ## systemd user timers
 
-`make install` places the units on the systemd user path (`$PREFIX/lib/systemd/user`) and does not enable them. A checkout that is not installed can instead copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy the installed `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (Arch/package `PREFIX=/usr`: `/usr/share/linux-cleaner/linux-cleaner.env.example`; checkout: `examples/linux-cleaner.env.example`) to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. Only `linux-cleaner-clean.service` loads this file. The monitor and retention services use their own unit settings; cleanup filters and JSON flags in this file do not affect them. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
+`make install` places the units on the systemd user path (`$PREFIX/lib/systemd/user`) and does not enable them. A checkout that is not installed can instead copy units from `examples/systemd/` to `~/.config/systemd/user/`. Copy the installed `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (Arch/package `PREFIX=/usr`: `/usr/share/linux-cleaner/linux-cleaner.env.example`; checkout: `examples/linux-cleaner.env.example`) to `~/.config/linux-cleaner/env` (create the directory if needed) for the cleanup service's safe-tier defaults and overrides. By default, only `linux-cleaner-clean.service` loads this file. The monitor has an independent optional profile described below, and retention uses its own unit settings; cleanup settings do not affect either unless you explicitly share the monitor profile. Use literal absolute paths in the environment file: systemd does not expand `$HOME` there.
 
 To select one existing project, set `LINUX_CLEANER_ONLY_PATH="/absolute/project path"`
 in `~/.config/linux-cleaner/env`, optionally with a NAME filter such as
@@ -95,6 +95,25 @@ systemctl --user enable --now linux-cleaner-retention.timer
 # Optional JSON monitoring dry-run (parity with cron below):
 systemctl --user enable --now linux-cleaner-monitor.timer
 ```
+
+The monitor optionally reads `~/.config/linux-cleaner/monitor.env`; missing or
+empty leaves its default whole-configuration JSON preview unchanged. Create it
+with literal values (systemd does not expand `$HOME`), for example:
+
+```ini
+LINUX_CLEANER_CONFIG=/absolute/path/to/cleaner.conf
+LINUX_CLEANER_ONLY_PATH="/absolute/project path"
+LINUX_CLEANER_ONLY_TARGET="C++ Build"
+```
+
+This file is independent of the cleanup `env` file. To share settings explicitly
+when no separate monitor profile exists, run
+`ln -s env ~/.config/linux-cleaner/monitor.env`. The monitor always runs
+`cleaner --quiet --dry-run --json`: inherited `LINUX_CLEANER_FORCE=1` and
+`LINUX_CLEANER_JSON=0` cannot enable cleanup or disable JSON. Trash, logging,
+minimum-reclaim and retention settings remain preview-only; no retention runs.
+Existing invalid settings still error, including path scope combined with
+`LINUX_CLEANER_TRASH_KEEP_DAYS`. The retention service never reads either profile.
 
 User linger may be required for timers without an active session.
 

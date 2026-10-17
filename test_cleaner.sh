@@ -4622,6 +4622,109 @@ with tempfile.TemporaryDirectory(prefix="cleaner-only-path-", dir="/tmp") as dir
 ONLY_PATH_PY
 
 
+# The shipped monitor command stays a preview with optional independent settings.
+python3 - "$CLEANER_SH" "$SCRIPT_DIR/examples/systemd/linux-cleaner-monitor.service" <<'MONITOR_PROFILE_PY'
+import hashlib, json, os, pathlib, shlex, stat, subprocess, sys, tempfile
+cleaner, unit_path = sys.argv[1:]
+unit = pathlib.Path(unit_path).read_text().splitlines()
+command = shlex.split(next(line.removeprefix("ExecStart=") for line in unit if line.startswith("ExecStart=")))
+profile_spec = next(line.removeprefix("EnvironmentFile=") for line in unit if line.startswith("EnvironmentFile="))
+assert profile_spec == "-%h/.config/linux-cleaner/monitor.env"
+assert command == ["/usr/bin/env", "cleaner", "--quiet", "--dry-run", "--json"]
+assert not any(line.startswith("Environment=LINUX_CLEANER_JSON=") for line in unit)
+with tempfile.TemporaryDirectory(prefix="cleaner-monitor-profile-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home, bindir = root / "home", root / "bin"
+    config_dir = home / ".config/linux-cleaner"
+    config_dir.mkdir(parents=True)
+    bindir.mkdir()
+    (bindir / "cleaner").symlink_to(cleaner)
+    trace = root / "forbidden-calls"
+    for name in ("rm", "mv", "mkdir", "flock", "sudo", "uv", "pnpm", "hf", "pacman", "paccache"):
+        path = bindir / name
+        path.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$MONITOR_TRACE"\nexit 99\n')
+        path.chmod(0o755)
+    (bindir / "pgrep").write_text("#!/bin/sh\nexit 1\n")
+    (bindir / "pgrep").chmod(0o755)
+    alpha = home / "projects/alpha [*?] space"
+    for project in (alpha, home / "projects/beta"):
+        cache = project / "cache"
+        cache.mkdir(parents=True)
+        for name, size in (("eligible", 13), ("global.keep", 11), ("row.keep", 7)):
+            (cache / name).write_bytes(b"x" * size)
+    (home / "default").write_bytes(b"x" * 31)
+    for name, size in (("projects/alpha [*?] space/medium", 17),
+                       ("projects/alpha [*?] space/other", 19)):
+        path = home / name
+        path.mkdir(parents=True)
+        (path / "payload").write_bytes(b"x" * size)
+    default = config_dir / "cleaner.conf"
+    default.write_text("safe|Default|$HOME/default|default config|0||\n")
+    custom = root / "custom.conf"
+    custom.write_text("safe|Shared Cache|$HOME/projects/*/cache|cache|0||exclude:row.keep\n"
+                      "medium|Shared Medium|$HOME/projects/*/medium|medium|0||\n"
+                      "safe|Other|$HOME/projects/*/other|other|0||\n"
+                      "safe|Shared Action|$HOME/default|external action|0||action:uv_cache_prune\n")
+    for name in ("state/linux-cleaner/last-report.txt", ".cache/linux-cleaner/ops.log",
+                 ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00/quarantine.meta",
+                 ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00/payload"):
+        path = home / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("keep sentinel\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"), XDG_STATE_HOME=str(home / "state"),
+               PATH=str(bindir) + ":" + env["PATH"], NO_COLOR="1", MONITOR_TRACE=str(trace))
+    profile = pathlib.Path(profile_spec[1:].replace("%h", str(home)))
+    shared = dict(LINUX_CLEANER_CONFIG=str(custom), LINUX_CLEANER_RISK="medium",
+                  LINUX_CLEANER_ONLY_TARGET="Shared", LINUX_CLEANER_EXCLUDE_TARGET="Other",
+                  LINUX_CLEANER_ONLY_PATH=str(alpha), LINUX_CLEANER_EXCLUDE="global.keep")
+    cleanup_profile = config_dir / "env"
+    cleanup_profile.write_text("\n".join(k + "=" + shlex.quote(v) for k, v in shared.items()) + "\n")
+    def snapshot():
+        return {str(p.relative_to(home)): (stat.S_IMODE(p.lstat().st_mode), p.lstat().st_mtime_ns,
+                os.readlink(p) if p.is_symlink() else hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None)
+                for p in home.rglob("*")}
+    def run(label, settings, expected=None, error=None, share=False):
+        print("Test Case: Monitor Profile " + label, flush=True)
+        if profile.exists() or profile.is_symlink():
+            profile.unlink()
+        if share:
+            profile.symlink_to(cleanup_profile.name)
+            assert profile.read_bytes() == cleanup_profile.read_bytes()
+        elif settings is not None:
+            profile.write_text("\n".join(k + "=" + shlex.quote(v) for k, v in settings.items()) + "\n")
+        before = snapshot()
+        # Supply controlled profile values directly; live systemd loading is not exercised.
+        result = subprocess.run(command, env=env | (settings or {}), capture_output=True, text=True, timeout=20)
+        assert result.returncode == (1 if error else 0), (label, result)
+        if error:
+            assert error in result.stderr and result.stdout == "", (label, result)
+        else:
+            data = json.loads(result.stdout)
+            assert data["config"] == str(custom if settings and "LINUX_CLEANER_CONFIG" in settings else default)
+            assert [(t["name"], t["bytes"]) for t in data["targets"]] == expected, (label, data)
+            assert data["total_reclaimable_bytes"] == sum(size for _, size in expected), (label, data)
+        assert snapshot() == before and not trace.exists(), (label, "preview changed state or called mutation/action tool")
+        print("PASS: Monitor Profile " + label, flush=True)
+    run("absent ignores cleanup profile", None, [("Default", 31)])
+    run("empty defaults", {}, [("Default", 31)])
+    run("independent scoped safe", shared | {"LINUX_CLEANER_RISK": "safe"}, [("Shared Cache", 13)])
+    run("independent scoped medium", shared, [("Shared Cache", 13), ("Shared Medium", 17)])
+    run("NAME exclusion", shared | {"LINUX_CLEANER_EXCLUDE_TARGET": "Medium"}, [("Shared Cache", 13)])
+    run("explicit shared symlink", shared, [("Shared Cache", 13), ("Shared Medium", 17)], share=True)
+    preview = dict(LINUX_CLEANER_FORCE="1", LINUX_CLEANER_JSON="0", LINUX_CLEANER_TRASH="1",
+                   LINUX_CLEANER_LOG=str(home / ".cache/linux-cleaner/ops.log"), LINUX_CLEANER_MIN_RECLAIM="1G")
+    run("execution settings stay JSON preview", shared | preview, [("Shared Cache", 13), ("Shared Medium", 17)])
+    run("retention stays preview", preview | {"LINUX_CLEANER_TRASH_KEEP_DAYS": "7"}, [("Default", 31)])
+    for label, settings, error in [
+        ("invalid risk", {"LINUX_CLEANER_RISK": "invalid"}, "Unknown risk"),
+        ("invalid scope", {"LINUX_CLEANER_ONLY_PATH": "relative"}, "literal absolute path"),
+        ("invalid retention", {"LINUX_CLEANER_TRASH_KEEP_DAYS": "bad"}, "non-negative integer"),
+        ("scope retention conflict", shared | {"LINUX_CLEANER_TRASH_KEEP_DAYS": "7"}, "--only-path applies only"),
+    ]:
+        run(label, settings, error=error)
+MONITOR_PROFILE_PY
+
 # Expansion must reject unrepresentable paths before a checked scope can see a sibling.
 setup_mock_env
 python3 - "$CLEANER_SH" <<'PATH_EXPANSION_PY'

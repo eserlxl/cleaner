@@ -61,7 +61,7 @@ systemctl --user enable --now linux-cleaner-clean.timer
 > [!WARNING]
 > Nothing is enabled on install; the Arch package only prints this command as a hint. Preview first with `cleaner --dry-run`. The timer has `Persistent=true`: if a 03:00 slot was missed since its last recorded run (for example a stamp left in `~/.local/share/systemd/timers/` by an earlier install), enabling it runs a cleanup **immediately**, not at the next 03:00.
 
-To customize the scheduled cleanup, copy `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (Arch/package `PREFIX=/usr`: `/usr/share/linux-cleaner/linux-cleaner.env.example`; checkout: `examples/linux-cleaner.env.example`) to `~/.config/linux-cleaner/env`, creating the directory if needed. **This file is read only by `linux-cleaner-clean.service`** (`EnvironmentFile=-%h/.config/linux-cleaner/env`), not by manual `cleaner` runs or the other units, and systemd does not expand `$HOME` in it, so use literal absolute paths.
+To customize the scheduled cleanup, copy `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (Arch/package `PREFIX=/usr`: `/usr/share/linux-cleaner/linux-cleaner.env.example`; checkout: `examples/linux-cleaner.env.example`) to `~/.config/linux-cleaner/env`, creating the directory if needed. **By default, this file is read only by `linux-cleaner-clean.service`** (`EnvironmentFile=-%h/.config/linux-cleaner/env`), not by manual `cleaner` runs or the other units, and systemd does not expand `$HOME` in it, so use literal absolute paths.
 
 - **`LINUX_CLEANER_RISK=safe`** (default) keeps unattended runs on `safe` targets; raise it to `medium` only if you accept unattended deletion of medium-tier data.
 - **`LINUX_CLEANER_TRASH=1`** moves files into `~/.cache/linux-cleaner/quarantine/` instead of deleting them. Then also enable the weekly retention timer, so quarantine disk usage stays bounded:
@@ -70,7 +70,15 @@ To customize the scheduled cleanup, copy `/usr/local/share/linux-cleaner/linux-c
 systemctl --user enable --now linux-cleaner-retention.timer   # purge sessions older than 30 days, Sundays 04:00
 ```
 
-An optional six-hourly JSON preview timer (`linux-cleaner-monitor.timer`) is also installed. Check what a run did:
+An optional six-hourly JSON preview timer (`linux-cleaner-monitor.timer`) is also installed.
+Its optional `~/.config/linux-cleaner/monitor.env` profile is independent of cleanup
+settings; missing means the usual whole-configuration preview. Use literal absolute
+paths, for example `LINUX_CLEANER_ONLY_PATH=/absolute/project`, optionally with
+`LINUX_CLEANER_CONFIG=/absolute/cleaner.conf`. To share settings explicitly, you may
+symlink `monitor.env` to `env`; see [the scheduling recipe](RUNBOOK.md#systemd-user-timers).
+The command always requests dry-run JSON, even with inherited `LINUX_CLEANER_FORCE=1` or
+`LINUX_CLEANER_JSON=0` mirrors; it never performs retention. Existing incompatible settings
+(such as a path scope plus global retention) still fail. Check what a run did:
 
 ```sh
 cleaner --report                                   # saved plan and result from the last cleanup

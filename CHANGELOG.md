@@ -21,6 +21,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- The installed monitor accepts an optional independent `monitor.env` profile for
+  scoped JSON previews; explicit dry-run/JSON flags preserve preview-only behavior.
+
 - `LINUX_CLEANER_ONLY_PATH` extends positive project selection to scheduled cleanup
   environment files; CLI scope overrides it, with the same safety and mode guards.
 - `--only-path PATH` selects one existing project’s ordinary targets
