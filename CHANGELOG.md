@@ -21,6 +21,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Session inventory adds `unrecorded_entry_count` and human warnings for immediate
+  entries absent from metadata accounting; failed reads stop inventory and purge.
+
 - `--restore --only-exact PATH` selects records by their literal original path,
   preserving prefix siblings and their recovery metadata for later restoration.
 

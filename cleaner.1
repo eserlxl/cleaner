@@ -117,7 +117,7 @@ With
 emit a JSON inventory of quarantine sessions
 .RB ( sessions
 array of
-.BR timestamp / size_bytes / size_human / date / targets ).
+.BR timestamp / size_bytes / size_human / date / unrecorded_entry_count / targets ).
 With
 .BR \-\-report ,
 emit a JSON summary of the saved last cleanup report
@@ -172,6 +172,16 @@ inspected before it is restored or permanently purged.
 With
 .BR \-\-json ,
 emit a machine-readable inventory instead of human-formatted output.
+Every session includes integer
+.B unrecorded_entry_count
+in JSON; human output warns when it is positive. It counts immediate entries
+(excluding quarantine.meta) not equal to a trimmed recorded relative path or its
+literal first component, including hidden entries and symlinks without following
+them. Missing metadata accounts for no entries. Referenced-root descendants and
+aliases are not inspected. Zero does not certify metadata integrity, recovery or
+safe purge. Positive counts do not change confirmation or force policy. Failed
+metadata reads or entry enumeration stop inventory and purge before confirmation
+or deletion, including forced purge and inline retention.
 .TP
 .B \-\-list\-targets
 List targets defined in the configuration file

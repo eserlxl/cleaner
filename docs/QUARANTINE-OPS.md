@@ -86,7 +86,17 @@ There is no environment mirror for `--only-exact`.
 
 If destination exists, restore skips (`Restore with Conflict`). If the original path (full or aged) or any existing intermediate directory component up to the destination file's parent (aged) is a symlink, restore treats it as a conflict without following the link (`Restore Aged Subdir Symlink Conflict`, `Restore Aged Original Path Symlink Conflict`, `Restore Full Original Path Symlink Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry. A retry after an interrupted restore finishes the job: a whole-target record whose payload is gone while its original path is back is treated as already restored and dropped (`Restore Retry After Interrupted Restore`); a payload missing with the original also absent still fails (`Restore Missing Source Still Fails`). A cleanup killed during an aged quarantine already wrote that target's record, so its moved files restore normally (`Trash Aged Interrupted Keeps Metadata`).
 
-If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; the inventory lists recorded targets only.
+If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; inventory lists recorded targets and reports `unrecorded_entry_count` (a positive count also produces a human warning).
+
+Inventory counts immediate session entries, excluding exactly `quarantine.meta`,
+that are not equal to a trimmed recorded relative path or its literal first path
+component. Hidden files, empty directories, FIFOs and symlinks count without
+following links. Missing metadata accounts for no entries; `aged-restored` records
+still account for their staging root. Referenced-root descendants and aliases are
+not inspected or normalized. A zero count is not proof of metadata integrity,
+recoverability or safe purge. A positive count does not prevent a confirmed or
+forced purge. Failed metadata reads or entry enumeration fail inventory and stop
+purge before confirmation/deletion, including inline retention.
 
 ### Restore exit / flag matrix
 

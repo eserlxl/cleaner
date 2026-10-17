@@ -1429,6 +1429,39 @@ validate_quarantine_session_name() {
   fi
 }
 
+# Count immediate entries not referenced by active metadata; no integrity claim.
+quarantine_unrecorded_entry_count() {
+  local session="$1" meta="$1/quarantine.meta" records="" entry mtype rel accounted count=0
+  local -a references=()
+  if [[ -f "$meta" ]]; then
+    if ! records=$(cat -- "$meta" && printf '.'); then
+      echo "Error: Failed to read quarantine metadata '$meta'." >&2
+      return 1
+    fi
+    records=${records%.}
+  fi
+  while IFS='|' read -r mtype rel _ || [[ -n "$mtype" ]]; do
+    mtype=$(trim "$mtype")
+    [[ -z "$mtype" || "$mtype" == \#* ]] && continue
+    references+=("$(trim "$rel")")
+  done <<< "$records"
+  while IFS= read -r -d '' entry; do
+    accounted=false
+    for rel in "${references[@]}"; do
+      if [[ "$rel" == "$entry" || "$rel" == "$entry/"* ]]; then
+        accounted=true
+        break
+      fi
+    done
+    [[ "$accounted" == true ]] || count=$((count + 1))
+  done < <(find "$session" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -printf '%f\0' 2>/dev/null)
+  if ! wait "$!"; then
+    echo "Error: Failed to enumerate quarantine entries in '$session'." >&2
+    return 1
+  fi
+  printf '%s\n' "$count"
+}
+
 # Print what one quarantine session holds -- the type (full/aged) and original
 # path of every record in its quarantine.meta. Strictly read-only. Shared by the
 # --list-sessions query and the irreversible purge confirmation, so the safety
@@ -1436,7 +1469,11 @@ validate_quarantine_session_name() {
 print_session_contents() {
   local session="$1"
   local meta="$session/quarantine.meta"
-  local mtype morig
+  local mtype morig unrecorded
+  unrecorded=$(quarantine_unrecorded_entry_count "$session") || return 1
+  if (( unrecorded > 0 )); then
+    printf '      Unrecorded entries: %s — inspect this session manually before restore or purge.\n' "$unrecorded"
+  fi
 
   if [[ ! -f "$meta" ]]; then
     echo -e "      ${YELLOW}(no metadata)${NC}"
@@ -1471,8 +1508,8 @@ quarantine_size_bytes() {
 # With --json, emit a machine-readable inventory instead of human banners.
 emit_list_sessions_json() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
-  local -a sessions=() session_sizes=()
-  local s session idx ts size_bytes size_human mdate meta mtype morig
+  local -a sessions=() session_sizes=() session_unrecorded=()
+  local s session idx ts size_bytes size_human mdate meta mtype morig unrecorded
   local sess_first=true tgt_first
 
   if [[ -d "$quarantine_base" ]]; then
@@ -1488,6 +1525,8 @@ emit_list_sessions_json() {
   for session in "${sessions[@]}"; do
     size_bytes=$(quarantine_size_bytes "$session") || return 1
     session_sizes+=("$size_bytes")
+    unrecorded=$(quarantine_unrecorded_entry_count "$session") || return 1
+    session_unrecorded+=("$unrecorded")
   done
 
   printf '{'
@@ -1503,8 +1542,8 @@ emit_list_sessions_json() {
     ts=$(basename "$session")
     size_human=$(format_bytes "$size_bytes")
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
-    printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","targets":[' \
-      "$(json_escape "$ts")" "$size_bytes" "$(json_escape "$size_human")" "$(json_escape "${mdate:-}")"
+    printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","unrecorded_entry_count":%s,"targets":[' \
+      "$(json_escape "$ts")" "$size_bytes" "$(json_escape "$size_human")" "$(json_escape "${mdate:-}")" "${session_unrecorded[idx]}"
     tgt_first=true
     meta="$session/quarantine.meta"
     if [[ -f "$meta" ]]; then
@@ -1557,7 +1596,7 @@ list_quarantine_sessions() {
     size=$({ du -sh "$session" 2>/dev/null || true; } | awk '{print $1}')
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
-    print_session_contents "$session"
+    print_session_contents "$session" || return 1
   done
 }
 
@@ -1691,7 +1730,7 @@ purge_quarantine_sessions() {
     ts=$(basename "$d")
     size=$({ du -sh "$d" 2>/dev/null || true; } | awk '{print $1}')
     echo -e "  ${ts}  size=${size:-?}"
-    print_session_contents "$d"
+    print_session_contents "$d" || return 1
   done
 
   # Confirm unless forced -- purge is irreversible.

@@ -26,6 +26,11 @@
 | Rename or remove existing key | MAJOR |
 | Change key semantics | MAJOR unless purely additive |
 
+Session JSON adds integer `unrecorded_entry_count`, including zero. It observes
+only immediate entries absent from literal recorded-root accounting, not metadata
+integrity or recoverability. All session sizes and counts are checked before JSON
+output; failed metadata reads or enumeration return nonzero with empty JSON.
+
 ## 4. Mutex flags
 
 Documented mutual exclusions (enforced in code):

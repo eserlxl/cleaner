@@ -1813,6 +1813,96 @@ done
 unset MOCK_INVENTORY_BASE MOCK_INVENTORY_FAILURE
 echo -e "${GREEN}PASS: total and partial inventory scans fail safely in human and JSON formats.${NC}"
 
+# Immediate unrecorded entry accounting is read-only and fails closed before purge.
+python3 - "$CLEANER_SH" <<'UNRECORDED_PY'
+import hashlib, json, os, pathlib, shutil, stat, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix="cleaner-unrecorded-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home, bindir = root / "home", root / "bin"
+    base = home / ".cache/linux-cleaner/quarantine"
+    mixed, missing, zero = [base / f"2025-01-0{i}_00-00-00" for i in (1, 2, 3)]
+    for session in (mixed, missing, zero): session.mkdir(parents=True)
+    for name in ("known", "known-prefix", "nested", "aged", ".hidden", "empty", "literal [*?] $,\\"):
+        (mixed / name).mkdir()
+    (mixed / "regular").write_text("keep regular\n")
+    (mixed / "line\nbreak").write_text("keep newline name\n")
+    os.mkfifo(mixed / "fifo")
+    (mixed / "link").symlink_to(mixed / "known", target_is_directory=True)
+    (mixed / "dangling").symlink_to(mixed / "absent")
+    (mixed / "nested/deep").write_text("nested reference\n")
+    (mixed / "quarantine.meta").write_text(
+        "# ignored|known-prefix|/ignored\n\n full | known |/recorded\n"
+        "aged|nested/deep|/nested\naged-restored|aged|/aged\n"
+        "full|literal [*?] $,\\|/literal\nfull|./regular|/not-normalized\n")
+    (missing / "payload").write_text("no metadata\n")
+    (missing / "empty").mkdir()
+    (zero / "recorded").mkdir()
+    (zero / "recorded/unlisted-descendant").write_text("not inspected\n")
+    (zero / "quarantine.meta").write_text("aged-restored|recorded|/zero\n")
+    for session in (mixed, missing, zero): os.utime(session, (0, 0))
+    config = root / "nothing.conf"
+    config.write_text("safe|Missing|$HOME/missing|No cleanup payload|0||\n")
+    bindir.mkdir()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1")
+    def snapshot(path):
+        return {str(p.relative_to(path)): (p.lstat().st_mode, os.readlink(p) if p.is_symlink()
+                else hashlib.sha256(p.read_bytes()).hexdigest() if stat.S_ISREG(p.lstat().st_mode) else None)
+                for p in path.rglob("*")}
+    def run(label, args, current=env, reply=""):
+        print("Test Case: Unrecorded Inventory " + label, flush=True)
+        result = subprocess.run([sys.argv[1]] + args, env=current, input=reply,
+                                capture_output=True, text=True, timeout=20)
+        return result
+    before = snapshot(home)
+    result = run("mixed zero and missing metadata JSON", ["--list-sessions", "--json"])
+    assert result.returncode == 0, result
+    sessions = json.loads(result.stdout)["sessions"]
+    assert [s["unrecorded_entry_count"] for s in sessions] == [8, 2, 0], sessions
+    assert len(sessions[0]["targets"]) == 5 and sessions[2]["targets"] == [{"type": "aged", "path": "/zero"}]
+    assert snapshot(home) == before
+    print("PASS: mixed, literal, nested, all-type, missing-metadata and zero counts", flush=True)
+    result = run("human warning", ["--list-sessions"])
+    assert result.returncode == 0 and "Unrecorded entries: 8" in result.stdout and "inspect" in result.stdout
+    assert snapshot(home) == before
+    print("PASS: human warning and inventory leave state unchanged", flush=True)
+    for producer in ("cat", "find"):
+        real = shutil.which(producer)
+        script = bindir / producer
+        script.write_text('#!/usr/bin/env bash\n'
+            'if [[ "$1" == "$FAIL_SESSION"' + ('/quarantine.meta' if producer == 'cat' else '') + ' ]]; then\n'
+            '  [[ "$FAIL_STYLE" != total ]] && ' + ('"' + real + '" "$@"' if producer == 'cat'
+                else 'printf "known\\0"') + '\n  exit 23\nfi\nexec "' + real + '" "$@"\n')
+        # cat is invoked with -- before its metadata operand.
+        if producer == "cat": script.write_text(script.read_text().replace('if [[ "$1"', '[[ "${1:-}" == -- ]] && shift\nif [[ "$1"'))
+        script.chmod(0o755)
+        for mode, style in (("json", "total"), ("json", "partial"), ("json", "late"),
+                            ("human", "total"), ("human", "partial"), ("forced", "total"),
+                            ("forced", "partial"), ("prompt", "partial"), ("retention", "partial")):
+            current = env | {"PATH": str(bindir) + ":" + env["PATH"], "FAIL_STYLE": style,
+                             "FAIL_SESSION": str(zero if style == "late" else mixed)}
+            args = ["--list-sessions"] + (["--json"] if mode == "json" else [])
+            if mode in ("forced", "prompt"): args = ["--purge-sessions", "all"] + (["--force"] if mode == "forced" else [])
+            if mode == "retention": args = ["--config", str(config), "--clean", "--force", "--trash-keep-days", "0"]
+            state = snapshot(base)
+            result = run(f"{producer} {style} {mode}", args, current, "y\n")
+            assert result.returncode == 1 and "Error: Failed to " in result.stderr, result
+            assert snapshot(base) == state and "Permanently delete" not in result.stdout, result
+            if mode == "json": assert not result.stdout, result
+            if mode == "retention":
+                assert "Retention failed: true" in result.stdout, result
+                report = subprocess.run([sys.argv[1], "--report", "--json"], env=env, capture_output=True, text=True)
+                assert report.returncode == 0 and json.loads(report.stdout)["retention_failed"] is True, report
+            print("PASS: checked failure preserves every quarantine entry", flush=True)
+        script.unlink()
+    result = run("positive count permits declined purge", ["--purge-sessions", "all"], reply="n\n")
+    assert result.returncode == 0 and "Unrecorded entries: 8" in result.stdout and "No sessions were purged" in result.stdout
+    state = snapshot(base)
+    result = run("positive count remains informational under force", ["--purge-sessions", mixed.name, "--force"])
+    assert result.returncode == 0 and not mixed.exists() and missing.exists() and zero.exists(), result
+    print("PASS: counts preserve existing confirmation and force policy", flush=True)
+UNRECORDED_PY
+
 # Exact size failures must precede JSON output and every budgeted deletion.
 for size_mode in json budget; do
   for size_failure in first late partial malformed; do
@@ -2860,6 +2950,23 @@ fi
 # Exercise both shell-glob blind spots explicitly: an empty unrecorded target
 # from the failed append and a hidden unrecorded entry in the same session.
 mv "$qmeta_session/1_Unrecorded_Empty/data.txt" "$qmeta_session/.hidden-unrecorded"
+if ! run_test_case "Unrecorded Inventory After Metadata Append Failure" 0 "qmeta_inventory.json" --list-sessions --json \
+   || ! python3 - "$TEST_ENV_DIR/qmeta_inventory.json" <<'QMETA_INVENTORY'
+import json, sys
+sessions = json.load(open(sys.argv[1]))["sessions"]
+assert len(sessions) == 1 and sessions[0]["unrecorded_entry_count"] == 2, sessions
+assert len(sessions[0]["targets"]) == 1, sessions
+QMETA_INVENTORY
+then
+  exit 1
+fi
+if ! run_test_case "Unrecorded Inventory Human After Metadata Append Failure" 0 "qmeta_inventory.log" --list-sessions \
+   || ! grep -q 'Unrecorded entries: 2' "$TEST_ENV_DIR/qmeta_inventory.log" \
+   || ! cmp -s "$TEST_ENV_DIR/qmeta.before" "$qmeta_file" \
+   || [[ ! -d "$qmeta_session/1_Unrecorded_Empty" ]] \
+   || ! grep -qx 'unrecorded payload' "$qmeta_session/.hidden-unrecorded"; then
+  exit 1
+fi
 qmeta_restore_refused=true
 if ! run_test_case "Restore Preserves Unrecorded Quarantine Payload" 1 "qmeta_restore.log" \
      --restore latest; then

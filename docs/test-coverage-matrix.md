@@ -24,6 +24,7 @@
 | U-103 | Installed monitor command previews default, independent and explicitly shared profiles; config/risk/NAME/path/exclusion selection, inherited execution/JSON overrides and invalid combinations preserve payload and all report/log/quarantine/lock state | Monitor Profile |
 | U-104 | Config initialization preserves regular, directory, symlink and dangling destinations appearing at final publication, reports refusal without success or temporary leaks, and preserves true move-failure cleanup and normal mode `0644` | Init Config Publication |
 | U-105 | Exact restore selects literal inventory paths without prefix-sibling matches, preserves pending metadata and aged checkpoints, supports later full restore and repeated selectors, and rejects mixed/invalid usage before locking | Restore Exact |
+| U-106 | Session inventory counts literal unrecorded immediate entries across all entry types, nested references, missing metadata and real append failure; total/partial/late read or enumeration errors precede JSON and block purge/inline retention | Unrecorded Inventory |
 
 ## 1.3.0 shipped feature inventory
 
