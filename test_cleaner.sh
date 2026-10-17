@@ -7512,6 +7512,85 @@ then
 fi
 echo -e "${GREEN}PASS: --report --json emits valid JSON matching the saved report and exits 1 when absent.${NC}"
 
+# Exact failure records preserve NAME boundaries and bytes across shared save paths.
+for failed_names_case in completed retention interrupted; do
+  setup_mock_env
+  export MOCK_FAILED_NAMES_HOME="$MOCK_HOME"
+  python3 - "$TEST_ENV_DIR" "$MOCK_HOME" "$failed_names_case" <<'FAILED_NAMES_CONFIG'
+import json, pathlib, sys
+root, home = map(pathlib.Path, sys.argv[1:3])
+names = ['Comma, Cache', 'Ordinary "quoted" \\name\tinside\b\f\v\x01\r\x1b[31mred\x1b[0m end']
+rows = []
+payloads = {}
+for name, leaf, action in [(names[0], "action", "action:uv_cache_prune"),
+                           (names[1], "ordinary", ""),
+                           ("Signal Target", "signal", "")][:3 if sys.argv[3] == "interrupted" else 2]:
+    target = home / ".cache/exact-failures" / leaf
+    target.mkdir(parents=True)
+    payload = target / "payload"
+    payload.write_text(leaf + " payload\n")
+    payloads[str(payload)] = payload.read_text()
+    rows.append(f"safe|{name}|{target}|Exact failed name fixture|0||{action}\n")
+session = home / ".cache/linux-cleaner/quarantine/2099-01-01_00-00-00"
+session.mkdir(parents=True)
+for leaf in ("payload", "quarantine.meta"):
+    path = session / leaf
+    path.write_text("keep recovery data\n")
+    payloads[str(path)] = path.read_text()
+(root / "failed_names.conf").write_text("".join(rows))
+(root / "failed_names_expected.json").write_text(json.dumps(dict(names=names, payloads=payloads)))
+FAILED_NAMES_CONFIG
+  cat > "$TEST_ENV_DIR/bin/uv" <<'FAILED_NAMES_UV'
+#!/usr/bin/env bash
+exit 73
+FAILED_NAMES_UV
+  cat > "$TEST_ENV_DIR/bin/rm" <<'FAILED_NAMES_RM'
+#!/usr/bin/env bash
+for arg; do
+  if [[ "$arg" == "$MOCK_FAILED_NAMES_HOME/.cache/exact-failures/ordinary" ]]; then
+    exit 73
+  elif [[ "$arg" == "$MOCK_FAILED_NAMES_HOME/.cache/exact-failures/signal" ]]; then
+    kill -TERM "$PPID"
+    exit 73
+  fi
+done
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+exec "$real_rm" "$@"
+FAILED_NAMES_RM
+  chmod +x "$TEST_ENV_DIR/bin/uv" "$TEST_ENV_DIR/bin/rm"
+  failed_names_args=()
+  failed_names_exit=1
+  [[ "$failed_names_case" == retention ]] && failed_names_args+=(--trash-keep-days 7)
+  [[ "$failed_names_case" == interrupted ]] && failed_names_exit=143
+  if ! run_test_case "Report Exact Failed Names ($failed_names_case)" "$failed_names_exit" "failed_names_run.log" \
+       --config "$TEST_ENV_DIR/failed_names.conf" --clean --force "${failed_names_args[@]}" \
+     || ! run_test_case "Report JSON Exact Failed Names ($failed_names_case)" 0 "failed_names_report.json" --report --json \
+     || ! python3 - "$TEST_ENV_DIR" "$XDG_STATE_HOME" "$failed_names_case" <<'FAILED_NAMES_JSON'
+import json, pathlib, sys
+root, state = map(pathlib.Path, sys.argv[1:3])
+expected = json.loads((root / "failed_names_expected.json").read_text())
+report = json.loads((root / "failed_names_report.json").read_text())
+assert report["failed_targets"] == expected["names"], report
+assert report["failed"] == len(expected["names"]) == 2 and report["cleaned"] == 0, report
+assert report["interrupted"] == ("SIGTERM" if sys.argv[3] == "interrupted" else None), report
+assert report["retention_failed"] is (False if sys.argv[3] == "retention" else None), report
+assert (report["quarantined_bytes"], report["permanent_bytes"]) == (0, 0), report
+saved = (state / "linux-cleaner/last-report.txt").read_bytes()
+records = [line[len(b"Failed target: "):] for line in saved.split(b"\n") if line.startswith(b"Failed target: ")]
+assert records == [name.encode() for name in expected["names"]], records
+stdout = (root / "failed_names_run.log").read_bytes()
+assert b"\nFailed targets: " in stdout and b"\nFailed target: " not in stdout, stdout
+for path, contents in expected["payloads"].items():
+    assert pathlib.Path(path).read_text() == contents, path
+FAILED_NAMES_JSON
+  then
+    echo -e "${RED}FAIL: exact failed NAMEs, counts, or payload changed ($failed_names_case).${NC}"
+    exit 1
+  fi
+done
+unset MOCK_FAILED_NAMES_HOME
+echo -e "${GREEN}PASS: exact failed NAMEs survive completion, retention rewrites, and interrupted saves.${NC}"
+
 # Inline retention outcomes are saved independently of cleanup-target failures.
 setup_retention_report() {
   setup_mock_env

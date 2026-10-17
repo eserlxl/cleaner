@@ -37,6 +37,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Saved-report JSON preserves exact failed target names, including punctuation,
+  through completed, interrupted, and retention-updated reports.
 - JSON session inventory and budgeted purge reject unavailable or invalid session
   sizes before publishing inventory or deleting sessions.
 - Session inventory exits with an error instead of printing a successful empty or

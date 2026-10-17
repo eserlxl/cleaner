@@ -101,6 +101,7 @@ INIT_CONFIG=false
 REPORT=false
 PLAN_REPORT_TEXT=""
 RESULT_REPORT_TEXT=""
+RESULT_FAILED_TARGETS=()
 
 # Set by any operation that was attempted and failed (a delete, a quarantine move,
 # a predefined action, a purge). The tool exits non-zero when it is set, per the
@@ -2363,7 +2364,7 @@ show_last_report() {
     local line saved="" result="" cleaned="null" skipped="null" failed="null" elapsed_seconds="null"
     local failed_raw="" rest item first=true quarantine_session="" interrupted="" retention_failed=null
     local quarantined_bytes=null permanent_bytes=null
-    local -a failed_targets=()
+    local -a failed_targets=() exact_failed_targets=()
     while IFS= read -r line || [[ -n "$line" ]]; do
       case "$line" in
         "Saved: "*)
@@ -2398,6 +2399,9 @@ show_last_report() {
             failed_targets+=("$item")
           done
           ;;
+        "Failed target: "*)
+          exact_failed_targets+=("${line#Failed target: }")
+          ;;
         "Quarantine session: "*)
           quarantine_session="${line#Quarantine session: }"
           ;;
@@ -2418,6 +2422,9 @@ show_last_report() {
           ;;
       esac
     done < "$report_file"
+    if [[ ${#exact_failed_targets[@]} -gt 0 ]]; then
+      failed_targets=("${exact_failed_targets[@]}")
+    fi
     printf '{"saved":"%s","result":"%s","cleaned":%s,"skipped":%s,"failed":%s,"elapsed_seconds":%s,"failed_targets":[' \
       "$(json_escape "$saved")" "$(json_escape "$result")" "$cleaned" "$skipped" "$failed" "$elapsed_seconds"
     for item in "${failed_targets[@]}"; do
@@ -2451,7 +2458,7 @@ show_last_report() {
 # warns and leaves the cleanup's exit status unchanged. The state path is
 # untrusted, so a symlink is never followed and readers never see a partial file.
 save_last_cleanup_report() {
-  local state_dir report_file tmp body
+  local state_dir report_file tmp body failed_name
   state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" ]]; then
@@ -2482,6 +2489,9 @@ save_last_cleanup_report() {
     echo "Warning: could not format the cleanup report." >&2
     return 0
   }
+  for failed_name in "${RESULT_FAILED_TARGETS[@]}"; do
+    body+=$'\n'"Failed target: $failed_name"
+  done
   if ! printf '%s\n' "$body" > "$tmp"; then
     rm -f -- "$tmp" || true
     echo "Warning: could not write the cleanup report." >&2
@@ -3293,6 +3303,7 @@ for i in "${!parsed_names[@]}"; do
       OPERATION_FAILED=true
       result_failed=$((result_failed + 1))
       result_failed_names+="${result_failed_names:+, }${name}"
+      RESULT_FAILED_TARGETS+=("$name")
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=failed"
     fi
     continue
@@ -3445,6 +3456,7 @@ for i in "${!parsed_names[@]}"; do
   if [[ "$target_failed" == true ]]; then
     result_failed=$((result_failed + 1))
     result_failed_names+="${result_failed_names:+, }${name}"
+    RESULT_FAILED_TARGETS+=("$name")
   else
     result_cleaned=$((result_cleaned + 1))
   fi
