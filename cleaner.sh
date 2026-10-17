@@ -1306,14 +1306,28 @@ print_session_contents() {
   done < "$meta"
 }
 
+# Exact session sizes are required for JSON inventory and purge budgets.
+quarantine_size_bytes() {
+  local output size
+  if output=$(du -sb -- "$1" 2>/dev/null); then
+    size=${output%%[[:space:]]*}
+    if [[ "$size" =~ ^(0|[1-9][0-9]*)$ ]]; then
+      printf '%s\n' "$size"
+      return 0
+    fi
+  fi
+  echo "Error: Failed to measure quarantine session '$1'." >&2
+  return 1
+}
+
 # List quarantine sessions (strictly read-only): print each session's
 # timestamp (directory name), size, and modification date, plus the targets it
 # holds. Never moves, deletes, or modifies any session or its metadata.
 # With --json, emit a machine-readable inventory instead of human banners.
 emit_list_sessions_json() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
-  local -a sessions=()
-  local s session ts size_bytes size_human mdate meta mtype morig
+  local -a sessions=() session_sizes=()
+  local s session idx ts size_bytes size_human mdate meta mtype morig
   local sess_first=true tgt_first
 
   if [[ -d "$quarantine_base" ]]; then
@@ -1326,17 +1340,22 @@ emit_list_sessions_json() {
     fi
   fi
 
+  for session in "${sessions[@]}"; do
+    size_bytes=$(quarantine_size_bytes "$session") || return 1
+    session_sizes+=("$size_bytes")
+  done
+
   printf '{'
   printf '"sessions":['
-  for session in "${sessions[@]}"; do
+  for idx in "${!sessions[@]}"; do
+    session=${sessions[idx]}
+    size_bytes=${session_sizes[idx]}
     if [[ "$sess_first" == true ]]; then
       sess_first=false
     else
       printf ','
     fi
     ts=$(basename "$session")
-    size_bytes=$({ du -sb "$session" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}')
-    [[ -z "$size_bytes" ]] && size_bytes=0
     size_human=$(format_bytes "$size_bytes")
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
     printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","targets":[' \
@@ -1493,8 +1512,7 @@ purge_quarantine_sessions() {
       return 1
     fi
     for s in "${all_sessions[@]}"; do
-      sess_bytes=$({ du -sb "$s" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}')
-      [[ -z "$sess_bytes" ]] && sess_bytes=0
+      sess_bytes=$(quarantine_size_bytes "$s") || return 1
       running_bytes=$((running_bytes + sess_bytes))
       if (( running_bytes > max_size_bytes )); then
         over_budget+=("$s")

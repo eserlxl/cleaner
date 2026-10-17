@@ -1742,6 +1742,61 @@ done
 unset MOCK_INVENTORY_BASE MOCK_INVENTORY_FAILURE
 echo -e "${GREEN}PASS: total and partial inventory scans fail safely in human and JSON formats.${NC}"
 
+# Exact size failures must precede JSON output and every budgeted deletion.
+for size_mode in json budget; do
+  for size_failure in first late partial malformed; do
+    echo -e "\n${BOLD}Test Case: Quarantine Size Failure ($size_mode $size_failure)${NC}"
+    setup_mock_env
+    size_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+    for size_session in 2026-01-01_00-00-00 2026-01-02_00-00-00; do
+      mkdir -p "$size_base/$size_session"
+      printf 'keep payload\n' > "$size_base/$size_session/payload"
+      printf 'full|payload|%s/original|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" \
+        > "$size_base/$size_session/quarantine.meta"
+    done
+    sha256sum "$size_base/"*/payload "$size_base/"*/quarantine.meta > "$TEST_ENV_DIR/size.sha256"
+    size_failed_session=2026-01-02_00-00-00
+    if [[ "$size_mode:$size_failure" == json:first || ( "$size_mode" == budget && "$size_failure" != first ) ]]; then
+      size_failed_session=2026-01-01_00-00-00
+    fi
+    export MOCK_SIZE_BASE="$size_base" MOCK_SIZE_FAILURE="$size_failure"
+    export MOCK_SIZE_FAILED_PATH="$size_base/$size_failed_session"
+    cat > "$TEST_ENV_DIR/bin/du" <<'SIZE_DU'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -sb && "${!#}" == "$MOCK_SIZE_FAILED_PATH" ]]; then
+  case "$MOCK_SIZE_FAILURE" in
+    partial) printf '12345\t%s\n' "$MOCK_SIZE_FAILED_PATH" ;;
+    malformed) printf 'not-a-size\t%s\n' "$MOCK_SIZE_FAILED_PATH"; exit 0 ;;
+  esac
+  exit 23
+fi
+real_du=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v du)
+exec "$real_du" "$@"
+SIZE_DU
+    cat > "$TEST_ENV_DIR/bin/rm" <<'SIZE_RM'
+#!/usr/bin/env bash
+# Refuse every removal so a regression can never destroy the fixture payload.
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/size_rm_attempts"
+exit 23
+SIZE_RM
+    chmod +x "$TEST_ENV_DIR/bin/du" "$TEST_ENV_DIR/bin/rm"
+    size_args=(--list-sessions --json)
+    [[ "$size_mode" == budget ]] && size_args=(--purge-sessions max-size:1 --force)
+    size_exit=0
+    PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" "${size_args[@]}" \
+      < /dev/null > "$TEST_ENV_DIR/size.out" 2> "$TEST_ENV_DIR/size.err" || size_exit=$?
+    if [[ "$size_exit" -ne 1 || -s "$TEST_ENV_DIR/size.out" || -s "$TEST_ENV_DIR/size_rm_attempts" ]] \
+       || ! grep -Fxq "Error: Failed to measure quarantine session '$MOCK_SIZE_FAILED_PATH'." "$TEST_ENV_DIR/size.err" \
+       || ! sha256sum -c "$TEST_ENV_DIR/size.sha256" > "$TEST_ENV_DIR/size_check.log" 2>&1; then
+      echo -e "${RED}FAIL: $size_mode $size_failure size failure emitted success, attempted removal, or changed payload (exit=$size_exit).${NC}"
+      cat "$TEST_ENV_DIR/size.out" "$TEST_ENV_DIR/size.err"
+      exit 1
+    fi
+  done
+done
+unset MOCK_SIZE_BASE MOCK_SIZE_FAILURE MOCK_SIZE_FAILED_PATH
+echo -e "${GREEN}PASS: unavailable or invalid session sizes stop inventory and budgeted purge safely.${NC}"
+
 # 31. Test Case: Opt-in operation logging (default-off, opt-in-on, no-leak, $HOME-confined)
 setup_mock_env
 log_path="$MOCK_HOME/.cache/linux-cleaner/operations.log"
@@ -5124,8 +5179,8 @@ FILTERED_NESTED
 done
 
 # A readable target holding an unreadable subdirectory must still be measured as
-# one integer (du/find exit non-zero there under pipefail), and session listing
-# must survive the same layout inside quarantine.
+# one integer (du/find exit non-zero there under pipefail). Human session listing
+# remains best-effort; JSON must reject a session that du cannot fully measure.
 setup_mock_env
 unreadable_root="$MOCK_HOME/.cache/partly-unreadable"
 unreadable_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-01-01_00-00-00"
@@ -5156,18 +5211,27 @@ if ! run_test_case "Partly Unreadable Aged Dry Run" 0 "unreadable_aged.log" --de
   unreadable_ok=false
 fi
 if ! run_test_case "Partly Unreadable Session List" 0 "unreadable_sessions.log" --list-sessions \
-   || ! grep -q '2026-01-01_00-00-00' "$TEST_ENV_DIR/unreadable_sessions.log" \
-   || ! run_test_case "Partly Unreadable Session JSON" 0 "unreadable_sessions_json.log" --list-sessions --json \
-   || ! python3 -m json.tool "$TEST_ENV_DIR/unreadable_sessions_json.log" > /dev/null 2>&1; then
+   || ! grep -q '2026-01-01_00-00-00' "$TEST_ENV_DIR/unreadable_sessions.log"; then
+  unreadable_ok=false
+fi
+unreadable_json_exit=0
+if ! du -sb -- "$unreadable_session" > /dev/null 2>&1; then
+  unreadable_json_exit=1
+fi
+if ! run_test_case "Partly Unreadable Session JSON" "$unreadable_json_exit" "unreadable_sessions_json.log" --list-sessions --json; then
+  unreadable_ok=false
+elif [[ "$unreadable_json_exit" -eq 0 ]]; then
+  python3 -m json.tool "$TEST_ENV_DIR/unreadable_sessions_json.log" > /dev/null 2>&1 || unreadable_ok=false
+elif ! grep -q 'Failed to measure quarantine session' "$TEST_ENV_DIR/unreadable_sessions_json.log"; then
   unreadable_ok=false
 fi
 chmod u+rwx "$unreadable_root/locked" "$unreadable_session/0_x/locked"
 if [[ "$unreadable_ok" != true ]]; then
-  echo -e "${RED}FAIL: a partly unreadable target or session broke size reporting.${NC}"
+  echo -e "${RED}FAIL: partly unreadable target estimates or strict session sizes behaved incorrectly.${NC}"
   cat "$TEST_ENV_DIR"/unreadable_*.log
   exit 1
 fi
-echo -e "${GREEN}PASS: partly unreadable targets and sessions are measured without aborting.${NC}"
+echo -e "${GREEN}PASS: target estimates and human listing tolerate unreadable paths; JSON requires a complete size.${NC}"
 
 # A CHECK_PROCESSES token carrying glob characters must reach pgrep verbatim,
 # whatever files exist in the directory the cleaner is started from.

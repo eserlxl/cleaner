@@ -26,6 +26,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- JSON session inventory and budgeted purge reject unavailable or invalid session
+  sizes before publishing inventory or deleting sessions.
 - Session inventory exits with an error instead of printing a successful empty or
   partial list when directory enumeration fails, in both human and JSON output.
 - Update saved reports after inline retention, including nothing-to-clean and
