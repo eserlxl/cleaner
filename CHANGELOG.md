@@ -17,7 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
-- Correct stale configuration guidance for the Claude Desktop VM image target.
+- Align configuration guidance with the existing target classes and exceptions.
 
 ### Added
 
