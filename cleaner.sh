@@ -475,7 +475,7 @@ emit_dry_run_json() {
     fi
     size_human=$(format_bytes "${json_bytes[$i]}")
     [[ "${json_runtime_sized[$i]:-false}" == true ]] && size_human="size at run time"
-    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s","description":"%s","min_age_days":"%s","size_at_run_time":%s}' \
+    printf '{"name":"%s","path":"%s","risk":"%s","bytes":%s,"size_human":"%s","status":"%s","description":"%s","min_age_days":"%s","size_at_run_time":%s,"reason":"%s"}' \
       "$(json_escape "${json_names[$i]}")" \
       "$(json_escape "${json_paths[$i]}")" \
       "$(json_escape "${json_risks[$i]}")" \
@@ -484,7 +484,8 @@ emit_dry_run_json() {
       "$(json_escape "${json_statuses[$i]}")" \
       "$(json_escape "${json_descs[$i]}")" \
       "$(json_escape "${json_ages[$i]}")" \
-      "${json_runtime_sized[$i]:-false}"
+      "${json_runtime_sized[$i]:-false}" \
+      "$(json_escape "${json_reasons[$i]:-}")"
   done
   printf ']}'
   printf '\n'
@@ -2211,6 +2212,7 @@ json_risks=()
 json_bytes=()
 json_runtime_sized=()
 json_statuses=()
+json_reasons=()
 json_descs=()
 json_ages=()
 
@@ -2466,6 +2468,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     json_bytes+=("$size_bytes")
     json_runtime_sized+=("$runtime_sized")
     json_statuses+=("${target_status:-skipped}")
+    json_reasons+=("${target_reason:-}")
     json_descs+=("$desc")
     json_ages+=("$min_age")
   fi

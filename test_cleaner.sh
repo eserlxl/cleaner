@@ -4448,6 +4448,42 @@ if ! PATH="$missing_action_bin" run_test_case "Absent Action JSON Without Sudo" 
 fi
 echo -e "${GREEN}PASS: absent actions skip before sudo and ordinary sibling cleanup succeeds.${NC}"
 
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/reason_found" "$MOCK_HOME/.cache/reason_blocked"
+printf 'found\n' > "$MOCK_HOME/.cache/reason_found/item.txt"
+printf 'blocked\n' > "$MOCK_HOME/.cache/reason_blocked/item.txt"
+missing_action_bin="$TEST_ENV_DIR/missing_action_bin"
+mkdir -p "$missing_action_bin"
+for tool in bash basename cat dirname realpath sed du awk tr id sort find stat date rm mktemp; do
+  ln -s "$(command -v "$tool")" "$missing_action_bin/$tool"
+done
+ln -s "$TEST_ENV_DIR/bin/pgrep" "$missing_action_bin/pgrep"
+rm -f "$TEST_ENV_DIR/bin/dnf"
+cat > "$TEST_ENV_DIR/skip_reasons_json.conf" <<'SKIP_REASONS_JSON'
+safe|Reason Found|$HOME/.cache/reason_found|Ordinary found target|0||
+safe|Reason Blocked|$HOME/.cache/reason_blocked|Blocked by active process|0|mock_running_proc|
+safe|Reason Missing Bin|$HOME/.cache/aurman|Missing binary action|0||action:dnf_clean
+SKIP_REASONS_JSON
+if ! PATH="$missing_action_bin" run_test_case "Dry Run JSON Reports Skip Reasons" 0 "skip_reasons_json.log" \
+     --config "$TEST_ENV_DIR/skip_reasons_json.conf" --dry-run --json \
+   || ! python3 - "$TEST_ENV_DIR/skip_reasons_json.log" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+by_name = {t["name"]: t for t in data["targets"]}
+assert by_name["Reason Found"]["status"] == "found", by_name["Reason Found"]
+assert by_name["Reason Found"]["reason"] == "", by_name["Reason Found"]
+assert by_name["Reason Blocked"]["status"] == "blocked", by_name["Reason Blocked"]
+assert by_name["Reason Blocked"]["reason"] == "process 'mock_running_proc' is active", by_name["Reason Blocked"]
+assert by_name["Reason Missing Bin"]["status"] == "skipped", by_name["Reason Missing Bin"]
+assert by_name["Reason Missing Bin"]["reason"].endswith("not available"), by_name["Reason Missing Bin"]
+PY
+then
+  echo -e "${RED}FAIL: --dry-run --json did not report expected skip and block reasons.${NC}"
+  cat "$TEST_ENV_DIR/skip_reasons_json.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --dry-run --json reports empty reason for found and exact reasons for blocked and skipped targets.${NC}"
+
 # Process-substitution discovery must propagate a partial find failure. Exercise
 # both ownership branches without using real sudo or host permission assumptions.
 for traversal_sudo in false true; do
