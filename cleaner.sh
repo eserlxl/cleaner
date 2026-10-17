@@ -2725,8 +2725,7 @@ if [[ "$DRY_RUN" = true ]]; then
   status_echo "${YELLOW}Dry-run mode active. No files were modified.${NC}"
   if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
     status_echo "Below --min-reclaim ${MIN_RECLAIM}: a cleanup run would skip."
-  fi
-  if [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
+  elif [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
     status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
   fi
   exit 0
