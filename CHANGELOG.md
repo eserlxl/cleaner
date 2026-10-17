@@ -74,6 +74,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - An aged or excluded quarantine now writes its `quarantine.meta` record as soon
   as the first file moves instead of after the whole directory loop, so a run
   interrupted mid-target stays restorable with `--restore`.
+- A retried `--restore` after an interrupted restore now treats a record whose
+  quarantined payload is already gone and whose original path is present again as
+  already restored (whole-target records only), drops the stale record, and completes the session retirement
+  instead of failing forever on a missing source.
 
 ## [1.4.2] - 2026-10-16
 

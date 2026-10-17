@@ -1614,6 +1614,15 @@ restore_quarantine() {
     
     local src_path="$restore_dir/$rel_path"
     if [[ ! -e "$src_path" ]]; then
+      # A whole-target payload that is gone while its original path is back was
+      # restored by an interrupted earlier run. An aged target's directory always
+      # survives quarantine, so its presence proves nothing there.
+      if [[ "$type" == "full" ]] && path_present "$use_sudo" "$original_path"; then
+        echo -e "Note: '$original_path' is already restored; dropping its stale record."
+        restored_rels+=("$rel_path")
+        log_restore_outcome "$restore_dir" "$original_path" success
+        continue
+      fi
       echo -e "${YELLOW}Warning: Quarantined source path '$src_path' not found. Skipping.${NC}"
       overall_success=false
       log_restore_outcome "$restore_dir" "$original_path" missing

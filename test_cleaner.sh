@@ -6452,5 +6452,72 @@ if ! run_test_case "Uninterrupted Cleanup Report Has No Interrupted Line" 0 "uni
 fi
 echo -e "${GREEN}PASS: interrupted cleanup saves partial report and logs outcome=interrupted; uninterrupted run has no Interrupted line.${NC}"
 
+# A retried --restore after an interrupted restore treats a missing payload
+# whose original path is already present as already restored, drops its stale
+# record, restores remaining targets, and retires the session; a missing payload
+# whose original path is also absent still fails and keeps the session.
+setup_mock_env
+q_retry_sess="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-03-03_00-00-00"
+mkdir -p "$q_retry_sess/0_First_Target" "$q_retry_sess/1_Second_Target"
+printf 'first-restored\n' > "$q_retry_sess/0_First_Target/a.txt"
+printf 'second-pending\n' > "$q_retry_sess/1_Second_Target/b.txt"
+printf 'full|0_First_Target|%s/.cache/retry_first|false|%s|%s\nfull|1_Second_Target|%s/.cache/retry_second|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$q_retry_sess/quarantine.meta"
+# Simulate an interrupted restore: first target payload already moved back, record still in quarantine.meta.
+mv "$q_retry_sess/0_First_Target" "$MOCK_HOME/.cache/retry_first"
+retry_ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$retry_ops_log"
+
+if ! run_test_case "Restore Retry After Interrupted Restore" 0 "restore_retry_interrupted.log" \
+       --restore latest --log \
+   || ! grep -qF "Note: '$MOCK_HOME/.cache/retry_first' is already restored; dropping its stale record." "$TEST_ENV_DIR/restore_retry_interrupted.log" \
+   || ! grep -qx 'first-restored' "$MOCK_HOME/.cache/retry_first/a.txt" \
+   || ! grep -qx 'second-pending' "$MOCK_HOME/.cache/retry_second/b.txt" \
+   || [[ -d "$q_retry_sess" ]] \
+   || ! grep -q "mode=restore session='2026-03-03_00-00-00' path='$MOCK_HOME/.cache/retry_first' outcome=success" "$retry_ops_log" \
+   || ! grep -q "mode=restore session='2026-03-03_00-00-00' path='$MOCK_HOME/.cache/retry_second' outcome=success" "$retry_ops_log"; then
+  echo -e "${RED}FAIL: retried restore after interruption did not complete or retire the session.${NC}"
+  cat "$TEST_ENV_DIR/restore_retry_interrupted.log" "$retry_ops_log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+q_missing_sess="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-03-04_00-00-00"
+mkdir -p "$q_missing_sess/1_Present_Target"
+printf 'present-payload\n' > "$q_missing_sess/1_Present_Target/b.txt"
+printf 'full|0_Missing_Target|%s/.cache/truly_missing|false|%s|%s\nfull|1_Present_Target|%s/.cache/present_restored|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$q_missing_sess/quarantine.meta"
+missing_ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$missing_ops_log"
+
+if ! run_test_case "Restore Missing Source Still Fails" 1 "restore_missing_source.log" \
+       --restore latest --log \
+   || ! grep -qF "Warning: Quarantined source path '$q_missing_sess/0_Missing_Target' not found. Skipping." "$TEST_ENV_DIR/restore_missing_source.log" \
+   || [[ -e "$MOCK_HOME/.cache/truly_missing" ]] \
+   || ! grep -qx 'present-payload' "$MOCK_HOME/.cache/present_restored/b.txt" \
+   || [[ ! -d "$q_missing_sess" ]] \
+   || ! grep -qF "|$MOCK_HOME/.cache/truly_missing|" "$q_missing_sess/quarantine.meta" \
+   || grep -qF "|$MOCK_HOME/.cache/present_restored|" "$q_missing_sess/quarantine.meta" \
+   || ! grep -q "mode=restore session='2026-03-04_00-00-00' path='$MOCK_HOME/.cache/truly_missing' outcome=missing" "$missing_ops_log"; then
+  echo -e "${RED}FAIL: missing quarantine payload with absent original path did not fail or keep its metadata record.${NC}"
+  cat "$TEST_ENV_DIR/restore_missing_source.log" "$q_missing_sess/quarantine.meta" "$missing_ops_log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: retried restore after interruption completes and retires the session; truly missing source still fails.${NC}"
+
+# An aged target's directory survives quarantine, so a missing aged payload is
+# never mistaken for an already-restored one.
+setup_mock_env
+q_aged_missing_sess="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-03-05_00-00-00"
+mkdir -p "$q_aged_missing_sess" "$MOCK_HOME/.cache/aged_kept_dir"
+printf 'aged|0_Aged_Missing|%s/.cache/aged_kept_dir|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$q_aged_missing_sess/quarantine.meta"
+if ! run_test_case "Restore Missing Aged Source Still Fails" 1 "restore_missing_aged.log" --restore latest \
+   || ! grep -qF "|$MOCK_HOME/.cache/aged_kept_dir|" "$q_aged_missing_sess/quarantine.meta"; then
+  echo -e "${RED}FAIL: a missing aged payload was treated as already restored.${NC}"
+  cat "$TEST_ENV_DIR/restore_missing_aged.log" 2>/dev/null || true
+  exit 1
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
