@@ -3454,6 +3454,21 @@ else
 fi
 
 setup_mock_env
+if run_test_case "Min Reclaim Dry Run Note" 0 "min_reclaim_dry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --min-reclaim 1T \
+   && grep -qF "Below --min-reclaim 1T: a cleanup run would skip." "$TEST_ENV_DIR/min_reclaim_dry.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+   && run_test_case "Min Reclaim Dry Run No Note" 0 "min_reclaim_dry_low.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --min-reclaim 1K \
+   && ! grep -qF "Below --min-reclaim" "$TEST_ENV_DIR/min_reclaim_dry_low.log"; then
+  echo -e "${GREEN}PASS: --dry-run notes a --min-reclaim skip only when the plan is below the threshold.${NC}"
+else
+  echo -e "${RED}FAIL: --dry-run --min-reclaim note did not match the threshold.${NC}"
+  cat "$TEST_ENV_DIR/min_reclaim_dry.log" "$TEST_ENV_DIR/min_reclaim_dry_low.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
 if run_test_case "Min Reclaim Below Total Cleans" 0 "min_reclaim_clean.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-reclaim 1K; then
   if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
