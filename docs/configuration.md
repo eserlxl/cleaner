@@ -90,7 +90,10 @@ cleaner --dry-run --only-path /opt/my-project --only-target 'C++ Build' --json
 cleaner --clean --trash --only-path /opt/my-project --only-target 'C++ Build'
 ```
 
-`--only-path` is CLI-only; its last occurrence wins. Supply one existing absolute
+`LINUX_CLEANER_ONLY_PATH=/opt/my-project` applies the same scope through the
+scheduled cleanup environment file. Unset or empty means no scope. CLI
+`--only-path` overrides the environment, including malformed inherited input;
+its last occurrence wins. Supply one existing absolute
 literal file or directory path, without line feeds. After NAME filtering, only
 resolved ordinary targets equal to or below its physical path are selected on
 whole components: ancestors, prefix siblings, and aliases resolving outside the

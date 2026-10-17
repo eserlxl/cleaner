@@ -4535,6 +4535,14 @@ with tempfile.TemporaryDirectory(prefix="cleaner-only-path-", dir="/tmp") as dir
         ("failed candidate resolution", ["--only-path", str(home), "--only-target", "Failed Resolution"], [], "No eligible config target", {"SCOPE_FAIL_RESOLVE": str(home / "fail-resolution")}),
         ("all risk levels", ["--only-path", str(home / "medium")], ["$HOME/medium/cache"], None, {}),
         ("last occurrence wins", ["--only-path", str(beta), "--only-path", str(alpha)], selected, None, {}),
+        ("environment scope", [], selected, None, {"LINUX_CLEANER_ONLY_PATH": str(alpha)}),
+        ("environment NAME composition", ["--only-target", "Shared", "--exclude-target", "Logs,Action"],
+         [str(alpha / "build")], None, {"LINUX_CLEANER_ONLY_PATH": str(alpha)}),
+        ("environment NAME error priority", ["--only-target", "absent"], [], "No config target NAME matches",
+         {"LINUX_CLEANER_ONLY_PATH": str(alpha)}),
+        ("CLI overrides environment", ["--only-path", str(alpha)], selected, None, {"LINUX_CLEANER_ONLY_PATH": str(beta)}),
+        ("CLI overrides relative environment", ["--only-path", str(alpha)], selected, None, {"LINUX_CLEANER_ONLY_PATH": "projects"}),
+        ("CLI overrides LF environment", ["--only-path", str(alpha)], selected, None, {"LINUX_CLEANER_ONLY_PATH": str(beta) + "\n"}),
     ]
     for fmt in ("human", "json"):
         for label, args, expected, error, overrides in cases:
@@ -4552,23 +4560,40 @@ with tempfile.TemporaryDirectory(prefix="cleaner-only-path-", dir="/tmp") as dir
         ("missing scope", ["--only-path", str(home / "missing-scope")], "must resolve", {}),
         ("LF scope alias", ["--only-path", str(home / "lf-alias")], "must resolve", {}),
         ("failed scope resolution", ["--only-path", str(alpha), "--clean", "--force"], "must resolve", {"SCOPE_FAIL_RESOLVE": str(alpha)}),
+        ("relative environment", [], "literal absolute path", {"LINUX_CLEANER_ONLY_PATH": "projects"}),
+        ("literal environment placeholder", [], "literal absolute path", {"LINUX_CLEANER_ONLY_PATH": "$HOME/projects"}),
+        ("LF environment", [], "literal absolute path", {"LINUX_CLEANER_ONLY_PATH": str(alpha) + "\n"}),
+        ("missing environment scope", [], "must resolve", {"LINUX_CLEANER_ONLY_PATH": str(home / "missing-scope")}),
+        ("LF environment alias", [], "must resolve", {"LINUX_CLEANER_ONLY_PATH": str(home / "lf-alias")}),
+        ("invalid CLI with valid environment", ["--only-path", "relative", "--only-path", str(alpha)], "literal absolute path",
+         {"LINUX_CLEANER_ONLY_PATH": str(alpha)}),
     ]:
         run(label, args, error, inventory=True, overrides=overrides)
     for partner in (["--restore", "latest"], ["--purge-sessions", "all"], ["--list-sessions"],
                     ["--check-config"], ["--report"], ["--init-config"], ["--trash-keep-days", "0"]):
         run("mutex " + partner[0], ["--only-path", str(alpha)] + partner, "--only-path applies only", inventory=True)
+        run("environment mutex " + partner[0], partner, "--only-path applies only", inventory=True,
+            overrides={"LINUX_CLEANER_ONLY_PATH": str(alpha)})
     run("inherited retention mutex", ["--only-path", str(alpha)], "--only-path applies only", inventory=True,
         overrides={"LINUX_CLEANER_TRASH_KEEP_DAYS": "7"})
+    run("environment retention mutex", [], "--only-path applies only", inventory=True,
+        overrides={"LINUX_CLEANER_ONLY_PATH": str(alpha), "LINUX_CLEANER_TRASH_KEEP_DAYS": "7"})
     write_config(rows + ["safe|Excluded Invalid|$HOME/missing|invalid age|invalid||"])
     run("raw validation first", ["--only-path", str(home / "missing-scope"), "--only-target", "Shared", "--list-targets", "--json"],
         "invalid MIN_AGE_DAYS", inventory=True)
+    run("environment raw validation first", ["--list-targets", "--json"], "invalid MIN_AGE_DAYS", inventory=True,
+        overrides={"LINUX_CLEANER_ONLY_PATH": str(home / "missing-scope")})
     write_config()
-    unscoped = run("no environment mirror", ["--list-targets", "--json"], inventory=True,
-                   overrides={"LINUX_CLEANER_ONLY_PATH": str(alpha)})
-    assert {"Shared Action", "Missing", "LF Alias"} <= {r["name"] for r in json.loads(unscoped.stdout)["targets"]}
+    for label, overrides in (("unset environment", {}), ("empty environment", {"LINUX_CLEANER_ONLY_PATH": ""})):
+        unscoped = run(label, ["--list-targets", "--json"], inventory=True, overrides=overrides)
+        assert {"Shared Action", "Missing", "LF Alias"} <= {r["name"] for r in json.loads(unscoped.stdout)["targets"]}
     assert snapshot() == before and not trace.exists(), "inventory changed state or probed analysis/mutation tools"
     preview = run("dry-run parity", ["--only-path", str(alpha), "--only-target", "Shared", "--json"])
     assert [r["path"] for r in json.loads(preview.stdout)["targets"]] == [str(alpha / "build"), str(alpha / "logs")]
+    env_preview = run("environment dry-run parity", ["--only-target", "Shared", "--json"],
+                      overrides={"LINUX_CLEANER_ONLY_PATH": str(alpha)})
+    assert json.loads(env_preview.stdout)["targets"] == json.loads(preview.stdout)["targets"]
+    assert snapshot() == before and not trace.exists(), "preview changed fixture state or called an external action"
     risk = run("risk ceiling keeps selection valid", ["--only-path", str(home / "medium"), "--json"])
     assert json.loads(risk.stdout)["targets"] == []
     for name, target, status in [("Blocked", "plain/blocked", "blocked"), ("Protected", "plain/protected", "protected"),
@@ -4585,6 +4610,12 @@ with tempfile.TemporaryDirectory(prefix="cleaner-only-path-", dir="/tmp") as dir
     assert (alpha / "logs/keep.log").is_file()
     for project in (beta, sibling):
         assert (project / "build/object.o").is_file() and (project / "logs/old.log").is_file(), project
+    assert (outside / "payload").read_text() == "outside payload\n" and not trace.exists()
+    run("environment clean one shared-NAME project", ["--only-target", "Shared", "--clean", "--force"],
+        overrides={"LINUX_CLEANER_ONLY_PATH": str(beta)})
+    assert not (beta / "build").exists() and not (beta / "logs/old.log").exists()
+    assert (beta / "logs/keep.log").is_file() and (alpha / "logs/keep.log").is_file()
+    assert (sibling / "build/object.o").is_file() and (sibling / "logs/old.log").is_file()
     assert (outside / "payload").read_text() == "outside payload\n" and not trace.exists()
     run("age guard cleanup", ["--only-path", str(home / "plain/aged"), "--clean", "--force"])
     assert not (home / "plain/aged/old").exists() and (home / "plain/aged/payload").is_file()

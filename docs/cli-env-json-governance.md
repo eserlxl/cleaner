@@ -15,7 +15,7 @@
 - Truthy values: `1`, `true`, `yes` (documented per variable).
 - **CLI overrides value mirrors** (config, log, risk, exclude, target filters) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
 - `LINUX_CLEANER_YES_DANGER` stays off in default examples. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated no-ops (one warning per run); targets outside `$HOME` are always allowed.
-- `--only-path` is CLI-only, uses last-occurrence precedence, and has no environment mirror or additional JSON fields.
+- `--only-path` overrides `LINUX_CLEANER_ONLY_PATH` with last-occurrence precedence. Unset or empty means no scope; the effective value must be an existing absolute literal path without line feeds. No additional JSON fields.
 - JSON target `status` no longer emits `rejected`. Older clients that accept that value keep working; current runs use the other statuses (`found`, `skipped`, and the rest).
 
 ## 3. JSON additive vs breaking changes

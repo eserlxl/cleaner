@@ -61,7 +61,7 @@ Options:
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
-  --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows.
+  --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
@@ -143,6 +143,9 @@ if [[ -n "${LINUX_CLEANER_ONLY_TARGET:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET:-}" ]]; then
   EXCLUDE_TARGET="$LINUX_CLEANER_EXCLUDE_TARGET"
+fi
+if [[ -n "${LINUX_CLEANER_ONLY_PATH:-}" ]]; then
+  ONLY_PATH="$LINUX_CLEANER_ONLY_PATH"
 fi
 if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
   MIN_RECLAIM="$LINUX_CLEANER_MIN_RECLAIM"
@@ -359,6 +362,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "$ONLY_PATH" && ( "$ONLY_PATH" != /* || "$ONLY_PATH" == *$'\n'* ) ]]; then
+  echo "Error: --only-path requires a literal absolute path without line feeds." >&2
+  exit 1
+fi
 
 # HOME is the tool's entire safety boundary: every target path is expanded,
 # canonicalized, and bounded against it. Refuse to run without it -- a bare $HOME

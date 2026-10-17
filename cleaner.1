@@ -285,7 +285,10 @@ With cleanup or configured-target inventory, select ordinary targets whose physi
 path equals or lies below one existing absolute literal
 .IR PATH .
 Matching uses whole path components; / selects every eligible resolved target.
-The last occurrence wins; there is no environment mirror. NAME filters apply
+The last occurrence wins and overrides
+.BR LINUX_CLEANER_ONLY_PATH .
+Unset or empty environment input means no scope. Paths are literal, without
+placeholder expansion. NAME filters apply
 first, then PATH selection, then cleanup risk and safety guards. All action:*
 rows are excluded because their effects may extend beyond the scope. Missing or
 unresolvable candidates and expanded or physical paths containing line feeds are
@@ -459,6 +462,15 @@ When set to a non-empty pattern (or comma-separated list; empty entries are reje
 (substring match on config target
 .BR NAME ).
 CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_ONLY_PATH
+When set to a non-empty existing absolute literal path without line feeds, enables
+.BR \-\-only\-path
+for cleanup or target inventory. Unset or empty means no scope. No placeholder
+expansion is performed. CLI overrides even malformed inherited values. Excludes
+action:* rows and cannot combine with session/config/report modes or global
+retention (including
+.BR LINUX_CLEANER_TRASH_KEEP_DAYS ).
 .TP
 .B LINUX_CLEANER_MIN_RECLAIM
 When set to a non-empty size threshold (such as

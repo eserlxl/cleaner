@@ -21,7 +21,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
-- CLI-only `--only-path PATH` selects one existing project’s ordinary targets
+- `LINUX_CLEANER_ONLY_PATH` extends positive project selection to scheduled cleanup
+  environment files; CLI scope overrides it, with the same safety and mode guards.
+- `--only-path PATH` selects one existing project’s ordinary targets
   across cleanup and human/JSON inventory, composing with NAME filters while
   preserving sibling projects and excluding external actions and global retention.
   Placeholder expansion rejects line feeds without silently selecting a sibling path.
