@@ -57,5 +57,6 @@ Run `cleaner --init-config` to copy the active config to `${XDG_CONFIG_HOME:-~/.
 | `bash` | `PKGBUILD depends` | Script interpreter |
 | `findutils` | `PKGBUILD depends` | Age filter and bounded wildcard discovery |
 | `coreutils` | `PKGBUILD depends` | `du`, `stat`, `realpath`, `rm`, etc. |
+| `pgrep` (`procps`/`procps-ng`) | conditional runtime | Required for targets with `CHECK_PROCESSES`; missing or failed queries skip those targets before sizing, sudo or cleanup. Targets without process checks still work. |
 | `pacman-contrib` | `PKGBUILD optdepends` | Required for `action:paccache_keep*` (`paccache` binary) |
 | `sudo` | runtime | Required for root-owned paths and predefined `action:*` system package-cache commands |

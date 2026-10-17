@@ -6017,6 +6017,90 @@ else
   exit 1
 fi
 
+# Query errors must preserve guarded targets before sizing, sudo, or actions.
+python3 - "$CLEANER_SH" <<'PROCESS_QUERY_PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+with tempfile.TemporaryDirectory(prefix="cleaner-process-query-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    real_pgrep, real_du = shutil.which("pgrep"), shutil.which("du")
+    for mode in ("comm", "cmdline"):
+        for query in ("error2", "error127", "partial-error", "later-error", "invalid-regex", "missing", "no-match", "active"):
+            label = mode + " " + query
+            print("Test Case: Process Query " + label, flush=True)
+            case = root / (mode + "-" + query)
+            home, bindir = case / "home", case / "bin"
+            home.mkdir(parents=True); bindir.mkdir()
+            trace = case / "calls"
+            for tool in "bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp mkdir mv cp chmod rmdir cut grep flock true test".split():
+                executable = shutil.which(tool)
+                if executable:
+                    (bindir / tool).symlink_to(executable)
+            if query != "missing":
+                (bindir / "pgrep").write_text('#!/bin/bash\n'
+                    '[[ "${!#}" != absent ]] || exit 1\n'
+                    'case "$PROCESS_QUERY" in\n'
+                    ' error2|later-error) exit 2 ;;\n'
+                    ' error127) exit 127 ;;\n'
+                    ' partial-error) printf "%s\\n" "$PROCESS_PID"; exit 2 ;;\n'
+                    ' invalid-regex) exec "$PROCESS_REAL_PGREP" "$@" ;;\n'
+                    ' no-match) exit 1 ;;\n'
+                    ' active) printf "%s\\n" "$PROCESS_PID"; exit 0 ;;\n'
+                    'esac\n')
+            for tool in ("uv", "apt-get", "sudo"):
+                (bindir / tool).write_text('#!/bin/bash\nprintf "%s\\n" "${0##*/}" >> "$PROCESS_TRACE"\n'
+                    + ('while [[ "${1:-}" == -* ]]; do shift; done\nexec "$@"\n' if tool == "sudo" else 'exit 0\n'))
+            (bindir / "du").unlink()
+            (bindir / "du").write_text('#!/bin/bash\nfor arg in "$@"; do\n'
+                ' [[ "$arg" != "$HOME/guarded"* ]] || printf "guarded du\\n" >> "$PROCESS_TRACE"\n'
+                'done\nexec "$PROCESS_REAL_DU" "$@"\n')
+            for executable in bindir.iterdir():
+                if not executable.is_symlink(): executable.chmod(0o755)
+            token = "[" if query == "invalid-regex" else "guard_app"
+            if mode == "cmdline": token = "cmdline:" + token
+            if query == "later-error": token = "absent," + token
+            config = case / "cleaner.conf"
+            config.write_text("\n".join([
+                f"safe|Guarded|$HOME/guarded|Guarded payload|0|{token}|",
+                f"safe|Guarded User Action|$HOME/guarded-user|Guarded prune|0|{token}|action:uv_cache_prune",
+                f"medium|Guarded System Action|$HOME/guarded-system|Guarded package cache|0|{token}|action:apt_clean",
+                "safe|Ungated|$HOME/ungated|Independent payload|0||",
+            ]) + "\n")
+            for leaf in ("guarded", "guarded-user", "guarded-system", "ungated"):
+                (home / leaf).mkdir(); (home / leaf / "payload").write_text("preserve\n")
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+            env.update(HOME=str(home), PATH=str(bindir), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1",
+                       PROCESS_QUERY=query, PROCESS_TRACE=str(trace), PROCESS_PID=str(os.getpid()),
+                       PROCESS_REAL_PGREP=real_pgrep, PROCESS_REAL_DU=real_du)
+            # A sibling PID exercises active cmdline matching without ancestry filtering.
+            with subprocess.Popen(["/bin/sleep", "30"]) as active:
+                if query == "active": env["PROCESS_PID"] = str(active.pid)
+                try:
+                    def run(flags):
+                        result = subprocess.run([sys.argv[1], "--config", str(config), "--risk", "medium"] + flags,
+                                                env=env, capture_output=True, text=True, timeout=15)
+                        assert result.returncode == 0, (label, result)
+                        return result.stdout
+                    expected = "found" if query == "no-match" else "blocked" if query == "active" else "skipped"
+                    data = json.loads(run(["--dry-run", "--json"]))
+                    guarded = [target for target in data["targets"] if target["name"].startswith("Guarded")]
+                    assert len(guarded) == 3 and all(t["status"] == expected for t in guarded), (label, data)
+                    if expected == "skipped":
+                        assert all(t["bytes"] == 0 and "process check failed" in t["reason"] and token.split(",")[-1] in t["reason"] for t in guarded), (label, guarded)
+                        assert "process check failed" in run(["--dry-run"]), label
+                    output = run(["--force"])
+                    assert not (home / "ungated").exists(), (label, output)
+                    if expected != "found":
+                        assert all((home / leaf / "payload").read_text() == "preserve\n" for leaf in ("guarded", "guarded-user", "guarded-system")), label
+                        assert not trace.exists(), (label, trace.read_text())
+                    else:
+                        assert not (home / "guarded").exists(), label
+                        calls = trace.read_text()
+                        assert "uv\n" in calls and "apt-get\n" in calls and "sudo\n" in calls, calls
+                finally:
+                    active.terminate(); active.wait()
+            print("PASS: Process Query " + label, flush=True)
+PROCESS_QUERY_PY
+
 # Excluding a whole single-file target must prevent the move/delete, even when
 # another eligible target makes the total nonzero and enables the execution pass.
 for exclusion_mode in delete trash; do

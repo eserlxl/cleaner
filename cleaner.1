@@ -622,6 +622,12 @@ tool launched through a shared runtime (Electron or node), where the process doe
 run under its own name. Prefer an installation path over a bare word. The cleaner's own
 process ancestry, its descendants, and already-exited PIDs are excluded, so a pattern
 appearing in its own invocation never blocks a target.
+Targets with CHECK_PROCESSES require
+.BR pgrep (1)
+(usually from procps or procps-ng). A missing or failed query, including an invalid
+regular expression or partial results with an error, skips that target before sizing,
+sudo, actions or deletion, with a process-check failure reason. Other targets continue
+under the normal skip and exit policy; targets without process checks need no pgrep.
 .PP
 The
 .B CUSTOM_ACTION

@@ -26,6 +26,7 @@
 | U-105 | Exact restore selects literal inventory paths without prefix-sibling matches, preserves pending metadata and aged checkpoints, supports later full restore and repeated selectors, and rejects mixed/invalid usage before locking | Restore Exact |
 | U-106 | Session inventory counts literal unrecorded immediate entries across all entry types, nested references, missing metadata and real append failure; total/partial/late read or enumeration errors precede JSON and block purge/inline retention | Unrecorded Inventory |
 | U-107 | Bounded CLI/environment lock waits normalize/validate complete values before state, preserve default/zero contention and optional-flock fallback, execute once after a real holder releases, keep timeout payload/session/report/log state, and leave nonlocking modes unaffected | Lock Wait / Concurrent Run Lock |
+| U-108 | Failed comm/cmdline queries, missing pgrep, partial error output, later-token errors and invalid regex preserve guarded payloads with skipped JSON reasons and no guarded sizing, sudo or actions; no-match and active controls preserve cleanup/blocking, and ungated targets still clean | Process Query |
 
 ## 1.3.0 shipped feature inventory
 

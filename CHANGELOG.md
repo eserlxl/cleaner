@@ -55,6 +55,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Failed process inspection skips guarded targets before sizing or cleanup, including
+  missing `pgrep`, invalid expressions and partial query failures; unguarded targets
+  remain usable.
+
 - Configuration initialization preserves destinations created by another writer
   during publication and reports refusal instead of overwriting them.
 

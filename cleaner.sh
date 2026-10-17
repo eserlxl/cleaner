@@ -2696,8 +2696,15 @@ save_last_cleanup_report() {
 # script or scheduler carries our arguments in its command line too, so matching one
 # of those would block every target forever while nothing is actually running.
 _cmdline_match() {
-  local pattern="$1" pid ancestry=" "
+  local pattern="$1" pid ancestry=" " pids query_status=0
   [[ -z "$pattern" ]] && return 1
+
+  pids=$(pgrep -f -- "$pattern" 2>/dev/null) || query_status=$?
+  case "$query_status" in
+    0) ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
 
   # Seed from $$, not $BASHPID: at script level the two are equal, so seeding with
   # BASHPID would make the first loop test fail and the walk never start.
@@ -2719,7 +2726,7 @@ _cmdline_match() {
     [[ "$ancestry" == *" $pid "* ]] && continue
     _is_own_descendant "$pid" && continue
     return 0
-  done < <(pgrep -f -- "$pattern" 2>/dev/null)
+  done <<< "$pids"
   return 1
 }
 
@@ -2736,6 +2743,7 @@ _is_own_descendant() {
   return 1
 }
 
+# Return 0 for active, 1 for idle, and 2 when inspection cannot establish either.
 is_process_running() {
   local procs="$1"
   if [[ -z "$procs" ]]; then
@@ -2745,11 +2753,12 @@ is_process_running() {
   # Split with read, not an unquoted expansion: word splitting would also
   # pathname-expand each token against the current directory, so a pattern such
   # as "app*" could turn into a stray file name and silently miss the process.
-  local proc
+  local proc query_status
   local -a proc_list
   IFS=',' read -r -a proc_list <<< "$procs"
   for proc in "${proc_list[@]}"; do
     proc=$(trim "$proc")
+    query_status=0
     if [[ "$proc" == cmdline:* ]]; then
       # A tool launched through a shared runtime (Electron, node) has a comm that is
       # not its own name, so exact-comm matching silently never fires. Match the full
@@ -2757,21 +2766,20 @@ is_process_running() {
       # pattern appears in our own argv (a config path, or --only-target naming the
       # tool), which would block every target forever. Drop our own PIDs first and
       # treat an otherwise-empty result as "not running".
-      if _cmdline_match "${proc#cmdline:}"; then
-        echo "$proc"
-        return 0
-      fi
+      _cmdline_match "${proc#cmdline:}" || query_status=$?
     else
       # The kernel keeps only the first 15 characters of a process name, and
       # pgrep -x refuses a longer plain name outright, so compare such a name on
       # its first 15. Regex-bearing tokens are the user's own and pass unchanged.
       local comm="$proc"
       [[ ${#comm} -gt 15 && "$comm" =~ ^[A-Za-z0-9_-]+$ ]] && comm="${comm:0:15}"
-      if pgrep -x "$comm" >/dev/null; then
-        echo "$proc"
-        return 0
-      fi
+      pgrep -x "$comm" >/dev/null 2>&1 || query_status=$?
     fi
+    case "$query_status" in
+      0) printf '%s\n' "$proc"; return 0 ;;
+      1) ;;
+      *) printf '%s\n' "$proc"; return 2 ;;
+    esac
   done
   return 1
 }
@@ -3120,8 +3128,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: '$required_bin' not available on this platform."
     else
       # Check if running processes block this target
-      running_proc=$(is_process_running "$check_procs" || true)
-      if [[ -n "$running_proc" ]]; then
+      process_status=0
+      running_proc=$(is_process_running "$check_procs") || process_status=$?
+      if [[ "$process_status" -eq 2 ]]; then
+        target_status=skipped
+        target_reason="process check failed for '$running_proc'"
+        status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: $target_reason."
+      elif [[ "$process_status" -eq 0 ]]; then
         target_status=blocked
         target_reason="process '$running_proc' is active"
         status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
