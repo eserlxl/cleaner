@@ -51,6 +51,7 @@ install-man:
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/$(BINNAME)"
 	rm -f "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
+	rm -f "$(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)/cleaner.conf.example"
 	rm -f "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)/LICENSE"
 	-rmdir "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)" 2>/dev/null
 	rm -f "$(DESTDIR)$(DATADIR)/$(PKGNAME)/linux-cleaner.env.example"

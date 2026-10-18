@@ -3077,8 +3077,9 @@ if [[ ! -e "$destroot/usr/bin/cleaner" ]] \
    && [[ ! -e "$destroot/usr/share/zsh" ]] \
    && [[ ! -e "$destroot/usr/share/fish/vendor_completions.d/cleaner.fish" ]] \
    && [[ ! -e "$destroot/usr/share/fish" ]] \
+   && [[ ! -e "$destroot/etc/linux-cleaner/cleaner.conf.example" ]] \
    && [[ -f "$destroot/etc/linux-cleaner/cleaner.conf" ]]; then
-  echo -e "${GREEN}PASS: uninstall removed the binary, man page, completions, and license but kept the config.${NC}"
+  echo -e "${GREEN}PASS: uninstall removed the binary, man page, completions, license and shipped cleaner.conf.example but kept the config.${NC}"
 else
   echo -e "${RED}FAIL: uninstall did not clean up correctly (or removed the system config).${NC}"
   cat "$TEST_ENV_DIR/uninstall_sh.log"

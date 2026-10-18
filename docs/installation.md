@@ -21,7 +21,7 @@ sudo make install PREFIX=/usr        # install under /usr (standard distro layou
 make install DESTDIR=/tmp/stage      # stage into a packaging root
 sudo ./install.sh install            # POSIX-sh alternative (honors PREFIX and DESTDIR)
 systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer  # before uninstall
-sudo make uninstall                  # remove installed files (system config is preserved)
+sudo make uninstall                  # remove installed files, including a shipped cleaner.conf.example (system config is preserved)
 systemctl --user daemon-reload       # after uninstall
 ```
 
