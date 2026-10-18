@@ -5705,6 +5705,59 @@ else
   exit 1
 fi
 
+# 58a. Test Case: the Makefile pre-release gate runs the runbook validator before the
+# lint step and test suite, keeping release verification aligned with make check.
+echo -e "\n${BOLD}Test Case: Makefile Pre-Release Gate Parity${NC}"
+check_prerelease_makefile() {
+  local mf="$1"
+  if ! awk '
+    /^pre-release:[[:space:]]*/ {
+      in_pre = 1
+      if ($0 ~ /(^|[[:space:]])check-runbook-examples([[:space:]]|$)/) step = 1
+      next
+    }
+    in_pre && /^[^[:space:]#]/ { in_pre = 0 }
+    in_pre && /^\t/ {
+      sub(/^\t+/, "")
+      if (step == 0 && $0 ~ /(^|[[:space:]])scripts\/validate-runbook-examples\.sh([[:space:]]|$)/) step = 1
+      else if (step == 1 && $0 == "shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh") step = 2
+      else if (step == 2 && $0 == "bash test_cleaner.sh") step = 3
+    }
+    END { exit (step == 3 ? 0 : 1) }
+  ' "$mf"; then
+    return 1
+  fi
+  if command -v make > /dev/null 2>&1; then
+    local plan
+    if [[ "$mf" == "$SCRIPT_DIR/Makefile" ]]; then
+      plan=$(make -n --no-print-directory -C "$SCRIPT_DIR" pre-release 2>/dev/null) || return 1
+    else
+      plan=$(make -n --no-print-directory -C "$SCRIPT_DIR" -f "$mf" pre-release 2>/dev/null) || return 1
+    fi
+    printf '%s\n' "$plan" | awk '
+      step == 0 && /(^|[[:space:]])scripts\/validate-runbook-examples\.sh([[:space:]]|$)/ { step = 1; next }
+      step == 1 && $0 == "shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh" { step = 2; next }
+      step == 2 && $0 == "bash test_cleaner.sh" { step = 3; next }
+      END { exit (step == 3 ? 0 : 1) }
+    ' || return 1
+  fi
+  return 0
+}
+pr_drift=""
+if ! check_prerelease_makefile "$SCRIPT_DIR/Makefile"; then
+  pr_drift+=" Makefile(missing or out-of-order pre-release steps)"
+fi
+sed '/^pre-release:/s/ check-runbook-examples//' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.prerelease.drift"
+if check_prerelease_makefile "$TEST_ENV_DIR/Makefile.prerelease.drift"; then
+  pr_drift+=" Makefile-fixture(drift not detected)"
+fi
+if [[ -z "$pr_drift" ]]; then
+  echo -e "${GREEN}PASS: Makefile pre-release gate runs check-runbook-examples, shellcheck, and test_cleaner.sh in order.${NC}"
+else
+  echo -e "${RED}FAIL: Makefile pre-release gate drift —$pr_drift${NC}"
+  exit 1
+fi
+
 # 58b. Test Case: the configuration guide's quoted --check-config output names the real
 # target count of the shipped cleaner.conf. The number drifted once already (44 vs 45)
 # when a target was added without touching the docs.

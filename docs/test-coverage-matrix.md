@@ -141,6 +141,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, .SRCINFO, CHANGELOG.md |
 | Package Install Scriptlet Is Hint Only | pacman scriptlet prints the opt-in hint, calls no systemctl, no post_upgrade | linux-cleaner.install, PKGBUILD, .SRCINFO |
 | ShellCheck Invocation Parity | lint parity | ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, Makefile |
+| Makefile Pre-Release Gate Parity | `pre-release` runs `scripts/validate-runbook-examples.sh` (`check-runbook-examples`), `shellcheck`, and `bash test_cleaner.sh` in order | Makefile |
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |
 | Config Guide Target Count | docs/configuration.md quotes the shipped config's `--check-config` count | docs/configuration.md, cleaner.conf |
 | Mode Flag Exclusion Docs Parity | every "Cannot be combined with" list names the partners cleaner.sh refuses | cleaner.sh, docs/cli-reference.md, cleaner.1 |
