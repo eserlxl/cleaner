@@ -51,6 +51,7 @@ Every option, environment variable, and exit status of `cleaner`. The man page (
 | `LINUX_CLEANER_ONLY_PATH` | Non-empty existing absolute literal path without line feeds enabling `--only-path` for cleanup or target inventory (overridden by CLI); excludes actions and cannot combine with global retention or session/config/report modes. |
 | `LINUX_CLEANER_LOCK_WAIT` | Literal decimal `0..2147483647` seconds enabling `--lock-wait`; unset/empty means `0`, leading zeros allowed, last CLI value overrides. Valid values are ignored by nonlocking modes. |
 | `LINUX_CLEANER_MIN_RECLAIM` | Non-empty size threshold (e.g. `500M`, `2G`) enabling `--min-reclaim` (overridden by CLI `--min-reclaim`). User-level prune actions (`uv`/`pnpm`/`hf`) are sized at run time and do not count toward the threshold. |
+| `LINUX_CLEANER_MIN_AGE` | Non-empty non-negative integer day count enabling `--min-age` (overridden by CLI `--min-age`). Skips `action:*` rows. |
 | `LINUX_CLEANER_TRASH_KEEP_DAYS` | Non-empty non-negative integer day count enabling `--trash-keep-days` (overridden by CLI `--trash-keep-days`). |
 | `LINUX_CLEANER_RISK` | Sets the default `--risk` ceiling (`safe`, `medium`, or `danger`; overridden by `-r/--risk`). |
 | `LINUX_CLEANER_TRASH` | When `1`, `true`, or `yes`, enables `--trash` (quarantine mode). |
@@ -61,7 +62,7 @@ Every option, environment variable, and exit status of `cleaner`. The man page (
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `ONLY_PATH`, `MIN_RECLAIM`, `TRASH_KEEP_DAYS`, `LOCK_WAIT`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `ONLY_PATH`, `MIN_RECLAIM`, `MIN_AGE`, `TRASH_KEEP_DAYS`, `LOCK_WAIT`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
 
 ## Exit status
 

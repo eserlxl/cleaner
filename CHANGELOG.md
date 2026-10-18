@@ -25,8 +25,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   installed under `$DATADIR/bash-completion/completions/cleaner` (mode `0644`) by both
   `Makefile` and `install.sh` and removed on uninstall.
 
-- `--min-age DAYS` raises every ordinary target's age threshold to at least `DAYS`
-  days for one cleanup or dry-run preview while skipping `action:*` rows.
+- `--min-age DAYS` and `LINUX_CLEANER_MIN_AGE` raise every ordinary target's age
+  threshold to at least `DAYS` days for one cleanup or dry-run preview (with CLI
+  `--min-age` overriding the environment) while skipping `action:*` rows.
 
 - `--lock-wait SECONDS` and `LINUX_CLEANER_LOCK_WAIT` let scheduled mutations wait
   for the existing exclusive lock, preserving fail-fast defaults and read-only modes.

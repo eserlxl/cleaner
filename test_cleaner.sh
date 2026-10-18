@@ -5001,6 +5001,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-monitor-profile-", dir="/tmp") 
     for label, settings, error in [
         ("invalid risk", {"LINUX_CLEANER_RISK": "invalid"}, "Unknown risk"),
         ("invalid scope", {"LINUX_CLEANER_ONLY_PATH": "relative"}, "literal absolute path"),
+        ("invalid min age", {"LINUX_CLEANER_MIN_AGE": "bad"}, "non-negative integer"),
         ("invalid retention", {"LINUX_CLEANER_TRASH_KEEP_DAYS": "bad"}, "non-negative integer"),
         ("scope retention conflict", shared | {"LINUX_CLEANER_TRASH_KEEP_DAYS": "7"}, "--only-path applies only"),
     ]:
@@ -9114,9 +9115,9 @@ if ! run_test_case "Purge Sessions Max Size Invalid" 1 "purge_max_size_invalid.l
 fi
 echo -e "${GREEN}PASS: --purge-sessions max-size:SIZE keeps newest sessions within budget and validates SIZE.${NC}"
 
-# --min-age DAYS: raise every ordinary target's age threshold for one run,
-# keep larger row thresholds, skip action:* rows, and reject invalid values
-# or incompatible modes.
+# --min-age DAYS / LINUX_CLEANER_MIN_AGE: raise every ordinary target's age
+# threshold for one run, keep larger row thresholds, skip action:* rows, and
+# reject invalid values or incompatible modes.
 echo -e "\n${BOLD}Test Case: Min Age Override${NC}"
 setup_mock_env
 ma_dir="$MOCK_HOME/.cache/min_age_target"
@@ -9128,6 +9129,8 @@ touch -d "40 days ago" "$ma_dir/old.txt"
 printf 'high-age-payload\n' > "$ma_high_dir/mid.txt"
 touch -d "40 days ago" "$ma_high_dir/mid.txt"
 ma_old_bytes=$(du -sb "$ma_dir/old.txt" | awk '{print $1}')
+# An age-0 plan sizes the whole directory, not the sum of its files.
+ma_dir_bytes=$(du -sb "$ma_dir" | awk '{print $1}')
 cat > "$TEST_ENV_DIR/min_age.conf" <<EOF
 safe|Min Age Target|\$HOME/.cache/min_age_target|Min age test target|0||
 safe|High Age Target|\$HOME/.cache/min_age_high|High age target|60||
@@ -9155,6 +9158,56 @@ then
 fi
 echo -e "${GREEN}PASS: --dry-run --json --min-age 30 reports raised min_age_days, old file bytes only, and skips action:* rows.${NC}"
 
+echo -e "\n${BOLD}Test Case: Min Age Env Dry Run JSON${NC}"
+min_age_env_ec=0
+LINUX_CLEANER_MIN_AGE=30 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/min_age.conf" --dry-run --json \
+  < /dev/null > "$TEST_ENV_DIR/min_age_env_json.log" 2>&1 || min_age_env_ec=$?
+if [[ "$min_age_env_ec" -ne 0 ]] \
+   || ! python3 - "$TEST_ENV_DIR/min_age_env_json.log" "$ma_old_bytes" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+old_bytes = int(sys.argv[2])
+assert d["total_reclaimable_bytes"] == old_bytes, d
+by_name = {t["name"]: t for t in d["targets"]}
+assert "Action Target" not in by_name, by_name
+t = by_name["Min Age Target"]
+assert t["min_age_days"] == "30" and t["bytes"] == old_bytes and t["status"] == "found", t
+h = by_name["High Age Target"]
+assert h["min_age_days"] == "60" and h["bytes"] == 0 and h["status"] == "clean", h
+PY
+then
+  echo -e "${RED}FAIL: LINUX_CLEANER_MIN_AGE=30 did not report min_age_days '30' and old file bytes only (ec=$min_age_env_ec).${NC}"
+  cat "$TEST_ENV_DIR/min_age_env_json.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: LINUX_CLEANER_MIN_AGE=30 raises min_age_days to '30' and plans only old file bytes.${NC}"
+
+echo -e "\n${BOLD}Test Case: Min Age CLI Overrides Env${NC}"
+min_age_override_ec=0
+LINUX_CLEANER_MIN_AGE=30 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/min_age.conf" --dry-run --json --min-age 0 \
+  < /dev/null > "$TEST_ENV_DIR/min_age_override_json.log" 2>&1 || min_age_override_ec=$?
+if [[ "$min_age_override_ec" -ne 0 ]] \
+   || ! python3 - "$TEST_ENV_DIR/min_age_override_json.log" "$ma_dir_bytes" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+total_bytes = int(sys.argv[2])
+assert d["total_reclaimable_bytes"] == total_bytes, d
+by_name = {t["name"]: t for t in d["targets"]}
+assert "Action Target" not in by_name, by_name
+t = by_name["Min Age Target"]
+assert t["min_age_days"] == "0" and t["bytes"] == total_bytes and t["status"] == "found", t
+h = by_name["High Age Target"]
+assert h["min_age_days"] == "60" and h["bytes"] == 0 and h["status"] == "clean", h
+PY
+then
+  echo -e "${RED}FAIL: --min-age 0 did not override LINUX_CLEANER_MIN_AGE=30 to plan the whole directory (ec=$min_age_override_ec).${NC}"
+  cat "$TEST_ENV_DIR/min_age_override_json.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --min-age 0 overrides LINUX_CLEANER_MIN_AGE=30 so the fresh file is planned again.${NC}"
+
 if ! run_test_case "Min Age Clean Deletes Only Old" 0 "min_age_clean.log" \
        --config "$TEST_ENV_DIR/min_age.conf" --clean --force --min-age 30 \
    || [[ -e "$ma_dir/old.txt" ]] \
@@ -9165,6 +9218,19 @@ if ! run_test_case "Min Age Clean Deletes Only Old" 0 "min_age_clean.log" \
   exit 1
 fi
 echo -e "${GREEN}PASS: --clean --force --min-age 30 deletes only the 40-day-old file and keeps fresh and higher-threshold files.${NC}"
+
+echo -e "\n${BOLD}Test Case: Min Age Env Invalid Value${NC}"
+min_age_env_bad_ec=0
+LINUX_CLEANER_MIN_AGE=bad PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/min_age.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/min_age_env_bad.log" 2>&1 || min_age_env_bad_ec=$?
+if [[ "$min_age_env_bad_ec" -ne 1 ]] \
+   || ! grep -q -- "--min-age expects a non-negative integer" "$TEST_ENV_DIR/min_age_env_bad.log"; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_MIN_AGE=bad did not exit 1 with expected error (ec=$min_age_env_bad_ec).${NC}"
+  cat "$TEST_ENV_DIR/min_age_env_bad.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: LINUX_CLEANER_MIN_AGE=bad exits 1 with a clear error.${NC}"
 
 if ! run_test_case "Min Age Invalid Value" 1 "min_age_bad.log" \
        --config "$TEST_ENV_DIR/min_age.conf" --min-age abc --dry-run \

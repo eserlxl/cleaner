@@ -65,7 +65,7 @@ Options:
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
-  --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows.
+  --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
@@ -155,6 +155,9 @@ if [[ -n "${LINUX_CLEANER_ONLY_PATH:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
   MIN_RECLAIM="$LINUX_CLEANER_MIN_RECLAIM"
+fi
+if [[ -n "${LINUX_CLEANER_MIN_AGE:-}" ]]; then
+  MIN_AGE_OVERRIDE="$LINUX_CLEANER_MIN_AGE"
 fi
 if [[ -n "${LINUX_CLEANER_TRASH_KEEP_DAYS:-}" ]]; then
   TRASH_KEEP_DAYS="$LINUX_CLEANER_TRASH_KEEP_DAYS"
