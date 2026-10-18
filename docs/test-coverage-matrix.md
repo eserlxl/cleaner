@@ -36,7 +36,7 @@
 | U-115 | A confirmed manual cleanup (`--clean` without `--force` or `--quiet`) on a system where `linux-cleaner-clean.timer` is installed but `disabled` ends with one `Tip:` line naming `systemctl --user enable --now linux-cleaner-clean.timer` (followed by a `LINUX_CLEANER_TRASH=1` warning line when `--trash` was used); forced, quiet, failed, timer-enabled, unit-absent/no-`systemctl`, and nothing-cleaned runs print nothing | Daily Timer Tip |
 | U-116 | Every `examples/systemd/*.service` runs with exactly one `Nice=19` and one `IOSchedulingClass=idle` line | inline drift check "every systemd service tags its journal output as linux-cleaner and runs at idle priority" |
 | U-117 | An opted-in cleanup (`--notify` or `LINUX_CLEANER_NOTIFY=1`) that exits non-zero before reaching its result notification sends one `--urgency=critical` notification (`Cleanup stopped with exit status <N> before finishing; see journalctl --user -t linux-cleaner.`) and preserves the exit status, while dry-runs, non-cleanup modes, unnotified runs and already-notified runs send no duplicate | Notify Cleanup Result |
-| U-118 | `--min-free SIZE` and `LINUX_CLEANER_MIN_FREE` skip cleanup when free space on `HOME` is at or above `SIZE` (saving `Result: skipped at or above --min-free SIZE`), proceed when below `SIZE`, print a dry-run skip note, and reject invalid sizes and non-cleanup modes | Min Free Above Threshold Skips / Min Free Below Threshold Cleans / Min Free Invalid Size / Min Free With List Sessions Rejected / Min Free Env / Min Free Dry Run Note |
+| U-118 | `--min-free SIZE` and `LINUX_CLEANER_MIN_FREE` skip cleanup when free space on `HOME` is at or above `SIZE` (saving `Result: skipped at or above --min-free SIZE`), proceed when below `SIZE`, print a dry-run skip note, and reject invalid sizes and non-cleanup modes; `0` disables the check, an unreadable `df` warns and proceeds, and `--report --json` reports `skipped_at_or_above_min_free` | Min Free Above Threshold Skips / Min Free Below Threshold Cleans / Min Free Invalid Size / Min Free With List Sessions Rejected / Min Free Env / Min Free Dry Run Note / Min Free Report JSON / Min Free Zero Disables / Min Free Unreadable Df |
 
 ## 1.3.0 shipped feature inventory
 
@@ -76,7 +76,7 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | U-30 | --restore and --purge-sessions outcomes in the opt-in operation log | Log Restore / Log Purge / Unlogged Purge |
 | U-31 | Restore mkdir failure keeps metadata aligned | Restore Mkdir Failure |
 | U-32 | Aged quarantine chown failure is recorded and later targets run | Aged Quarantine Chown Failure |
-| U-33 | check-aur-ready rejects a SKIP checksum | check-aur-ready rejects a SKIP checksum |
+| U-33 | check-aur-ready rejects a SKIP checksum | AUR Checksum Gate |
 | U-34 | Failed sudo authentication during restore keeps metadata aligned | Restore Sudo Auth Failure |
 | U-35 | Plain CHECK_PROCESSES names longer than 15 characters match the kernel process name | Dry Run Mode (Default) / Bare Token Still Matches Comm |
 | U-36 | action:apk_clean | Cross-Distro Actions / Action Required Binary Mapping / Apk Safe Degradation |
