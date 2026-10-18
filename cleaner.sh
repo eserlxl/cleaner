@@ -88,6 +88,8 @@ YES_DANGER=false
 QUIET=false
 DEBUG=false
 NOTIFY=false
+# Only the flag is refused outside cleanup; an inherited mirror is ignored there.
+NOTIFY_CLI=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
@@ -234,6 +236,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --notify)
       NOTIFY=true
+      NOTIFY_CLI=true
       shift
       ;;
     --json)
@@ -535,7 +538,7 @@ if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:
   exit 1
 fi
 
-if [[ "$NOTIFY" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+if [[ "$NOTIFY_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
   echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
 fi
@@ -585,7 +588,7 @@ if [[ -n "$TRASH_KEEP_DAYS" && "$CHECK_CONFIG" == true ]]; then
   exit 1
 fi
 
-if [[ "$NOTIFY" == true && "$CHECK_CONFIG" == true ]]; then
+if [[ "$NOTIFY_CLI" == true && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --notify applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi

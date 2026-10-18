@@ -9513,6 +9513,19 @@ if ! run_test_case "Notify Cleanup Result (--notify with --report rejected)" 1 "
   cat "$TEST_ENV_DIR/notify_report.log" 2>/dev/null || true
   exit 1
 fi
+
+# 7. An inherited LINUX_CLEANER_NOTIFY is ignored by non-cleanup modes.
+: > "$notify_log"
+for notify_mode in --report --list-sessions; do
+  notify_mode_ec=0
+  LINUX_CLEANER_NOTIFY=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" "$notify_mode" < /dev/null > "$TEST_ENV_DIR/notify_mode.log" 2>&1 || notify_mode_ec=$?
+  if [[ "$notify_mode_ec" -ne 0 || -s "$notify_log" ]]; then
+    echo -e "${RED}FAIL: LINUX_CLEANER_NOTIFY=1 broke $notify_mode (ec=$notify_mode_ec) or notified.${NC}"
+    cat "$TEST_ENV_DIR/notify_mode.log" "$notify_log" 2>/dev/null || true
+    exit 1
+  fi
+done
 unset MOCK_NOTIFY_LOG MOCK_NOTIFY_EXIT
 echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notifications safely and reject non-cleanup modes.${NC}"
 

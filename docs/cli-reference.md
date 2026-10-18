@@ -46,7 +46,7 @@ Every option, environment variable, and exit status of `cleaner`. The man page (
 | `LINUX_CLEANER_LOG` | Enable operation logging to the given path under `$HOME` (same as `--log`). |
 | `LINUX_CLEANER_QUIET` | When `1`, `true`, or `yes`, enables `--quiet`. |
 | `LINUX_CLEANER_DEBUG` | When `1`, `true`, or `yes`, enables `--debug`. |
-| `LINUX_CLEANER_NOTIFY` | When `1`, `true`, or `yes`, enables `--notify` (send a desktop notification summarizing the cleanup result; no-op on dry-run). |
+| `LINUX_CLEANER_NOTIFY` | When `1`, `true`, or `yes`, enables `--notify` (send a desktop notification summarizing the cleanup result; no-op on dry-run). Non-cleanup modes ignore it. |
 | `LINUX_CLEANER_JSON` | When `1`, `true`, or `yes`, enables `--json` (valid with dry-run, `--list-targets`, `--list-sessions`, or `--report`). |
 | `LINUX_CLEANER_ONLY_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--only-target` (overridden by CLI `--only-target`). |
 | `LINUX_CLEANER_EXCLUDE_TARGET` | Non-empty pattern (or comma-separated list; empty entries are rejected) enabling `--exclude-target` (overridden by CLI `--exclude-target`). |
