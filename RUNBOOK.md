@@ -40,6 +40,8 @@ Dry-run, inventory, report, check-config and init-config never acquire or wait.
 0 3 * * * LINUX_CLEANER_FORCE=1 cleaner --clean --force
 ```
 
+The systemd units run at idle CPU and IO priority (`Nice=19`, `IOSchedulingClass=idle`); for the same under cron, prefix the command with `nice -n 19 ionice -c 3`.
+
 Permanent deletion of safe targets. Quarantine is opt-in and must be paired with the retention purge below, or carry its own retention:
 
 ```cron
