@@ -9632,6 +9632,70 @@ if ! (
 fi
 echo -e "${GREEN}PASS: completions/cleaner.bash passes bash -n, covers all --help options, and completes flags and values.${NC}"
 
+# Zsh and fish completion functional test: the zsh --purge-sessions selectors must
+# complete (an unescaped ':' in the _arguments spec made zsh report a parse error and
+# offer nothing), the prefix selectors must not gain a trailing space, and fish must
+# not offer file names for options whose value is a pattern, size or number.
+echo -e "\n${BOLD}Test Case: Zsh and Fish Completion Functional Check${NC}"
+setup_mock_env
+mkdir -p "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/comp_work"
+cp "$SCRIPT_DIR/completions/_cleaner" "$TEST_ENV_DIR/comp_fn/_cleaner"
+touch "$TEST_ENV_DIR/comp_work/comp_file.txt"
+if command -v zsh > /dev/null 2>&1; then
+  # Drive a real interactive zsh through zpty: type the line, press TAB, then a
+  # widget writes $BUFFER to a file, so the result does not depend on screen output.
+  cat > "$TEST_ENV_DIR/zsh_comp_probe.zsh" <<'ZSH_PROBE'
+fndir=$1 out=$2 line=$3
+zmodload zsh/zpty || exit 2
+zpty z zsh -f -i
+zpty -w z "fpath=($fndir \$fpath); autoload -U compinit; compinit -u -D 2>/dev/null"
+zpty -w z "dumpbuf() { print -r -- \"<\$BUFFER>\" > ${(q)out} }; zle -N dumpbuf; bindkey '^X' dumpbuf"
+zpty -w -n z "${line}"$'\t'$'\x18'
+for i in {1..100}; do [[ -s $out ]] && break; sleep 0.1; done
+zpty -d z
+[[ -s $out ]]
+ZSH_PROBE
+  zsh_comp_failed=""
+  for zcase in "ol|<cleaner --purge-sessions older-than:>" "ma|<cleaner --purge-sessions max-size:>" \
+               "la|<cleaner --purge-sessions latest >" "al|<cleaner --purge-sessions all >"; do
+    rm -f "$TEST_ENV_DIR/zsh_comp.out"
+    if ! timeout 20 zsh -f "$TEST_ENV_DIR/zsh_comp_probe.zsh" "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/zsh_comp.out" \
+           "cleaner --purge-sessions ${zcase%%|*}" > /dev/null 2>&1 \
+       || [[ "$(cat "$TEST_ENV_DIR/zsh_comp.out")" != "${zcase#*|}" ]]; then
+      zsh_comp_failed+=" ${zcase%%|*}->'$(cat "$TEST_ENV_DIR/zsh_comp.out" 2>/dev/null)'"
+    fi
+  done
+  if [[ -n "$zsh_comp_failed" ]]; then
+    echo -e "${RED}FAIL: zsh did not complete the --purge-sessions selectors:$zsh_comp_failed.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: zsh completes the --purge-sessions selectors, without a space after older-than: and max-size:.${NC}"
+else
+  echo -e "${GREEN}PASS (skipped): zsh is not installed; cannot run the zsh completion check.${NC}"
+fi
+if command -v fish > /dev/null 2>&1; then
+  fish_comp_failed=""
+  for fcase in --exclude --only --only-exact --only-target --exclude-target --lock-wait \
+               --min-reclaim --min-free --min-age --trash-keep-days; do
+    if [[ -n "$(cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
+                 fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $fcase '" 2>&1)" ]]; then
+      fish_comp_failed+=" $fcase"
+    fi
+  done
+  if ! (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
+          fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner --config '") \
+        | grep -qx 'comp_file.txt'; then
+    fish_comp_failed+=" --config(no file offered)"
+  fi
+  if [[ -n "$fish_comp_failed" ]]; then
+    echo -e "${RED}FAIL: fish completion offered file names for value options, or none for --config:$fish_comp_failed.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: fish offers no file names for pattern, size and number values, and still offers files for --config.${NC}"
+else
+  echo -e "${GREEN}PASS (skipped): fish is not installed; cannot run the fish completion check.${NC}"
+fi
+
 # --notify / LINUX_CLEANER_NOTIFY: send a desktop notification summarizing the
 # cleanup result via notify-send, pass --urgency=critical on failed targets,
 # ignore dry-runs and runs without the option, tolerate failing/missing

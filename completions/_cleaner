@@ -29,7 +29,7 @@ _cleaner() {
     '--min-free[With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)]:size:' \
     '--min-age[With cleanup: raise every ordinary target'\''s age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)]:days:' \
     '--trash-keep-days[With cleanup: purge quarantine sessions older than DAYS days after cleaning]:days:' \
-    '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible]:session:(latest all older-than: max-size:)' \
+    '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible]:session:{compadd -- latest all; compadd -S "" -- older-than\: max-size\:}' \
     '--allow-outside-home[Deprecated no-op; targets outside HOME are always allowed]' \
     '--log[Append an operation log (opt-in, off by default; kept under your HOME)]::file:_files' \
     '(-q --quiet)'{-q,--quiet}'[Suppress per-target status lines; keep errors, totals, and final summary]' \
