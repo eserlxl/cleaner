@@ -6022,7 +6022,7 @@ python3 - "$CLEANER_SH" <<'PROCESS_QUERY_PY'
 import json, os, pathlib, shutil, subprocess, sys, tempfile
 with tempfile.TemporaryDirectory(prefix="cleaner-process-query-", dir="/tmp") as directory:
     root = pathlib.Path(directory)
-    real_pgrep, real_du = shutil.which("pgrep"), shutil.which("du")
+    real_du = shutil.which("du")
     for mode in ("comm", "cmdline"):
         for query in ("error2", "error127", "partial-error", "later-error", "invalid-regex", "missing", "no-match", "active"):
             label = mode + " " + query
@@ -6042,7 +6042,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-process-query-", dir="/tmp") as
                     ' error2|later-error) exit 2 ;;\n'
                     ' error127) exit 127 ;;\n'
                     ' partial-error) printf "%s\\n" "$PROCESS_PID"; exit 2 ;;\n'
-                    ' invalid-regex) exec "$PROCESS_REAL_PGREP" "$@" ;;\n'
+                    ' invalid-regex) [[ "${!#}" == "[" ]] && exit 2; exit 0 ;;\n'
                     ' no-match) exit 1 ;;\n'
                     ' active) printf "%s\\n" "$PROCESS_PID"; exit 0 ;;\n'
                     'esac\n')
@@ -6070,7 +6070,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-process-query-", dir="/tmp") as
             env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
             env.update(HOME=str(home), PATH=str(bindir), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1",
                        PROCESS_QUERY=query, PROCESS_TRACE=str(trace), PROCESS_PID=str(os.getpid()),
-                       PROCESS_REAL_PGREP=real_pgrep, PROCESS_REAL_DU=real_du)
+                       PROCESS_REAL_DU=real_du)
             # A sibling PID exercises active cmdline matching without ancestry filtering.
             with subprocess.Popen(["/bin/sleep", "30"]) as active:
                 if query == "active": env["PROCESS_PID"] = str(active.pid)
