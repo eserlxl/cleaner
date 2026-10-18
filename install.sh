@@ -46,6 +46,8 @@ do_install() {
   install -m 0644 "$SRC_DIR/completions/cleaner.bash" "$DESTDIR$DATADIR/bash-completion/completions/$BINNAME"
   install -d "$DESTDIR$DATADIR/zsh/site-functions"
   install -m 0644 "$SRC_DIR/completions/_cleaner" "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
+  install -d "$DESTDIR$DATADIR/fish/vendor_completions.d"
+  install -m 0644 "$SRC_DIR/completions/cleaner.fish" "$DESTDIR$DATADIR/fish/vendor_completions.d/$BINNAME.fish"
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
 }
 
@@ -62,6 +64,9 @@ do_uninstall() {
   rm -f "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
   rmdir "$DESTDIR$DATADIR/zsh/site-functions" 2>/dev/null || true
   rmdir "$DESTDIR$DATADIR/zsh" 2>/dev/null || true
+  rm -f "$DESTDIR$DATADIR/fish/vendor_completions.d/$BINNAME.fish"
+  rmdir "$DESTDIR$DATADIR/fish/vendor_completions.d" 2>/dev/null || true
+  rmdir "$DESTDIR$DATADIR/fish" 2>/dev/null || true
   for unit in $UNITS; do
     rm -f "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
   done

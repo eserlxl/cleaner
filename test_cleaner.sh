@@ -3010,6 +3010,7 @@ for asset in "usr/bin/cleaner" \
              "usr/share/linux-cleaner/linux-cleaner.env.example" \
              "usr/share/bash-completion/completions/cleaner" \
              "usr/share/zsh/site-functions/_cleaner" \
+             "usr/share/fish/vendor_completions.d/cleaner.fish" \
              "usr/share/licenses/linux-cleaner/LICENSE"; do
   if [[ ! -f "$destroot/$asset" ]]; then
     echo -e "${RED}FAIL: install.sh did not ship '$asset'.${NC}"
@@ -3035,10 +3036,15 @@ if ! cmp -s "$SCRIPT_DIR/completions/_cleaner" "$destroot/usr/share/zsh/site-fun
   echo -e "${RED}FAIL: install.sh did not ship the zsh completion file unchanged with mode 0644.${NC}"
   install_ok=false
 fi
+if ! cmp -s "$SCRIPT_DIR/completions/cleaner.fish" "$destroot/usr/share/fish/vendor_completions.d/cleaner.fish" \
+   || [[ "$(stat -c '%a' "$destroot/usr/share/fish/vendor_completions.d/cleaner.fish" 2>/dev/null)" != 644 ]]; then
+  echo -e "${RED}FAIL: install.sh did not ship the fish completion file unchanged with mode 0644.${NC}"
+  install_ok=false
+fi
 if [[ "$install_ok" != true ]]; then
   exit 1
 fi
-echo -e "${GREEN}PASS: install.sh shipped all seven assets under DESTDIR with a 0755 binary and 0644 environment template and shell completions.${NC}"
+echo -e "${GREEN}PASS: install.sh shipped all eight assets under DESTDIR with a 0755 binary and 0644 environment template and shell completions.${NC}"
 
 # Re-installing over an existing config must preserve it and ship .example instead.
 DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
@@ -3061,6 +3067,8 @@ if [[ ! -e "$destroot/usr/bin/cleaner" ]] \
    && [[ ! -e "$destroot/usr/share/bash-completion" ]] \
    && [[ ! -e "$destroot/usr/share/zsh/site-functions/_cleaner" ]] \
    && [[ ! -e "$destroot/usr/share/zsh" ]] \
+   && [[ ! -e "$destroot/usr/share/fish/vendor_completions.d/cleaner.fish" ]] \
+   && [[ ! -e "$destroot/usr/share/fish" ]] \
    && [[ -f "$destroot/etc/linux-cleaner/cleaner.conf" ]]; then
   echo -e "${GREEN}PASS: uninstall removed the binary, man page, completions, and license but kept the config.${NC}"
 else
@@ -3134,6 +3142,11 @@ if command -v make > /dev/null 2>&1; then
     echo -e "${RED}FAIL: make install did not ship the zsh completion file unchanged with mode 0644.${NC}"
     exit 1
   fi
+  if ! cmp -s "$SCRIPT_DIR/completions/cleaner.fish" "$makeroot/usr/share/fish/vendor_completions.d/cleaner.fish" \
+     || [[ "$(stat -c '%a' "$makeroot/usr/share/fish/vendor_completions.d/cleaner.fish" 2>/dev/null)" != 644 ]]; then
+    echo -e "${RED}FAIL: make install did not ship the fish completion file unchanged with mode 0644.${NC}"
+    exit 1
+  fi
   echo -e "${GREEN}PASS: make install shipped six systemd user units and shell completions mode 644.${NC}"
   unmakeroot="$TEST_ENV_DIR/unmakeroot"
   make -C "$SCRIPT_DIR" install DESTDIR="$unmakeroot" PREFIX=/usr \
@@ -3156,6 +3169,8 @@ if command -v make > /dev/null 2>&1; then
      && [[ ! -e "$unmakeroot/usr/share/bash-completion" ]] \
      && [[ ! -e "$unmakeroot/usr/share/zsh/site-functions/_cleaner" ]] \
      && [[ ! -e "$unmakeroot/usr/share/zsh" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/fish/vendor_completions.d/cleaner.fish" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/fish" ]] \
      && [[ -f "$unmakeroot/etc/linux-cleaner/cleaner.conf" ]] \
      && [[ "$units_removed" == true ]]; then
     echo -e "${GREEN}PASS: make uninstall removed the binary, man page, completions, license, and systemd user units but kept the config.${NC}"
@@ -9315,6 +9330,7 @@ echo -e "\n${BOLD}Test Case: Bash Completion Drift and Functional Check${NC}"
 setup_mock_env
 comp_file="$SCRIPT_DIR/completions/cleaner.bash"
 zsh_comp_file="$SCRIPT_DIR/completions/_cleaner"
+fish_comp_file="$SCRIPT_DIR/completions/cleaner.fish"
 if [[ ! -f "$comp_file" ]] || ! bash -n "$comp_file"; then
   echo -e "${RED}FAIL: completions/cleaner.bash is missing or failed bash -n.${NC}"
   exit 1
@@ -9327,14 +9343,24 @@ if command -v zsh > /dev/null 2>&1 && ! zsh -n "$zsh_comp_file"; then
   echo -e "${RED}FAIL: completions/_cleaner failed zsh -n.${NC}"
   exit 1
 fi
+if [[ ! -f "$fish_comp_file" ]]; then
+  echo -e "${RED}FAIL: completions/cleaner.fish is missing.${NC}"
+  exit 1
+fi
+if command -v fish > /dev/null 2>&1 && ! fish -n "$fish_comp_file"; then
+  echo -e "${RED}FAIL: completions/cleaner.fish failed fish -n.${NC}"
+  exit 1
+fi
 comp_help_out="$TEST_ENV_DIR/comp_help_flags.txt"
 HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" bash "$CLEANER_SH" --help > "$comp_help_out" 2>&1
 comp_missing_flags=""
 zsh_comp_missing_flags=""
+fish_comp_missing_flags=""
 while IFS= read -r flag; do
   [[ -z "$flag" ]] && continue
   grep -qE -- "(^|[[:space:]])${flag}($|[[:space:]])" "$comp_file" || comp_missing_flags+=" $flag"
   grep -qE -- "(^|[^a-z-])${flag}($|[^a-z-])" "$zsh_comp_file" || zsh_comp_missing_flags+=" $flag"
+  grep -qE -- "(^|[[:space:]])-l[[:space:]]+${flag#--}($|[[:space:]])" "$fish_comp_file" || fish_comp_missing_flags+=" $flag"
 done < <(grep -oE -- '--[a-z][a-z-]*' "$comp_help_out" | sort -u)
 if [[ -n "$comp_missing_flags" ]]; then
   echo -e "${RED}FAIL: completions/cleaner.bash lacks --help options:$comp_missing_flags.${NC}"
@@ -9342,6 +9368,10 @@ if [[ -n "$comp_missing_flags" ]]; then
 fi
 if [[ -n "$zsh_comp_missing_flags" ]]; then
   echo -e "${RED}FAIL: completions/_cleaner lacks --help options:$zsh_comp_missing_flags.${NC}"
+  exit 1
+fi
+if [[ -n "$fish_comp_missing_flags" ]]; then
+  echo -e "${RED}FAIL: completions/cleaner.fish lacks --help options:$fish_comp_missing_flags.${NC}"
   exit 1
 fi
 if ! (

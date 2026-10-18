@@ -21,6 +21,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Ship native Fish tab completion (`completions/cleaner.fish`) for `cleaner` and `cleaner.sh`,
+  installed under `$DATADIR/fish/vendor_completions.d/cleaner.fish` (mode `0644`) by both
+  `Makefile` and `install.sh` and removed on uninstall.
+
 - Ship native Zsh tab completion (`completions/_cleaner`) for `cleaner` and `cleaner.sh`,
   installed under `$DATADIR/zsh/site-functions/_cleaner` (mode `0644`) by both
   `Makefile` and `install.sh` and removed on uninstall.

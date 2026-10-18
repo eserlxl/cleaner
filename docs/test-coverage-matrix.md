@@ -31,6 +31,7 @@
 | U-110 | Both installers ship `completions/cleaner.bash` to `$DATADIR/bash-completion/completions/cleaner` with mode `0644` and uninstall removes it; the completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
 | U-111 | `--notify` and `LINUX_CLEANER_NOTIFY` send one desktop notification summarizing the cleanup result via `notify-send` (`--urgency=critical` when a target failed), act as a no-op on dry-run, warn once when `notify-send` is absent, never alter the exit status on notifier failure, and reject non-cleanup modes | Notify Cleanup Result / Mode Flag Exclusion Docs Parity |
 | U-112 | Both installers ship `completions/_cleaner` to `$DATADIR/zsh/site-functions/_cleaner` with mode `0644` and uninstall removes it; the zsh completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
+| U-113 | Both installers ship `completions/cleaner.fish` to `$DATADIR/fish/vendor_completions.d/cleaner.fish` with mode `0644` and uninstall removes it; the fish completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
 
 ## 1.3.0 shipped feature inventory
 
@@ -138,6 +139,6 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |
 | Config Guide Target Count | docs/configuration.md quotes the shipped config's `--check-config` count | docs/configuration.md, cleaner.conf |
 | Mode Flag Exclusion Docs Parity | every "Cannot be combined with" list names the partners cleaner.sh refuses | cleaner.sh, docs/cli-reference.md, cleaner.1 |
-| Bash Completion Drift and Functional Check | every `--long` option in `--help` appears in the bash and zsh completion files | cleaner.sh, completions/cleaner.bash, completions/_cleaner |
+| Bash Completion Drift and Functional Check | every `--long` option in `--help` appears in the bash, zsh and fish completion files | cleaner.sh, completions/cleaner.bash, completions/_cleaner, completions/cleaner.fish |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.

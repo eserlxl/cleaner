@@ -41,6 +41,8 @@ install: install-man
 	install -m 0644 completions/cleaner.bash "$(DESTDIR)$(DATADIR)/bash-completion/completions/$(BINNAME)"
 	install -d "$(DESTDIR)$(DATADIR)/zsh/site-functions"
 	install -m 0644 completions/_cleaner "$(DESTDIR)$(DATADIR)/zsh/site-functions/_$(BINNAME)"
+	install -d "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d"
+	install -m 0644 completions/cleaner.fish "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d/$(BINNAME).fish"
 
 install-man:
 	install -d "$(DESTDIR)$(MANDIR)/man1"
@@ -59,6 +61,9 @@ uninstall:
 	rm -f "$(DESTDIR)$(DATADIR)/zsh/site-functions/_$(BINNAME)"
 	-rmdir "$(DESTDIR)$(DATADIR)/zsh/site-functions" 2>/dev/null
 	-rmdir "$(DESTDIR)$(DATADIR)/zsh" 2>/dev/null
+	rm -f "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d/$(BINNAME).fish"
+	-rmdir "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d" 2>/dev/null
+	-rmdir "$(DESTDIR)$(DATADIR)/fish" 2>/dev/null
 	rm -f "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.service \
 		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.timer \
 		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-retention.service \
