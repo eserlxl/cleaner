@@ -65,6 +65,7 @@ Options:
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
+  --min-free SIZE            With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G).
   --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
@@ -104,6 +105,8 @@ ONLY_PATH=""
 ONLY_PATH_CANONICAL=""
 MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
+MIN_FREE=""
+MIN_FREE_BYTES=0
 MIN_AGE_OVERRIDE=""
 TRASH_KEEP_DAYS=""
 LOCK_WAIT="${LINUX_CLEANER_LOCK_WAIT:-0}"
@@ -164,6 +167,9 @@ if [[ -n "${LINUX_CLEANER_ONLY_PATH:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
   MIN_RECLAIM="$LINUX_CLEANER_MIN_RECLAIM"
+fi
+if [[ -n "${LINUX_CLEANER_MIN_FREE:-}" ]]; then
+  MIN_FREE="$LINUX_CLEANER_MIN_FREE"
 fi
 if [[ -n "${LINUX_CLEANER_MIN_AGE:-}" ]]; then
   MIN_AGE_OVERRIDE="$LINUX_CLEANER_MIN_AGE"
@@ -351,6 +357,14 @@ while [[ $# -gt 0 ]]; do
       MIN_RECLAIM="$2"
       shift 2
       ;;
+    --min-free)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --min-free requires a size argument.${NC}" >&2
+        exit 1
+      fi
+      MIN_FREE="$2"
+      shift 2
+      ;;
     --min-age)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --min-age requires a day count argument.${NC}" >&2
@@ -496,6 +510,18 @@ if [[ -n "$MIN_RECLAIM" ]]; then
   fi
 fi
 
+if [[ -n "$MIN_FREE" ]]; then
+  min_free_rc=0
+  MIN_FREE_BYTES=$(parse_size_bytes "$MIN_FREE") || min_free_rc=$?
+  if [[ "$min_free_rc" -eq 1 ]]; then
+    echo -e "${RED}Error: --min-free expects a size such as 500M or 2G, got '${MIN_FREE}'.${NC}" >&2
+    exit 1
+  elif [[ "$min_free_rc" -ne 0 ]]; then
+    echo -e "${RED}Error: --min-free size '${MIN_FREE}' is too large.${NC}" >&2
+    exit 1
+  fi
+fi
+
 if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
   if [[ ! "$MIN_AGE_OVERRIDE" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: --min-age expects a non-negative integer day count, got '${MIN_AGE_OVERRIDE}'.${NC}" >&2
@@ -547,6 +573,11 @@ if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" 
   exit 1
 fi
 
+if [[ -n "$MIN_FREE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --min-free applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
+  exit 1
+fi
+
 if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
   echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
@@ -594,6 +625,11 @@ fi
 
 if [[ -n "$MIN_RECLAIM" && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --check-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$MIN_FREE" && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --min-free applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -2639,6 +2675,9 @@ show_last_report() {
         "Result: skipped below --min-reclaim"*)
           result="skipped_below_min_reclaim"
           ;;
+        "Result: skipped at or above --min-free"*)
+          result="skipped_at_or_above_min_free"
+          ;;
         "Result: cleaned="*)
           result="completed"
           if [[ "$line" =~ ^Result:\ cleaned=([0-9]+)\ skipped=([0-9]+)\ failed=([0-9]+)\ elapsed=([0-9]+)s$ ]]; then
@@ -3455,11 +3494,18 @@ for i in "${!parsed_exists[@]}"; do
   fi
 done
 
+home_free_bytes=0
+if [[ -n "$MIN_FREE" ]]; then
+  home_free_bytes=$(get_fs_avail_bytes "$HOME")
+fi
+
 # If dry-run is specified, we stop here
 if [[ "$DRY_RUN" = true ]]; then
   status_echo "${YELLOW}Dry-run mode active. No files were modified.${NC}"
   if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
     status_echo "Below --min-reclaim ${MIN_RECLAIM}: a cleanup run would skip."
+  elif [[ -n "$MIN_FREE" && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
+    status_echo "Free space $(format_bytes "$home_free_bytes") is at or above --min-free ${MIN_FREE}: a cleanup run would skip."
   elif [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
     status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
   fi
@@ -3477,6 +3523,17 @@ fi
 if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
   echo "Planned reclaim $(format_bytes "$total_reclaimable_bytes") is below --min-reclaim ${MIN_RECLAIM}; nothing was cleaned."
   RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
+  RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
+  save_last_cleanup_report
+  apply_trash_keep_days
+  notify_cleanup_result
+  [[ "$OPERATION_FAILED" = true ]] && exit 1
+  exit 0
+fi
+
+if [[ -n "$MIN_FREE" && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
+  echo "Free space $(format_bytes "$home_free_bytes") is at or above --min-free ${MIN_FREE}; nothing was cleaned."
+  RESULT_REPORT_TEXT="Result: skipped at or above --min-free ${MIN_FREE}"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
   apply_trash_keep_days

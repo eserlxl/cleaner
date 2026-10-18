@@ -61,7 +61,7 @@ _cleaner() {
       mapfile -t COMPREPLY < <(compgen -d -- "$cur")
       return 0
       ;;
-    -e|--exclude|--only|--only-exact|--only-target|--exclude-target|--lock-wait|--min-reclaim|--trash-keep-days|--min-age)
+    -e|--exclude|--only|--only-exact|--only-target|--exclude-target|--lock-wait|--min-reclaim|--min-free|--trash-keep-days|--min-age)
       return 0
       ;;
   esac
@@ -89,6 +89,7 @@ _cleaner() {
     --only-path
     --lock-wait
     --min-reclaim
+    --min-free
     --min-age
     --trash-keep-days
     --purge-sessions

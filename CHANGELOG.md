@@ -25,6 +25,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--min-free SIZE` and `LINUX_CLEANER_MIN_FREE` skip cleanup when the filesystem holding `HOME` already has at least `SIZE` free (e.g. `10G`), printing a skip note on `--dry-run` and recording `Result: skipped at or above --min-free SIZE` in `last-report.txt`.
+
 - Send a critical desktop notification (`Cleanup stopped with exit status <N> before finishing; see journalctl --user -t linux-cleaner.`) when an opted-in cleanup (`--notify` or `LINUX_CLEANER_NOTIFY=1`) exits non-zero before reaching its result report, while preserving the exit status and leaving dry-run, non-cleanup, and already-notified runs unchanged.
 
 - Suggest `cleaner --init-config` with the destination user config path at the

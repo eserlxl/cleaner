@@ -153,7 +153,7 @@ emit a JSON summary of the saved last cleanup report
 .RB ( saved ,
 .BR result
 as
-.BR completed ", " nothing_to_clean ", or " skipped_below_min_reclaim ,
+.BR completed ", " nothing_to_clean ", " skipped_below_min_reclaim ", or " skipped_at_or_above_min_free ,
 .BR cleaned / skipped / failed / elapsed_seconds ,
 .BR failed_targets ,
 .BR quarantine_session ,
@@ -262,6 +262,7 @@ combined with
 .BR \-\-exclude\-target ,
 .BR \-\-only\-path ,
 .BR \-\-min\-reclaim ,
+.BR \-\-min\-free ,
 .BR \-\-min\-age ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
@@ -390,6 +391,30 @@ are sized at run time and do not count toward the threshold. In dry-run mode,
 prints a note when a cleanup run would skip; in a cleanup run, prints why
 nothing was cleaned, saves
 .BI "Result: skipped below \-\-min\-reclaim " SIZE
+in the last cleanup report, and exits 0. Exits 1 on a malformed
+.IR SIZE .
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
+.TP
+.B \-\-min\-free \fISIZE\fR
+Used with cleanup: skip the run when the filesystem holding
+.B HOME
+already has at least
+.I SIZE
+free (an integer with an optional
+.BR K ", " M ", " G ", or " T
+1024-based unit, such as
+.BR 10G ).
+In dry-run mode, prints a note when a cleanup run would skip; in a cleanup
+run, prints why nothing was cleaned, saves
+.BI "Result: skipped at or above \-\-min\-free " SIZE
 in the last cleanup report, and exits 0. Exits 1 on a malformed
 .IR SIZE .
 Cannot be combined with
@@ -588,6 +613,15 @@ or
 .BR 2G ),
 enables
 .BR \-\-min\-reclaim .
+CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_MIN_FREE
+When set to a non-empty size threshold (such as
+.BR 10G ),
+enables
+.BR \-\-min\-free
+(measured on the filesystem holding
+.BR HOME ).
 CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_MIN_AGE

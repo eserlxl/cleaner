@@ -23,6 +23,7 @@ complete -c cleaner -l exclude-target -r -d 'With cleanup or --list-targets: ski
 complete -c cleaner -l only-path -x -a '(__fish_complete_directories)' -d 'With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH)'
 complete -c cleaner -l lock-wait -r -d 'With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT)'
 complete -c cleaner -l min-reclaim -r -d 'With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G)'
+complete -c cleaner -l min-free -r -d 'With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)'
 complete -c cleaner -l min-age -r -d "With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)"
 complete -c cleaner -l trash-keep-days -r -d 'With cleanup: purge quarantine sessions older than DAYS days after cleaning'
 complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size:' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible'

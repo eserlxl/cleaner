@@ -4094,6 +4094,113 @@ else
   exit 1
 fi
 
+# --min-free / LINUX_CLEANER_MIN_FREE: skip cleanup when home filesystem free space is at or above threshold.
+write_min_free_df_stub() {
+  cat > "$TEST_ENV_DIR/bin/df" <<MOCK_DF
+#!/usr/bin/env bash
+printf 'Avail\n%s\n' "$1"
+MOCK_DF
+  chmod +x "$TEST_ENV_DIR/bin/df"
+}
+
+setup_mock_env
+write_min_free_df_stub 5368709120
+if run_test_case "Min Free Above Threshold Skips" 0 "min_free_skip.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-free 1G; then
+  if grep -qF "is at or above --min-free 1G; nothing was cleaned." "$TEST_ENV_DIR/min_free_skip.log" \
+     && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+     && grep -qF "Result: skipped at or above --min-free 1G" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+     && run_test_case "Min Free Report JSON" 0 "min_free_report.json" --report --json \
+     && python3 - "$TEST_ENV_DIR/min_free_report.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["result"] == "skipped_at_or_above_min_free", d
+PY
+  then
+    echo -e "${GREEN}PASS: --min-free 1G skips cleanup when 5G is free and records skipped report.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-free 1G did not skip cleanup, deleted files, or missed saved report.${NC}"
+    cat "$TEST_ENV_DIR/min_free_skip.log" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" 2>/dev/null || true
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+setup_mock_env
+write_min_free_df_stub 104857600
+if run_test_case "Min Free Below Threshold Cleans" 0 "min_free_clean.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-free 1G; then
+  if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+    echo -e "${GREEN}PASS: --min-free 1G proceeds with cleanup when free space is below threshold.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-free 1G did not clean files when free space was below threshold.${NC}"
+    cat "$TEST_ENV_DIR/min_free_clean.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Min Free Invalid Size" 1 "min_free_invalid.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free bogus --dry-run; then
+  if grep -q -- "--min-free expects a size" "$TEST_ENV_DIR/min_free_invalid.log"; then
+    echo -e "${GREEN}PASS: --min-free bogus is rejected with a clear error.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-free bogus did not report expected size error.${NC}"
+    cat "$TEST_ENV_DIR/min_free_invalid.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+if run_test_case "Min Free With List Sessions Rejected" 1 "min_free_nolist.log" \
+     --min-free 1G --list-sessions; then
+  if grep -q "min-free applies only to cleanup" "$TEST_ENV_DIR/min_free_nolist.log"; then
+    echo -e "${GREEN}PASS: --min-free with --list-sessions is rejected.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-free with --list-sessions was not rejected.${NC}"
+    cat "$TEST_ENV_DIR/min_free_nolist.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Min Free Env${NC}"
+setup_mock_env
+write_min_free_df_stub 5368709120
+min_free_env_ec=0
+LINUX_CLEANER_MIN_FREE=1G PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/env_min_free.log" 2>&1 || min_free_env_ec=$?
+if [[ "$min_free_env_ec" -eq 0 ]] \
+   && grep -qF "is at or above --min-free 1G; nothing was cleaned." "$TEST_ENV_DIR/env_min_free.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+   && grep -qF "Result: skipped at or above --min-free 1G" "$XDG_STATE_HOME/linux-cleaner/last-report.txt"; then
+  echo -e "${GREEN}PASS: LINUX_CLEANER_MIN_FREE=1G skips cleanup and keeps files intact.${NC}"
+else
+  echo -e "${RED}FAIL: LINUX_CLEANER_MIN_FREE=1G did not skip cleanup (ec=$min_free_env_ec).${NC}"
+  cat "$TEST_ENV_DIR/env_min_free.log"
+  exit 1
+fi
+
+setup_mock_env
+write_min_free_df_stub 5368709120
+if run_test_case "Min Free Dry Run Note" 0 "min_free_dry.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --min-free 1G \
+   && grep -qF "Free space 5 GB is at or above --min-free 1G: a cleanup run would skip." "$TEST_ENV_DIR/min_free_dry.log" \
+   && ! grep -qF "Next: run" "$TEST_ENV_DIR/min_free_dry.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --dry-run notes a --min-free skip when free space is at or above the threshold.${NC}"
+else
+  echo -e "${RED}FAIL: --dry-run --min-free note did not match the threshold.${NC}"
+  cat "$TEST_ENV_DIR/min_free_dry.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/bin/df"
+
 # --quiet: minimal output for unattended cron runs.
 echo -e "\n${BOLD}Test Case: Quiet Dry Run Output${NC}"
 if run_test_case "Quiet Dry Run" 0 "quiet_dry.log" \
@@ -5587,7 +5694,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days --notify)
+  --init-config --only-target --exclude-target --only-path --min-reclaim --min-free --min-age --trash-keep-days --notify)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -5595,12 +5702,13 @@ mx_args() {
     --only-target|--exclude-target) echo "$1 NPM" ;;
     --only-path) echo "--only-path $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
+    --min-free) echo "--min-free 1G" ;;
     --min-age) echo "--min-age 30" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days --notify --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-free --min-age --trash-keep-days --notify --list-targets
   --check-config --init-config --report)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do

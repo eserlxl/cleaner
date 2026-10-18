@@ -49,6 +49,12 @@ Permanent deletion of safe targets. Quarantine is opt-in and must be paired with
 0 3 * * * LINUX_CLEANER_FORCE=1 cleaner --clean --trash --force --trash-keep-days 30
 ```
 
+To clean only under disk pressure, schedule an hourly run with `--min-free SIZE` (or `LINUX_CLEANER_MIN_FREE`); free space is measured on the filesystem holding `HOME`, and runs at or above `SIZE` free skip with exit `0`:
+
+```cron
+0 * * * * LINUX_CLEANER_FORCE=1 cleaner --clean --force --min-free 10G
+```
+
 ## Cron: retention purge
 
 ```cron

@@ -26,6 +26,7 @@ _cleaner() {
     '--only-path[With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH)]:directory:_directories' \
     '--lock-wait[With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT)]:seconds:' \
     '--min-reclaim[With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G)]:size:' \
+    '--min-free[With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)]:size:' \
     '--min-age[With cleanup: raise every ordinary target'\''s age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)]:days:' \
     '--trash-keep-days[With cleanup: purge quarantine sessions older than DAYS days after cleaning]:days:' \
     '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible]:session:(latest all older-than: max-size:)' \
