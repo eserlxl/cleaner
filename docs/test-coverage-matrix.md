@@ -32,6 +32,7 @@
 | U-111 | `--notify` and `LINUX_CLEANER_NOTIFY` send one desktop notification summarizing the cleanup result via `notify-send` (`--urgency=critical` when a target failed), act as a no-op on dry-run, warn once when `notify-send` is absent, never alter the exit status on notifier failure, and reject non-cleanup modes | Notify Cleanup Result / Mode Flag Exclusion Docs Parity |
 | U-112 | Both installers ship `completions/_cleaner` to `$DATADIR/zsh/site-functions/_cleaner` with mode `0644` and uninstall removes it; the zsh completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
 | U-113 | Both installers ship `completions/cleaner.fish` to `$DATADIR/fish/vendor_completions.d/cleaner.fish` with mode `0644` and uninstall removes it; the fish completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
+| U-114 | A preview (`--dry-run`) using a discovered shared config while no user config exists ends with one line naming `cleaner --init-config` and the user config destination; suppressed with an explicit config, an existing user config, or `--quiet` | Init Config Preview Tip |
 
 ## 1.3.0 shipped feature inventory
 

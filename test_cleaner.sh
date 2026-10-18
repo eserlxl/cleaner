@@ -9765,5 +9765,35 @@ if [[ "$tip_fail_ec" -ne 1 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer
 fi
 echo -e "${GREEN}PASS: confirmed manual cleanup suggests enabling linux-cleaner-clean.timer only when disabled and silent otherwise.${NC}"
 
+# Preview from a shared config suggests initializing user config when none exists.
+unset LINUX_CLEANER_CONFIG 2>/dev/null || true
+setup_mock_env
+tip_xdg="$TEST_ENV_DIR/init_tip_xdg"
+rm -rf "$tip_xdg"
+mkdir -p "$tip_xdg"
+expected_tip="Customize: run 'cleaner --init-config' to copy this config to $tip_xdg/linux-cleaner/cleaner.conf and edit it."
+if XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip" 0 "init_tip.log" \
+     --dry-run \
+   && [[ "$(grep -cxF "$expected_tip" "$TEST_ENV_DIR/init_tip.log" || true)" -eq 1 ]] \
+   && [[ "$(grep -c "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip.log" || true)" -eq 1 ]] \
+   && XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip Explicit Config Control" 0 "init_tip_explicit.log" \
+     -c "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+   && ! grep -qF "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip_explicit.log" \
+   && XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip Quiet Control" 0 "init_tip_quiet.log" \
+     --dry-run --quiet \
+   && ! grep -qF "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip_quiet.log" \
+   && mkdir -p "$tip_xdg/linux-cleaner" \
+   && cp "$TEST_ENV_DIR/test_cleaner.conf" "$tip_xdg/linux-cleaner/cleaner.conf" \
+   && XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip User Config Control" 0 "init_tip_user.log" \
+     --dry-run \
+   && ! grep -qF "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip_user.log"; then
+  echo -e "${GREEN}PASS: preview from shared config suggests --init-config; controls suppress the tip.${NC}"
+else
+  echo -e "${RED}FAIL: init-config preview tip did not appear once or controls printed the tip.${NC}"
+  cat "$TEST_ENV_DIR/init_tip.log" "$TEST_ENV_DIR/init_tip_explicit.log" "$TEST_ENV_DIR/init_tip_quiet.log" "$TEST_ENV_DIR/init_tip_user.log" 2>/dev/null || true
+  exit 1
+fi
+rm -rf "$tip_xdg"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

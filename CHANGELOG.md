@@ -21,6 +21,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Suggest `cleaner --init-config` with the destination user config path at the
+  end of a preview (`--dry-run`) when the active configuration was discovered
+  from a shared location (/etc or checkout) and no user config exists yet, while
+  leaving explicit-config, existing-user-config, quiet, and JSON runs unchanged.
+
 - Point a confirmed manual cleanup (`cleaner --clean` without `--force` or
   `--quiet`) at `systemctl --user enable --now linux-cleaner-clean.timer` when
   the user daily timer unit is installed but `disabled`, while leaving forced,

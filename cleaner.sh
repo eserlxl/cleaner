@@ -111,6 +111,7 @@ LIST_SESSIONS=false
 LIST_TARGETS=false
 CHECK_CONFIG=false
 INIT_CONFIG=false
+CONFIG_DISCOVERED=false
 REPORT=false
 PLAN_REPORT_TEXT=""
 RESULT_REPORT_TEXT=""
@@ -720,6 +721,9 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != 
     done
     # No candidate exists: keep the dev path so the not-found error is actionable.
     [[ -z "$CONFIG_FILE" ]] && CONFIG_FILE="$SCRIPT_DIR/cleaner.conf"
+    if [[ "$CONFIG_FILE" != "$xdg_config_parent/linux-cleaner/cleaner.conf" ]]; then
+      CONFIG_DISCOVERED=true
+    fi
   fi
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
@@ -3435,6 +3439,14 @@ if [[ "$DRY_RUN" = true ]]; then
     status_echo "Below --min-reclaim ${MIN_RECLAIM}: a cleanup run would skip."
   elif [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
     status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
+  fi
+  if [[ "$CONFIG_DISCOVERED" == true ]]; then
+    user_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || exit 1
+    user_config_parent=${user_config_parent%.}
+    user_config="$user_config_parent/linux-cleaner/cleaner.conf"
+    if [[ ! -e "$user_config" ]]; then
+      status_echo "Customize: run 'cleaner --init-config' to copy this config to $user_config and edit it."
+    fi
   fi
   exit 0
 fi
