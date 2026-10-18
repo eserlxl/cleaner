@@ -411,7 +411,9 @@ already has at least
 free (an integer with an optional
 .BR K ", " M ", " G ", or " T
 1024-based unit, such as
-.BR 10G ).
+.BR 10G ;
+.B 0
+disables the check).
 In dry-run mode, prints a note when a cleanup run would skip; in a cleanup
 run, prints why nothing was cleaned, saves
 .BI "Result: skipped at or above \-\-min\-free " SIZE

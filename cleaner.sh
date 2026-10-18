@@ -3495,7 +3495,8 @@ for i in "${!parsed_exists[@]}"; do
 done
 
 home_free_bytes=0
-if [[ -n "$MIN_FREE" ]]; then
+# A zero threshold disables the gate, like --min-reclaim 0.
+if [[ "$MIN_FREE_BYTES" -gt 0 ]]; then
   home_free_bytes=$(get_fs_avail_bytes "$HOME")
 fi
 
@@ -3504,7 +3505,7 @@ if [[ "$DRY_RUN" = true ]]; then
   status_echo "${YELLOW}Dry-run mode active. No files were modified.${NC}"
   if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
     status_echo "Below --min-reclaim ${MIN_RECLAIM}: a cleanup run would skip."
-  elif [[ -n "$MIN_FREE" && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
+  elif [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
     status_echo "Free space $(format_bytes "$home_free_bytes") is at or above --min-free ${MIN_FREE}: a cleanup run would skip."
   elif [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
     status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
@@ -3531,7 +3532,7 @@ if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]
   exit 0
 fi
 
-if [[ -n "$MIN_FREE" && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
+if [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
   echo "Free space $(format_bytes "$home_free_bytes") is at or above --min-free ${MIN_FREE}; nothing was cleaned."
   RESULT_REPORT_TEXT="Result: skipped at or above --min-free ${MIN_FREE}"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'

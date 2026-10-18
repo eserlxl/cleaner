@@ -4142,6 +4142,21 @@ else
   exit 1
 fi
 
+setup_mock_env
+write_min_free_df_stub 5368709120
+if run_test_case "Min Free Zero Disables" 0 "min_free_zero.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-free 0; then
+  if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] && ! grep -qF -- "--min-free" "$TEST_ENV_DIR/min_free_zero.log"; then
+    echo -e "${GREEN}PASS: --min-free 0 disables the free-space gate and cleans normally.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-free 0 skipped the cleanup instead of disabling the gate.${NC}"
+    cat "$TEST_ENV_DIR/min_free_zero.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 if run_test_case "Min Free Invalid Size" 1 "min_free_invalid.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free bogus --dry-run; then
   if grep -q -- "--min-free expects a size" "$TEST_ENV_DIR/min_free_invalid.log"; then
