@@ -44,6 +44,8 @@ do_install() {
   done
   install -d "$DESTDIR$DATADIR/bash-completion/completions"
   install -m 0644 "$SRC_DIR/completions/cleaner.bash" "$DESTDIR$DATADIR/bash-completion/completions/$BINNAME"
+  install -d "$DESTDIR$DATADIR/zsh/site-functions"
+  install -m 0644 "$SRC_DIR/completions/_cleaner" "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
 }
 
@@ -57,6 +59,9 @@ do_uninstall() {
   rm -f "$DESTDIR$DATADIR/bash-completion/completions/$BINNAME"
   rmdir "$DESTDIR$DATADIR/bash-completion/completions" 2>/dev/null || true
   rmdir "$DESTDIR$DATADIR/bash-completion" 2>/dev/null || true
+  rm -f "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
+  rmdir "$DESTDIR$DATADIR/zsh/site-functions" 2>/dev/null || true
+  rmdir "$DESTDIR$DATADIR/zsh" 2>/dev/null || true
   for unit in $UNITS; do
     rm -f "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
   done
