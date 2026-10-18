@@ -7,4 +7,7 @@ Type=oneshot
 # Matches RUNBOOK cron: cleaner --clean --force (permanent deletion; quarantine is LINUX_CLEANER_TRASH=1).
 ExecStart=/usr/bin/env cleaner --clean --force
 SyslogIdentifier=linux-cleaner
+# Idle priority keeps a catch-up or periodic run from slowing the desktop session.
+Nice=19
+IOSchedulingClass=idle
 EnvironmentFile=-%h/.config/linux-cleaner/env

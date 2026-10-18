@@ -17,6 +17,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- Run the clean, retention and monitor systemd user units at `Nice=19` with
+  idle IO scheduling, so a `Persistent=true` catch-up run at login or the
+  six-hourly preview does not slow the desktop session.
+
 - Align configuration guidance with the existing target classes and exceptions.
 
 ### Added

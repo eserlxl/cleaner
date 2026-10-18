@@ -3097,8 +3097,14 @@ for unit_file in "$SCRIPT_DIR"/examples/systemd/*.service; do
     echo -e "${RED}FAIL: $(basename "$unit_file") lacks exactly one SyslogIdentifier=linux-cleaner line.${NC}"
     exit 1
   fi
+  for priority_line in 'Nice=19' 'IOSchedulingClass=idle'; do
+    if [[ "$(grep -cx "$priority_line" "$unit_file")" -ne 1 ]]; then
+      echo -e "${RED}FAIL: $(basename "$unit_file") lacks exactly one $priority_line line.${NC}"
+      exit 1
+    fi
+  done
 done
-echo -e "${GREEN}PASS: every systemd service tags its journal output as linux-cleaner.${NC}"
+echo -e "${GREEN}PASS: every systemd service tags its journal output as linux-cleaner and runs at idle priority.${NC}"
 
 # Mutating runs share one lock, so the retention unit must queue behind a
 # cleanup that Persistent=true catch-up starts at the same moment.

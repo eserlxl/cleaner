@@ -34,6 +34,7 @@
 | U-113 | Both installers ship `completions/cleaner.fish` to `$DATADIR/fish/vendor_completions.d/cleaner.fish` with mode `0644` and uninstall removes it; the fish completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
 | U-114 | A preview (`--dry-run`) using a discovered shared config while no user config exists ends with one line naming `cleaner --init-config` and the user config destination; suppressed with an explicit config (CLI or `LINUX_CLEANER_CONFIG`), an existing user config, or `--quiet` | Init Config Preview Tip |
 | U-115 | A confirmed manual cleanup (`--clean` without `--force` or `--quiet`) on a system where `linux-cleaner-clean.timer` is installed but `disabled` ends with one `Tip:` line naming `systemctl --user enable --now linux-cleaner-clean.timer` (followed by a `LINUX_CLEANER_TRASH=1` warning line when `--trash` was used); forced, quiet, failed, timer-enabled, unit-absent/no-`systemctl`, and nothing-cleaned runs print nothing | Daily Timer Tip |
+| U-116 | Every `examples/systemd/*.service` runs with exactly one `Nice=19` and one `IOSchedulingClass=idle` line | inline drift check "every systemd service tags its journal output as linux-cleaner and runs at idle priority" |
 
 ## 1.3.0 shipped feature inventory
 
