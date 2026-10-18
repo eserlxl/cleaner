@@ -2743,6 +2743,7 @@ notify_cleanup_result() {
 # Point a confirmed manual cleanup at the installed-but-disabled daily timer.
 suggest_daily_timer() {
   [[ "${FORCE:-false}" == false && "${QUIET:-false}" == false && "${JSON_OUTPUT:-false}" == false && "${OPERATION_FAILED:-false}" == false ]] || return 0
+  [[ "${result_cleaned:-0}" -eq 0 ]] && return 0
   command -v systemctl >/dev/null 2>&1 || return 0
   local state=""
   if command -v timeout >/dev/null 2>&1; then
@@ -2752,6 +2753,9 @@ suggest_daily_timer() {
   fi
   if [[ "$state" == "disabled" ]]; then
     status_echo "Tip: run this cleanup daily with 'systemctl --user enable --now linux-cleaner-clean.timer'."
+    if [[ "$TRASH_MODE" == true ]]; then
+      status_echo "The timer deletes permanently unless LINUX_CLEANER_TRASH=1 is set in ~/.config/linux-cleaner/env."
+    fi
   fi
 }
 

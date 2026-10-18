@@ -9667,6 +9667,7 @@ echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notificatio
 echo -e "\n${BOLD}Test Case: Daily Timer Tip${NC}"
 setup_mock_env
 timer_tip_line="Tip: run this cleanup daily with 'systemctl --user enable --now linux-cleaner-clean.timer'."
+timer_tip_trash_line="The timer deletes permanently unless LINUX_CLEANER_TRASH=1 is set in ~/.config/linux-cleaner/env."
 write_timer_tip_fixture() {
   mkdir -p "$MOCK_HOME/.cache/timer_tip_target"
   printf 'payload\n' > "$MOCK_HOME/.cache/timer_tip_target/file.txt"
@@ -9706,8 +9707,9 @@ PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
   --config "$TEST_ENV_DIR/timer_tip.conf" --clean \
   < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_disabled.log" 2>&1 || tip_dis_ec=$?
 if [[ "$tip_dis_ec" -ne 0 ]] \
-   || [[ "$(grep -cxF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_disabled.log" || true)" -ne 1 ]]; then
-  echo -e "${RED}FAIL: confirmed --clean with disabled timer did not print the daily timer tip once (ec=$tip_dis_ec).${NC}"
+   || [[ "$(grep -cxF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_disabled.log" || true)" -ne 1 ]] \
+   || grep -qF "$timer_tip_trash_line" "$TEST_ENV_DIR/timer_tip_disabled.log"; then
+  echo -e "${RED}FAIL: confirmed --clean with disabled timer did not print the daily timer tip once or printed the trash warning (ec=$tip_dis_ec).${NC}"
   cat "$TEST_ENV_DIR/timer_tip_disabled.log" 2>/dev/null || true
   exit 1
 fi
@@ -9763,6 +9765,62 @@ if [[ "$tip_fail_ec" -ne 1 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer
   cat "$TEST_ENV_DIR/timer_tip_fail.log" 2>/dev/null || true
   exit 1
 fi
+
+# 6. Confirmed --clean --trash with disabled stub prints the tip and the env warning once each.
+write_systemctl_state_stub disabled 1
+write_timer_tip_fixture
+tip_trash_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean --trash \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_trash.log" 2>&1 || tip_trash_ec=$?
+if [[ "$tip_trash_ec" -ne 0 ]] \
+   || [[ "$(grep -cxF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_trash.log" || true)" -ne 1 ]] \
+   || [[ "$(grep -cxF "$timer_tip_trash_line" "$TEST_ENV_DIR/timer_tip_trash.log" || true)" -ne 1 ]]; then
+  echo -e "${RED}FAIL: confirmed --clean --trash with disabled timer did not print the daily timer tip and trash warning once (ec=$tip_trash_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_trash.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 7. Declining all targets with --interactive on disabled stub cleans nothing and prints no tip.
+write_systemctl_state_stub disabled 1
+write_timer_tip_fixture
+tip_interactive_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean --interactive \
+  < <(printf 'n\n') > "$TEST_ENV_DIR/timer_tip_interactive.log" 2>&1 || tip_interactive_ec=$?
+if [[ "$tip_interactive_ec" -ne 0 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_interactive.log"; then
+  echo -e "${RED}FAIL: --interactive declining targets printed the daily timer tip or failed (ec=$tip_interactive_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_interactive.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 8. Confirmed --clean with disabled stub but PATH lacking systemctl prints no tip.
+write_systemctl_state_stub disabled 1
+write_timer_tip_fixture
+tip_nosys_bin="$TEST_ENV_DIR/tip_nosys_bin"
+rm -rf "$tip_nosys_bin"
+mkdir -p "$tip_nosys_bin"
+for tool in bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp pgrep mkdir mv cp chmod rmdir cut grep flock timeout; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    ln -s "$(command -v "$tool")" "$tip_nosys_bin/$tool"
+  fi
+done
+for f in "$TEST_ENV_DIR/bin"/*; do
+  if [[ -f "$f" && "$(basename "$f")" != "systemctl" && ! -e "$tip_nosys_bin/$(basename "$f")" ]]; then
+    ln -s "$f" "$tip_nosys_bin/$(basename "$f")"
+  fi
+done
+tip_nosys_ec=0
+PATH="$tip_nosys_bin" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_nosys.log" 2>&1 || tip_nosys_ec=$?
+if [[ "$tip_nosys_ec" -ne 0 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_nosys.log"; then
+  echo -e "${RED}FAIL: confirmed --clean without systemctl on PATH printed the daily timer tip or failed (ec=$tip_nosys_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_nosys.log" 2>/dev/null || true
+  exit 1
+fi
+rm -rf "$tip_nosys_bin"
+
 echo -e "${GREEN}PASS: confirmed manual cleanup suggests enabling linux-cleaner-clean.timer only when disabled and silent otherwise.${NC}"
 
 # Preview from a shared config suggests initializing user config when none exists.
@@ -9779,6 +9837,10 @@ if XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip" 0 "init_ti
    && XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip Explicit Config Control" 0 "init_tip_explicit.log" \
      -c "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
    && ! grep -qF "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip_explicit.log" \
+   && LINUX_CLEANER_CONFIG="$TEST_ENV_DIR/test_cleaner.conf" XDG_CONFIG_HOME="$tip_xdg" \
+     run_test_case "Init Config Preview Tip Env Config Control" 0 "init_tip_env.log" \
+     --dry-run \
+   && ! grep -qF "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip_env.log" \
    && XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip Quiet Control" 0 "init_tip_quiet.log" \
      --dry-run --quiet \
    && ! grep -qF "Customize: run 'cleaner --init-config'" "$TEST_ENV_DIR/init_tip_quiet.log" \
@@ -9790,7 +9852,7 @@ if XDG_CONFIG_HOME="$tip_xdg" run_test_case "Init Config Preview Tip" 0 "init_ti
   echo -e "${GREEN}PASS: preview from shared config suggests --init-config; controls suppress the tip.${NC}"
 else
   echo -e "${RED}FAIL: init-config preview tip did not appear once or controls printed the tip.${NC}"
-  cat "$TEST_ENV_DIR/init_tip.log" "$TEST_ENV_DIR/init_tip_explicit.log" "$TEST_ENV_DIR/init_tip_quiet.log" "$TEST_ENV_DIR/init_tip_user.log" 2>/dev/null || true
+  cat "$TEST_ENV_DIR/init_tip.log" "$TEST_ENV_DIR/init_tip_explicit.log" "$TEST_ENV_DIR/init_tip_env.log" "$TEST_ENV_DIR/init_tip_quiet.log" "$TEST_ENV_DIR/init_tip_user.log" 2>/dev/null || true
   exit 1
 fi
 rm -rf "$tip_xdg"
