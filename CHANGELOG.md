@@ -21,6 +21,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Ship Bash tab completion (`completions/cleaner.bash`) for `cleaner` and `cleaner.sh`,
+  installed under `$DATADIR/bash-completion/completions/cleaner` (mode `0644`) by both
+  `Makefile` and `install.sh` and removed on uninstall.
+
 - `--min-age DAYS` raises every ordinary target's age threshold to at least `DAYS`
   days for one cleanup or dry-run preview while skipping `action:*` rows.
 

@@ -42,6 +42,8 @@ do_install() {
   for unit in $UNITS; do
     install -m 0644 "$SRC_DIR/examples/systemd/$unit" "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
   done
+  install -d "$DESTDIR$DATADIR/bash-completion/completions"
+  install -m 0644 "$SRC_DIR/completions/cleaner.bash" "$DESTDIR$DATADIR/bash-completion/completions/$BINNAME"
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
 }
 
@@ -52,6 +54,9 @@ do_uninstall() {
   rmdir "$DESTDIR$DATADIR/licenses/$PKGNAME" 2>/dev/null || true
   rm -f "$DESTDIR$DATADIR/$PKGNAME/linux-cleaner.env.example"
   rmdir "$DESTDIR$DATADIR/$PKGNAME" 2>/dev/null || true
+  rm -f "$DESTDIR$DATADIR/bash-completion/completions/$BINNAME"
+  rmdir "$DESTDIR$DATADIR/bash-completion/completions" 2>/dev/null || true
+  rmdir "$DESTDIR$DATADIR/bash-completion" 2>/dev/null || true
   for unit in $UNITS; do
     rm -f "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
   done

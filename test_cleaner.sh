@@ -3008,6 +3008,7 @@ for asset in "usr/bin/cleaner" \
              "etc/linux-cleaner/cleaner.conf" \
              "usr/share/man/man1/cleaner.1" \
              "usr/share/linux-cleaner/linux-cleaner.env.example" \
+             "usr/share/bash-completion/completions/cleaner" \
              "usr/share/licenses/linux-cleaner/LICENSE"; do
   if [[ ! -f "$destroot/$asset" ]]; then
     echo -e "${RED}FAIL: install.sh did not ship '$asset'.${NC}"
@@ -3023,10 +3024,15 @@ if ! cmp -s "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$destroot/usr/shar
   echo -e "${RED}FAIL: install.sh did not ship the environment template unchanged with mode 0644.${NC}"
   install_ok=false
 fi
+if ! cmp -s "$SCRIPT_DIR/completions/cleaner.bash" "$destroot/usr/share/bash-completion/completions/cleaner" \
+   || [[ "$(stat -c '%a' "$destroot/usr/share/bash-completion/completions/cleaner" 2>/dev/null)" != 644 ]]; then
+  echo -e "${RED}FAIL: install.sh did not ship the bash completion file unchanged with mode 0644.${NC}"
+  install_ok=false
+fi
 if [[ "$install_ok" != true ]]; then
   exit 1
 fi
-echo -e "${GREEN}PASS: install.sh shipped all five assets under DESTDIR with a 0755 binary and 0644 environment template.${NC}"
+echo -e "${GREEN}PASS: install.sh shipped all six assets under DESTDIR with a 0755 binary and 0644 environment template and bash completion.${NC}"
 
 # Re-installing over an existing config must preserve it and ship .example instead.
 DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
@@ -3045,8 +3051,10 @@ if [[ ! -e "$destroot/usr/bin/cleaner" ]] \
    && [[ ! -e "$destroot/usr/share/man/man1/cleaner.1" ]] \
    && [[ ! -e "$destroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
    && [[ ! -e "$destroot/usr/share/linux-cleaner" ]] \
+   && [[ ! -e "$destroot/usr/share/bash-completion/completions/cleaner" ]] \
+   && [[ ! -e "$destroot/usr/share/bash-completion" ]] \
    && [[ -f "$destroot/etc/linux-cleaner/cleaner.conf" ]]; then
-  echo -e "${GREEN}PASS: uninstall removed the binary, man page, and license but kept the config.${NC}"
+  echo -e "${GREEN}PASS: uninstall removed the binary, man page, completion, and license but kept the config.${NC}"
 else
   echo -e "${RED}FAIL: uninstall did not clean up correctly (or removed the system config).${NC}"
   cat "$TEST_ENV_DIR/uninstall_sh.log"
@@ -3108,7 +3116,12 @@ if command -v make > /dev/null 2>&1; then
     echo -e "${RED}FAIL: make install did not ship the environment template unchanged with mode 0644.${NC}"
     exit 1
   fi
-  echo -e "${GREEN}PASS: make install shipped six systemd user units mode 644.${NC}"
+  if ! cmp -s "$SCRIPT_DIR/completions/cleaner.bash" "$makeroot/usr/share/bash-completion/completions/cleaner" \
+     || [[ "$(stat -c '%a' "$makeroot/usr/share/bash-completion/completions/cleaner" 2>/dev/null)" != 644 ]]; then
+    echo -e "${RED}FAIL: make install did not ship the bash completion file unchanged with mode 0644.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: make install shipped six systemd user units and bash completion mode 644.${NC}"
   unmakeroot="$TEST_ENV_DIR/unmakeroot"
   make -C "$SCRIPT_DIR" install DESTDIR="$unmakeroot" PREFIX=/usr \
     > "$TEST_ENV_DIR/make_install_for_uninstall.log" 2>&1
@@ -3126,9 +3139,11 @@ if command -v make > /dev/null 2>&1; then
      && [[ ! -e "$unmakeroot/usr/share/man/man1/cleaner.1" ]] \
      && [[ ! -e "$unmakeroot/usr/share/licenses/linux-cleaner/LICENSE" ]] \
      && [[ ! -e "$unmakeroot/usr/share/linux-cleaner" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/bash-completion/completions/cleaner" ]] \
+     && [[ ! -e "$unmakeroot/usr/share/bash-completion" ]] \
      && [[ -f "$unmakeroot/etc/linux-cleaner/cleaner.conf" ]] \
      && [[ "$units_removed" == true ]]; then
-    echo -e "${GREEN}PASS: make uninstall removed the binary, man page, license, and systemd user units but kept the config.${NC}"
+    echo -e "${GREEN}PASS: make uninstall removed the binary, man page, completion, license, and systemd user units but kept the config.${NC}"
   else
     echo -e "${RED}FAIL: make uninstall did not clean up correctly (or removed the system config).${NC}"
     cat "$TEST_ENV_DIR/make_uninstall.log"
@@ -9167,6 +9182,66 @@ if ! run_test_case "Min Age Invalid Value" 1 "min_age_bad.log" \
   exit 1
 fi
 echo -e "${GREEN}PASS: --min-age rejects invalid values and incompatible modes and handles huge decimal values without overflow.${NC}"
+
+# Bash completion drift and functional test: completions/cleaner.bash must
+# pass bash -n, include every --long option from --help, and complete options
+# and value grammars in plain bash without bash-completion helpers.
+echo -e "\n${BOLD}Test Case: Bash Completion Drift and Functional Check${NC}"
+setup_mock_env
+comp_file="$SCRIPT_DIR/completions/cleaner.bash"
+if [[ ! -f "$comp_file" ]] || ! bash -n "$comp_file"; then
+  echo -e "${RED}FAIL: completions/cleaner.bash is missing or failed bash -n.${NC}"
+  exit 1
+fi
+comp_help_out="$TEST_ENV_DIR/comp_help_flags.txt"
+HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" bash "$CLEANER_SH" --help > "$comp_help_out" 2>&1
+comp_missing_flags=""
+while IFS= read -r flag; do
+  [[ -z "$flag" ]] && continue
+  grep -qE -- "(^|[[:space:]])${flag}($|[[:space:]])" "$comp_file" || comp_missing_flags+=" $flag"
+done < <(grep -oE -- '--[a-z][a-z-]*' "$comp_help_out" | sort -u)
+if [[ -n "$comp_missing_flags" ]]; then
+  echo -e "${RED}FAIL: completions/cleaner.bash lacks --help options:$comp_missing_flags.${NC}"
+  exit 1
+fi
+if ! (
+  # shellcheck source=completions/cleaner.bash
+  source "$comp_file"
+  COMP_WORDS=(cleaner -r "")
+  COMP_CWORD=2
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "safe medium danger" ]] || exit 1
+
+  COMP_WORDS=(cleaner --ri)
+  COMP_CWORD=1
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "--risk" ]] || exit 1
+
+  COMP_WORDS=(cleaner --restore "")
+  COMP_CWORD=2
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "latest" ]] || exit 1
+
+  COMP_WORDS=(cleaner --purge-sessions "")
+  COMP_CWORD=2
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "latest all older-than: max-size:" ]] || exit 1
+
+  COMP_WORDBREAKS=$' \t\n"\'><=;|&(:'
+  COMP_WORDS=(cleaner --purge-sessions older-than :)
+  COMP_CWORD=3
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "" ]] || exit 1
+
+  COMP_WORDS=(cleaner --min-age "")
+  COMP_CWORD=2
+  _cleaner
+  [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+); then
+  echo -e "${RED}FAIL: completions/cleaner.bash functional completion check failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: completions/cleaner.bash passes bash -n, covers all --help options, and completes flags and values.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

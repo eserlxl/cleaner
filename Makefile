@@ -37,6 +37,8 @@ install: install-man
 	install -m 0644 examples/linux-cleaner.env.example "$(DESTDIR)$(DATADIR)/$(PKGNAME)/linux-cleaner.env.example"
 	install -d "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"
 	install -m 0644 examples/systemd/*.service examples/systemd/*.timer "$(DESTDIR)$(SYSTEMDUSERUNITDIR)/"
+	install -d "$(DESTDIR)$(DATADIR)/bash-completion/completions"
+	install -m 0644 completions/cleaner.bash "$(DESTDIR)$(DATADIR)/bash-completion/completions/$(BINNAME)"
 
 install-man:
 	install -d "$(DESTDIR)$(MANDIR)/man1"
@@ -49,6 +51,9 @@ uninstall:
 	-rmdir "$(DESTDIR)$(DATADIR)/licenses/$(PKGNAME)" 2>/dev/null
 	rm -f "$(DESTDIR)$(DATADIR)/$(PKGNAME)/linux-cleaner.env.example"
 	-rmdir "$(DESTDIR)$(DATADIR)/$(PKGNAME)" 2>/dev/null
+	rm -f "$(DESTDIR)$(DATADIR)/bash-completion/completions/$(BINNAME)"
+	-rmdir "$(DESTDIR)$(DATADIR)/bash-completion/completions" 2>/dev/null
+	-rmdir "$(DESTDIR)$(DATADIR)/bash-completion" 2>/dev/null
 	rm -f "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.service \
 		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-clean.timer \
 		"$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-retention.service \
