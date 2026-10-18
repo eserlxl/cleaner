@@ -25,7 +25,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
-- `--min-free SIZE` and `LINUX_CLEANER_MIN_FREE` skip cleanup when the filesystem holding `HOME` already has at least `SIZE` free (e.g. `10G`), printing a skip note on `--dry-run` and recording `Result: skipped at or above --min-free SIZE` in `last-report.txt`.
+- `--min-free SIZE` and `LINUX_CLEANER_MIN_FREE` skip cleanup when the filesystem holding `HOME` already has at least `SIZE` free (e.g. `10G`), printing a skip note on `--dry-run` and recording `Result: skipped at or above --min-free SIZE` in `last-report.txt`. `0` disables the check, and an unreadable free-space value prints a warning and the run proceeds as without `--min-free`.
 
 - Send a critical desktop notification (`Cleanup stopped with exit status <N> before finishing; see journalctl --user -t linux-cleaner.`) when an opted-in cleanup (`--notify` or `LINUX_CLEANER_NOTIFY=1`) exits non-zero before reaching its result report, while preserving the exit status and leaving dry-run, non-cleanup, and already-notified runs unchanged.
 
@@ -48,8 +48,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   `Makefile` and `install.sh` and removed on uninstall.
 
 - `--notify` and `LINUX_CLEANER_NOTIFY` send an opt-in desktop notification via
-  `notify-send` summarizing the cleanup result (`--urgency=critical` when a target
-  failed), while acting as a no-op on dry-run and never failing or blocking a cleanup.
+  `notify-send` summarizing the cleanup result after inline retention
+  (`--urgency=critical` when a target failed, the run hit an operation failure, or it
+  was interrupted), while acting as a no-op on dry-run and never failing or blocking a
+  cleanup. Read-only and session modes ignore an inherited `LINUX_CLEANER_NOTIFY`.
+  `libnotify` is an optional dependency.
 
 - Ship Bash tab completion (`completions/cleaner.bash`) for `cleaner` and `cleaner.sh`,
   installed under `$DATADIR/bash-completion/completions/cleaner` (mode `0644`) by both
@@ -92,6 +95,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   (MINOR-compatible capability).
 
 ### Fixed
+
+- `make uninstall` and `install.sh uninstall` remove the `cleaner.conf.example` a
+  re-install shipped next to an existing system config, while still keeping
+  `cleaner.conf`.
 
 - Failed process inspection skips guarded targets before sizing or cleanup, including
   missing `pgrep`, invalid expressions and partial query failures; unguarded targets
