@@ -47,7 +47,7 @@ Documented mutual exclusions (enforced in code):
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, `--list-sessions`, or `--report` (saved report summary; not `--init-config`)
 - `--only` and CLI-only `--only-exact` require `--restore`, cannot be mixed in either order, and use last-occurrence precedence when the same selector repeats. Exact matching uses the literal inventory path without expansion or normalization; no environment mirror or JSON fields are added.
 - `--only-target` and `--exclude-target` vs `--check-config`
-- `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--report`, `--init-config`
+- `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`
 - `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
