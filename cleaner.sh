@@ -752,6 +752,7 @@ split_name_patterns --exclude-target "$EXCLUDE_TARGET" EXCLUDE_TARGET_PATTERNS
 only_target_matched=false
 name_filter_kept=false
 path_filter_matched=false
+age_filter_matched=false
 SELECTED_TARGET_PATH=""
 
 select_target_name() {
@@ -801,6 +802,10 @@ check_target_selection() {
   fi
   if [[ -n "$ONLY_PATH" && "$path_filter_matched" != true ]]; then
     echo "Error: No eligible config target resolves at or below '--only-path ${ONLY_PATH}'." >&2
+    return 1
+  fi
+  if [[ -n "$MIN_AGE_OVERRIDE" && "$age_filter_matched" != true ]]; then
+    echo "Error: No eligible config target remains for '--min-age ${MIN_AGE_OVERRIDE}' (action:* rows are skipped)." >&2
     return 1
   fi
   return 0
@@ -3096,6 +3101,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   [[ -z "$min_age" ]] && min_age=0
   if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
     [[ "$custom_clean_cmd" == action:* ]] && continue
+    age_filter_matched=true
     row_age=${min_age#"${min_age%%[!0]*}"}
     row_age=${row_age:-0}
     # shellcheck disable=SC2071

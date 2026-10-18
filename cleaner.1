@@ -387,8 +387,10 @@ rows use the raised value as their idle threshold, and
 .B action:*
 rows are skipped because external commands cannot apply a file-age filter. Exits
 1 on a malformed
-.IR DAYS .
-Cannot be combined with
+.I DAYS
+or when no eligible config target remains after skipping
+.B action:*
+rows. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,

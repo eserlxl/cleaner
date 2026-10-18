@@ -9249,6 +9249,24 @@ if ! run_test_case "Min Age Invalid Value" 1 "min_age_bad.log" \
 fi
 echo -e "${GREEN}PASS: --min-age rejects invalid values and incompatible modes and handles huge decimal values without overflow.${NC}"
 
+cat > "$TEST_ENV_DIR/min_age_action_only.conf" <<EOF
+safe|Action Target|/var/cache/pacman/pkg|Pacman action|0||action:pacman_clean
+EOF
+
+if ! run_test_case "Min Age Action Only Selection Rejected" 1 "min_age_action_only.log" \
+       --config "$TEST_ENV_DIR/min_age_action_only.conf" --min-age 5 --dry-run \
+   || ! grep -qF "Error: No eligible config target remains for '--min-age 5' (action:* rows are skipped)." "$TEST_ENV_DIR/min_age_action_only.log" \
+   || ! run_test_case "Min Age Only Target Action Rejected" 1 "min_age_action_target.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --min-age 5 --only-target "Action Target" --dry-run \
+   || ! grep -qF "Error: No eligible config target remains for '--min-age 5' (action:* rows are skipped)." "$TEST_ENV_DIR/min_age_action_target.log" \
+   || ! run_test_case "Min Age Ordinary Target Selection" 0 "min_age_target_ok.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --min-age 5 --only-target "Min Age"; then
+  echo -e "${RED}FAIL: --min-age did not exit 1 on action-only targets or succeed on ordinary target selection.${NC}"
+  cat "$TEST_ENV_DIR/min_age_action_only.log" "$TEST_ENV_DIR/min_age_action_target.log" "$TEST_ENV_DIR/min_age_target_ok.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --min-age fails when selection leaves only action rows and succeeds for ordinary rows.${NC}"
+
 # Bash completion drift and functional test: completions/cleaner.bash must
 # pass bash -n, include every --long option from --help, and complete options
 # and value grammars in plain bash without bash-completion helpers.
