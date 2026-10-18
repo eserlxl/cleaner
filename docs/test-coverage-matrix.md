@@ -27,6 +27,8 @@
 | U-106 | Session inventory counts literal unrecorded immediate entries across all entry types, nested references, missing metadata and real append failure; total/partial/late read or enumeration errors precede JSON and block purge/inline retention | Unrecorded Inventory |
 | U-107 | Bounded CLI/environment lock waits normalize/validate complete values before state, preserve default/zero contention and optional-flock fallback, execute once after a real holder releases, keep timeout payload/session/report/log state, and leave nonlocking modes unaffected | Lock Wait / Concurrent Run Lock |
 | U-108 | Failed comm/cmdline queries, missing pgrep, partial error output, later-token errors and invalid regex preserve guarded payloads with skipped JSON reasons and no guarded sizing, sudo or actions; no-match and active controls preserve cleanup/blocking, and ungated targets still clean | Process Query |
+| U-109 | `--min-age DAYS` raises every ordinary target's `MIN_AGE_DAYS` to at least `DAYS` for one run, keeps larger row thresholds, skips `action:*` rows, and rejects invalid, missing and oversized values and non-cleanup modes | Min Age Dry Run JSON / Min Age Clean Deletes Only Old / Min Age Invalid Value / Min Age Large Decimal No Overflow |
+| U-110 | Both installers ship `completions/cleaner.bash` to `$DATADIR/bash-completion/completions/cleaner` with mode `0644` and uninstall removes it; the completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
 
 ## 1.3.0 shipped feature inventory
 
@@ -134,5 +136,6 @@ Rows below moved here after the 1.3.0 release; add new unreleased rows only whil
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |
 | Config Guide Target Count | docs/configuration.md quotes the shipped config's `--check-config` count | docs/configuration.md, cleaner.conf |
 | Mode Flag Exclusion Docs Parity | every "Cannot be combined with" list names the partners cleaner.sh refuses | cleaner.sh, docs/cli-reference.md, cleaner.1 |
+| Bash Completion Drift and Functional Check | every `--long` option in `--help` appears in the completion file | cleaner.sh, completions/cleaner.bash |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.
