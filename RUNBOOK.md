@@ -127,7 +127,7 @@ when no separate monitor profile exists, run
 `ln -s env ~/.config/linux-cleaner/monitor.env`. The monitor always runs
 `cleaner --quiet --dry-run --json`: inherited `LINUX_CLEANER_FORCE=1` and
 `LINUX_CLEANER_JSON=0` cannot enable cleanup or disable JSON. Trash, logging,
-minimum-reclaim and retention settings remain preview-only; no retention runs.
+minimum-reclaim, minimum-free and retention settings remain preview-only; no retention runs.
 Existing invalid settings still error, including path scope combined with
 `LINUX_CLEANER_TRASH_KEEP_DAYS`. The retention service never reads either profile.
 
@@ -203,7 +203,7 @@ cleaner --report --json
 30 3 * * * cleaner --report --json
 ```
 
-The same monitor can read `quarantined_bytes` and `permanent_bytes` for the last cleanup's exact accounted estimates, without rounded-unit parsing. They are `null` for historical or malformed byte records, zero for new nothing-to-clean/minimum-reclaim skips, and exclude retention purges. Interrupted runs include only already-credited work. Ordinary targets and system actions credit planned sizes; user prune actions credit nonnegative free-space deltas, so these counters do not guarantee physically freed blocks. Cancelling cleanup before work preserves the previous report.
+The same monitor can read `quarantined_bytes` and `permanent_bytes` for the last cleanup's exact accounted estimates, without rounded-unit parsing. They are `null` for historical or malformed byte records, zero for new nothing-to-clean/minimum-reclaim/minimum-free skips, and exclude retention purges. Interrupted runs include only already-credited work. Ordinary targets and system actions credit planned sizes; user prune actions credit nonnegative free-space deltas, so these counters do not guarantee physically freed blocks. Cancelling cleanup before work preserves the previous report.
 
 ## Env recipe: outside-HOME package caches
 

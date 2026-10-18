@@ -166,7 +166,8 @@ field is true when inline retention failed, false when it did not fail
 (including cancellation), and null when no retention outcome was saved.
 Cleanup-target counts are unchanged.
 The byte fields are exact accounted integers, or null for historical or malformed
-byte records. New nothing-to-clean and minimum-reclaim skips record zero.
+byte records. New nothing-to-clean, minimum-reclaim and minimum-free skips
+record zero.
 Ordinary targets and system actions credit planned sizes; user prune actions
 credit free-space deltas clamped at zero. These estimates do not guarantee
 physically freed blocks. Interrupted runs include only already-credited work;
