@@ -9664,6 +9664,34 @@ if [[ "$notify_absent_ec" -ne 0 ]] \
   cat "$TEST_ENV_DIR/notify_absent.out" "$TEST_ENV_DIR/notify_absent.err" 2>/dev/null || true
   exit 1
 fi
+
+# 11. An opted-in cleanup that exits non-zero before reporting records one critical failure notification; dry-run records nothing.
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+write_notify_stub
+: > "$notify_log"
+notify_early_ec=0
+LINUX_CLEANER_NOTIFY=1 LINUX_CLEANER_RISK=bogus PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/notify_early.log" 2>&1 || notify_early_ec=$?
+if [[ "$notify_early_ec" -ne 1 ]] \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner --urgency=critical linux-cleaner Cleanup stopped with exit status 1 before finishing; see journalctl --user -t linux-cleaner\.$' "$notify_log"; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_NOTIFY=1 LINUX_CLEANER_RISK=bogus --clean --force did not exit 1 and record one critical notification containing 'exit status 1' (ec=$notify_early_ec).${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_early.log" 2>/dev/null || true
+  exit 1
+fi
+: > "$notify_log"
+notify_early_dry_ec=0
+LINUX_CLEANER_NOTIFY=1 LINUX_CLEANER_RISK=bogus PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/notify_early_dry.log" 2>&1 || notify_early_dry_ec=$?
+if [[ "$notify_early_dry_ec" -ne 1 || -s "$notify_log" ]]; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_NOTIFY=1 LINUX_CLEANER_RISK=bogus --dry-run did not exit 1 silently without notification (ec=$notify_early_dry_ec).${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_early_dry.log" 2>/dev/null || true
+  exit 1
+fi
 unset MOCK_NOTIFY_LOG MOCK_NOTIFY_EXIT
 echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notifications safely and reject non-cleanup modes.${NC}"
 

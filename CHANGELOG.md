@@ -25,6 +25,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Send a critical desktop notification (`Cleanup stopped with exit status <N> before finishing; see journalctl --user -t linux-cleaner.`) when an opted-in cleanup (`--notify` or `LINUX_CLEANER_NOTIFY=1`) exits non-zero before reaching its result report, while preserving the exit status and leaving dry-run, non-cleanup, and already-notified runs unchanged.
+
 - Suggest `cleaner --init-config` with the destination user config path at the
   end of a preview (`--dry-run`) when the active configuration was discovered
   from a shared location (/etc or checkout) and no user config exists yet, while

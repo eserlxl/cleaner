@@ -109,7 +109,9 @@ or
 .B "Retention failed: true"
 line;
 .B \-\-urgency=critical
-when any target or inline retention failed or the run was interrupted). No-op on dry-run. Prints one warning on stderr when
+when any target or inline retention failed or the run was interrupted). If an opted-in cleanup exits non-zero before reaching its result notification, sends one critical notification with
+.B "Cleanup stopped with exit status \fIN\fB before finishing; see journalctl \-\-user \-t linux\-cleaner."
+No-op on dry-run. Prints one warning on stderr when
 .B \-\-notify
 is active and
 .B notify\-send

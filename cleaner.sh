@@ -90,6 +90,7 @@ DEBUG=false
 NOTIFY=false
 # Only the flag is refused outside cleanup; an inherited mirror is ignored there.
 NOTIFY_CLI=false
+NOTIFY_SENT=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
@@ -193,6 +194,23 @@ case "${LINUX_CLEANER_ALLOW_OUTSIDE_HOME:-}" in
     echo "Warning: LINUX_CLEANER_ALLOW_OUTSIDE_HOME is deprecated and has no effect; targets outside HOME are always allowed." >&2
     ;;
 esac
+
+notify_failed_exit() {
+  local status=$?
+  if [[ "${NOTIFY:-false}" != true || "${NOTIFY_SENT:-false}" == true || "$status" -eq 0 || "${DRY_RUN:-true}" != false || -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true ]]; then
+    return "$status"
+  fi
+  if command -v notify-send >/dev/null 2>&1; then
+    local msg="Cleanup stopped with exit status ${status} before finishing; see journalctl --user -t linux-cleaner."
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 5 notify-send --app-name=linux-cleaner --urgency=critical "linux-cleaner" "$msg" >/dev/null 2>&1 || true
+    else
+      notify-send --app-name=linux-cleaner --urgency=critical "linux-cleaner" "$msg" >/dev/null 2>&1 || true
+    fi
+  fi
+  exit "$status"
+}
+trap notify_failed_exit EXIT
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -2733,6 +2751,7 @@ notify_cleanup_result() {
   if (( ${result_failed:-0} > 0 )) || [[ "${OPERATION_FAILED:-false}" == true || -n "$interrupted_line" ]]; then
     notify_args+=(--urgency=critical)
   fi
+  NOTIFY_SENT=true
   if command -v timeout >/dev/null 2>&1; then
     timeout 5 notify-send "${notify_args[@]}" "linux-cleaner" "$msg" >/dev/null 2>&1 || true
   else
