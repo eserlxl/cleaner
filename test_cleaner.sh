@@ -9267,6 +9267,32 @@ if ! run_test_case "Min Age Action Only Selection Rejected" 1 "min_age_action_on
 fi
 echo -e "${GREEN}PASS: --min-age fails when selection leaves only action rows and succeeds for ordinary rows.${NC}"
 
+# A filter:cxx_build row takes the raised age as its idle threshold: a build tree
+# last touched 10 days ago is planned at age 0 but active under --min-age 30.
+ma_build="$MOCK_HOME/min_age_build"
+mkdir -p "$ma_build"
+printf 'cache\n' > "$ma_build/CMakeCache.txt"
+touch -d "10 days ago" "$ma_build/CMakeCache.txt" "$ma_build"
+cat > "$TEST_ENV_DIR/min_age_build.conf" <<EOF
+safe|Min Age Build|\$HOME/min_age_build|Idle build tree|0||filter:cxx_build
+EOF
+for ma_case in "0:found" "30:clean"; do
+  ma_args=(--config "$TEST_ENV_DIR/min_age_build.conf" --dry-run --json)
+  [[ "${ma_case%%:*}" == 0 ]] || ma_args+=(--min-age "${ma_case%%:*}")
+  if ! run_test_case "Min Age Build Idle ${ma_case}" 0 "min_age_build.log" "${ma_args[@]}" \
+     || ! python3 - "$TEST_ENV_DIR/min_age_build.log" "${ma_case##*:}" <<'PY'
+import json, sys
+t = {t["name"]: t for t in json.load(open(sys.argv[1], encoding="utf-8"))["targets"]}["Min Age Build"]
+assert t["status"] == sys.argv[2], t
+PY
+  then
+    echo -e "${RED}FAIL: filter:cxx_build row did not report '${ma_case##*:}' for idle threshold ${ma_case%%:*}.${NC}"
+    cat "$TEST_ENV_DIR/min_age_build.log" 2>/dev/null || true
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: --min-age raises a filter:cxx_build row's idle threshold.${NC}"
+
 # Bash completion drift and functional test: completions/cleaner.bash must
 # pass bash -n, include every --long option from --help, and complete options
 # and value grammars in plain bash without bash-completion helpers.
