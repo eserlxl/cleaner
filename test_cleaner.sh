@@ -152,6 +152,14 @@ EOF
     chmod +x "$TEST_ENV_DIR/bin/$_uact"
   done
 
+  cat << 'EOF' > "$TEST_ENV_DIR/bin/systemctl"
+#!/usr/bin/env bash
+# Mock systemctl command
+echo "not-found"
+exit 4
+EOF
+  chmod +x "$TEST_ENV_DIR/bin/systemctl"
+
   # Create dummy files
   echo "dummy npm cache" > "$MOCK_HOME/.npm/_cacache/cache1.txt"
   truncate -s 2M "$MOCK_HOME/.npm/_cacache/cache1.txt"
@@ -9652,6 +9660,110 @@ if [[ "$notify_absent_ec" -ne 0 ]] \
 fi
 unset MOCK_NOTIFY_LOG MOCK_NOTIFY_EXIT
 echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notifications safely and reject non-cleanup modes.${NC}"
+
+# Confirmed manual cleanup prints a tip when linux-cleaner-clean.timer is
+# installed but disabled; forced, quiet, failed, timer-enabled, and
+# unit-absent/no-systemctl runs stay silent.
+echo -e "\n${BOLD}Test Case: Daily Timer Tip${NC}"
+setup_mock_env
+timer_tip_line="Tip: run this cleanup daily with 'systemctl --user enable --now linux-cleaner-clean.timer'."
+write_timer_tip_fixture() {
+  mkdir -p "$MOCK_HOME/.cache/timer_tip_target"
+  printf 'payload\n' > "$MOCK_HOME/.cache/timer_tip_target/file.txt"
+  printf 'safe|Timer Tip Target|%s/.cache/timer_tip_target|Timer tip fixture|0||\n' "$MOCK_HOME" > "$TEST_ENV_DIR/timer_tip.conf"
+}
+write_systemctl_state_stub() {
+  local state="$1" rc="$2"
+  cat > "$TEST_ENV_DIR/bin/systemctl" <<EOF
+#!/usr/bin/env bash
+if [[ "\$*" == "--user is-enabled linux-cleaner-clean.timer" ]]; then
+  echo "$state"
+  exit $rc
+fi
+echo "unexpected: \$*" >&2
+exit 2
+EOF
+  chmod +x "$TEST_ENV_DIR/bin/systemctl"
+}
+
+# 1. Default setup_mock_env stub (not-found, exit 4) prints no tip on confirmed --clean.
+write_timer_tip_fixture
+tip_nf_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_nf.log" 2>&1 || tip_nf_ec=$?
+if [[ "$tip_nf_ec" -ne 0 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_nf.log"; then
+  echo -e "${RED}FAIL: default not-found systemctl stub printed the daily timer tip or failed (ec=$tip_nf_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_nf.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 2. Stub printing disabled on confirmed --clean prints the tip exactly once.
+write_systemctl_state_stub disabled 1
+write_timer_tip_fixture
+tip_dis_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_disabled.log" 2>&1 || tip_dis_ec=$?
+if [[ "$tip_dis_ec" -ne 0 ]] \
+   || [[ "$(grep -cxF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_disabled.log" || true)" -ne 1 ]]; then
+  echo -e "${RED}FAIL: confirmed --clean with disabled timer did not print the daily timer tip once (ec=$tip_dis_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_disabled.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 3. Stub printing enabled on confirmed --clean prints nothing.
+write_systemctl_state_stub enabled 0
+write_timer_tip_fixture
+tip_en_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_enabled.log" 2>&1 || tip_en_ec=$?
+if [[ "$tip_en_ec" -ne 0 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_enabled.log"; then
+  echo -e "${RED}FAIL: confirmed --clean with enabled timer printed the daily timer tip or failed (ec=$tip_en_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_enabled.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 4. With disabled stub, --clean --force and confirmed --clean --quiet print nothing.
+write_systemctl_state_stub disabled 1
+write_timer_tip_fixture
+if ! run_test_case "Daily Timer Tip (--force silent)" 0 "timer_tip_force.log" \
+       --config "$TEST_ENV_DIR/timer_tip.conf" --clean --force \
+   || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_force.log"; then
+  echo -e "${RED}FAIL: --clean --force with disabled timer printed the daily timer tip.${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_force.log" 2>/dev/null || true
+  exit 1
+fi
+write_timer_tip_fixture
+tip_quiet_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --clean --quiet \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_quiet.log" 2>&1 || tip_quiet_ec=$?
+if [[ "$tip_quiet_ec" -ne 0 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_quiet.log"; then
+  echo -e "${RED}FAIL: confirmed --clean --quiet with disabled timer printed the daily timer tip or failed (ec=$tip_quiet_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_quiet.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 5. A failing target on confirmed --clean with disabled stub prints no tip.
+cat > "$TEST_ENV_DIR/bin/uv" <<'FAIL_TIMER_UV'
+#!/usr/bin/env bash
+exit 1
+FAIL_TIMER_UV
+chmod +x "$TEST_ENV_DIR/bin/uv"
+mkdir -p "$MOCK_HOME/.cache/uv"
+printf 'safe|UV Cache|%s/.cache/uv|Failing UV cache|0||action:uv_cache_prune\n' "$MOCK_HOME" > "$TEST_ENV_DIR/timer_tip_fail.conf"
+tip_fail_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/timer_tip_fail.conf" --clean \
+  < <(printf 'y\n') > "$TEST_ENV_DIR/timer_tip_fail.log" 2>&1 || tip_fail_ec=$?
+if [[ "$tip_fail_ec" -ne 1 ]] || grep -qF "$timer_tip_line" "$TEST_ENV_DIR/timer_tip_fail.log"; then
+  echo -e "${RED}FAIL: failing confirmed --clean with disabled timer printed the daily timer tip or returned unexpected exit code (ec=$tip_fail_ec).${NC}"
+  cat "$TEST_ENV_DIR/timer_tip_fail.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: confirmed manual cleanup suggests enabling linux-cleaner-clean.timer only when disabled and silent otherwise.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

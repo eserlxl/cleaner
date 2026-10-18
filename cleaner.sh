@@ -2736,6 +2736,21 @@ notify_cleanup_result() {
   fi
 }
 
+# Point a confirmed manual cleanup at the installed-but-disabled daily timer.
+suggest_daily_timer() {
+  [[ "${FORCE:-false}" == false && "${QUIET:-false}" == false && "${JSON_OUTPUT:-false}" == false && "${OPERATION_FAILED:-false}" == false ]] || return 0
+  command -v systemctl >/dev/null 2>&1 || return 0
+  local state=""
+  if command -v timeout >/dev/null 2>&1; then
+    state=$(timeout 5 systemctl --user is-enabled linux-cleaner-clean.timer 2>/dev/null || true)
+  else
+    state=$(systemctl --user is-enabled linux-cleaner-clean.timer 2>/dev/null || true)
+  fi
+  if [[ "$state" == "disabled" ]]; then
+    status_echo "Tip: run this cleanup daily with 'systemctl --user enable --now linux-cleaner-clean.timer'."
+  fi
+}
+
 # Save the plan plus the result. Non-fatal: a bad state path or a write error
 # warns and leaves the cleanup's exit status unchanged. The state path is
 # untrusted, so a symlink is never followed and readers never see a partial file.
@@ -3832,6 +3847,8 @@ if [[ "$TRASH_MODE" = true ]]; then
 else
   echo -e "${BOLD}${GREEN}Cleanup finished! Total space permanently reclaimed: $(format_bytes "$total_deleted_bytes")${NC}"
 fi
+
+suggest_daily_timer
 
 # Report a non-zero status when any target failed, so an unattended run (cron,
 # systemd) can detect a failure that was otherwise only printed to stderr.

@@ -21,6 +21,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Point a confirmed manual cleanup (`cleaner --clean` without `--force` or
+  `--quiet`) at `systemctl --user enable --now linux-cleaner-clean.timer` when
+  the user daily timer unit is installed but `disabled`, while leaving forced,
+  quiet, failed, timer-enabled, and unit-absent runs silent.
+
 - Ship native Fish tab completion (`completions/cleaner.fish`) for `cleaner` and `cleaner.sh`,
   installed under `$DATADIR/fish/vendor_completions.d/cleaner.fish` (mode `0644`) by both
   `Makefile` and `install.sh` and removed on uninstall.
