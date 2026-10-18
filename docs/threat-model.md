@@ -37,7 +37,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 6 | Path escape via quarantine SESSION name | `validate_quarantine_session_name` | Restore Invalid Session / Purge Invalid Session |
 | 7 | Over-broad wildcard in PATH_EXPRESSION | Fixed-depth `find` below a literal root (a `**` component at most 10 levels, `GLOB_RECURSION_MAX_DEPTH`) + per-match `check_path_safety` | Wildcard Path Expansion / Wildcard Root Refusal / Wildcard Line Number Fidelity / Wildcard Recursion Ceiling |
 | 8 | Build target contains source files | With Git available, `count_git_tracked` skips targets containing tracked files even with `--force`, unless the cleaner runs as root or the target requires sudo. | Git-Tracked Target Guard |
-| 9 | Target overlaps user-protected directory | `protect|PATH` config directive skips any target whose canonical path equals, lies under, or contains a protected path | Protected Path Config |
+| 9 | Target overlaps user-protected directory | `protect\|PATH` config directive skips any target whose canonical path equals, lies under, or contains a protected path | Protect Check Config Valid / Protect Clean Force / Protect Dry Run JSON |
 
 ## Config Tampering and Injection
 
@@ -75,7 +75,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Symlink parent outside HOME | FOUND at the canonical outside path | Symlinked Parent Escape |
 | Symlink target | Refused (SYMLINK) | Dry Run Mode (Default) |
 | Protected system directory | UNSAFE (`check_path_safety` returns 1) | Protected System Dir UNSAFE / Top-Level System Directories |
-| User-defined protected path (`protect|PATH`) | Skipped (`protected`, `[PROTECTED]` under `--debug`) when canonical target equals, lies under, or contains a protected path | Protected Path Config |
+| User-defined protected path (`protect\|PATH`) | Skipped (`protected`, `[PROTECTED]` under `--debug`) when canonical target equals, lies under, or contains a protected path | Protect Check Config Valid / Protect Clean Force / Protect Dry Run JSON |
 | Root required, privileges unavailable | Skipped (`requires root`); the rest of the run continues and the exit status stays 0 | Root Skip Without Privileges |
 | Process inspection unavailable or failed | `CHECK_PROCESSES` requires `pgrep` (`procps`/`procps-ng`); query errors, including missing binary, invalid regex and partial results with an error, skip that target before sizing, sudo, actions or deletion. Ungated targets continue; skips retain the normal exit policy | Process Query |
 | TOCTOU on live paths | residual | manual VM review |

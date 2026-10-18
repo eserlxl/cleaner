@@ -141,7 +141,7 @@ retention too aggressive? → increase DAYS; restore from remaining sessions if 
 
 ## Test contract appendix
 
-Purge Older-Than Retention, Purge Older-Than No Match, Purge Older-Than Invalid Days, Restore Only One Target, Full Restore After Selective Restore, Restore with Conflict, Restore with Partial Failure, Failed Quarantine Move Not Recorded, Trash Action Warning, Purge Missing Session, Only Target With Restore Rejected, Only Without Restore Rejected, Only Target With List Targets Rejected, Only Target With List Sessions Rejected, Only Target With Purge Rejected, Restore Retry After Interrupted Restore, Restore Missing Source Still Fails, Trash Aged Interrupted Keeps Metadata, Concurrent Run Lock Restore, Concurrent Run Lock Purge, Purge Sessions Max Size Keeps Newest, Trash Keep Days Purges Old Sessions, Trash Cross Filesystem Space Guard.
+Purge Older-Than Retention, Purge Older-Than No Match, Purge Older-Than Invalid Days, Restore Only One Target, Full Restore After Selective Restore, Restore with Conflict, Restore with Partial Failure, Failed Quarantine Move Not Recorded, Trash Action Warning, Purge Missing Session, Only Target With Restore Rejected, Only Without Restore Rejected, Only Target With List Targets, Only Target With List Sessions Rejected, Only Target With Purge Rejected, Restore Retry After Interrupted Restore, Restore Missing Source Still Fails, Trash Aged Interrupted Keeps Metadata, Concurrent Run Lock Restore, Concurrent Run Lock Purge, Purge Sessions Max Size Keeps Newest, Trash Keep Days Purges Old Sessions, Trash Cross Filesystem Space Guard.
 
 ## Maintainer sign-off
 
