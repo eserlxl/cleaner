@@ -13,7 +13,7 @@
 
 - Mirrors use `LINUX_CLEANER_*` prefix (see `docs/env-automation-contract.md`).
 - Truthy values: `1`, `true`, `yes` (documented per variable).
-- **CLI overrides value mirrors** (config, log, risk, exclude, target filters, lock wait) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
+- **CLI overrides value mirrors** (config, log, risk, exclude, target filters, min reclaim, min age, retention days, lock wait) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
 - `LINUX_CLEANER_YES_DANGER` stays off in default examples. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated no-ops (one warning per run); targets outside `$HOME` are always allowed.
 - `--only-path` overrides `LINUX_CLEANER_ONLY_PATH` with last-occurrence precedence. Unset or empty means no scope; the effective value must be an existing absolute literal path without line feeds. No additional JSON fields.
 - `--lock-wait` overrides `LINUX_CLEANER_LOCK_WAIT` with last-occurrence precedence; unset/empty environment means zero. Validate the effective decimal `0..2147483647` after overrides and normalize leading zeros before use. No mode mutex or JSON key; valid settings do not lock nonlocking modes.
@@ -40,6 +40,7 @@ Documented mutual exclusions (enforced in code):
 - `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--only-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--trash-keep-days` (including its environment mirror)
 - `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
+- `--min-age` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--only-path`
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, `--list-sessions`, or `--report` (saved report summary; not `--init-config`)
 - `--only` and CLI-only `--only-exact` require `--restore`, cannot be mixed in either order, and use last-occurrence precedence when the same selector repeats. Exact matching uses the literal inventory path without expansion or normalization; no environment mirror or JSON fields are added.
@@ -47,7 +48,7 @@ Documented mutual exclusions (enforced in code):
 - `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--report`, `--init-config`
 - `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`
-- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--min-reclaim`, `--trash-keep-days`, `--json`
+- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--min-reclaim`, `--min-age`, `--trash-keep-days`, `--json`
 
 See `test_cleaner.sh` mutex rejection cases.
 
