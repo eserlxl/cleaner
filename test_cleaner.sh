@@ -9205,7 +9205,8 @@ if [[ -n "$comp_missing_flags" ]]; then
   exit 1
 fi
 if ! (
-  # shellcheck source=completions/cleaner.bash
+  # The completion file is syntax-checked with bash -n above.
+  # shellcheck source=/dev/null
   source "$comp_file"
   COMP_WORDS=(cleaner -r "")
   COMP_CWORD=2
