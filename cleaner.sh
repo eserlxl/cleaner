@@ -3497,7 +3497,12 @@ done
 home_free_bytes=0
 # A zero threshold disables the gate, like --min-reclaim 0.
 if [[ "$MIN_FREE_BYTES" -gt 0 ]]; then
-  home_free_bytes=$(get_fs_avail_bytes "$HOME")
+  # Unlike get_fs_avail_bytes, an unreadable value stays empty so it is not mistaken for 0 free.
+  home_free_bytes=$({ df -B1 --output=avail -- "$HOME" 2>/dev/null || true; } | awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {print v}')
+  if [[ -z "$home_free_bytes" ]]; then
+    echo -e "${YELLOW}Warning: cannot read free space on the filesystem holding HOME; --min-free ${MIN_FREE} is ignored this run.${NC}" >&2
+    home_free_bytes=0
+  fi
 fi
 
 # If dry-run is specified, we stop here

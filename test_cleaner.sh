@@ -4157,6 +4157,23 @@ else
   exit 1
 fi
 
+setup_mock_env
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/df"
+chmod +x "$TEST_ENV_DIR/bin/df"
+if run_test_case "Min Free Unreadable Df" 0 "min_free_nodf.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-free 1G; then
+  if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+     && grep -qF -- "cannot read free space on the filesystem holding HOME; --min-free 1G is ignored this run." "$TEST_ENV_DIR/min_free_nodf.log"; then
+    echo -e "${GREEN}PASS: --min-free warns and cleans when free space cannot be read.${NC}"
+  else
+    echo -e "${RED}FAIL: --min-free did not warn or did not clean when df failed.${NC}"
+    cat "$TEST_ENV_DIR/min_free_nodf.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 if run_test_case "Min Free Invalid Size" 1 "min_free_invalid.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free bogus --dry-run; then
   if grep -q -- "--min-free expects a size" "$TEST_ENV_DIR/min_free_invalid.log"; then
