@@ -167,6 +167,25 @@ export LINUX_CLEANER_RISK=safe
 cleaner --clean --trash --force
 ```
 
+## Env recipe: clean under disk pressure
+
+To keep caches until space runs short, let the cleanup timer run hourly and skip while the filesystem holding `HOME` still has enough free space. Add the threshold to `~/.config/linux-cleaner/env`:
+
+```ini
+LINUX_CLEANER_MIN_FREE=10G
+```
+
+Then override the timer schedule with `systemctl --user edit linux-cleaner-clean.timer` (the empty `OnCalendar=` clears the shipped 03:00 slot):
+
+```ini
+[Timer]
+OnCalendar=
+OnCalendar=hourly
+```
+
+Preview which way a run would go with `cleaner --dry-run --min-free 10G`.
+Revert to the daily schedule with `systemctl --user revert linux-cleaner-clean.timer`.
+
 ## Env recipe: JSON monitoring
 
 `LINUX_CLEANER_JSON=1` enables `--json` for dry-run reclaim summaries, `--list-targets` inventories, `--list-sessions` quarantine inventories, or the `--report` summary of the last cleanup. Examples:
