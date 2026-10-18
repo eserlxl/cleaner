@@ -44,6 +44,7 @@ A release must never be cut on a failing safety suite. Before tagging, confirm a
 
 - `shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh` is clean;
 - `bash test_cleaner.sh` (or `make check`) passes;
+- `bash scripts/validate-runbook-examples.sh` (`make check-runbook-examples`, which `make pre-release` runs first) passes;
 - the version-consistency check passes (the CHANGELOG top version equals
   `cleaner.sh --version`, `cleaner.1`'s `.TH` version matches, and `PKGBUILD`/`.SRCINFO`
   carry the same `pkgver`);

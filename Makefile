@@ -83,7 +83,7 @@ check: check-runbook-examples
 clean:
 	@echo "Nothing to clean."
 
-pre-release:
+pre-release: check-runbook-examples
 	shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
 	bash test_cleaner.sh
 
