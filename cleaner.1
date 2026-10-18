@@ -897,6 +897,13 @@ should run
 .B systemctl \-\-user disable \-\-now linux\-cleaner\-clean.timer linux\-cleaner\-retention.timer linux\-cleaner\-monitor.timer
 and, after removal,
 .BR "systemctl \-\-user daemon\-reload" .
+.TP
+.I /usr/share/bash\-completion/completions/cleaner
+.I /usr/share/zsh/site\-functions/_cleaner
+.I /usr/share/fish/vendor_completions.d/cleaner.fish
+Shell completions for bash, zsh and fish, installed by both installers with
+.B PREFIX=/usr
+(mode 0644).
 .SH EXIT STATUS
 Returns 0 on success, 130
 .RB ( SIGINT )
