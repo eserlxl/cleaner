@@ -9556,6 +9556,100 @@ for notify_mode in --report --list-sessions; do
     exit 1
   fi
 done
+
+# 8. --clean --force --notify --trash --trash-keep-days 0 with failing retention purge records one critical notification with "Retention failed: true".
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+write_notify_stub
+notify_ret_old="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+notify_ret_target="$MOCK_HOME/.cache/notify_ret_target"
+mkdir -p "$notify_ret_old" "$notify_ret_target"
+printf 'old payload\n' > "$notify_ret_old/payload"
+printf 'full|payload|%s/prior|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$notify_ret_old/quarantine.meta"
+touch -d '10 days ago' "$notify_ret_old"
+printf 'target payload\n' > "$notify_ret_target/file"
+printf 'safe|Notify Retention Target|%s|notify retention fixture|0||\n' "$notify_ret_target" > "$TEST_ENV_DIR/notify_retention.conf"
+export MOCK_NOTIFY_RET_OLD="$notify_ret_old"
+cat > "$TEST_ENV_DIR/bin/rm" <<'NOTIFY_RET_RM'
+#!/usr/bin/env bash
+for arg; do
+  [[ "$arg" == "$MOCK_NOTIFY_RET_OLD" ]] && exit 1
+done
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+exec "$real_rm" "$@"
+NOTIFY_RET_RM
+chmod +x "$TEST_ENV_DIR/bin/rm"
+: > "$notify_log"
+if ! run_test_case "Notify Cleanup Result (retention failure critical)" 1 "notify_retention.log" \
+       --config "$TEST_ENV_DIR/notify_retention.conf" --clean --force --notify --trash --trash-keep-days 0 \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner --urgency=critical linux-cleaner Result: cleaned=1 skipped=0 failed=0 ' "$notify_log" \
+   || ! grep -qx 'Retention failed: true' "$notify_log"; then
+  unset MOCK_NOTIFY_RET_OLD
+  echo -e "${RED}FAIL: --clean --force --notify --trash --trash-keep-days 0 with failing retention did not record one critical notification containing 'Retention failed: true'.${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_retention.log" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_NOTIFY_RET_OLD
+
+# 9. An interrupted cleanup with --notify records one critical notification containing "Interrupted:".
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+write_notify_stub
+mkdir -p "$MOCK_HOME/.cache/notify_int_target"
+printf 'payload\n' > "$MOCK_HOME/.cache/notify_int_target/a.txt"
+printf 'safe|Notify Int Target|%s/.cache/notify_int_target|Interrupted notify fixture|0||\n' "$MOCK_HOME" > "$TEST_ENV_DIR/notify_int.conf"
+cat > "$TEST_ENV_DIR/bin/rm" <<'NOTIFY_INT_RM'
+#!/usr/bin/env bash
+real_rm=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v rm)
+for arg in "$@"; do
+  case "$arg" in
+    *notify_int_target*)
+      "$real_rm" "$@"
+      kill -TERM "$PPID"
+      exit 0
+      ;;
+  esac
+done
+exec "$real_rm" "$@"
+NOTIFY_INT_RM
+chmod +x "$TEST_ENV_DIR/bin/rm"
+: > "$notify_log"
+if ! run_test_case "Notify Cleanup Result (interrupted critical)" 143 "notify_int.log" \
+       --config "$TEST_ENV_DIR/notify_int.conf" --clean --force --notify \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner --urgency=critical linux-cleaner Result: cleaned=0 skipped=0 failed=0 ' "$notify_log" \
+   || ! grep -qx 'Interrupted: SIGTERM before all targets finished' "$notify_log"; then
+  echo -e "${RED}FAIL: interrupted cleanup with --notify did not record one critical notification containing 'Interrupted:'.${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_int.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 10. A run with notify-send absent from PATH and --notify prints "notify-send is not installed" once on stderr and exits 0.
+setup_mock_env
+notify_missing_bin="$TEST_ENV_DIR/notify_missing_bin"
+mkdir -p "$notify_missing_bin"
+for tool in bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp pgrep mkdir mv cp chmod rmdir cut grep flock timeout; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    ln -s "$(command -v "$tool")" "$notify_missing_bin/$tool"
+  fi
+done
+mkdir -p "$MOCK_HOME/.cache/notify_absent_target"
+printf 'payload\n' > "$MOCK_HOME/.cache/notify_absent_target/file"
+printf 'safe|Notify Absent Target|%s/.cache/notify_absent_target|Absent notify-send fixture|0||\n' "$MOCK_HOME" > "$TEST_ENV_DIR/notify_absent.conf"
+notify_absent_ec=0
+PATH="$notify_missing_bin" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/notify_absent.conf" --clean --force --notify \
+  < /dev/null > "$TEST_ENV_DIR/notify_absent.out" 2> "$TEST_ENV_DIR/notify_absent.err" || notify_absent_ec=$?
+if [[ "$notify_absent_ec" -ne 0 ]] \
+   || [[ "$(grep -c 'notify-send is not installed' "$TEST_ENV_DIR/notify_absent.err" || true)" -ne 1 ]] \
+   || grep -q 'notify-send is not installed' "$TEST_ENV_DIR/notify_absent.out"; then
+  echo -e "${RED}FAIL: --notify without notify-send on PATH did not print 'notify-send is not installed' once on stderr and exit 0 (ec=$notify_absent_ec).${NC}"
+  cat "$TEST_ENV_DIR/notify_absent.out" "$TEST_ENV_DIR/notify_absent.err" 2>/dev/null || true
+  exit 1
+fi
 unset MOCK_NOTIFY_LOG MOCK_NOTIFY_EXIT
 echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notifications safely and reject non-cleanup modes.${NC}"
 

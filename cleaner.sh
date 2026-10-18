@@ -2705,19 +2705,28 @@ notify_cleanup_result() {
     return 0
   fi
   local first_line="${RESULT_REPORT_TEXT%%$'\n'*}"
-  local reclaimed_line="" line msg
+  local reclaimed_line="" interrupted_line="" retention_failed_line="" line msg
   while IFS= read -r line; do
     if [[ "$line" == "Reclaimed: "* ]]; then
       reclaimed_line="$line"
-      break
+    elif [[ "$line" == "Interrupted: "* ]]; then
+      interrupted_line="$line"
+    elif [[ "$line" == "Retention failed: true" ]]; then
+      retention_failed_line="$line"
     fi
   done <<< "$RESULT_REPORT_TEXT"
   msg="$first_line"
   if [[ -n "$reclaimed_line" ]]; then
     msg+=$'\n'"$reclaimed_line"
   fi
+  if [[ -n "$interrupted_line" ]]; then
+    msg+=$'\n'"$interrupted_line"
+  fi
+  if [[ -n "$retention_failed_line" ]]; then
+    msg+=$'\n'"$retention_failed_line"
+  fi
   local -a notify_args=(--app-name=linux-cleaner)
-  if (( ${result_failed:-0} > 0 )); then
+  if (( ${result_failed:-0} > 0 )) || [[ "${OPERATION_FAILED:-false}" == true || -n "$interrupted_line" ]]; then
     notify_args+=(--urgency=critical)
   fi
   if command -v timeout >/dev/null 2>&1; then
@@ -3420,8 +3429,8 @@ if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]
   RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
-  notify_cleanup_result
   apply_trash_keep_days
+  notify_cleanup_result
   [[ "$OPERATION_FAILED" = true ]] && exit 1
   exit 0
 fi
@@ -3433,8 +3442,8 @@ if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; th
   RESULT_REPORT_TEXT="Result: nothing to clean"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
-  notify_cleanup_result
   apply_trash_keep_days
+  notify_cleanup_result
   [[ "$OPERATION_FAILED" = true ]] && exit 1
   exit 0
 fi
@@ -3809,8 +3818,8 @@ trap - INT TERM
 RESULT_REPORT_TEXT=$(print_result_report)
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
-notify_cleanup_result
 apply_trash_keep_days
+notify_cleanup_result
 
 echo
 if [[ "$TRASH_MODE" = true ]]; then

@@ -101,11 +101,15 @@ Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overrid
 .B \-\-notify
 With cleanup: send one desktop notification via
 .BR notify\-send (1)
-summarizing the cleanup result (first line of the result report plus its
+after inline retention summarizing the cleanup result (first line of the result report plus its
 .B Reclaimed:
+line, and any
+.B Interrupted:
+or
+.B "Retention failed: true"
 line;
 .B \-\-urgency=critical
-when any target failed). No-op on dry-run. Prints one warning on stderr when
+when any target or inline retention failed or the run was interrupted). No-op on dry-run. Prints one warning on stderr when
 .B \-\-notify
 is active and
 .B notify\-send
