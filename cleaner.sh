@@ -65,6 +65,7 @@ Options:
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
+  --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows.
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
@@ -98,6 +99,7 @@ ONLY_PATH=""
 ONLY_PATH_CANONICAL=""
 MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
+MIN_AGE_OVERRIDE=""
 TRASH_KEEP_DAYS=""
 LOCK_WAIT="${LINUX_CLEANER_LOCK_WAIT:-0}"
 PURGE_TARGET=""
@@ -315,6 +317,14 @@ while [[ $# -gt 0 ]]; do
       MIN_RECLAIM="$2"
       shift 2
       ;;
+    --min-age)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --min-age requires a day count argument.${NC}" >&2
+        exit 1
+      fi
+      MIN_AGE_OVERRIDE="$2"
+      shift 2
+      ;;
     --trash-keep-days)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --trash-keep-days requires a day count argument.${NC}" >&2
@@ -452,6 +462,15 @@ if [[ -n "$MIN_RECLAIM" ]]; then
   fi
 fi
 
+if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
+  if [[ ! "$MIN_AGE_OVERRIDE" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: --min-age expects a non-negative integer day count, got '${MIN_AGE_OVERRIDE}'.${NC}" >&2
+    exit 1
+  fi
+  MIN_AGE_OVERRIDE=${MIN_AGE_OVERRIDE#"${MIN_AGE_OVERRIDE%%[!0]*}"}
+  MIN_AGE_OVERRIDE=${MIN_AGE_OVERRIDE:-0}
+fi
+
 if [[ -n "$TRASH_KEEP_DAYS" ]]; then
   if [[ ! "$TRASH_KEEP_DAYS" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: --trash-keep-days expects a non-negative integer day count, got '${TRASH_KEEP_DAYS}'.${NC}" >&2
@@ -494,6 +513,11 @@ if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" 
   exit 1
 fi
 
+if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
+  exit 1
+fi
+
 if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
   echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
   exit 1
@@ -531,6 +555,11 @@ fi
 
 if [[ -n "$MIN_RECLAIM" && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --check-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$MIN_AGE_OVERRIDE" && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -3062,6 +3091,15 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   
   # An empty age means the whole directory (effective 0).
   [[ -z "$min_age" ]] && min_age=0
+  if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
+    [[ "$custom_clean_cmd" == action:* ]] && continue
+    row_age=${min_age#"${min_age%%[!0]*}"}
+    row_age=${row_age:-0}
+    # shellcheck disable=SC2071
+    if [[ ${#MIN_AGE_OVERRIDE} -gt ${#row_age} || ( ${#MIN_AGE_OVERRIDE} -eq ${#row_age} && "$MIN_AGE_OVERRIDE" > "$row_age" ) ]]; then
+      min_age="$MIN_AGE_OVERRIDE"
+    fi
+  fi
   effective_age="$min_age"
   idle_age=0
   if [[ "$custom_clean_cmd" == "filter:cxx_build" ]] && has_positive_age "$min_age"; then

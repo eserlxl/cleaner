@@ -234,6 +234,7 @@ combined with
 .BR \-\-exclude\-target ,
 .BR \-\-only\-path ,
 .BR \-\-min\-reclaim ,
+.BR \-\-min\-age ,
 .BR \-\-trash\-keep\-days ,
 or
 .BR \-\-json .
@@ -362,6 +363,31 @@ nothing was cleaned, saves
 .BI "Result: skipped below \-\-min\-reclaim " SIZE
 in the last cleanup report, and exits 0. Exits 1 on a malformed
 .IR SIZE .
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
+.TP
+.B \-\-min\-age \fIDAYS\fR
+Used with cleanup: raise every ordinary target's
+.B MIN_AGE_DAYS
+threshold to at least
+.I DAYS
+days (a non-negative decimal integer) for that run. Targets configured with a
+larger
+.B MIN_AGE_DAYS
+keep their configured threshold,
+.B filter:cxx_build
+rows use the raised value as their idle threshold, and
+.B action:*
+rows are skipped because external commands cannot apply a file-age filter. Exits
+1 on a malformed
+.IR DAYS .
 Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,

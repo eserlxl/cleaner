@@ -21,6 +21,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--min-age DAYS` raises every ordinary target's age threshold to at least `DAYS`
+  days for one cleanup or dry-run preview while skipping `action:*` rows.
+
 - `--lock-wait SECONDS` and `LINUX_CLEANER_LOCK_WAIT` let scheduled mutations wait
   for the existing exclusive lock, preserving fail-fast defaults and read-only modes.
 

@@ -5526,7 +5526,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --only-target --exclude-target --only-path --min-reclaim --trash-keep-days)
+  --init-config --only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -5534,11 +5534,12 @@ mx_args() {
     --only-target|--exclude-target) echo "$1 NPM" ;;
     --only-path) echo "--only-path $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
+    --min-age) echo "--min-age 30" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --trash-keep-days --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days --list-targets
   --check-config --init-config --report)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -9097,6 +9098,75 @@ if ! run_test_case "Purge Sessions Max Size Invalid" 1 "purge_max_size_invalid.l
   exit 1
 fi
 echo -e "${GREEN}PASS: --purge-sessions max-size:SIZE keeps newest sessions within budget and validates SIZE.${NC}"
+
+# --min-age DAYS: raise every ordinary target's age threshold for one run,
+# keep larger row thresholds, skip action:* rows, and reject invalid values
+# or incompatible modes.
+echo -e "\n${BOLD}Test Case: Min Age Override${NC}"
+setup_mock_env
+ma_dir="$MOCK_HOME/.cache/min_age_target"
+ma_high_dir="$MOCK_HOME/.cache/min_age_high"
+mkdir -p "$ma_dir" "$ma_high_dir"
+printf 'old-file-payload\n' > "$ma_dir/old.txt"
+printf 'fresh\n' > "$ma_dir/fresh.txt"
+touch -d "40 days ago" "$ma_dir/old.txt"
+printf 'high-age-payload\n' > "$ma_high_dir/mid.txt"
+touch -d "40 days ago" "$ma_high_dir/mid.txt"
+ma_old_bytes=$(du -sb "$ma_dir/old.txt" | awk '{print $1}')
+cat > "$TEST_ENV_DIR/min_age.conf" <<EOF
+safe|Min Age Target|\$HOME/.cache/min_age_target|Min age test target|0||
+safe|High Age Target|\$HOME/.cache/min_age_high|High age target|60||
+safe|Action Target|/var/cache/pacman/pkg|Pacman action|0||action:pacman_clean
+EOF
+
+if ! run_test_case "Min Age Dry Run JSON" 0 "min_age_json.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --dry-run --json --min-age 30 \
+   || ! python3 - "$TEST_ENV_DIR/min_age_json.log" "$ma_old_bytes" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+old_bytes = int(sys.argv[2])
+assert d["total_reclaimable_bytes"] == old_bytes, d
+by_name = {t["name"]: t for t in d["targets"]}
+assert "Action Target" not in by_name, by_name
+t = by_name["Min Age Target"]
+assert t["min_age_days"] == "30" and t["bytes"] == old_bytes and t["status"] == "found", t
+h = by_name["High Age Target"]
+assert h["min_age_days"] == "60" and h["bytes"] == 0 and h["status"] == "clean", h
+PY
+then
+  echo -e "${RED}FAIL: --dry-run --json --min-age 30 did not report min_age_days '30', old file bytes only, preserved larger row age, and excluded action:* rows.${NC}"
+  cat "$TEST_ENV_DIR/min_age_json.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --dry-run --json --min-age 30 reports raised min_age_days, old file bytes only, and skips action:* rows.${NC}"
+
+if ! run_test_case "Min Age Clean Deletes Only Old" 0 "min_age_clean.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --clean --force --min-age 30 \
+   || [[ -e "$ma_dir/old.txt" ]] \
+   || [[ ! -f "$ma_dir/fresh.txt" ]] \
+   || [[ ! -f "$ma_high_dir/mid.txt" ]]; then
+  echo -e "${RED}FAIL: --clean --force --min-age 30 did not delete only the old file.${NC}"
+  cat "$TEST_ENV_DIR/min_age_clean.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --clean --force --min-age 30 deletes only the 40-day-old file and keeps fresh and higher-threshold files.${NC}"
+
+if ! run_test_case "Min Age Invalid Value" 1 "min_age_bad.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --min-age abc --dry-run \
+   || ! grep -q -- "--min-age expects a non-negative integer" "$TEST_ENV_DIR/min_age_bad.log" \
+   || ! run_test_case "Min Age Missing Value" 1 "min_age_noarg.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --min-age \
+   || ! grep -q -- "--min-age requires a day count" "$TEST_ENV_DIR/min_age_noarg.log" \
+   || ! run_test_case "Min Age With Report Rejected" 1 "min_age_report.log" \
+       --min-age 5 --report \
+   || ! grep -q -- "--min-age applies only to cleanup" "$TEST_ENV_DIR/min_age_report.log" \
+   || ! run_test_case "Min Age Large Decimal No Overflow" 0 "min_age_huge.log" \
+       --config "$TEST_ENV_DIR/min_age.conf" --dry-run --min-age 0099999999999999999999; then
+  echo -e "${RED}FAIL: --min-age validation, mode exclusion, or large decimal handling failed.${NC}"
+  cat "$TEST_ENV_DIR/min_age_bad.log" "$TEST_ENV_DIR/min_age_noarg.log" "$TEST_ENV_DIR/min_age_report.log" "$TEST_ENV_DIR/min_age_huge.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --min-age rejects invalid values and incompatible modes and handles huge decimal values without overflow.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
