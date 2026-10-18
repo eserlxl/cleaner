@@ -40,11 +40,20 @@ _cleaner() {
         local i
         for i in "${!COMPREPLY[@]}"; do
           COMPREPLY[i]="${COMPREPLY[i]#"$colon_prefix"}"
+          # An empty reply would replace the typed ':' with nothing.
+          [[ -z "${COMPREPLY[i]}" ]] && unset 'COMPREPLY[i]'
         done
       fi
       return 0
       ;;
-    -c|--config|--log)
+    --log)
+      # The FILE argument is optional, so an option may follow directly.
+      if [[ "$cur" != -* ]]; then
+        mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+        return 0
+      fi
+      ;;
+    -c|--config)
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;

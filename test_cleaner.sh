@@ -9316,7 +9316,17 @@ if ! (
   COMP_WORDS=(cleaner --purge-sessions older-than :)
   COMP_CWORD=3
   _cleaner
-  [[ "${COMPREPLY[*]}" == "" ]] || exit 1
+  [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+
+  COMP_WORDS=(cleaner --log --qu)
+  COMP_CWORD=2
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "--quiet" ]] || exit 1
+
+  COMP_WORDS=(cleaner --log "$comp_file")
+  COMP_CWORD=2
+  _cleaner
+  [[ "${COMPREPLY[*]}" == "$comp_file" ]] || exit 1
 
   COMP_WORDS=(cleaner --min-age "")
   COMP_CWORD=2
