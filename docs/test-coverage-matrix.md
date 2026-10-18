@@ -29,6 +29,7 @@
 | U-108 | Failed comm/cmdline queries, missing pgrep, partial error output, later-token errors and invalid regex preserve guarded payloads with skipped JSON reasons and no guarded sizing, sudo or actions; no-match and active controls preserve cleanup/blocking, and ungated targets still clean | Process Query |
 | U-109 | `--min-age DAYS` and `LINUX_CLEANER_MIN_AGE` raise every ordinary target's `MIN_AGE_DAYS` to at least `DAYS` for one run (with CLI `--min-age` overriding the environment), keep larger row thresholds, skip `action:*` rows, and reject invalid, missing and oversized values and non-cleanup modes | Min Age Dry Run JSON / Min Age Env Dry Run JSON / Min Age CLI Overrides Env / Min Age Clean Deletes Only Old / Min Age Invalid Value / Min Age Env Invalid Value / Min Age Large Decimal No Overflow |
 | U-110 | Both installers ship `completions/cleaner.bash` to `$DATADIR/bash-completion/completions/cleaner` with mode `0644` and uninstall removes it; the completion offers options, risk levels, session selectors, files and directories | Installer DESTDIR Smoke Test / Bash Completion Drift and Functional Check |
+| U-111 | `--notify` and `LINUX_CLEANER_NOTIFY` send one desktop notification summarizing the cleanup result via `notify-send` (`--urgency=critical` when a target failed), act as a no-op on dry-run, warn once when `notify-send` is absent, never alter the exit status on notifier failure, and reject non-cleanup modes | Notify Cleanup Result / Mode Flag Exclusion Docs Parity |
 
 ## 1.3.0 shipped feature inventory
 

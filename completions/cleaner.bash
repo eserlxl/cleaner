@@ -96,6 +96,7 @@ _cleaner() {
     --log
     -q --quiet
     --debug
+    --notify
     --json
     -h --help
     -V --version

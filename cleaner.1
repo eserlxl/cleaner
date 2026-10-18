@@ -98,6 +98,28 @@ savings, and the final summary still print.
 Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by
 .BR \-\-quiet ).
 .TP
+.B \-\-notify
+With cleanup: send one desktop notification via
+.BR notify\-send (1)
+summarizing the cleanup result (first line of the result report plus its
+.B Reclaimed:
+line;
+.B \-\-urgency=critical
+when any target failed). No-op on dry-run. Prints one warning on stderr when
+.B \-\-notify
+is active and
+.B notify\-send
+is not installed; a missing binary, missing session bus, or failing or hanging
+notifier never changes the exit status. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
+.TP
 .B \-\-json
 With
 .BR \-\-dry\-run ,
@@ -236,6 +258,7 @@ combined with
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-age ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-notify ,
 or
 .BR \-\-json .
 .TP
@@ -503,6 +526,13 @@ When set to
 enables
 .BR \-\-debug
 (show per-target FOUND, CLEAN and PROTECTED lines). No CLI flag disables it; set it to 0 or unset it.
+.TP
+.B LINUX_CLEANER_NOTIFY
+When set to
+.BR 1 ", " true ", or " yes ,
+enables
+.BR \-\-notify
+(send a desktop notification summarizing the cleanup result; no-op on dry-run). No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to

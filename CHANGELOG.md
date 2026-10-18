@@ -21,6 +21,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--notify` and `LINUX_CLEANER_NOTIFY` send an opt-in desktop notification via
+  `notify-send` summarizing the cleanup result (`--urgency=critical` when a target
+  failed), while acting as a no-op on dry-run and never failing or blocking a cleanup.
+
 - Ship Bash tab completion (`completions/cleaner.bash`) for `cleaner` and `cleaner.sh`,
   installed under `$DATADIR/bash-completion/completions/cleaner` (mode `0644`) by both
   `Makefile` and `install.sh` and removed on uninstall.

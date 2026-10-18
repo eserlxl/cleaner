@@ -5542,7 +5542,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days)
+  --init-config --only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days --notify)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -5555,7 +5555,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-age --trash-keep-days --notify --list-targets
   --check-config --init-config --report)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -9363,6 +9363,128 @@ if ! (
   exit 1
 fi
 echo -e "${GREEN}PASS: completions/cleaner.bash passes bash -n, covers all --help options, and completes flags and values.${NC}"
+
+# --notify / LINUX_CLEANER_NOTIFY: send a desktop notification summarizing the
+# cleanup result via notify-send, pass --urgency=critical on failed targets,
+# ignore dry-runs and runs without the option, tolerate failing/missing
+# notifiers without changing exit status, and reject non-cleanup modes.
+echo -e "\n${BOLD}Test Case: Notify Cleanup Result${NC}"
+setup_mock_env
+notify_log="$TEST_ENV_DIR/notify_calls.log"
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+# setup_mock_env rebuilds $TEST_ENV_DIR/bin, so each step reinstalls the stub.
+write_notify_stub() {
+  cat > "$TEST_ENV_DIR/bin/notify-send" <<'NOTIFY_STUB'
+#!/usr/bin/env bash
+printf '%s\n---\n' "$*" >> "${MOCK_NOTIFY_LOG:?}"
+exit "${MOCK_NOTIFY_EXIT:-0}"
+NOTIFY_STUB
+  chmod +x "$TEST_ENV_DIR/bin/notify-send"
+}
+write_notify_stub
+
+# 1. --clean --force --notify records one call whose body starts with "Result: cleaned=" and includes "Reclaimed:".
+: > "$notify_log"
+if ! run_test_case "Notify Cleanup Result (clean --notify)" 0 "notify_clean.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --notify \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner linux-cleaner Result: cleaned=' "$notify_log" \
+   || ! grep -q '^Reclaimed: ' "$notify_log" \
+   || grep -q -- '--urgency=critical' "$notify_log"; then
+  echo -e "${RED}FAIL: --clean --force --notify did not record exactly one normal notification with Result: cleaned= and Reclaimed:.${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_clean.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 2. A run with a failing target passes --urgency=critical.
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+write_notify_stub
+cat > "$TEST_ENV_DIR/bin/uv" <<'FAIL_UV'
+#!/usr/bin/env bash
+exit 1
+FAIL_UV
+chmod +x "$TEST_ENV_DIR/bin/uv"
+mkdir -p "$MOCK_HOME/.cache/uv"
+printf 'safe|UV Cache|%s/.cache/uv|Failing UV cache|0||action:uv_cache_prune\n' "$MOCK_HOME" > "$TEST_ENV_DIR/notify_fail.conf"
+: > "$notify_log"
+if ! run_test_case "Notify Cleanup Result (failed target critical)" 1 "notify_fail.log" \
+       --config "$TEST_ENV_DIR/notify_fail.conf" --clean --force --notify \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner --urgency=critical linux-cleaner Result: cleaned=0 skipped=0 failed=1 ' "$notify_log" \
+   || ! grep -q '^Reclaimed: ' "$notify_log"; then
+  echo -e "${RED}FAIL: failing cleanup with --notify did not pass --urgency=critical.${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_fail.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 3. --dry-run --notify and a run without the flag record nothing.
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+write_notify_stub
+: > "$notify_log"
+if ! run_test_case "Notify Cleanup Result (dry-run --notify)" 0 "notify_dry.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --notify \
+   || ! run_test_case "Notify Cleanup Result (clean without --notify)" 0 "notify_off.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+   || [[ -s "$notify_log" ]]; then
+  echo -e "${RED}FAIL: --dry-run --notify or a run without --notify invoked notify-send.${NC}"
+  cat "$notify_log" 2>/dev/null || true
+  exit 1
+fi
+
+# 4. LINUX_CLEANER_NOTIFY=1 behaves like --notify.
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=0
+write_notify_stub
+: > "$notify_log"
+notify_env_ec=0
+LINUX_CLEANER_NOTIFY=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/notify_env.log" 2>&1 || notify_env_ec=$?
+if [[ "$notify_env_ec" -ne 0 ]] \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner linux-cleaner Result: cleaned=' "$notify_log"; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_NOTIFY=1 did not send the expected notification (ec=$notify_env_ec).${NC}"
+  cat "$notify_log" "$TEST_ENV_DIR/notify_env.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 5. A notify-send stub that exits 1 leaves the exit status 0.
+setup_mock_env
+export MOCK_NOTIFY_LOG="$notify_log"
+export MOCK_NOTIFY_EXIT=1
+cat > "$TEST_ENV_DIR/bin/notify-send" <<'NOTIFY_STUB'
+#!/usr/bin/env bash
+echo "simulated notifier error" >&2
+printf '%s\n---\n' "$*" >> "${MOCK_NOTIFY_LOG:?}"
+exit "${MOCK_NOTIFY_EXIT:-0}"
+NOTIFY_STUB
+chmod +x "$TEST_ENV_DIR/bin/notify-send"
+: > "$notify_log"
+if ! run_test_case "Notify Cleanup Result (stub exits 1)" 0 "notify_stub_fail.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --notify \
+   || [[ "$(grep -c '^---$' "$notify_log" || true)" -ne 1 ]] \
+   || grep -q "simulated notifier error" "$TEST_ENV_DIR/notify_stub_fail.log"; then
+  echo -e "${RED}FAIL: a failing notify-send stub changed the exit status or leaked output.${NC}"
+  cat "$TEST_ENV_DIR/notify_stub_fail.log" 2>/dev/null || true
+  exit 1
+fi
+
+# 6. --notify with --report exits 1.
+if ! run_test_case "Notify Cleanup Result (--notify with --report rejected)" 1 "notify_report.log" \
+       --notify --report \
+   || ! grep -q "notify applies only to cleanup" "$TEST_ENV_DIR/notify_report.log"; then
+  echo -e "${RED}FAIL: --notify with --report did not exit 1 with mode-exclusion error.${NC}"
+  cat "$TEST_ENV_DIR/notify_report.log" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_NOTIFY_LOG MOCK_NOTIFY_EXIT
+echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notifications safely and reject non-cleanup modes.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

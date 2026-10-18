@@ -72,6 +72,7 @@ Options:
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
   --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
+  --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
@@ -86,6 +87,7 @@ FORCE=false
 YES_DANGER=false
 QUIET=false
 DEBUG=false
+NOTIFY=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
@@ -140,6 +142,9 @@ case "${LINUX_CLEANER_QUIET:-}" in
 esac
 case "${LINUX_CLEANER_DEBUG:-}" in
   1|true|TRUE|yes|YES) DEBUG=true ;;
+esac
+case "${LINUX_CLEANER_NOTIFY:-}" in
+  1|true|TRUE|yes|YES) NOTIFY=true ;;
 esac
 case "${LINUX_CLEANER_JSON:-}" in
   1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
@@ -225,6 +230,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --debug)
       DEBUG=true
+      shift
+      ;;
+    --notify)
+      NOTIFY=true
       shift
       ;;
     --json)
@@ -526,6 +535,11 @@ if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:
   exit 1
 fi
 
+if [[ "$NOTIFY" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, or --init-config).${NC}" >&2
+  exit 1
+fi
+
 if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
   echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, --report, or --init-config.${NC}" >&2
   exit 1
@@ -568,6 +582,11 @@ fi
 
 if [[ -n "$TRASH_KEEP_DAYS" && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --check-config).${NC}" >&2
+  exit 1
+fi
+
+if [[ "$NOTIFY" == true && "$CHECK_CONFIG" == true ]]; then
+  echo -e "${RED}Error: --notify applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 
@@ -2673,6 +2692,38 @@ show_last_report() {
   cat -- "$report_file"
 }
 
+# Send an opt-in desktop notification summarizing the cleanup result.
+# Never fails or blocks: output and exit status are discarded, and a hanging
+# notifier is bounded to 5 seconds when timeout(1) is available.
+notify_cleanup_result() {
+  [[ "${NOTIFY:-false}" == true && "${DRY_RUN:-true}" != true ]] || return 0
+  if ! command -v notify-send >/dev/null 2>&1; then
+    echo "Warning: --notify requested, but notify-send is not installed." >&2
+    return 0
+  fi
+  local first_line="${RESULT_REPORT_TEXT%%$'\n'*}"
+  local reclaimed_line="" line msg
+  while IFS= read -r line; do
+    if [[ "$line" == "Reclaimed: "* ]]; then
+      reclaimed_line="$line"
+      break
+    fi
+  done <<< "$RESULT_REPORT_TEXT"
+  msg="$first_line"
+  if [[ -n "$reclaimed_line" ]]; then
+    msg+=$'\n'"$reclaimed_line"
+  fi
+  local -a notify_args=(--app-name=linux-cleaner)
+  if (( ${result_failed:-0} > 0 )); then
+    notify_args+=(--urgency=critical)
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 5 notify-send "${notify_args[@]}" "linux-cleaner" "$msg" >/dev/null 2>&1 || true
+  else
+    notify-send "${notify_args[@]}" "linux-cleaner" "$msg" >/dev/null 2>&1 || true
+  fi
+}
+
 # Save the plan plus the result. Non-fatal: a bad state path or a write error
 # warns and leaves the cleanup's exit status unchanged. The state path is
 # untrusted, so a symlink is never followed and readers never see a partial file.
@@ -3366,6 +3417,7 @@ if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]
   RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
+  notify_cleanup_result
   apply_trash_keep_days
   [[ "$OPERATION_FAILED" = true ]] && exit 1
   exit 0
@@ -3378,6 +3430,7 @@ if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; th
   RESULT_REPORT_TEXT="Result: nothing to clean"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
+  notify_cleanup_result
   apply_trash_keep_days
   [[ "$OPERATION_FAILED" = true ]] && exit 1
   exit 0
@@ -3431,6 +3484,7 @@ handle_cleanup_signal() {
   RESULT_REPORT_TEXT="$(print_result_report)"$'\n'"Interrupted: ${sig} before all targets finished"
   printf '%s\n' "$RESULT_REPORT_TEXT"
   save_last_cleanup_report
+  notify_cleanup_result
   log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=run outcome=interrupted signal=${sig}"
   exit "$code"
 }
@@ -3752,6 +3806,7 @@ trap - INT TERM
 RESULT_REPORT_TEXT=$(print_result_report)
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
+notify_cleanup_result
 apply_trash_keep_days
 
 echo
