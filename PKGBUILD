@@ -7,7 +7,8 @@ arch=('any')
 url="https://github.com/eserlxl/cleaner"
 license=('GPL-3.0-or-later')
 depends=('bash' 'findutils' 'coreutils')
-optdepends=('pacman-contrib: paccache-based package-cache actions')
+optdepends=('pacman-contrib: paccache-based package-cache actions'
+            'libnotify: desktop notifications for --notify')
 backup=('etc/linux-cleaner/cleaner.conf')
 install=linux-cleaner.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")

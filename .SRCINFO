@@ -10,6 +10,7 @@ pkgbase = linux-cleaner
 	depends = findutils
 	depends = coreutils
 	optdepends = pacman-contrib: paccache-based package-cache actions
+	optdepends = libnotify: desktop notifications for --notify
 	backup = etc/linux-cleaner/cleaner.conf
 	source = linux-cleaner-1.5.0.tar.gz::https://github.com/eserlxl/cleaner/archive/refs/tags/v1.5.0.tar.gz
 	sha256sums = 0221620d52298aac163923f454bf0cd00e782709aade532b9998bc19a0c16c9f

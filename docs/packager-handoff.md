@@ -14,7 +14,7 @@ Pre-release checklist for AUR/distro packagers. Complete every row before publis
 - [ ] Removal docs (`make uninstall`, `pacman -R`) tell each user who enabled the timers to first run `systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer` and `systemctl --user daemon-reload` after removal
 - [ ] Docs for switching from `make install` to the package say to move or remove the leftover `/etc/linux-cleaner/cleaner.conf` first (pacman "exists in filesystem"), how to clear a stale `timers.target.wants` link, and that `Persistent=true` runs a missed slot at once on enable
 - [ ] `linux-cleaner.install` (`install=` in `PKGBUILD`) only prints the opt-in timer hint from `post_install`: no `systemctl` call, no `post_upgrade`; it ships to the AUR repo with `PKGBUILD` and `.SRCINFO`
-- [ ] `PKGBUILD` `depends` (`bash`, `findutils`, `coreutils`) and `optdepends` (`pacman-contrib`) align with the requirements table in [installation.md](installation.md#supported-platforms-and-requirements)
+- [ ] `PKGBUILD` `depends` (`bash`, `findutils`, `coreutils`) and `optdepends` (`pacman-contrib`, `libnotify`) align with the requirements table in [installation.md](installation.md#supported-platforms-and-requirements)
 
 ## Version consistency
 
