@@ -368,7 +368,12 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --only-path)
-      if [[ -z "${2:-}" || "$2" != /* || "$2" == *$'\n'* ]]; then
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --only-path requires a literal absolute path without line feeds." >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      if [[ "$2" != /* || "$2" == *$'\n'* ]]; then
         echo "Error: --only-path requires a literal absolute path without line feeds." >&2
         exit 1
       fi
@@ -393,6 +398,7 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --lock-wait requires a seconds argument." >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       LOCK_WAIT="$2"
       shift 2
       ;;
@@ -401,6 +407,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --min-reclaim requires a size argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       MIN_RECLAIM="$2"
       shift 2
       ;;
@@ -409,6 +416,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --min-free requires a size argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       MIN_FREE="$2"
       shift 2
       ;;
@@ -417,6 +425,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --min-age requires a day count argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       MIN_AGE_OVERRIDE="$2"
       shift 2
       ;;
@@ -425,6 +434,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --trash-keep-days requires a day count argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       TRASH_KEEP_DAYS="$2"
       shift 2
       ;;

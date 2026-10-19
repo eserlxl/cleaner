@@ -129,6 +129,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Refuse a long option (`--...`) or `-d` as the argument of `--only-path`, `--lock-wait`, `--min-reclaim`, `--min-free`, `--min-age`, or `--trash-keep-days` (`Error: <flag> requires a value, got option '<token>'.`), so an unquoted empty variable before `--dry-run` cannot swallow `--dry-run` and turn a preview into a deletion. A missing `--only-path` value still reports the literal-absolute-path error, and negative integers such as `--lock-wait -1` and `--trash-keep-days -5` still reach their numeric checks.
+
 - Refuse a cross-filesystem `--restore` when the full payload or aged staging directory exceeds destination free space, keeping the payload and recovery record in quarantine for a retry; same-filesystem moves and unreadable device or free-space probes behave as before.
 
 - Scope the commented `Nix Store` example row's process check in `cleaner.conf` to active Nix commands (`nix,nix-build,nix-store`) instead of `nix-daemon` so uncommenting it on multi-user Nix installs is not permanently blocked, document that it runs as the user without root, list `nix-store` among runtime-sized actions in the CLI reference, and update `--exclude-path` help and shell completions to describe containing paths.
