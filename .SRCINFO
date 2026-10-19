@@ -14,6 +14,6 @@ pkgbase = linux-cleaner
 	optdepends = git: skip cleanup targets that hold git-tracked files
 	backup = etc/linux-cleaner/cleaner.conf
 	source = linux-cleaner-1.6.0.tar.gz::https://github.com/eserlxl/cleaner/archive/refs/tags/v1.6.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 22fbc79c3093556ee24b49a97fc3bce43b330fb67fc28b176519fd282eea92d6
 
 pkgname = linux-cleaner
