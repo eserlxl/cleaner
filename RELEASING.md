@@ -24,9 +24,11 @@ This project ships as a single script; releases are cut from `main` as annotated
    ```
    Confirm `./cleaner.sh --version` prints the new version. (The tarball checksum
    cannot be computed yet — it needs the pushed tag, so it stays in *Packaging (AUR)*.)
-3. **Roll the changelog**: move the `[Unreleased]` entries under a new
-   `## [X.Y.Z] - <YYYY-MM-DD>` heading in `CHANGELOG.md`, and update the
-   compare/tag links at the bottom.
+3. **Roll the changelog**: `./release-notes.sh roll X.Y.Z` moves the `[Unreleased]`
+   entries under a new `## [X.Y.Z] - <YYYY-MM-DD>` heading (today's date, or pass it as a
+   third argument) and rewrites the compare/tag links at the bottom. It refuses an
+   existing section, an empty `[Unreleased]`, or a missing `[Unreleased]` compare link,
+   leaving `CHANGELOG.md` untouched.
 4. **Run the pre-release gate** (below) — it must be green.
 5. **Commit** the version bump and changelog roll.
 6. **Tag** an annotated release and push it:
