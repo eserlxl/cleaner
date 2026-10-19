@@ -4281,7 +4281,8 @@ for i in "${!parsed_names[@]}"; do
           if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
             if [[ "$aged_moved" = false ]]; then
               aged_moved=true
-              echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta" || success=false
+              # A missed record would leave every later file unrestorable.
+              echo "aged|${i}_${safe_name}|$path|$use_sudo|$owner_info" >> "$QUARANTINE_DIR/quarantine.meta" || { success=false; break; }
             fi
           else
             success=false

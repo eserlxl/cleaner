@@ -9078,6 +9078,59 @@ if [[ ! -f "$aged_unint_meta" ]] \
 fi
 echo -e "${GREEN}PASS: interrupted aged quarantine records metadata on the first moved file and stays restorable.${NC}"
 
+# A failed aged quarantine.meta append must stop the loop. The file already
+# moved stays unrecorded; every later file stays at its original path.
+setup_mock_env
+aged_stop_target="$MOCK_HOME/.cache/aged_meta_stop"
+mkdir -p "$aged_stop_target"
+printf 'first-aged\n' > "$aged_stop_target/first.txt"
+printf 'second-aged\n' > "$aged_stop_target/second.txt"
+printf 'third-aged\n' > "$aged_stop_target/third.txt"
+touch -d '10 days ago' "$aged_stop_target/first.txt" "$aged_stop_target/second.txt" "$aged_stop_target/third.txt"
+cat > "$TEST_ENV_DIR/aged_meta_stop.conf" <<'EOF'
+safe|Aged Meta Stop|$HOME/.cache/aged_meta_stop|Aged target whose metadata append fails|7||
+EOF
+cat > "$TEST_ENV_DIR/bin/mv" <<'META_MV'
+#!/usr/bin/env bash
+real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
+if ! "$real_mv" "$@"; then
+  exit 1
+fi
+if [[ ! -f "$TEST_ENV_DIR/aged_meta_mv_once" ]]; then
+  : > "$TEST_ENV_DIR/aged_meta_mv_once"
+  dest="${@: -1}"
+  session=$(dirname "$(dirname "$dest")")
+  mkdir "$session/quarantine.meta"
+fi
+META_MV
+chmod +x "$TEST_ENV_DIR/bin/mv"
+
+aged_stop_ok=true
+if ! run_test_case "Trash Aged Metadata Append Failure Stops Moves" 1 "aged_meta_stop.log" \
+     --config "$TEST_ENV_DIR/aged_meta_stop.conf" --clean --trash --force; then
+  aged_stop_ok=false
+fi
+rm -f "$TEST_ENV_DIR/bin/mv"
+aged_stop_session=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null || true)
+aged_stop_left=0
+for aged_stop_name in first.txt second.txt third.txt; do
+  if [[ -f "$aged_stop_target/$aged_stop_name" ]]; then
+    aged_stop_left=$((aged_stop_left + 1))
+  fi
+done
+aged_stop_moved=0
+if [[ -n "$aged_stop_session" ]]; then
+  aged_stop_moved=$(find "$aged_stop_session" -type f | wc -l)
+fi
+if [[ "$aged_stop_ok" == true && "$aged_stop_left" -eq 2 && "$aged_stop_moved" -eq 1 ]]; then
+  echo -e "${GREEN}PASS: a failed aged metadata append stopped further moves and left the other files in place.${NC}"
+else
+  echo -e "${RED}FAIL: aged metadata append failure did not stop after one moved file (left=$aged_stop_left moved=$aged_stop_moved).${NC}"
+  cat "$TEST_ENV_DIR/aged_meta_stop.log" 2>/dev/null || true
+  find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -print 2>/dev/null || true
+  exit 1
+fi
+
 # A mutating run (--clean, --restore, --purge-sessions) takes an exclusive
 # non-blocking flock on $HOME/.cache/linux-cleaner/cleaner.lock and refuses a
 # concurrent mutating run with exit 1 and nothing deleted, while refusing a
