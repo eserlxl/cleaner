@@ -2050,6 +2050,12 @@ retire_aged_staging() {
   [[ ! -e "$src" && ! -L "$src" ]]
 }
 
+# Best-effort: put a kept session's directory mtime back to SECONDS-SINCE-EPOCH (arg 2).
+reset_session_mtime() {
+  [[ -n "$2" ]] || return 0
+  touch -m -d "@$2" -- "$1" 2>/dev/null || true
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1"
@@ -2080,6 +2086,10 @@ restore_quarantine() {
     fi
   fi
   
+  # A kept session must keep its retention age (older-than reads this mtime).
+  local session_mtime=""
+  session_mtime=$(stat -c %Y "$restore_dir" 2>/dev/null) || session_mtime=""
+
   local meta_file="$restore_dir/quarantine.meta"
   if [[ ! -f "$meta_file" ]]; then
     echo -e "${RED}Error: Metadata file 'quarantine.meta' not found in '$restore_dir'.${NC}" >&2
@@ -2314,6 +2324,7 @@ restore_quarantine() {
   fi
 
   if [[ "$overall_success" != true ]]; then
+    reset_session_mtime "$restore_dir" "$session_mtime"
     echo -e "${RED}Error: Restoration completed with some errors. The quarantine session has been kept at '$restore_dir' for recovery.${NC}" >&2
     exit 1
   fi
@@ -2324,10 +2335,12 @@ restore_quarantine() {
   if [[ -z "${RESTORE_ONLY:-}" || ${#retained[@]} -eq 0 ]]; then
     local remaining_path=""
     if ! remaining_path=$(find "$restore_dir" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -print -quit 2>/dev/null); then
+      reset_session_mtime "$restore_dir" "$session_mtime"
       echo -e "${RED}Error: Unable to verify quarantine session contents. The session and metadata have been kept for recovery at '$restore_dir'.${NC}" >&2
       exit 1
     fi
     if [[ -n "$remaining_path" ]]; then
+      reset_session_mtime "$restore_dir" "$session_mtime"
       echo -e "${RED}Error: Unrecorded quarantine payload remains at '$remaining_path'. The session and metadata have been kept for manual recovery.${NC}" >&2
       exit 1
     fi
@@ -2337,6 +2350,7 @@ restore_quarantine() {
     return 0
   fi
 
+  reset_session_mtime "$restore_dir" "$session_mtime"
   echo -e "${BOLD}${GREEN}Restoration complete!${NC}"
   if [[ ${#retained[@]} -gt 0 ]]; then
     echo -e "Session ${YELLOW}$(basename "$restore_dir")${NC} kept: ${#retained[@]} target(s) still quarantined."

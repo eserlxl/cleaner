@@ -35,7 +35,7 @@ Each `--trash` clean creates a new session. Bound growth: `estimated_disk = sess
 
 ## Retention (older-than)
 
-Session age uses the quarantine session directory mtime (`find -mtime +DAYS`), not per-file ages inside the session.
+Session age uses the quarantine session directory mtime (`find -mtime +DAYS`), not per-file ages inside the session. A partial or failed restore that keeps the session preserves its original directory mtime, so the remaining quarantined targets still expire on schedule.
 
 ### Exit-code automation matrix
 

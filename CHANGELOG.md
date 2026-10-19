@@ -103,6 +103,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Preserve a quarantine session's directory mtime when a partial (`--only` / `--only-exact`) or failed restore keeps the session, so `older-than` retention still retires the remaining targets on the session's original schedule.
+
 - Keep Bash session-name completion working under failglob by discovering session directories via compgen instead of expanding a pathname glob, offering selectors and sessions without aborting.
 
 - Keep the git-tracked target guard enabled for readable targets that require `sudo` (such as an outside-`HOME` target under an unwritable parent directory), skipping the git check only when the cleaner runs as root or the target is unreadable without `sudo`.

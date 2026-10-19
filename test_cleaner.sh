@@ -3737,6 +3737,49 @@ else
   exit 1
 fi
 
+# A partial restore must keep the session's original retention age so older-than
+# still purges the remaining quarantined targets on schedule.
+setup_mock_env
+cat << 'EOF' > "$TEST_ENV_DIR/only_age.conf"
+safe|Yarn Cache|$HOME/.cache/yarn|yarn cache|0||
+safe|NPM Cache|$HOME/.npm/_cacache|npm cache|0||
+EOF
+if run_test_case "Quarantine for Partial Restore Retention Age" 0 "only_age_setup.log" \
+     --config "$TEST_ENV_DIR/only_age.conf" --trash --force; then
+  only_age_sess=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+  touch -d '40 days ago' "$only_age_sess"
+  only_age_mtime_before=$(stat -c %Y "$only_age_sess")
+  if run_test_case "Partial Restore Keeps Session Retention Age" 0 "only_age_restore.log" \
+       --restore latest --only "/.cache/yarn"; then
+    only_age_mtime_after=$(stat -c %Y "$only_age_sess")
+    if [[ "$only_age_mtime_after" == "$only_age_mtime_before" ]] \
+       && [[ -f "$MOCK_HOME/.cache/yarn/yarn-cache.json" ]] \
+       && [[ -d "$only_age_sess" ]]; then
+      echo -e "${GREEN}PASS: partial restore kept the session's 40-day mtime.${NC}"
+    else
+      echo -e "${RED}FAIL: partial restore reset session mtime ($only_age_mtime_before -> $only_age_mtime_after).${NC}"
+      cat "$TEST_ENV_DIR/only_age_restore.log"
+      exit 1
+    fi
+    if run_test_case "Purge Older-Than After Partial Restore" 0 "only_age_purge.log" \
+         --purge-sessions older-than:30 --force; then
+      if [[ ! -d "$only_age_sess" ]]; then
+        echo -e "${GREEN}PASS: older-than:30 purged the 40-day session after a partial restore.${NC}"
+      else
+        echo -e "${RED}FAIL: older-than:30 did not purge the 40-day session after a partial restore.${NC}"
+        cat "$TEST_ENV_DIR/only_age_purge.log"
+        exit 1
+      fi
+    else
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # A pattern matching nothing must fail loudly rather than "succeed" having done nothing.
 setup_mock_env
 cat << 'EOF' > "$TEST_ENV_DIR/only.conf"
