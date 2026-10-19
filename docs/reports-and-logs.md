@@ -16,7 +16,7 @@ New reports retain an `Accounted bytes: quarantined=N permanent=N` record. The a
 
 ## Desktop notification (`--notify`)
 
-With [`--notify`](cli-reference.md) or `LINUX_CLEANER_NOTIFY=1`, a cleanup run sends one desktop notification through `notify-send` (package `libnotify`) once the result is saved. Its body is the result's first line plus the `Reclaimed:`, `Interrupted:` and `Retention failed: true` lines when present. It is marked critical when a target failed, the run hit an operation failure, or it was interrupted. A cleanup that exits with an error before reporting sends one critical "Cleanup stopped with exit status N before finishing" notice instead. Dry-runs and read-only modes send nothing; without `notify-send` the run continues and prints one warning.
+With [`--notify`](cli-reference.md) or `LINUX_CLEANER_NOTIFY=1`, a cleanup run sends one desktop notification through `notify-send` (package `libnotify`) once the result is saved. Its body is the result's first line plus the `Reclaimed:`, `Interrupted:` and `Retention failed: true` lines when present. It is marked critical when a target failed, the run hit an operation failure, inline retention failed, or it was interrupted. A cleanup that exits with an error before reporting sends one critical "Cleanup stopped with exit status N before finishing" notice instead. Dry-runs and read-only modes send nothing; without `notify-send` the run continues and prints one warning.
 
 ## Prometheus textfile metrics (`LINUX_CLEANER_METRICS_FILE`)
 
