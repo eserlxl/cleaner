@@ -7922,7 +7922,9 @@ for aur_case in single-quoted-skip double-quoted-skip unquoted-skip multiline-sk
     double-quoted-skip) printf 'sha256sums=("SKIP")\n' > "$aur_dir/PKGBUILD" ;;
     unquoted-skip) printf 'sha256sums=(SKIP)\n' > "$aur_dir/PKGBUILD" ;;
     multiline-skip) printf "sha256sums=(\n  '%s'\n  'SKIP' # placeholder\n)\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
-    pinned) cp "$SCRIPT_DIR/PKGBUILD" "$aur_dir/PKGBUILD"; aur_expect_failure=false ;;
+    # A fixture, not the live PKGBUILD: the tagged release commit cannot carry its own
+    # tarball checksum, so the live file is checked at publish time (AUR_PREP=1).
+    pinned) printf "sha256sums=('%s')\n" "$aur_hash" > "$aur_dir/PKGBUILD"; aur_expect_failure=false ;;
     multiline-pinned)
       printf '# SKIP is forbidden\nsha256sums=(\n  %s\n  "%s" # pinned\n  '\''%s'\''\n)\n' \
         "$aur_hash" "$aur_hash" "$aur_hash" > "$aur_dir/PKGBUILD"
