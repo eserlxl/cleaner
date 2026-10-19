@@ -41,7 +41,7 @@ Every option, environment variable, and exit status of `cleaner`. The man page (
 - **`-h, --help`**: Display help and exit.
 - **`-V, --version`**: Print version and exit.
 
-Value-taking options (`-c/--config`, `-r/--risk`, `-e/--exclude`, `--restore`, `--only`, `--only-exact`, `--only-target`, `--exclude-target`, `--exclude-path`, and `--purge-sessions`) refuse a following long option (`--...`) or `-d` as their argument and exit `1` with `Error: <flag> requires a value, got option '<token>'.` before any analysis or deletion, so a missing value can never turn `--dry-run`/`-d` into a pattern. Other dash-leading values, such as `-x*` or a target `NAME` of `-n`, are still accepted.
+Value-taking options (`-c/--config`, `-r/--risk`, `-e/--exclude`, `--restore`, `--only`, `--only-exact`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--lock-wait`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, and `--purge-sessions`) refuse a following long option (`--...`) or `-d` as their argument and exit `1` with `Error: <flag> requires a value, got option '<token>'.` before any analysis or deletion, so a missing value can never turn `--dry-run`/`-d` into a pattern. Other dash-leading values, such as `-x*` or a target `NAME` of `-n`, are still accepted.
 
 ## Environment variables
 
