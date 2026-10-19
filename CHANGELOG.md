@@ -96,6 +96,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Fail closed (`[SKIP]`, `git-tracked check failed`) when a target lies inside a Git work tree whose tracked files cannot be listed by `git ls-files` (such as a corrupt `.git/index`), instead of treating the failure as zero tracked files and cleaning the target.
+
 - Refuse combining `--restore`, `--purge-sessions`, and `--list-sessions` (`Error: --restore, --purge-sessions and --list-sessions cannot be combined.`) instead of silently dropping the second mode after running the first.
 
 - `make uninstall` and `install.sh uninstall` remove the `cleaner.conf.example` a

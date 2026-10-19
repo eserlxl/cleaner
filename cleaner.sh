@@ -2430,6 +2430,7 @@ check_path_safety() {
 # Count tracked files without exposing filenames or querying Git with privileges.
 # The scanned repository is untrusted: its .git/config can name a core.fsmonitor
 # command that ls-files would run, so fsmonitor is forced off on every call.
+# Returns 1 when a work tree's tracked files cannot be listed, so the caller fails closed.
 count_git_tracked() {
   local target_path="$1" git_dir="$1" pathspec=. count=0 inside_work_tree
   if [[ "$EUID" -ne 0 ]] && command -v git >/dev/null 2>&1; then
@@ -2440,7 +2441,7 @@ count_git_tracked() {
     if inside_work_tree=$(git -c core.fsmonitor=false -C "$git_dir" rev-parse --is-inside-work-tree 2>/dev/null) \
        && [[ "$inside_work_tree" == true ]]; then
       count=$(git -c core.fsmonitor=false --literal-pathspecs -C "$git_dir" ls-files -z -- "$pathspec" 2>/dev/null \
-        | tr -cd '\000' | wc -c) || count=0
+        | tr -cd '\000' | wc -c) || return 1
     fi
   fi
   echo "$count"
@@ -3365,11 +3366,16 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         fi
 
         git_tracked_count=0
+        git_tracked_status=0
         if [[ "$root_unavailable" != true && -e "$path" && "$requires_sudo" != true ]]; then
-          git_tracked_count=$(count_git_tracked "$path")
+          git_tracked_count=$(count_git_tracked "$path") || git_tracked_status=$?
         fi
         if [[ "$root_unavailable" == true ]]; then
           :
+        elif [[ "$git_tracked_status" -ne 0 ]]; then
+          target_status=skipped
+          target_reason="git-tracked check failed"
+          status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: $target_reason."
         elif [[ "$git_tracked_count" -gt 0 ]]; then
           target_status=skipped
           target_reason="$git_tracked_count git-tracked file(s)"

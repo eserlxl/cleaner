@@ -296,6 +296,54 @@ PY
   echo -e "${GREEN}PASS: Git-tracked targets and all contents survive --force; ignored and non-repo output is cleaned.${NC}"
 done
 
+# A work tree whose index cannot be read fails closed and skips the target.
+setup_mock_env
+mkdir -p "$MOCK_HOME/proj/build" "$MOCK_HOME/plain-build"
+printf 'cache\n' > "$MOCK_HOME/proj/build/CMakeCache.txt"
+printf 'source\n' > "$MOCK_HOME/proj/build/tracked.c"
+printf 'output\n' > "$MOCK_HOME/plain-build/output.bin"
+HOME="$MOCK_HOME" git init -q "$MOCK_HOME/proj"
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" config user.name 'Cleaner Test'
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" config user.email 'cleaner-test@example.invalid'
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" add -- build/tracked.c
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+  commit -qm 'Track source in build tree'
+printf 'corrupt index\n' > "$MOCK_HOME/proj/.git/index"
+cat > "$TEST_ENV_DIR/git_guard_corrupt.conf" <<'GIT_GUARD_CORRUPT'
+safe|Corrupt Repo Build|$HOME/proj/build|Build tree in repo with corrupt index|0||filter:cxx_build
+safe|Corrupt Repo File|$HOME/proj/build/tracked.c|Single file in repo with corrupt index|0||
+safe|Plain Build|$HOME/plain-build|Outside any repository|0||
+GIT_GUARD_CORRUPT
+if ! run_test_case "Git-Tracked Target Guard Corrupt Index JSON" 0 "git_guard_corrupt_json.log" \
+     --config "$TEST_ENV_DIR/git_guard_corrupt.conf" --json --dry-run \
+   || ! python3 - "$TEST_ENV_DIR/git_guard_corrupt_json.log" "$MOCK_HOME" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+home = sys.argv[2]
+targets = {target["path"]: target for target in data["targets"]}
+for path in (home + "/proj/build", home + "/proj/build/tracked.c"):
+    assert targets[path]["status"] == "skipped", targets[path]
+    assert targets[path]["reason"] == "git-tracked check failed", targets[path]
+    assert targets[path]["bytes"] == 0, targets[path]
+assert targets[home + "/plain-build"]["status"] == "found", targets[home + "/plain-build"]
+PY
+then
+  echo -e "${RED}FAIL: Corrupt git index targets were not skipped with 'git-tracked check failed' in JSON dry-run.${NC}"
+  cat "$TEST_ENV_DIR/git_guard_corrupt_json.log"
+  exit 1
+fi
+if ! run_test_case "Git-Tracked Target Guard Corrupt Index" 0 "git_guard_corrupt.log" \
+     --config "$TEST_ENV_DIR/git_guard_corrupt.conf" --force \
+   || ! grep -qF "[SKIP] Corrupt Repo Build: skipped: git-tracked check failed." "$TEST_ENV_DIR/git_guard_corrupt.log" \
+   || ! grep -qF "[SKIP] Corrupt Repo File: skipped: git-tracked check failed." "$TEST_ENV_DIR/git_guard_corrupt.log" \
+   || [[ ! -f "$MOCK_HOME/proj/build/tracked.c" || ! -f "$MOCK_HOME/proj/build/CMakeCache.txt" \
+      || -e "$MOCK_HOME/plain-build" ]]; then
+  echo -e "${RED}FAIL: Corrupt git index target was cleaned or plain target was preserved.${NC}"
+  cat "$TEST_ENV_DIR/git_guard_corrupt.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: Corrupt git index fails closed with [SKIP] and preserves work-tree targets.${NC}"
+
 # Old transcripts and durable memory share a tree and cannot be separated by age.
 assert_row_exclusion() {
   local age="$1" mode="$2" global_source="${3:-none}"
