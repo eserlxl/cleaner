@@ -5975,8 +5975,8 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
         for label, code, status in (("init helper failure", body("init_user_config") + "\ninit_user_config", 1),
                                     ("reader helper failure", body("show_last_report") + "\nshow_last_report", 1),
                                     ("writer helper failure best effort", body("write_cleanup_metrics") + "\n" + body("write_last_report_file") + "\n" + body("save_last_cleanup_report") + "\nsave_last_cleanup_report", 0),
-                                    ("discovery helper failure", discovery, 1),
-                                    ("explicit config skips discovery helper", 'CONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
+                                    ("discovery helper failure", body("set_default_config_candidates") + "\n" + discovery, 1),
+                                    ("explicit config skips discovery helper", body("set_default_config_candidates") + '\nCONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
             probe = root / "helper-failure.sh"
             probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\nDOCTOR=false\n' + failure + code + "\n")
             before = snapshot()
@@ -11168,13 +11168,18 @@ if [[ "$doc_all_ec" -ne 0 ]] \
 fi
 echo -e "${GREEN}PASS: --doctor prints OK/INFO lines for an all-present environment without touching any lock or file.${NC}"
 
-# Checkout fallback when XDG config is absent.
+# Checkout fallback when XDG config is absent; the /etc candidate is redirected
+# in a copy so the host's own install cannot answer instead.
 rm -rf "$doctor_xdg" "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+doc_checkout_dir="$TEST_ENV_DIR/doctor_checkout"
+mkdir -p "$doc_checkout_dir"
+sed 's|"/etc/linux-cleaner/cleaner.conf"|"'"$doc_checkout_dir"'/etc/cleaner.conf"|' "$CLEANER_SH" > "$doc_checkout_dir/cleaner.sh"
+cp "$TEST_ENV_DIR/test_cleaner.conf" "$doc_checkout_dir/cleaner.conf"
 doc_checkout_ec=0
 XDG_CONFIG_HOME="$doctor_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_checkout.log" 2>&1 || doc_checkout_ec=$?
+  bash "$doc_checkout_dir/cleaner.sh" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_checkout.log" 2>&1 || doc_checkout_ec=$?
 if [[ "$doc_checkout_ec" -ne 0 ]] \
-   || ! grep -qE "^OK: config: .*cleaner\.conf \((/etc|checkout)\)$" "$TEST_ENV_DIR/doctor_checkout.log" \
+   || ! grep -qxF "OK: config: $doc_checkout_dir/cleaner.conf (checkout)" "$TEST_ENV_DIR/doctor_checkout.log" \
    || ! grep -qF "INFO: quarantine: 0 session(s) ($MOCK_HOME/.cache/linux-cleaner/quarantine)" "$TEST_ENV_DIR/doctor_checkout.log" \
    || [[ -e "$MOCK_HOME/.cache/linux-cleaner/quarantine" ]]; then
   echo -e "${RED}FAIL: --doctor without XDG config did not resolve fallback config or created quarantine dir (ec=$doc_checkout_ec).${NC}"
@@ -11183,7 +11188,7 @@ if [[ "$doc_checkout_ec" -ne 0 ]] \
 fi
 echo -e "${GREEN}PASS: --doctor resolves fallback config and reports 0 quarantine sessions without creating the directory.${NC}"
 
-# Missing pgrep/flock/git and missing config file emit WARN lines and still exit 0.
+# Missing pgrep/flock/git emit WARN lines and still exit 0 when a readable config exists.
 doc_min_bin="$TEST_ENV_DIR/doctor_min_bin"
 mkdir -p "$doc_min_bin"
 for base_tool in bash du stat find realpath mktemp rm id dirname basename tr sed awk cut sort tail cat date chmod mkdir mv cp rmdir timeout; do
@@ -11193,10 +11198,10 @@ for base_tool in bash du stat find realpath mktemp rm id dirname basename tr sed
 done
 doc_warn_ec=0
 PATH="$doc_min_bin" HOME="$MOCK_HOME" \
-  "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/no_such_doctor.conf" \
+  "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
   < /dev/null > "$TEST_ENV_DIR/doctor_warn.log" 2>&1 || doc_warn_ec=$?
 if [[ "$doc_warn_ec" -ne 0 ]] \
-   || ! grep -qF "WARN: config: $TEST_ENV_DIR/no_such_doctor.conf (explicit, not found)" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -qxF "OK: config: $TEST_ENV_DIR/test_cleaner.conf (explicit)" "$TEST_ENV_DIR/doctor_warn.log" \
    || ! grep -q "^OK: check_gnu_userland:" "$TEST_ENV_DIR/doctor_warn.log" \
    || ! grep -q "^WARN: pgrep: not found" "$TEST_ENV_DIR/doctor_warn.log" \
    || ! grep -q "^WARN: flock: not found" "$TEST_ENV_DIR/doctor_warn.log" \
@@ -11204,11 +11209,45 @@ if [[ "$doc_warn_ec" -ne 0 ]] \
    || ! grep -q "^INFO: sudo -n:" "$TEST_ENV_DIR/doctor_warn.log" \
    || ! grep -q "^INFO: notify-send: not found" "$TEST_ENV_DIR/doctor_warn.log" \
    || ! grep -q "^INFO: timers (systemctl --user is-enabled): clean=unavailable retention=unavailable monitor=unavailable$" "$TEST_ENV_DIR/doctor_warn.log"; then
-  echo -e "${RED}FAIL: --doctor with missing pgrep/flock/git and missing config did not emit WARN lines and exit 0 (ec=$doc_warn_ec).${NC}"
+  echo -e "${RED}FAIL: --doctor with missing pgrep/flock/git did not emit WARN lines and exit 0 (ec=$doc_warn_ec).${NC}"
   cat "$TEST_ENV_DIR/doctor_warn.log" 2>/dev/null || true
   exit 1
 fi
-echo -e "${GREEN}PASS: --doctor emits WARN lines for missing pgrep/flock/git and missing config while exiting 0.${NC}"
+echo -e "${GREEN}PASS: --doctor emits WARN lines for missing pgrep/flock/git while exiting 0.${NC}"
+
+# A missing or unreadable config means cleanup cannot run: --doctor warns and exits 1,
+# and cleanup refuses an unreadable config with one Error: line before any analysis.
+doc_cfg_ec=0
+HOME="$MOCK_HOME" "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/no_such_doctor.conf" \
+  < /dev/null > "$TEST_ENV_DIR/doctor_nocfg.log" 2>&1 || doc_cfg_ec=$?
+if [[ "$doc_cfg_ec" -ne 1 ]] \
+   || ! grep -qxF "WARN: config: $TEST_ENV_DIR/no_such_doctor.conf (explicit, not found)" "$TEST_ENV_DIR/doctor_nocfg.log"; then
+  echo -e "${RED}FAIL: --doctor with a missing config did not warn and exit 1 (ec=$doc_cfg_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_nocfg.log" 2>/dev/null || true
+  exit 1
+fi
+if [[ "$EUID" -ne 0 ]]; then
+  unreadable_cfg="$TEST_ENV_DIR/unreadable_cleaner.conf"
+  cp "$TEST_ENV_DIR/test_cleaner.conf" "$unreadable_cfg"
+  chmod 000 "$unreadable_cfg"
+  doc_cfg_ec=0
+  HOME="$MOCK_HOME" "$CLEANER_SH" --doctor --config "$unreadable_cfg" \
+    < /dev/null > "$TEST_ENV_DIR/doctor_unreadable.log" 2>&1 || doc_cfg_ec=$?
+  unreadable_clean_ec=0
+  HOME="$MOCK_HOME" "$CLEANER_SH" --dry-run --config "$unreadable_cfg" \
+    < /dev/null > "$TEST_ENV_DIR/unreadable_cfg.log" 2>&1 || unreadable_clean_ec=$?
+  chmod 600 "$unreadable_cfg"
+  if [[ "$doc_cfg_ec" -ne 1 ]] \
+     || ! grep -qxF "WARN: config: $unreadable_cfg (explicit, not readable)" "$TEST_ENV_DIR/doctor_unreadable.log" \
+     || [[ "$unreadable_clean_ec" -ne 1 ]] \
+     || ! grep -qF "Error: Configuration file '$unreadable_cfg' is not readable" "$TEST_ENV_DIR/unreadable_cfg.log" \
+     || grep -q "Permission denied\|Analyzing targets" "$TEST_ENV_DIR/unreadable_cfg.log"; then
+    echo -e "${RED}FAIL: an unreadable config was not refused cleanly by cleanup and --doctor (doctor=$doc_cfg_ec clean=$unreadable_clean_ec).${NC}"
+    cat "$TEST_ENV_DIR/doctor_unreadable.log" "$TEST_ENV_DIR/unreadable_cfg.log" 2>/dev/null || true
+    exit 1
+  fi
+fi
+echo -e "${GREEN}PASS: --doctor exits 1 for a missing or unreadable config, and cleanup refuses an unreadable config with a clear error.${NC}"
 
 # Failing GNU userland probe prints WARN and exits 1.
 cat > "$TEST_ENV_DIR/bin/stat" <<'DOC_BAD_STAT_EOF'

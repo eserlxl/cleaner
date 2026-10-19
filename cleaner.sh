@@ -749,6 +749,18 @@ _xdg_dir() {
   fi
 }
 
+# Default config search order into CONFIG_CANDIDATES: XDG user config >
+# system config > dev-checkout config beside the script.
+set_default_config_candidates() {
+  local xdg_config_parent
+  xdg_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || return 1
+  xdg_config_parent=${xdg_config_parent%.}
+  CONFIG_CANDIDATES=(
+    "$xdg_config_parent/linux-cleaner/cleaner.conf"
+    "/etc/linux-cleaner/cleaner.conf"
+    "$SCRIPT_DIR/cleaner.conf")
+}
+
 # Copy the active configuration file to the user config path without overwriting.
 init_user_config() {
   local xdg_parent dest_dir dest src="" candidate tmp
@@ -835,17 +847,11 @@ fi
 
 # Check if config file exists (only if not restoring, purging, or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
-  # Resolve the default config by search order when -c/--config was not given:
-  # XDG user config > system config > dev-checkout config beside the script.
-  config_candidates=()
+  # Resolve the default config by search order when -c/--config was not given.
+  CONFIG_CANDIDATES=()
   if [[ -z "$CONFIG_FILE" ]]; then
-    xdg_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || exit 1
-    xdg_config_parent=${xdg_config_parent%.}
-    config_candidates=(
-      "$xdg_config_parent/linux-cleaner/cleaner.conf"
-      "/etc/linux-cleaner/cleaner.conf"
-      "$SCRIPT_DIR/cleaner.conf")
-    for candidate in "${config_candidates[@]}"; do
+    set_default_config_candidates || exit 1
+    for candidate in "${CONFIG_CANDIDATES[@]}"; do
       if [[ -f "$candidate" ]]; then
         CONFIG_FILE="$candidate"
         break
@@ -853,16 +859,20 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != 
     done
     # No candidate exists: keep the dev path so the not-found error is actionable.
     [[ -z "$CONFIG_FILE" ]] && CONFIG_FILE="$SCRIPT_DIR/cleaner.conf"
-    if [[ "$CONFIG_FILE" != "$xdg_config_parent/linux-cleaner/cleaner.conf" ]]; then
+    if [[ "$CONFIG_FILE" != "${CONFIG_CANDIDATES[0]}" ]]; then
       CONFIG_DISCOVERED=true
     fi
   fi
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
-    if [[ ${#config_candidates[@]} -gt 0 ]]; then
-      printf '  searched: %s\n' "${config_candidates[@]}" >&2
+    if [[ ${#CONFIG_CANDIDATES[@]} -gt 0 ]]; then
+      printf '  searched: %s\n' "${CONFIG_CANDIDATES[@]}" >&2
       echo "Run 'cleaner --doctor' to check the environment." >&2
     fi
+    exit 1
+  fi
+  if [[ ! -r "$CONFIG_FILE" ]]; then
+    echo -e "${RED}Error: Configuration file '$CONFIG_FILE' is not readable${NC}" >&2
     exit 1
   fi
 fi
@@ -3296,37 +3306,36 @@ check_gnu_userland() {
 
 # Read-only environment checklist: explain config resolution, GNU userland,
 # optional helper binaries, user timer states, and quarantine session count.
-# Exits 0 when cleanup can run, or 1 only when GNU userland is missing.
+# Exits 0 when cleanup can run, or 1 when the config is missing or unreadable
+# or GNU userland is missing.
 run_doctor() {
-  local doctor_rc=0 xdg_config_parent xdg_candidate etc_candidate checkout_candidate
-  local cfg_path="$CONFIG_FILE" cfg_source="explicit" bin_path
-  xdg_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || return 1
-  xdg_config_parent=${xdg_config_parent%.}
-  xdg_candidate="$xdg_config_parent/linux-cleaner/cleaner.conf"
-  etc_candidate="/etc/linux-cleaner/cleaner.conf"
-  checkout_candidate="$SCRIPT_DIR/cleaner.conf"
+  local doctor_rc=0 cfg_path="$CONFIG_FILE" cfg_source="explicit" bin_path i
+  local -a cfg_labels=(XDG /etc checkout)
+  set_default_config_candidates || return 1
   if [[ -z "$cfg_path" ]]; then
-    if [[ -f "$xdg_candidate" ]]; then
-      cfg_path="$xdg_candidate"
-      cfg_source="XDG"
-    elif [[ -f "$etc_candidate" ]]; then
-      cfg_path="$etc_candidate"
-      cfg_source="/etc"
-    else
-      cfg_path="$checkout_candidate"
-      cfg_source="checkout"
-    fi
-  elif [[ "$cfg_path" == "$xdg_candidate" ]]; then
-    cfg_source="XDG"
-  elif [[ "$cfg_path" == "$etc_candidate" ]]; then
-    cfg_source="/etc"
-  elif [[ "$cfg_path" == "$checkout_candidate" ]]; then
+    # Same fallback as discovery: the checkout path when no candidate exists.
+    cfg_path="${CONFIG_CANDIDATES[2]}"
     cfg_source="checkout"
-  fi
-  if [[ -f "$cfg_path" ]]; then
-    printf 'OK: config: %s (%s)\n' "$cfg_path" "$cfg_source"
+    for i in 0 1 2; do
+      if [[ -f "${CONFIG_CANDIDATES[i]}" ]]; then
+        cfg_path="${CONFIG_CANDIDATES[i]}"
+        cfg_source="${cfg_labels[i]}"
+        break
+      fi
+    done
   else
+    for i in 0 1 2; do
+      [[ "$cfg_path" == "${CONFIG_CANDIDATES[i]}" ]] && cfg_source="${cfg_labels[i]}" && break
+    done
+  fi
+  if [[ ! -f "$cfg_path" ]]; then
     printf 'WARN: config: %s (%s, not found)\n' "$cfg_path" "$cfg_source"
+    doctor_rc=1
+  elif [[ ! -r "$cfg_path" ]]; then
+    printf 'WARN: config: %s (%s, not readable)\n' "$cfg_path" "$cfg_source"
+    doctor_rc=1
+  else
+    printf 'OK: config: %s (%s)\n' "$cfg_path" "$cfg_source"
   fi
 
   if check_gnu_userland; then
