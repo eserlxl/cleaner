@@ -8317,7 +8317,7 @@ cat > "$TEST_ENV_DIR/user_actions.conf" <<EOF
 safe|UV Cache|\$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
 safe|PNPM Store|\$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
 safe|Hugging Face Cache|\$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
-safe|Nix Store|$OUTSIDE_DIR/nix_parent/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-daemon|action:nix_store_gc
+safe|Nix Store|$OUTSIDE_DIR/nix_parent/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-build,nix-store|action:nix_store_gc
 EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_action.calls"
 : > "$MOCK_USER_ACTION_LOG"
@@ -8364,7 +8364,7 @@ cat > "$TEST_ENV_DIR/user_actions.conf" <<EOF
 safe|UV Cache|\$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
 safe|PNPM Store|\$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
 safe|Hugging Face Cache|\$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
-safe|Nix Store|$OUTSIDE_DIR/nix/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-daemon|action:nix_store_gc
+safe|Nix Store|$OUTSIDE_DIR/nix/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-build,nix-store|action:nix_store_gc
 EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_missing.calls"
 : > "$MOCK_USER_ACTION_LOG"
@@ -8420,6 +8420,74 @@ fi
 unset MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: running process blocks its user-action row while siblings still run.${NC}"
 
+# 3a. Shipped commented Nix Store row, once uncommented, is not blocked when nix-daemon is running, runs, and still blocks during nix-store/nix-build.
+setup_mock_env
+shipped_nix_row=$(sed -n 's/^[[:space:]]*#[[:space:]]*\(safe|Nix Store|.*\)$/\1/p' "$SCRIPT_DIR/cleaner.conf")
+if [[ -z "$shipped_nix_row" ]]; then
+  echo -e "${RED}FAIL: could not extract commented Nix Store row from cleaner.conf.${NC}"
+  exit 1
+fi
+printf '%s\n' "$shipped_nix_row" > "$TEST_ENV_DIR/shipped_nix_daemon.conf"
+
+cat > "$TEST_ENV_DIR/bin/pgrep" <<'PGREP_DAEMON'
+#!/usr/bin/env bash
+if [[ "$1" == "-x" && "$2" == "nix-daemon" ]]; then
+  exit 0
+fi
+exit 1
+PGREP_DAEMON
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+
+if ! run_test_case "Shipped Nix Row Not Blocked By Nix-Daemon" 0 "nix_daemon.log" \
+       --config "$TEST_ENV_DIR/shipped_nix_daemon.conf" --dry-run --debug \
+   || grep -q "BLOCKED.*process 'nix-daemon' is active" "$TEST_ENV_DIR/nix_daemon.log" \
+   || grep -q "Blocked (process 'nix-daemon' is active)" "$TEST_ENV_DIR/nix_daemon.log"; then
+  echo -e "${RED}FAIL: shipped Nix row was blocked by nix-daemon.${NC}"
+  cat "$TEST_ENV_DIR/nix_daemon.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: shipped commented Nix row, once uncommented, is not blocked when only nix-daemon is running.${NC}"
+
+mkdir -p "$OUTSIDE_DIR/nix/store"
+sed "s|/nix/store|$OUTSIDE_DIR/nix/store|" "$TEST_ENV_DIR/shipped_nix_daemon.conf" > "$TEST_ENV_DIR/nix_active_test.conf"
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/nix_run.calls"
+: > "$MOCK_USER_ACTION_LOG"
+if ! run_test_case "Uncommented Nix Row Runs While Nix-Daemon Active" 0 "nix_runs.log" \
+       --config "$TEST_ENV_DIR/nix_active_test.conf" --clean --force \
+   || ! grep -qx "nix-store --gc" "$MOCK_USER_ACTION_LOG" \
+   || ! grep -q '^Result: cleaned=1 skipped=0 failed=0 ' "$TEST_ENV_DIR/nix_runs.log"; then
+  echo -e "${RED}FAIL: uncommented Nix row did not run while nix-daemon was active.${NC}"
+  cat "$TEST_ENV_DIR/nix_runs.log" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_USER_ACTION_LOG
+echo -e "${GREEN}PASS: uncommented Nix row runs while nix-daemon is active.${NC}"
+
+for active_proc in nix-store nix-build; do
+  cat > "$TEST_ENV_DIR/bin/pgrep" <<PGREP_BLOCK
+#!/usr/bin/env bash
+if [[ "\$1" == "-x" && "\$2" == "$active_proc" ]]; then
+  exit 0
+fi
+exit 1
+PGREP_BLOCK
+  chmod +x "$TEST_ENV_DIR/bin/pgrep"
+  export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/nix_${active_proc}.calls"
+  : > "$MOCK_USER_ACTION_LOG"
+  if ! run_test_case "Uncommented Nix Row Blocked By Active $active_proc" 0 "nix_${active_proc}_blocked.log" \
+         --config "$TEST_ENV_DIR/nix_active_test.conf" --clean --force \
+     || [[ -s "$MOCK_USER_ACTION_LOG" ]] \
+     || ! grep -q "BLOCKED.*Nix Store: Skip cleanup because process '$active_proc' is active." "$TEST_ENV_DIR/nix_${active_proc}_blocked.log" \
+     || ! grep -q '^Targets: found=0 .* blocked=1 ' "$TEST_ENV_DIR/nix_${active_proc}_blocked.log"; then
+    echo -e "${RED}FAIL: active '$active_proc' did not block uncommented Nix row.${NC}"
+    cat "$TEST_ENV_DIR/nix_${active_proc}_blocked.log" "$MOCK_USER_ACTION_LOG" 2>/dev/null || true
+    exit 1
+  fi
+  unset MOCK_USER_ACTION_LOG
+  echo -e "${GREEN}PASS: active '$active_proc' blocks the uncommented Nix row.${NC}"
+done
+
+
 # 4. --dry-run invokes none of the mocks and reports 0 B reclaimable with run-time size message.
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub" "$OUTSIDE_DIR/nix/store"
@@ -8428,7 +8496,7 @@ cat > "$TEST_ENV_DIR/user_actions.conf" <<EOF
 safe|UV Cache|\$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
 safe|PNPM Store|\$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
 safe|Hugging Face Cache|\$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
-safe|Nix Store|$OUTSIDE_DIR/nix/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-daemon|action:nix_store_gc
+safe|Nix Store|$OUTSIDE_DIR/nix/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-build,nix-store|action:nix_store_gc
 EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_dry.calls"
 : > "$MOCK_USER_ACTION_LOG"
