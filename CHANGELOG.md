@@ -103,6 +103,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Refuse a long option (`--...`) or `-d` as the argument of `-c/--config`, `-r/--risk`, `-e/--exclude`, `--restore`, `--only`, `--only-exact`, `--only-target`, `--exclude-target`, or `--purge-sessions` (`Error: <flag> requires a value, got option '<token>'.`), so an unquoted empty variable before `--dry-run` cannot swallow `--dry-run` and turn a preview into a deletion, while still accepting other dash-leading values such as `-x*` or a target `NAME` of `-n`.
+
 - Preserve a quarantine session's directory mtime when a partial (`--only` / `--only-exact`) or failed restore keeps the session, so `older-than` retention still retires the remaining targets on the session's original schedule.
 
 - Keep Bash session-name completion working under failglob by discovering session directories via compgen instead of expanding a pathname glob, offering selectors and sessions without aborting.

@@ -218,6 +218,17 @@ notify_failed_exit() {
 }
 trap notify_failed_exit EXIT
 
+# A missing value must not swallow the next flag: "-e $EMPTY --dry-run" would
+# otherwise turn the requested preview into a cleanup. Other single-dash values
+# stay valid (target NAMEs such as "-n" or "-e" are supported); only -d is refused.
+require_non_option_value() {
+  local flag="$1" val="$2"
+  if [[ "$val" =~ ^--[A-Za-z] || "$val" == -d ]]; then
+    echo -e "${RED}Error: $flag requires a value, got option '$val'.${NC}" >&2
+    exit 1
+  fi
+}
+
 # Parse command line options
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -226,6 +237,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --config requires a file path argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       CONFIG_FILE="$2"
       shift 2
       ;;
@@ -281,6 +293,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --risk requires a level argument (safe, medium, danger).${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       MAX_RISK="$2"
       shift 2
       ;;
@@ -289,6 +302,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --exclude requires a pattern argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       EXCLUDE_PATTERNS="$2"
       shift 2
       ;;
@@ -297,6 +311,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --restore requires a session argument (latest or timestamp).${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       RESTORE_TARGET="$2"
       shift 2
       ;;
@@ -309,6 +324,7 @@ while [[ $# -gt 0 ]]; do
         fi
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       if [[ -n "$RESTORE_ONLY" && "$RESTORE_ONLY_MODE" != "$1" ]]; then
         echo "Error: --only and --only-exact cannot be combined." >&2
         exit 1
@@ -322,6 +338,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --only-target requires a pattern argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       ONLY_TARGET="$2"
       shift 2
       ;;
@@ -330,6 +347,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --exclude-target requires a pattern argument.${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       EXCLUDE_TARGET="$2"
       shift 2
       ;;
@@ -386,6 +404,7 @@ while [[ $# -gt 0 ]]; do
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, max-size:SIZE, or timestamp).${NC}" >&2
         exit 1
       fi
+      require_non_option_value "$1" "$2"
       PURGE_TARGET="$2"
       shift 2
       ;;

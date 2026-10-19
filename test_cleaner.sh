@@ -1392,6 +1392,56 @@ else
   exit 1
 fi
 
+# 15b. Test Case: Value-taking options refuse an option name as their value
+setup_mock_env
+if run_test_case "Refuse Option Value (--force -e --dry-run)" 1 "opt_val_exclude.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force -e --dry-run \
+   && grep -qF "Error: -e requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_exclude.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force -e --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force -e --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_exclude.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --exclude-target --dry-run)" 1 "opt_val_exclude_target.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --exclude-target --dry-run \
+   && grep -qF "Error: --exclude-target requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_exclude_target.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --exclude-target --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --exclude-target --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_exclude_target.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+printf 'dash-glob-keep\n' > "$MOCK_HOME/.npm/_cacache/-xfile.txt"
+if run_test_case "Accept Dash-Leading Glob Value (-e '-x*')" 0 "opt_val_dash_glob.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force -e '-x*' \
+   && [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/-xfile.txt" ]]; then
+  echo -e "${GREEN}PASS: -e '-x*' is accepted and preserves matching dash-leading files.${NC}"
+else
+  echo -e "${RED}FAIL: -e '-x*' was rejected or did not exclude matching files.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_dash_glob.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force -e -d)" 1 "opt_val_exclude_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force -e -d \
+   && grep -qF "Error: -e requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_exclude_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force -e -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force -e -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_exclude_short.log" 2>/dev/null || true
+  exit 1
+fi
+
 # 16. Test Case: Canonicalization ..-traversal escape is FOUND at the canonical outside path
 setup_mock_env
 dotdot_canon="$(realpath -m "$MOCK_HOME/../dotdot_escape_probe")"

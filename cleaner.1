@@ -554,6 +554,30 @@ Print the tool version and exit.
 .TP
 .BR \-h ", " \-\-help
 Display the usage message and exit.
+.PP
+Value-taking options
+.RB ( \-c / \-\-config ,
+.BR \-r / \-\-risk ,
+.BR \-e / \-\-exclude ,
+.BR \-\-restore ,
+.BR \-\-only ,
+.BR \-\-only\-exact ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+and
+.BR \-\-purge\-sessions )
+refuse a following long option
+.RB ( \-\- ...)
+or
+.B \-d
+as their argument and exit 1 with
+.B "Error: \fI<flag>\fB requires a value, got option '\fI<token>\fB'."
+before any analysis or deletion, so a missing value never turns a dry-run flag
+into a pattern. Other dash-leading values, such as
+.B \-x*
+or a target NAME of
+.BR \-n ,
+are still accepted.
 .SH ENVIRONMENT
 .TP
 .B LINUX_CLEANER_CONFIG
