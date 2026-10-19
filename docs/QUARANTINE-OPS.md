@@ -2,7 +2,7 @@
 
 ## On-disk layout
 
-Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine.meta` recording original paths and ownership. Each session directory is created with mode `0700` (and any missing parent directories under `~/.cache/linux-cleaner/quarantine` are created `0700` when created by the tool).
+Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine.meta` recording original paths and ownership. Each session directory is created with mode `0700` (and any missing parent directories under `~/.cache/linux-cleaner/quarantine` are created `0700` when created by the tool). A symlink at that quarantine directory is refused: trash cleanup, `--list-sessions`, `--restore`, and `--purge-sessions` exit non-zero and move nothing, and `--doctor` prints a warning.
 
 Restore trusts this metadata for source and destination paths, privilege use, and ownership. Keep the quarantine tree private and restore only sessions you trust; metadata is not authenticated or comprehensively validated against tampering.
 

@@ -1804,7 +1804,19 @@ emit_list_sessions_json() {
   printf ']}\n'
 }
 
+# find does not descend a symlinked start point, so a link at the quarantine
+# base hides every session written through it. Refuse before any move or any
+# "no sessions" report. A missing base is not a symlink and stays a normal empty result.
+refuse_symlinked_quarantine() {
+  local quarantine_base="$1"
+  if [[ -L "$quarantine_base" ]]; then
+    echo -e "${RED}Error: Refusing symlinked quarantine directory '$quarantine_base'.${NC}" >&2
+    return 1
+  fi
+}
+
 list_quarantine_sessions() {
+  refuse_symlinked_quarantine "$HOME/.cache/linux-cleaner/quarantine" || return 1
   if [[ "$JSON_OUTPUT" == true ]]; then
     emit_list_sessions_json
     return "$?"
@@ -1845,6 +1857,8 @@ list_quarantine_sessions() {
 purge_quarantine_sessions() {
   local target="$1"
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+  # Return, not exit: inline retention must still record its failure.
+  refuse_symlinked_quarantine "$quarantine_base" || return 1
 
   local days=""
   local max_size_spec="" max_size_bytes=0 max_size_rc=0
@@ -2191,7 +2205,8 @@ reset_session_mtime() {
 restore_quarantine() {
   local target="$1"
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
-  
+  refuse_symlinked_quarantine "$quarantine_base" || exit 1
+
   if [[ ! -d "$quarantine_base" ]]; then
     echo -e "${RED}Error: No quarantine directory exists at '$quarantine_base'.${NC}" >&2
     exit 1
@@ -3442,7 +3457,9 @@ run_doctor() {
   fi
 
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_dots=""
-  if [[ -d "$quarantine_base" && ! -L "$quarantine_base" ]] && \
+  if [[ -L "$quarantine_base" ]]; then
+    printf 'WARN: quarantine: symlinked quarantine directory refused (%s)\n' "$quarantine_base"
+  elif [[ -d "$quarantine_base" && ! -L "$quarantine_base" ]] && \
      ! session_dots=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -printf '.' 2>/dev/null); then
     printf 'WARN: quarantine: cannot enumerate sessions (%s)\n' "$quarantine_base"
   else
@@ -4225,7 +4242,10 @@ for i in "${!parsed_names[@]}"; do
     if [[ -z "$QUARANTINE_DIR" ]]; then
       time_stamp=$(date +%Y-%m-%d_%H-%M-%S)
       quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+      refuse_symlinked_quarantine "$quarantine_base" || exit 1
       (umask 077; mkdir -p "$quarantine_base")
+      # mkdir -p can race with a swap of the base for a symlink.
+      refuse_symlinked_quarantine "$quarantine_base" || exit 1
       session_suffix=0
       while true; do
         if [[ "$session_suffix" -eq 0 ]]; then

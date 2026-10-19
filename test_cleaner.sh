@@ -849,6 +849,64 @@ else
   exit 1
 fi
 
+# A symlinked quarantine base hides sessions from find, which does not descend
+# its start point. Trash must move nothing; readers must not claim the base is empty.
+setup_mock_env
+symlink_q_real="$TEST_ENV_DIR/quarantine_elsewhere"
+mkdir -p "$symlink_q_real/2026-01-01_00-00-00" "$MOCK_HOME/.cache/linux-cleaner"
+echo hidden > "$symlink_q_real/2026-01-01_00-00-00/payload"
+ln -s "$symlink_q_real" "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+symlink_q_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+symlink_q_msg="Error: Refusing symlinked quarantine directory '$symlink_q_base'."
+symlink_q_npm="$MOCK_HOME/.npm/_cacache/cache1.txt"
+symlink_q_before=$(find "$symlink_q_real" -printf '%p\n' | sort)
+if ! run_test_case "Trash Refuses Symlinked Quarantine Directory" 1 "trash_symlink_q.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force \
+   || ! grep -qF "$symlink_q_msg" "$TEST_ENV_DIR/trash_symlink_q.log" \
+   || [[ ! -f "$symlink_q_npm" ]] \
+   || [[ ! -L "$symlink_q_base" ]] \
+   || [[ "$(find "$symlink_q_real" -printf '%p\n' | sort)" != "$symlink_q_before" ]]; then
+  echo -e "${RED}FAIL: symlinked quarantine was not refused or trash wrote through the link.${NC}"
+  cat "$TEST_ENV_DIR/trash_symlink_q.log" 2>/dev/null || true
+  exit 1
+fi
+if ! run_test_case "List Sessions Refuses Symlinked Quarantine Directory" 1 "list_symlink_q.log" \
+     --list-sessions \
+   || ! grep -qF "$symlink_q_msg" "$TEST_ENV_DIR/list_symlink_q.log" \
+   || grep -q "No quarantine sessions found" "$TEST_ENV_DIR/list_symlink_q.log" \
+   || [[ "$(find "$symlink_q_real" -printf '%p\n' | sort)" != "$symlink_q_before" ]]; then
+  echo -e "${RED}FAIL: --list-sessions did not refuse a symlinked quarantine directory.${NC}"
+  cat "$TEST_ENV_DIR/list_symlink_q.log" 2>/dev/null || true
+  exit 1
+fi
+if ! run_test_case "Restore Refuses Symlinked Quarantine Directory" 1 "restore_symlink_q.log" \
+     --restore latest \
+   || ! grep -qF "$symlink_q_msg" "$TEST_ENV_DIR/restore_symlink_q.log" \
+   || grep -q "No quarantined sessions found" "$TEST_ENV_DIR/restore_symlink_q.log" \
+   || [[ ! -f "$symlink_q_real/2026-01-01_00-00-00/payload" ]]; then
+  echo -e "${RED}FAIL: --restore did not refuse a symlinked quarantine directory.${NC}"
+  cat "$TEST_ENV_DIR/restore_symlink_q.log" 2>/dev/null || true
+  exit 1
+fi
+if ! run_test_case "Purge Sessions Refuses Symlinked Quarantine Directory" 1 "purge_symlink_q.log" \
+     --purge-sessions all --force \
+   || ! grep -qF "$symlink_q_msg" "$TEST_ENV_DIR/purge_symlink_q.log" \
+   || grep -q "No quarantine sessions found" "$TEST_ENV_DIR/purge_symlink_q.log" \
+   || [[ ! -f "$symlink_q_real/2026-01-01_00-00-00/payload" ]]; then
+  echo -e "${RED}FAIL: --purge-sessions did not refuse a symlinked quarantine directory.${NC}"
+  cat "$TEST_ENV_DIR/purge_symlink_q.log" 2>/dev/null || true
+  exit 1
+fi
+if ! run_test_case "Doctor Symlinked Quarantine Warning" 0 "doctor_symlink_q.log" \
+     --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+   || ! grep -qxF "WARN: quarantine: symlinked quarantine directory refused ($symlink_q_base)" "$TEST_ENV_DIR/doctor_symlink_q.log" \
+   || grep -q "^INFO: quarantine:" "$TEST_ENV_DIR/doctor_symlink_q.log"; then
+  echo -e "${RED}FAIL: --doctor did not warn about a symlinked quarantine directory.${NC}"
+  cat "$TEST_ENV_DIR/doctor_symlink_q.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: a symlinked quarantine directory is refused by trash, list, restore and purge, and --doctor warns.${NC}"
+
 # 6b. Test Case: same-second trash runs allocate distinct, chronologically sortable sessions
 setup_mock_env
 cat << 'EOF' > "$TEST_ENV_DIR/bin/date"

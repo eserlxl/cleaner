@@ -137,6 +137,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Refuse a symlinked `~/.cache/linux-cleaner/quarantine` directory during trash cleanup, `--list-sessions`, `--restore`, and `--purge-sessions` (`Error: Refusing symlinked quarantine directory '<path>'.`) so sessions behind the link are not reported as missing and nothing is moved, and warn from `--doctor` (`WARN: quarantine: symlinked quarantine directory refused (<path>)`).
+
 - Stop an aged `--trash` quarantine from moving more files once its `quarantine.meta` record cannot be written, so the rest of the target stays in place instead of landing as unrecorded payload that `--restore` cannot bring back.
 
 - Stop fish completion from offering working-directory files for a bare `cleaner` argument, which the CLI refuses as an unknown option; `--config`, `--log`, `--only-path` and `--exclude-path` still complete files.
