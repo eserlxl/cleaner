@@ -2,7 +2,7 @@
 # makepkg reads these variables and supplies srcdir/pkgdir.
 # shellcheck shell=bash disable=SC2034,SC2154
 pkgname=linux-cleaner
-pkgver=1.5.0
+pkgver=1.6.0
 pkgrel=1
 pkgdesc="Safe, configuration-driven cleaner for caches and temporary files"
 arch=('any')
@@ -18,7 +18,7 @@ source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Pinned sha256 of the v$pkgver release tarball. After each version bump, run
 # `updpkgsums` once the tag is pushed (see RELEASING.md "Packaging"); never
 # publish with 'SKIP'.
-sha256sums=('0221620d52298aac163923f454bf0cd00e782709aade532b9998bc19a0c16c9f')
+sha256sums=('SKIP')
 
 package() {
   cd "$srcdir/cleaner-$pkgver" || return 1

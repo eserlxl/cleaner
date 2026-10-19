@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-19
+
 ### Changed
 
 - Add `make lint`, which runs shellcheck over every tracked shell file listed once in the Makefile's `SHELLCHECK_FILES` (now also `scripts/validate-runbook-examples.sh`, `completions/cleaner.bash`, `linux-cleaner.install` and `PKGBUILD`); `make pre-release`, CI and the contributor docs all run it, and the suite fails when a tracked shell file is missing from the list.
@@ -610,7 +612,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.6.0
 [1.5.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.5.0
 [1.4.2]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.2
 [1.4.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.4.1
