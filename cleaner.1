@@ -310,7 +310,9 @@ non-interactive
 .BR "sudo \-n" ;
 .BR notify\-send ;
 .B "systemctl \-\-user is\-enabled"
-for the clean, retention, and monitor timers; and the quarantine session count)
+for the clean, retention, and monitor timers; a WARN when the enabled clean
+timer's env file sets LINUX_CLEANER_TRASH without LINUX_CLEANER_TRASH_KEEP_DAYS or
+an enabled retention timer; and the quarantine session count)
 and exit 0 when cleanup can run or 1 when the configuration file is missing or
 unreadable or GNU userland is missing. Requires no configuration file to print
 the checklist. Cannot be combined with

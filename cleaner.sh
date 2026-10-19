@@ -3417,6 +3417,27 @@ run_doctor() {
   fi
   printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
 
+  # The clean unit reads this env file; trash mode there needs a retention bound.
+  local timer_env="$HOME/.config/linux-cleaner/env" env_line env_trash="" env_keep=""
+  if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+      env_line=$(trim "$env_line")
+      case "$env_line" in
+        LINUX_CLEANER_TRASH=*) env_trash="${env_line#*=}" ;;
+        LINUX_CLEANER_TRASH_KEEP_DAYS=*) env_keep="${env_line#*=}" ;;
+      esac
+    done < "$timer_env"
+    env_trash="${env_trash//[\"\']/}"
+    env_keep="${env_keep//[\"\']/}"
+    case "$env_trash" in
+      1|true|TRUE|yes|YES)
+        if [[ -z "$env_keep" && "$retention_timer" != enabled ]]; then
+          printf 'WARN: quarantine retention: %s enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine\n' "$timer_env"
+        fi
+        ;;
+    esac
+  fi
+
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_dots=""
   if [[ -d "$quarantine_base" && ! -L "$quarantine_base" ]] && \
      ! session_dots=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -printf '.' 2>/dev/null); then

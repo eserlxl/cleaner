@@ -11253,6 +11253,50 @@ if [[ "$doc_all_ec" -ne 0 ]] \
 fi
 echo -e "${GREEN}PASS: --doctor prints OK/INFO lines for an all-present environment without touching any lock or file.${NC}"
 
+# The clean unit's env file enabling trash mode needs a retention bound; --doctor
+# warns only when the clean timer is enabled and neither bound is configured.
+echo -e "\n${BOLD}Test Case: Doctor Quarantine Retention Warning${NC}"
+doc_env_dir="$MOCK_HOME/.config/linux-cleaner"
+mkdir -p "$doc_env_dir"
+doc_retention_state=disabled
+doc_retention_case() {
+  local label="$1" expect="$2" ec=0
+  cat > "$TEST_ENV_DIR/bin/systemctl" <<DOC_RET_SYSTEMCTL_EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "--user" && "\${2:-}" == "is-enabled" ]]; then
+  case "\${3:-}" in
+    linux-cleaner-clean.timer) echo "enabled"; exit 0 ;;
+    linux-cleaner-retention.timer) echo "$doc_retention_state"; exit 0 ;;
+    linux-cleaner-monitor.timer) echo "disabled"; exit 1 ;;
+  esac
+fi
+exit 1
+DOC_RET_SYSTEMCTL_EOF
+  chmod +x "$TEST_ENV_DIR/bin/systemctl"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+    < /dev/null > "$TEST_ENV_DIR/doctor_retention.log" 2>&1 || ec=$?
+  if [[ "$ec" -ne 0 ]] \
+     || { [[ "$expect" == warn ]] && ! grep -qxF "WARN: quarantine retention: $doc_env_dir/env enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine" "$TEST_ENV_DIR/doctor_retention.log"; } \
+     || { [[ "$expect" == none ]] && grep -q "quarantine retention" "$TEST_ENV_DIR/doctor_retention.log"; }; then
+    echo -e "${RED}FAIL: --doctor quarantine retention check ($label) expected '$expect' (ec=$ec).${NC}"
+    cat "$TEST_ENV_DIR/doctor_retention.log" 2>/dev/null || true
+    exit 1
+  fi
+}
+printf 'LINUX_CLEANER_FORCE=1\nLINUX_CLEANER_TRASH="1"\n# LINUX_CLEANER_TRASH_KEEP_DAYS=30\n' > "$doc_env_dir/env"
+doc_retention_case "trash without retention" warn
+printf 'LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=30\n' > "$doc_env_dir/env"
+doc_retention_case "trash with keep days" none
+printf 'LINUX_CLEANER_TRASH=yes\n' > "$doc_env_dir/env"
+doc_retention_state=enabled
+doc_retention_case "trash with retention timer" none
+doc_retention_state=disabled
+printf 'LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH=0\n' > "$doc_env_dir/env"
+doc_retention_case "trash disabled by a later line" none
+rm -f "$doc_env_dir/env"
+echo -e "${GREEN}PASS: --doctor warns when the daily timer quarantines with no retention bound, and only then.${NC}"
+
 # Checkout fallback when XDG config is absent; the /etc candidate is redirected
 # in a copy so the host's own install cannot answer instead.
 rm -rf "$doctor_xdg" "$MOCK_HOME/.cache/linux-cleaner/quarantine"
