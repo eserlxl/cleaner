@@ -3304,10 +3304,10 @@ check_gnu_userland() {
 
 # Read-only environment checklist: explain config resolution, GNU userland,
 # optional helper binaries, user timer states, and quarantine session count.
-# Exits 0 when cleanup can run, or 1 when the config is missing or unreadable
-# or GNU userland is missing.
+# Exits 0 when cleanup can run, or 1 when the config is missing, unreadable,
+# or invalid, or GNU userland is missing.
 run_doctor() {
-  local doctor_rc=0 cfg_path="$CONFIG_FILE" cfg_source="explicit" bin_path i
+  local doctor_rc=0 cfg_path="$CONFIG_FILE" cfg_source="explicit" bin_path i cfg_err="" cfg_rc=0
   local -a cfg_labels=(XDG /etc checkout)
   set_default_config_candidates || return 1
   if [[ -z "$cfg_path" ]]; then
@@ -3333,7 +3333,18 @@ run_doctor() {
     printf 'WARN: config: %s (%s, not readable)\n' "$cfg_path" "$cfg_source"
     doctor_rc=1
   else
-    printf 'OK: config: %s (%s)\n' "$cfg_path" "$cfg_source"
+    # Subshell: validate_config_file exits 1, and the checklist must continue.
+    # The CONFIG_FILE prefix applies only there, so the caller's value stays put.
+    cfg_err=$(CONFIG_FILE="$cfg_path" validate_config_file 2>&1 >/dev/null) || cfg_rc=$?
+    if [[ "$cfg_rc" -ne 0 ]]; then
+      cfg_err=$(printf '%s' "$cfg_err" | sed $'s/\033\\[[0-9;]*m//g')
+      cfg_err="${cfg_err//$'\n'/ }"
+      cfg_err=$(trim "$cfg_err")
+      printf 'WARN: config: %s (%s, %s)\n' "$cfg_path" "$cfg_source" "$cfg_err"
+      doctor_rc=1
+    else
+      printf 'OK: config: %s (%s)\n' "$cfg_path" "$cfg_source"
+    fi
   fi
 
   if check_gnu_userland; then

@@ -11484,7 +11484,7 @@ fi
 rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
 echo -e "${GREEN}PASS: early non-zero cleanup exit records linux_cleaner_last_run_success 0 with a current timestamp.${NC}"
 
-# --doctor: read-only environment checklist (config resolution, check_gnu_userland,
+# --doctor: read-only environment checklist (config resolution and schema, check_gnu_userland,
 # pgrep, flock, git, sudo -n, notify-send, user timers, quarantine session count).
 echo -e "\n${BOLD}Test Case: Doctor Mode Environment Checklist${NC}"
 setup_mock_env
@@ -11684,6 +11684,75 @@ if [[ "$EUID" -ne 0 ]]; then
   fi
   echo -e "${GREEN}PASS: --doctor warns when the quarantine directory cannot be enumerated.${NC}"
 fi
+
+# A readable config with a schema error warns and exits 1; the rest of the
+# checklist still prints. A valid config stays OK.
+echo -e "\n${BOLD}Test Case: Doctor Invalid Config Schema Exits 1${NC}"
+doc_schema_cfg="$TEST_ENV_DIR/doctor_schema.conf"
+rm -rf "$MOCK_HOME/.cache/linux-cleaner"
+doc_schema_assert() {
+  local label="$1" cfg="$2" source="$3" fragment="$4" ec="$5"
+  if [[ "$ec" -ne 1 ]] \
+     || ! grep -qF "WARN: config: ${cfg} (${source}, " "$TEST_ENV_DIR/doctor_schema.log" \
+     || ! grep -qF "$fragment" "$TEST_ENV_DIR/doctor_schema.log" \
+     || ! grep -q "^OK: check_gnu_userland:" "$TEST_ENV_DIR/doctor_schema.log" \
+     || ! grep -q "^INFO: quarantine:" "$TEST_ENV_DIR/doctor_schema.log" \
+     || ! awk 'BEGIN { w = 0; g = 0 } /^WARN: config: / { w = NR } /^OK: check_gnu_userland:/ { g = NR } END { exit !(w > 0 && g > w) }' "$TEST_ENV_DIR/doctor_schema.log" \
+     || [[ -e "$MOCK_HOME/.cache/linux-cleaner" ]]; then
+    echo -e "${RED}FAIL: --doctor schema check ($label) did not warn and continue (ec=$ec).${NC}"
+    cat "$TEST_ENV_DIR/doctor_schema.log" "$TEST_ENV_DIR/doctor_schema.err" 2>/dev/null || true
+    exit 1
+  fi
+}
+doc_schema_explicit() {
+  local label="$1" fragment="$2" ec=0
+  HOME="$MOCK_HOME" "$CLEANER_SH" --doctor --config "$doc_schema_cfg" \
+    < /dev/null > "$TEST_ENV_DIR/doctor_schema.log" 2> "$TEST_ENV_DIR/doctor_schema.err" || ec=$?
+  doc_schema_assert "$label" "$doc_schema_cfg" "explicit" "$fragment" "$ec"
+}
+printf 'bad_line_only\n' > "$doc_schema_cfg"
+doc_schema_explicit "bad field count" "expected 5-7 fields"
+printf 'bogus|Name|/tmp/x|desc|0\n' > "$doc_schema_cfg"
+doc_schema_explicit "invalid risk" "Unknown risk level"
+printf 'safe|Name|/tmp/x|desc|0||action:not_a_real_action\n' > "$doc_schema_cfg"
+doc_schema_explicit "unknown action" "Unknown action"
+printf 'safe|Name|/tmp/x|desc|nope\n' > "$doc_schema_cfg"
+doc_schema_explicit "non-integer MIN_AGE_DAYS" "invalid MIN_AGE_DAYS"
+printf 'protect|/tmp/x|extra\n' > "$doc_schema_cfg"
+doc_schema_explicit "bad protect line" "protect line requires 2 fields"
+doc_schema_ok_ec=0
+HOME="$MOCK_HOME" "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+  < /dev/null > "$TEST_ENV_DIR/doctor_schema_ok.log" 2> "$TEST_ENV_DIR/doctor_schema_ok.err" || doc_schema_ok_ec=$?
+if [[ "$doc_schema_ok_ec" -ne 0 ]] \
+   || ! grep -qxF "OK: config: $TEST_ENV_DIR/test_cleaner.conf (explicit)" "$TEST_ENV_DIR/doctor_schema_ok.log" \
+   || grep -q "^WARN: config:" "$TEST_ENV_DIR/doctor_schema_ok.log" \
+   || [[ -e "$MOCK_HOME/.cache/linux-cleaner" ]]; then
+  echo -e "${RED}FAIL: --doctor with a valid config did not print OK: config and exit 0 (ec=$doc_schema_ok_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_schema_ok.log" "$TEST_ENV_DIR/doctor_schema_ok.err" 2>/dev/null || true
+  exit 1
+fi
+doc_schema_xdg="$TEST_ENV_DIR/doctor_schema_xdg"
+mkdir -p "$doc_schema_xdg/linux-cleaner"
+printf 'bad_line_only\n' > "$doc_schema_xdg/linux-cleaner/cleaner.conf"
+doc_schema_ec=0
+env -u LINUX_CLEANER_CONFIG XDG_CONFIG_HOME="$doc_schema_xdg" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_schema.log" 2> "$TEST_ENV_DIR/doctor_schema.err" || doc_schema_ec=$?
+doc_schema_assert "XDG source" "$doc_schema_xdg/linux-cleaner/cleaner.conf" "XDG" "expected 5-7 fields" "$doc_schema_ec"
+doc_schema_root="$TEST_ENV_DIR/doctor_schema_src"
+mkdir -p "$doc_schema_root/etc" "$doc_schema_root/xdg-empty"
+sed 's|"/etc/linux-cleaner/cleaner.conf"|"'"$doc_schema_root"'/etc/cleaner.conf"|' "$CLEANER_SH" > "$doc_schema_root/cleaner.sh"
+printf 'bad_line_only\n' > "$doc_schema_root/etc/cleaner.conf"
+doc_schema_ec=0
+env -u LINUX_CLEANER_CONFIG XDG_CONFIG_HOME="$doc_schema_root/xdg-empty" HOME="$MOCK_HOME" \
+  bash "$doc_schema_root/cleaner.sh" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_schema.log" 2> "$TEST_ENV_DIR/doctor_schema.err" || doc_schema_ec=$?
+doc_schema_assert "/etc source" "$doc_schema_root/etc/cleaner.conf" "/etc" "expected 5-7 fields" "$doc_schema_ec"
+rm -f "$doc_schema_root/etc/cleaner.conf"
+printf 'bad_line_only\n' > "$doc_schema_root/cleaner.conf"
+doc_schema_ec=0
+env -u LINUX_CLEANER_CONFIG XDG_CONFIG_HOME="$doc_schema_root/xdg-empty" HOME="$MOCK_HOME" \
+  bash "$doc_schema_root/cleaner.sh" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_schema.log" 2> "$TEST_ENV_DIR/doctor_schema.err" || doc_schema_ec=$?
+doc_schema_assert "checkout source" "$doc_schema_root/cleaner.conf" "checkout" "expected 5-7 fields" "$doc_schema_ec"
+echo -e "${GREEN}PASS: --doctor exits 1 on an invalid config schema, still prints the later checklist, and keeps OK for a valid config.${NC}"
 
 # Failing GNU userland probe prints WARN and exits 1.
 cat > "$TEST_ENV_DIR/bin/stat" <<'DOC_BAD_STAT_EOF'
