@@ -9644,6 +9644,70 @@ if ! run_test_case "Purge Sessions Max Size Invalid" 1 "purge_max_size_invalid.l
 fi
 echo -e "${GREEN}PASS: --purge-sessions max-size:SIZE keeps newest sessions within budget and validates SIZE.${NC}"
 
+# --purge-sessions keep-latest:N: keep the N newest sessions and purge older
+# ones; exit 0 when at most N sessions exist or when no quarantine base exists;
+# exit 1 on an invalid count.
+setup_mock_env
+kl_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+kl_s1="$kl_qbase/2026-01-01_00-00-00"
+kl_s2="$kl_qbase/2026-01-02_00-00-00"
+kl_s3="$kl_qbase/2026-01-03_00-00-00"
+mkdir -p "$kl_s1" "$kl_s2" "$kl_s3"
+printf 'one\n' > "$kl_s1/payload.txt"
+printf 'two\n' > "$kl_s2/payload.txt"
+printf 'three\n' > "$kl_s3/payload.txt"
+
+if ! run_test_case "Purge Sessions Keep Latest Keeps Newest" 0 "purge_keep_latest_keep.log" \
+       --purge-sessions keep-latest:2 --force \
+   || [[ -d "$kl_s1" ]] \
+   || [[ ! -d "$kl_s2" ]] \
+   || [[ ! -d "$kl_s3" ]] \
+   || ! grep -q "Purged 2026-01-01_00-00-00" "$TEST_ENV_DIR/purge_keep_latest_keep.log" \
+   || ! grep -q "Purged 1 session(s)." "$TEST_ENV_DIR/purge_keep_latest_keep.log"; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:2 did not keep the two newest sessions and purge the oldest.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_keep.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Purge Sessions Keep Latest Nothing To Purge" 0 "purge_keep_latest_none.log" \
+       --purge-sessions keep-latest:2 --force \
+   || ! grep -qF "No quarantine sessions beyond the newest 2." "$TEST_ENV_DIR/purge_keep_latest_none.log" \
+   || [[ ! -d "$kl_s2" ]] \
+   || [[ ! -d "$kl_s3" ]]; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:2 when within count did not report nothing to purge and keep sessions.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_none.log" 2>/dev/null || true
+  exit 1
+fi
+
+# A count too large for shell arithmetic keeps everything instead of wrapping.
+if ! run_test_case "Purge Sessions Keep Latest Huge Count" 0 "purge_keep_latest_huge.log" \
+       --purge-sessions keep-latest:18446744073709551615 --force \
+   || ! grep -qF "No quarantine sessions beyond the newest 18446744073709551615." "$TEST_ENV_DIR/purge_keep_latest_huge.log" \
+   || [[ ! -d "$kl_s2" ]] \
+   || [[ ! -d "$kl_s3" ]]; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest with a huge count purged a session.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_huge.log" 2>/dev/null || true
+  exit 1
+fi
+
+rm -rf "$kl_qbase"
+if ! run_test_case "Purge Sessions Keep Latest Missing Base" 0 "purge_keep_latest_missing_base.log" \
+       --purge-sessions keep-latest:2 --force \
+   || ! grep -qF "No quarantine sessions beyond the newest 2." "$TEST_ENV_DIR/purge_keep_latest_missing_base.log"; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:2 without quarantine base did not exit 0 with nothing-to-purge message.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_missing_base.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Purge Sessions Keep Latest Invalid" 1 "purge_keep_latest_invalid.log" \
+       --purge-sessions keep-latest:x --force \
+   || ! grep -qF "Error: Invalid count in 'keep-latest:x'. Use keep-latest:<count>, e.g. keep-latest:5." "$TEST_ENV_DIR/purge_keep_latest_invalid.log"; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:x did not reject an invalid count.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_invalid.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --purge-sessions keep-latest:N keeps newest sessions within count and validates count.${NC}"
+
 # --min-age DAYS / LINUX_CLEANER_MIN_AGE: raise every ordinary target's age
 # threshold for one run, keep larger row thresholds, skip action:* rows, and
 # reject invalid values or incompatible modes.
@@ -9895,7 +9959,7 @@ if ! (
   COMP_WORDS=(cleaner --purge-sessions "")
   COMP_CWORD=2
   HOME="$MOCK_HOME" _cleaner
-  [[ "${COMPREPLY[*]}" == "latest all older-than: max-size:" ]] || exit 1
+  [[ "${COMPREPLY[*]}" == "latest all older-than: max-size: keep-latest:" ]] || exit 1
 
   echo -e "\n${BOLD}Test Case: Bash Quarantine Session Completion${NC}"
   mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
@@ -9906,7 +9970,7 @@ if ! (
     if [[ "$session_option" == --restore ]]; then
       [[ "${COMPREPLY[*]}" == "latest 2026-10-18_12-34-56" ]] || exit 1
     else
-      [[ "${COMPREPLY[*]}" == "latest all older-than: max-size: 2026-10-18_12-34-56" ]] || exit 1
+      [[ "${COMPREPLY[*]}" == "latest all older-than: max-size: keep-latest: 2026-10-18_12-34-56" ]] || exit 1
     fi
     COMP_WORDS=(cleaner "$session_option" 2026-)
     HOME="$MOCK_HOME" _cleaner
@@ -9988,6 +10052,7 @@ zpty -d z
 ZSH_PROBE
   zsh_comp_failed=""
   for zcase in "ol|<cleaner --purge-sessions older-than:>" "ma|<cleaner --purge-sessions max-size:>" \
+               "ke|<cleaner --purge-sessions keep-latest:>" \
                "la|<cleaner --purge-sessions latest >" "al|<cleaner --purge-sessions all >"; do
     rm -f "$TEST_ENV_DIR/zsh_comp.out"
     if ! HOME="$MOCK_HOME" timeout 20 zsh -f "$TEST_ENV_DIR/zsh_comp_probe.zsh" "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/zsh_comp.out" \
@@ -10000,7 +10065,7 @@ ZSH_PROBE
     echo -e "${RED}FAIL: zsh did not complete the --purge-sessions selectors:$zsh_comp_failed.${NC}"
     exit 1
   fi
-  echo -e "${GREEN}PASS: zsh completes the --purge-sessions selectors, without a space after older-than: and max-size:.${NC}"
+  echo -e "${GREEN}PASS: zsh completes the --purge-sessions selectors, without a space after older-than:, max-size:, and keep-latest:.${NC}"
   echo -e "\n${BOLD}Test Case: Zsh Quarantine Session Completion${NC}"
   mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
   touch "$MOCK_HOME/.cache/linux-cleaner/quarantine/not-a-session"
@@ -10033,7 +10098,7 @@ if command -v fish > /dev/null 2>&1; then
       for option in --restore --purge-sessions
         set expected latest
         if test "$option" = --purge-sessions
-          set -a expected all older-than: max-size:
+          set -a expected all older-than: max-size: keep-latest:
         end
         if test "$argv[2]" = present
           set -a expected 2026-10-18_12-34-56

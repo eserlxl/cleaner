@@ -514,7 +514,7 @@ or
 .TP
 .B \-\-purge\-sessions \fISESSION\fR
 Permanently delete quarantine session(s) to reclaim space:
-.IR latest ", " all ", " older\-than:DAYS ", " max\-size:SIZE ", or a specific timestamp."
+.IR latest ", " all ", " older\-than:DAYS ", " max\-size:SIZE ", " keep\-latest:N ", or a specific timestamp."
 A named timestamp must likewise be an immediate child name (no path separators or
 .BR . / .. ).
 The
@@ -537,6 +537,14 @@ keeping the newest sessions within the budget; it exits 0 when no sessions
 exceed the budget (or when no quarantine directory exists) and exits 1 on a
 malformed or overflowing
 .IR SIZE .
+The
+.I keep\-latest:N
+selector lists sessions newest-first and purges every session after the first
+.I N
+(a non-negative decimal integer), exiting 0 when at most
+.I N
+sessions exist (or when no quarantine directory exists) and exiting 1 on a
+malformed count.
 Irreversible; the confirmation prompt names every target it would destroy, and is
 skipped only when
 .B \-\-force

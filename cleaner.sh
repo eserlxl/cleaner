@@ -68,7 +68,7 @@ Options:
   --min-free SIZE            With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G).
   --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
-  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible.
+  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
@@ -401,7 +401,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
-        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, max-size:SIZE, or timestamp).${NC}" >&2
+        echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp).${NC}" >&2
         exit 1
       fi
       require_non_option_value "$1" "$2"
@@ -1787,6 +1787,7 @@ purge_quarantine_sessions() {
 
   local days=""
   local max_size_spec="" max_size_bytes=0 max_size_rc=0
+  local keep_count=""
 
   if [[ "$target" == older-than:* ]]; then
     # Age-based retention: what makes trash mode viable unattended. Without it a
@@ -1813,6 +1814,16 @@ purge_quarantine_sessions() {
     fi
     if [[ ! -d "$quarantine_base" ]]; then
       echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
+      return 0
+    fi
+  elif [[ "$target" == keep-latest:* ]]; then
+    keep_count="${target#keep-latest:}"
+    if [[ ! "$keep_count" =~ ^[0-9]+$ ]]; then
+      echo -e "${RED}Error: Invalid count in '$target'. Use keep-latest:<count>, e.g. keep-latest:5.${NC}" >&2
+      exit 1
+    fi
+    if [[ ! -d "$quarantine_base" ]]; then
+      echo -e "${YELLOW}No quarantine sessions beyond the newest ${keep_count}.${NC}"
       return 0
     fi
   fi
@@ -1886,6 +1897,32 @@ purge_quarantine_sessions() {
     local idx
     for (( idx=${#over_budget[@]}-1; idx>=0; idx-- )); do
       targets+=("${over_budget[idx]}")
+    done
+  elif [[ "$target" == keep-latest:* ]]; then
+    local s
+    local -a all_sessions=() over_count=()
+    while IFS= read -r s; do
+      [[ -n "$s" ]] && all_sessions+=("$s")
+    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
+    if ! wait "$!"; then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      return 1
+    fi
+    # Compare as decimal text first: a huge count must keep everything, never
+    # overflow into a negative index that would purge the newest sessions.
+    local idx keep_n=${keep_count#"${keep_count%%[!0]*}"}
+    keep_n=${keep_n:-0}
+    if [[ ${#keep_n} -le 9 ]]; then
+      for (( idx=keep_n; idx<${#all_sessions[@]}; idx++ )); do
+        over_count+=("${all_sessions[idx]}")
+      done
+    fi
+    if [[ ${#over_count[@]} -eq 0 ]]; then
+      echo -e "${YELLOW}No quarantine sessions beyond the newest ${keep_count}.${NC}"
+      return 0
+    fi
+    for (( idx=${#over_count[@]}-1; idx>=0; idx-- )); do
+      targets+=("${over_count[idx]}")
     done
   else
     # A named session must be an immediate child of the base.

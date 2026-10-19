@@ -43,7 +43,7 @@ _cleaner() {
       return 0
       ;;
     --purge-sessions)
-      mapfile -t COMPREPLY < <(compgen -W "latest all older-than: max-size:" -- "$cur")
+      mapfile -t COMPREPLY < <(compgen -W "latest all older-than: max-size: keep-latest:" -- "$cur")
       COMPREPLY+=("${sessions[@]}")
       if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *: ]]; then
         compopt -o nospace 2>/dev/null || true

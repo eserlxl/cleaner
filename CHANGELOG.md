@@ -25,6 +25,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--purge-sessions keep-latest:N` keeps the newest `N` quarantine sessions and
+  purges older ones (oldest first), exiting `0` when at most `N` sessions exist or no
+  quarantine directory exists and exiting `1` on an invalid count.
+
 - Dry-run JSON includes top-level `would_skip` with the cleanup gate decision
   (`skipped_below_min_reclaim`, `skipped_at_or_above_min_free`, `nothing_to_clean`,
   or `null` when cleanup would proceed).
