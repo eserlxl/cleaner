@@ -96,6 +96,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Refuse combining `--restore`, `--purge-sessions`, and `--list-sessions` (`Error: --restore, --purge-sessions and --list-sessions cannot be combined.`) instead of silently dropping the second mode after running the first.
+
 - `make uninstall` and `install.sh uninstall` remove the `cleaner.conf.example` a
   re-install shipped next to an existing system config, while still keeping
   `cleaner.conf`.

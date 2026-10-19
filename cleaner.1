@@ -211,7 +211,14 @@ them. Missing metadata accounts for no entries. Referenced-root descendants and
 aliases are not inspected. Zero does not certify metadata integrity, recovery or
 safe purge. Positive counts do not change confirmation or force policy. Failed
 metadata reads or entry enumeration stop inventory and purge before confirmation
-or deletion, including forced purge and inline retention.
+or deletion, including forced purge and inline retention. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
 .TP
 .B \-\-list\-targets
 List targets defined in the configuration file
@@ -485,7 +492,14 @@ restore. Distinct ownership within a mixed-owner tree is not preserved.
 A named session must be an immediate child of the quarantine directory;
 path separators and
 .BR . / ..
-are rejected.
+are rejected. Cannot be combined with
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
 .TP
 .B \-\-purge\-sessions \fISESSION\fR
 Permanently delete quarantine session(s) to reclaim space:
@@ -515,7 +529,14 @@ malformed or overflowing
 Irreversible; the confirmation prompt names every target it would destroy, and is
 skipped only when
 .B \-\-force
-is given.
+is given. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
 .TP
 .BR \-V ", " \-\-version
 Print the tool version and exit.

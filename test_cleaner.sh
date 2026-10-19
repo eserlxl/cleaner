@@ -5579,6 +5579,34 @@ else
   exit 1
 fi
 
+session_mutex_qsession="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+session_mutex_dest="$MOCK_HOME/.cache/session_mutex_dest"
+mkdir -p "$session_mutex_qsession"
+printf 'quarantined\n' > "$session_mutex_qsession/payload"
+printf 'full|payload|%s|false|%s|%s\n' \
+  "$session_mutex_dest" "$(id -u)" "$(id -g)" > "$session_mutex_qsession/quarantine.meta"
+
+if run_test_case "Restore With Purge Sessions Rejected" 1 "session_mutex_rp.log" \
+     --restore latest --purge-sessions older-than:30 --force \
+   && run_test_case "Restore With List Sessions Rejected" 1 "session_mutex_rl.log" \
+     --restore latest --list-sessions \
+   && run_test_case "Purge Sessions With List Sessions Rejected" 1 "session_mutex_pl.log" \
+     --purge-sessions all --force --list-sessions; then
+  if grep -qF "Error: --restore, --purge-sessions and --list-sessions cannot be combined." "$TEST_ENV_DIR/session_mutex_rp.log" \
+     && grep -qF "Error: --restore, --purge-sessions and --list-sessions cannot be combined." "$TEST_ENV_DIR/session_mutex_rl.log" \
+     && grep -qF "Error: --restore, --purge-sessions and --list-sessions cannot be combined." "$TEST_ENV_DIR/session_mutex_pl.log" \
+     && [[ -f "$session_mutex_qsession/payload" && ! -e "$session_mutex_dest" ]]; then
+    echo -e "${GREEN}PASS: combining any pair of --restore, --purge-sessions, and --list-sessions is rejected without touching sessions.${NC}"
+  else
+    echo -e "${RED}FAIL: session mode combinations did not report the expected conflict error or touched the session.${NC}"
+    cat "$TEST_ENV_DIR/session_mutex_rp.log" "$TEST_ENV_DIR/session_mutex_rl.log" "$TEST_ENV_DIR/session_mutex_pl.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+
 # 57. Test Case: release-notes extraction. This decides what a published release SAYS,
 # and a published release cannot be cleanly un-published — so it must be tested, not
 # left as inline awk inside a workflow where nothing covers it.
@@ -5794,7 +5822,7 @@ mx_args() {
   esac
 }
 mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-free --min-age --trash-keep-days --notify --list-targets
-  --check-config --init-config --report)
+  --check-config --init-config --report --restore --purge-sessions --list-sessions)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
   mx_refused=""

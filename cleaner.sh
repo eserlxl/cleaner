@@ -613,6 +613,15 @@ if [[ "$INIT_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET
   exit 1
 fi
 
+session_mode_count=0
+[[ -n "${RESTORE_TARGET:-}" ]] && session_mode_count=$((session_mode_count + 1))
+[[ -n "${PURGE_TARGET:-}" ]] && session_mode_count=$((session_mode_count + 1))
+[[ "$LIST_SESSIONS" == true ]] && session_mode_count=$((session_mode_count + 1))
+if [[ "$session_mode_count" -gt 1 ]]; then
+  echo -e "${RED}Error: --restore, --purge-sessions and --list-sessions cannot be combined.${NC}" >&2
+  exit 1
+fi
+
 if [[ -n "$ONLY_TARGET" && "$CHECK_CONFIG" == true ]]; then
   echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --check-config).${NC}" >&2
   exit 1

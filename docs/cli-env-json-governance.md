@@ -51,6 +51,9 @@ Documented mutual exclusions (enforced in code):
 - `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`
 - `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
+- `--restore` vs `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
+- `--purge-sessions` vs `--restore`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
+- `--list-sessions` vs `--restore`, `--purge-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 
 See `test_cleaner.sh` mutex rejection cases.
 
