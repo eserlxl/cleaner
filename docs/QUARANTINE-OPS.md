@@ -63,6 +63,15 @@ Message on no match includes: `No quarantine sessions older than`
 
 Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does not use `--force` for overwrite; conflicts skip.
 
+Before a cross-filesystem restore, the destination must have enough free space
+for the full payload or, for an aged record, the entire staging directory before
+any files move. Otherwise restore prints `Error: Not enough free space to restore
+'<original_path>' (needs X, Y free); kept in quarantine.`, exits `1`, and keeps that
+record and its payload for a retry; other records can still restore. Same-filesystem
+moves need no copy space. An unreadable device or free-space figure falls back to
+trying the move (`Restore Full Cross Filesystem Space Guard`,
+`Restore Aged Cross Filesystem Space Guard`, and their `Fits` cases).
+
 A named `SESSION` (anything other than `latest`) must be an immediate child of the quarantine base: path separators and `.`/`..` are rejected (`Restore Invalid Session`). The same rule applies to named `--purge-sessions` arguments (`Purge Invalid Session`).
 
 Selective substring restore: `--restore latest --only PATTERN` (`Restore Only One Target`, `Full Restore After Selective Restore`).

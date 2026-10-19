@@ -9399,6 +9399,85 @@ fi
 rm -f "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
 echo -e "${GREEN}PASS: cross-filesystem quarantine refuses targets larger than free space and allows fitting ones.${NC}"
 
+# Restore checks the full payload or the entire aged staging directory before
+# moving anything, preserving the record for a retry when space is insufficient.
+for xfs_restore_type in Full Aged; do
+  setup_mock_env
+  xfs_restore_target="$OUTSIDE_DIR/xfs_restore/${xfs_restore_type,,}"
+  xfs_restore_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-03-06_00-00-00"
+  xfs_restore_src="$xfs_restore_session/0_XFS_Restore"
+  mkdir -p "$xfs_restore_src/nested"
+  printf 'cross-fs-restore\n' > "$xfs_restore_src/artifact.bin"
+  printf 'nested-restore\n' > "$xfs_restore_src/nested/old.bin"
+  if [[ "$xfs_restore_type" == Aged ]]; then
+    mkdir -p "$xfs_restore_target"
+    printf 'retained-file\n' > "$xfs_restore_target/recent.bin"
+  fi
+  printf '%s|0_XFS_Restore|%s|false|%s|%s\n' \
+    "${xfs_restore_type,,}" "$xfs_restore_target" "$(id -u)" "$(id -g)" > "$xfs_restore_session/quarantine.meta"
+  xfs_restore_meta=$(cat "$xfs_restore_session/quarantine.meta")
+
+  cat > "$TEST_ENV_DIR/bin/stat" <<'MOCK_XFS_RESTORE_STAT'
+#!/usr/bin/env bash
+real_stat=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v stat)
+if [[ "${1:-}" == "-c" && "${2:-}" == "%d" ]]; then
+  case "${3:-}" in
+    */.cache/linux-cleaner/quarantine/*)
+      echo 999991
+      exit 0
+      ;;
+    */outside_dir/xfs_restore*)
+      echo 999992
+      exit 0
+      ;;
+  esac
+fi
+exec "$real_stat" "$@"
+MOCK_XFS_RESTORE_STAT
+  cat > "$TEST_ENV_DIR/bin/df" <<'MOCK_XFS_RESTORE_DF'
+#!/usr/bin/env bash
+real_df=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v df)
+for arg in "$@"; do
+  case "$arg" in
+    */outside_dir/xfs_restore*)
+      "$real_df" "$@" > /dev/null 2>&1 || exit 1
+      printf 'Avail\n%s\n' "${MOCK_RESTORE_AVAIL:-1}"
+      exit 0
+      ;;
+  esac
+done
+exec "$real_df" "$@"
+MOCK_XFS_RESTORE_DF
+  chmod +x "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
+
+  if ! run_test_case "Restore $xfs_restore_type Cross Filesystem Space Guard" 1 "xfs_restore_low.log" --restore latest \
+     || ! grep -q "Error: Not enough free space to restore '$xfs_restore_target' (needs .*, 1 B free); kept in quarantine\." "$TEST_ENV_DIR/xfs_restore_low.log" \
+     || ! grep -qx 'cross-fs-restore' "$xfs_restore_src/artifact.bin" \
+     || ! grep -qx 'nested-restore' "$xfs_restore_src/nested/old.bin" \
+     || [[ "$(cat "$xfs_restore_session/quarantine.meta")" != "$xfs_restore_meta" ]] \
+     || [[ -e "$xfs_restore_target/artifact.bin" || -e "$xfs_restore_target/nested/old.bin" ]]; then
+    echo -e "${RED}FAIL: $xfs_restore_type cross-filesystem restore with 1 B free modified the payload or record.${NC}"
+    cat "$TEST_ENV_DIR/xfs_restore_low.log" 2>/dev/null || true
+    exit 1
+  fi
+
+  if ! MOCK_RESTORE_AVAIL=1073741824 \
+       run_test_case "Restore $xfs_restore_type Cross Filesystem Space Guard Fits" 0 "xfs_restore_fits.log" --restore latest \
+     || ! grep -qx 'cross-fs-restore' "$xfs_restore_target/artifact.bin" \
+     || ! grep -qx 'nested-restore' "$xfs_restore_target/nested/old.bin" \
+     || [[ -d "$xfs_restore_session" ]]; then
+    echo -e "${RED}FAIL: $xfs_restore_type cross-filesystem restore that fits did not succeed.${NC}"
+    cat "$TEST_ENV_DIR/xfs_restore_fits.log" 2>/dev/null || true
+    exit 1
+  fi
+  if [[ "$xfs_restore_type" == Aged ]] && ! grep -qx 'retained-file' "$xfs_restore_target/recent.bin"; then
+    echo -e "${RED}FAIL: aged cross-filesystem restore modified a retained destination file.${NC}"
+    exit 1
+  fi
+  rm -f "$TEST_ENV_DIR/bin/stat" "$TEST_ENV_DIR/bin/df"
+  echo -e "${GREEN}PASS: $xfs_restore_type cross-filesystem restore keeps oversized payloads and records, then restores when space permits.${NC}"
+done
+
 # --trash-keep-days / LINUX_CLEANER_TRASH_KEEP_DAYS: purge quarantine sessions
 # older than DAYS at the end of a non-dry-run cleanup, never the newly created
 # session, and never in dry-run mode.

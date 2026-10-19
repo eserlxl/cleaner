@@ -2128,21 +2128,34 @@ quarantine_move_full() {
   [[ "$ok" = true ]]
 }
 
-# True unless TARGET sits on another filesystem than the quarantine base and is
-# larger than the base's free space. A same-filesystem move is a rename and needs
-# no room; a cross-filesystem one copies, and running out mid-copy would fill
-# $HOME. An unreadable device or free-space figure falls back to trying the move.
+# True unless SRC sits on another filesystem than DEST and is larger than DEST's
+# free space. A same-filesystem move is a rename and needs no room; a
+# cross-filesystem one copies, and running out mid-copy would fill DEST. An
+# empty BYTES sizes SRC only once the devices differ. An unreadable device or
+# free-space figure falls back to trying the move. Sets MOVE_NEED_BYTES and
+# MOVE_AVAIL_BYTES for the caller's message.
+move_has_room() {
+  local src="$1" src_sudo="$2" dest="$3" dest_sudo="$4" bytes="$5"
+  local src_dev dest_dev avail
+  src_dev=$(with_sudo "$src_sudo" stat -c '%d' "$src" 2>/dev/null) || return 0
+  dest_dev=$(with_sudo "$dest_sudo" stat -c '%d' "$dest" 2>/dev/null) || return 0
+  [[ "$src_dev" == "$dest_dev" ]] && return 0
+  if [[ -z "$bytes" ]]; then
+    bytes=$({ with_sudo "$src_sudo" du -sb "$src" 2>/dev/null || true; } | awk '{s=$1} END {print s+0}')
+  fi
+  MOVE_NEED_BYTES=$bytes
+  avail=$(with_sudo "$dest_sudo" df -B1 --output=avail "$dest" 2>/dev/null | awk 'NR == 2 { print $1 }') || return 0
+  [[ "$avail" =~ ^[0-9]+$ ]] || return 0
+  MOVE_AVAIL_BYTES=$avail
+  [[ "$bytes" -le "$avail" ]]
+}
+
+# move_has_room for a target about to be quarantined under $HOME.
 quarantine_has_room() {
-  local target="$1" use_sudo="$2" bytes="$3" base target_dev base_dev avail
+  local target="$1" use_sudo="$2" bytes="$3" base
   base="$HOME/.cache/linux-cleaner/quarantine"
   (umask 077; mkdir -p "$base") || return 0
-  target_dev=$(with_sudo "$use_sudo" stat -c '%d' "$target" 2>/dev/null) || return 0
-  base_dev=$(stat -c '%d' "$base" 2>/dev/null) || return 0
-  [[ "$target_dev" == "$base_dev" ]] && return 0
-  avail=$(df -B1 --output=avail "$base" 2>/dev/null | awk 'NR == 2 { print $1 }') || return 0
-  [[ "$avail" =~ ^[0-9]+$ ]] || return 0
-  QUARANTINE_AVAIL_BYTES=$avail
-  [[ "$bytes" -le "$avail" ]]
+  move_has_room "$target" "$use_sudo" "$base" false "$bytes"
 }
 
 # Permanently delete a whole target and account for it. Sets OPERATION_FAILED on a
@@ -2337,10 +2350,15 @@ restore_quarantine() {
       # shellcheck disable=SC2016
       if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$(dirname "$original_path")"; then
         success=false
-      elif with_sudo "$use_sudo" mv "$src_path" "$original_path"; then
-        with_sudo "$use_sudo" chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
       else
-        success=false
+        if ! move_has_room "$src_path" "$use_sudo" "$(dirname "$original_path")" "$use_sudo" ""; then
+          echo -e "${RED}Error: Not enough free space to restore '$original_path' (needs $(format_bytes "$MOVE_NEED_BYTES"), $(format_bytes "$MOVE_AVAIL_BYTES") free); kept in quarantine.${NC}" >&2
+          success=false
+        elif with_sudo "$use_sudo" mv "$src_path" "$original_path"; then
+          with_sudo "$use_sudo" chown -hR "$uid:$gid" "$original_path" 2>/dev/null || true
+        else
+          success=false
+        fi
       fi
     elif [[ "$type" == "aged" ]]; then
       if with_sudo "$use_sudo" test -L "$original_path"; then
@@ -2353,48 +2371,53 @@ restore_quarantine() {
       if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$original_path"; then
         success=false
       else
-        while IFS= read -r -d '' file; do
-          local file_rel="${file#"$src_path"/}"
-          local dest_file="$original_path/$file_rel"
-          local dest_parent check_dir="$original_path" rel_dir part symlink_conflict=false
-          dest_parent=$(dirname "$dest_file")
-          if [[ "$dest_parent" != "$original_path" ]]; then
-            rel_dir="${file_rel%/*}"
-            while [[ -n "$rel_dir" ]]; do
-              part="${rel_dir%%/*}"
-              check_dir="$check_dir/$part"
-              if with_sudo "$use_sudo" test -L "$check_dir"; then
-                echo -e "${RED}Error: Restore destination path '$check_dir' is a symlink. Conflict detected, skipping '$dest_file'.${NC}" >&2
-                symlink_conflict=true
-                break
-              fi
-              [[ "$rel_dir" == "$part" ]] && break
-              rel_dir="${rel_dir#*/}"
-            done
-          fi
-          if [[ "$symlink_conflict" = true ]]; then
-            success=false
-            had_conflict=true
-            continue
-          fi
-          if path_present "$use_sudo" "$dest_file"; then
-            echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
-            success=false
-            had_conflict=true
-            continue
-          fi
-          # shellcheck disable=SC2016
-          if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$dest_parent"; then
-            success=false
-            continue
-          fi
-          if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
-            with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
-          else
-            success=false
-          fi
-        done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-        wait "$!" || success=false
+        if ! move_has_room "$src_path" "$use_sudo" "$original_path" "$use_sudo" ""; then
+          echo -e "${RED}Error: Not enough free space to restore '$original_path' (needs $(format_bytes "$MOVE_NEED_BYTES"), $(format_bytes "$MOVE_AVAIL_BYTES") free); kept in quarantine.${NC}" >&2
+          success=false
+        else
+          while IFS= read -r -d '' file; do
+            local file_rel="${file#"$src_path"/}"
+            local dest_file="$original_path/$file_rel"
+            local dest_parent check_dir="$original_path" rel_dir part symlink_conflict=false
+            dest_parent=$(dirname "$dest_file")
+            if [[ "$dest_parent" != "$original_path" ]]; then
+              rel_dir="${file_rel%/*}"
+              while [[ -n "$rel_dir" ]]; do
+                part="${rel_dir%%/*}"
+                check_dir="$check_dir/$part"
+                if with_sudo "$use_sudo" test -L "$check_dir"; then
+                  echo -e "${RED}Error: Restore destination path '$check_dir' is a symlink. Conflict detected, skipping '$dest_file'.${NC}" >&2
+                  symlink_conflict=true
+                  break
+                fi
+                [[ "$rel_dir" == "$part" ]] && break
+                rel_dir="${rel_dir#*/}"
+              done
+            fi
+            if [[ "$symlink_conflict" = true ]]; then
+              success=false
+              had_conflict=true
+              continue
+            fi
+            if path_present "$use_sudo" "$dest_file"; then
+              echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
+              success=false
+              had_conflict=true
+              continue
+            fi
+            # shellcheck disable=SC2016
+            if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$dest_parent"; then
+              success=false
+              continue
+            fi
+            if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
+              with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
+            else
+              success=false
+            fi
+          done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+          wait "$!" || success=false
+        fi
       fi
     else
       echo -e "${RED}Error: Unknown restore type '$type' for '$original_path'. Skipping.${NC}" >&2
@@ -4169,7 +4192,7 @@ for i in "${!parsed_names[@]}"; do
   fi
 
   if [[ "$TRASH_MODE" = true ]] && ! quarantine_has_room "$path" "$use_sudo" "$size"; then
-    echo -e "  ${RED}Error: Not enough free space to quarantine '$name' (needs $(format_bytes "$size"), $(format_bytes "$QUARANTINE_AVAIL_BYTES") free); left in place.${NC}" >&2
+    echo -e "  ${RED}Error: Not enough free space to quarantine '$name' (needs $(format_bytes "$size"), $(format_bytes "$MOVE_AVAIL_BYTES") free); left in place.${NC}" >&2
     OPERATION_FAILED=true
     target_failed=true
   elif [[ "$TRASH_MODE" = true ]]; then

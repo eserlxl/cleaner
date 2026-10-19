@@ -127,6 +127,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Refuse a cross-filesystem `--restore` when the full payload or aged staging directory exceeds destination free space, keeping the payload and recovery record in quarantine for a retry; same-filesystem moves and unreadable device or free-space probes behave as before.
+
 - Scope the commented `Nix Store` example row's process check in `cleaner.conf` to active Nix commands (`nix,nix-build,nix-store`) instead of `nix-daemon` so uncommenting it on multi-user Nix installs is not permanently blocked, document that it runs as the user without root, list `nix-store` among runtime-sized actions in the CLI reference, and update `--exclude-path` help and shell completions to describe containing paths.
 
 - Record `linux_cleaner_last_run_success 0` with a current timestamp (and zero target and byte counts) in `LINUX_CLEANER_METRICS_FILE` when a cleanup exits non-zero before saving its report (such as a preflight or quarantine-session creation failure), while preserving the exit status and leaving dry-run, read-only, and already-written runs unchanged.
