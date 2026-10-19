@@ -132,8 +132,19 @@ With
 emit a machine-readable JSON summary instead of human-formatted output
 .RB ( total_reclaimable_bytes ,
 .BR total_reclaimable_human ,
+.BR would_skip ,
 per-target
 .BR bytes / size_human / description / min_age_days / size_at_run_time / reason ).
+The top-level
+.B would_skip
+names the gate a cleanup run would stop at
+.RB ( skipped_below_min_reclaim ,
+.BR skipped_at_or_above_min_free ,
+or
+.BR nothing_to_clean ,
+checked in that order), or is
+.B null
+when cleanup would proceed; runtime-sized prune actions count as cleanable.
 With
 .BR \-\-list\-targets ,
 emit a JSON inventory of configured targets

@@ -25,6 +25,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Dry-run JSON includes top-level `would_skip` with the cleanup gate decision
+  (`skipped_below_min_reclaim`, `skipped_at_or_above_min_free`, `nothing_to_clean`,
+  or `null` when cleanup would proceed).
+
 - Complete existing quarantine session names for `--restore` and `--purge-sessions`
   in Bash, Zsh and Fish, alongside the existing session selectors.
 

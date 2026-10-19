@@ -938,11 +938,19 @@ json_escape() {
 }
 
 emit_dry_run_json() {
-  local i first=true size_human
+  local i first=true size_human would_skip=null
+  if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
+    would_skip='"skipped_below_min_reclaim"'
+  elif [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
+    would_skip='"skipped_at_or_above_min_free"'
+  elif [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; then
+    would_skip='"nothing_to_clean"'
+  fi
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
   printf '"total_reclaimable_bytes":%s,' "$total_reclaimable_bytes"
   printf '"total_reclaimable_human":"%s",' "$(json_escape "$(format_bytes "$total_reclaimable_bytes")")"
+  printf '"would_skip":%s,' "$would_skip"
   printf '"targets":['
   for i in "${!json_names[@]}"; do
     if [[ "$first" == true ]]; then
@@ -3486,19 +3494,16 @@ done < <(expand_config_globs)
 
 check_target_selection || exit 1
 
-if [[ "$JSON_OUTPUT" == true ]]; then
-  emit_dry_run_json
-  exit 0
-fi
+if [[ "$JSON_OUTPUT" != true ]]; then
+  echo
+  echo -e "${BOLD}Total potential space savings: ${GREEN}$(format_bytes "$total_reclaimable_bytes")${NC}"
+  echo
 
-echo
-echo -e "${BOLD}Total potential space savings: ${GREEN}$(format_bytes "$total_reclaimable_bytes")${NC}"
-echo
-
-# Captured once, with no color codes (the printer uses printf, not the color vars).
-PLAN_REPORT_TEXT=$(print_plan_report)
-if [[ "$QUIET" != true ]]; then
-  printf '%s\n\n' "$PLAN_REPORT_TEXT"
+  # Captured once, with no color codes (the printer uses printf, not the color vars).
+  PLAN_REPORT_TEXT=$(print_plan_report)
+  if [[ "$QUIET" != true ]]; then
+    printf '%s\n\n' "$PLAN_REPORT_TEXT"
+  fi
 fi
 
 # Whether any analyzed target is cleanable (user-level prune rows count even at 0 B).
@@ -3519,6 +3524,11 @@ if [[ "$MIN_FREE_BYTES" -gt 0 ]]; then
     echo -e "${YELLOW}Warning: cannot read free space on the filesystem holding HOME; --min-free ${MIN_FREE} is ignored this run.${NC}" >&2
     home_free_bytes=0
   fi
+fi
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  emit_dry_run_json
+  exit 0
 fi
 
 # If dry-run is specified, we stop here

@@ -4373,6 +4373,57 @@ else
   exit 1
 fi
 
+# JSON previews report cleanup gates in the same order as cleanup, including empty plans.
+for json_gate_case in "Min Reclaim" "Min Free" "Nothing To Clean" "Proceed" \
+                      "Empty Min Reclaim" "Empty Min Free" "Runtime Sized"; do
+  setup_mock_env
+  mkdir -p "$MOCK_HOME/.cache/json_gate"
+  printf 'cache\n' > "$MOCK_HOME/.cache/json_gate/file.txt"
+  printf '%s\n' "safe|JSON Gate|\$HOME/.cache/json_gate|Gate preview|0||" > "$TEST_ENV_DIR/json_gate.conf"
+  write_min_free_df_stub 1073741824
+  json_gate_args=(--min-reclaim 0 --min-free 0)
+  json_gate_expected=null
+  case "$json_gate_case" in
+    "Min Reclaim"|"Empty Min Reclaim")
+      json_gate_args=(--min-reclaim 1G --min-free 1G)
+      json_gate_expected=skipped_below_min_reclaim
+      ;;
+    "Min Free"|"Empty Min Free")
+      json_gate_args=(--min-reclaim 0 --min-free 1G)
+      json_gate_expected=skipped_at_or_above_min_free
+      ;;
+    "Nothing To Clean") json_gate_expected=nothing_to_clean ;;
+    "Proceed")
+      write_min_free_df_stub 536870912
+      json_gate_args=(--min-reclaim 0 --min-free 1G)
+      ;;
+    "Runtime Sized")
+      printf '%s\n' "safe|JSON Gate|\$HOME/.cache/json_gate|Gate preview|0||action:uv_cache_prune" > "$TEST_ENV_DIR/json_gate.conf"
+      ;;
+  esac
+  case "$json_gate_case" in
+    "Nothing To Clean"|"Empty "*) rm -rf "$MOCK_HOME/.cache/json_gate" ;;
+  esac
+  if ! run_test_case "JSON Would Skip $json_gate_case" 0 "json_gate.log" \
+       --config "$TEST_ENV_DIR/json_gate.conf" --dry-run --json "${json_gate_args[@]}" \
+     || ! python3 - "$TEST_ENV_DIR/json_gate.log" "$json_gate_expected" "$json_gate_case" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+expected = None if sys.argv[2] == "null" else sys.argv[2]
+assert d["would_skip"] == expected, d
+if sys.argv[3] == "Runtime Sized":
+    assert d["total_reclaimable_bytes"] == 0, d
+    assert d["targets"][0]["size_at_run_time"] is True, d
+PY
+  then
+    echo -e "${RED}FAIL: JSON would_skip did not match $json_gate_case.${NC}"
+    cat "$TEST_ENV_DIR/json_gate.log"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: JSON would_skip matches $json_gate_case.${NC}"
+done
+rm -f "$TEST_ENV_DIR/bin/df"
+
 # Target names with quotes, backslashes, and C0 controls must still produce valid JSON.
 echo -e "\n${BOLD}Test Case: JSON Escaping Special Target Names${NC}"
 printf '%s\n' $'safe|Türkçe Cache "quoted" \\\\name\b\f\v\001|$HOME/.cache/json_escape_test|Adversarial name chars|0||' \
