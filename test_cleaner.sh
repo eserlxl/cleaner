@@ -10476,6 +10476,26 @@ if ! (
   COMP_CWORD=2
   HOME="$MOCK_HOME" _cleaner
   [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+
+  # File-valued options must ask readline to treat replies as filenames, so a
+  # directory gets a trailing slash and special characters are quoted.
+  # shellcheck disable=SC2329  # invoked indirectly by _cleaner
+  compopt() { compopt_calls+=("$*"); }
+  for file_option in -c --config --log --only-path --exclude-path; do
+    compopt_calls=()
+    COMP_WORDS=(cleaner "$file_option" "$comp_file")
+    COMP_CWORD=2
+    HOME="$MOCK_HOME" _cleaner
+    [[ " ${compopt_calls[*]} " == *" -o filenames "* ]] || exit 1
+  done
+  for word_option in -r --restore; do
+    compopt_calls=()
+    COMP_WORDS=(cleaner "$word_option" "")
+    COMP_CWORD=2
+    HOME="$MOCK_HOME" _cleaner
+    [[ " ${compopt_calls[*]} " != *"filenames"* ]] || exit 1
+  done
+  unset -f compopt
 ); then
   echo -e "${RED}FAIL: completions/cleaner.bash functional completion check failed.${NC}"
   exit 1

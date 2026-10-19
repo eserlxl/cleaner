@@ -62,15 +62,18 @@ _cleaner() {
     --log)
       # The FILE argument is optional, so an option may follow directly.
       if [[ "$cur" != -* ]]; then
+        compopt -o filenames 2>/dev/null || true
         mapfile -t COMPREPLY < <(compgen -f -- "$cur")
         return 0
       fi
       ;;
     -c|--config)
+      compopt -o filenames 2>/dev/null || true
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;
     --only-path|--exclude-path)
+      compopt -o filenames 2>/dev/null || true
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;
