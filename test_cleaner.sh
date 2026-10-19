@@ -3274,7 +3274,7 @@ for unit_file in "$SCRIPT_DIR"/examples/systemd/*.service; do
   done
   # Oneshot units default to an infinite start timeout; a hung run would stall the timer.
   if [[ "$(grep -c '^TimeoutStartSec=' "$unit_file")" -ne 1 ]] \
-     || grep -qE '^TimeoutStartSec=(0|infinity)?$' "$unit_file"; then
+     || grep -qE '^TimeoutStartSec=(0+([a-z]+)?|infinity)?$' "$unit_file"; then
     echo -e "${RED}FAIL: $(basename "$unit_file") lacks exactly one finite TimeoutStartSec= line.${NC}"
     exit 1
   fi

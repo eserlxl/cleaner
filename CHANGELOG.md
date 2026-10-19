@@ -25,7 +25,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
-- The shipped systemd services set `TimeoutStartSec=2h`: a hung oneshot run is stopped with `SIGTERM` (recorded as interrupted) instead of keeping the unit activating and silently skipping later timer slots.
+- The shipped systemd services set `TimeoutStartSec=2h`: a hung oneshot run is stopped with `SIGTERM` and the unit fails (a cleanup stopped during its cleanup phase also saves an `Interrupted: SIGTERM` report) instead of keeping the unit activating and silently skipping later timer slots.
 - `--doctor` prints a read-only environment checklist (`OK`/`WARN`/`INFO` lines for the resolved config path and origin, `check_gnu_userland`, `pgrep`, `flock`, `git`, non-interactive `sudo -n`, `notify-send`, `systemctl --user is-enabled` for the `clean`/`retention`/`monitor` timers, and the quarantine session count, or a `WARN` when the quarantine cannot be enumerated) without requiring a configuration file, exiting `0` when cleanup can run or `1` when the configuration file is missing or unreadable or GNU userland is missing.
 - A missing configuration file found by the default search now lists every searched location (XDG, `/etc`, checkout) and suggests `cleaner --doctor`; an explicit `-c`/`LINUX_CLEANER_CONFIG` path is reported as before.
 - An unreadable configuration file is now refused with `Error: Configuration file '<path>' is not readable` and exit `1` before any analysis, instead of a raw shell `Permission denied` error.
