@@ -25,6 +25,14 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `LINUX_CLEANER_METRICS_FILE` atomically writes a Prometheus `node_exporter`
+  textfile (`linux_cleaner_last_run_timestamp_seconds`,
+  `linux_cleaner_last_run_success`,
+  `linux_cleaner_targets{result="cleaned|skipped|failed"}`, and
+  `linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"}`) at every
+  cleanup exit from the saved report's result and accounted-bytes values while
+  refusing relative paths, line feeds, and symlinks with a non-fatal warning.
+
 - `--exclude-path PATH` and `LINUX_CLEANER_EXCLUDE_PATH` skip cleanup and
   `--list-targets` targets whose resolved physical path equals or lies below an
   existing absolute path (`action:*` rows included when their path matches;

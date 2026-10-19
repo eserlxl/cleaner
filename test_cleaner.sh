@@ -5938,7 +5938,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
         assert "is a symlink" in result.stderr, result
         passed("exact init symlink refused")
         writer = root / "writer.sh"
-        writer.write_text("#!/bin/bash\nset -euo pipefail\n" + body("_xdg_dir") + "\n" + body("save_last_cleanup_report") +
+        writer.write_text("#!/bin/bash\nset -euo pipefail\n" + body("_xdg_dir") + "\n" + body("write_cleanup_metrics") + "\n" + body("write_last_report_file") + "\n" + body("save_last_cleanup_report") +
                           '\nPLAN_REPORT_TEXT="Plan: exact storage"\nRESULT_REPORT_TEXT="Result: cleaned=1 skipped=0 failed=0 elapsed=2s"\nRESULT_FAILED_TARGETS=()\numask 022\nsave_last_cleanup_report\n')
         for suffix in ("\n", "\n\n"):
             parent = root / ("written" + suffix)
@@ -5973,7 +5973,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
         discovery = source[discovery_start:source.index("\n# Trim whitespace", discovery_start)]
         for label, code, status in (("init helper failure", body("init_user_config") + "\ninit_user_config", 1),
                                     ("reader helper failure", body("show_last_report") + "\nshow_last_report", 1),
-                                    ("writer helper failure best effort", body("save_last_cleanup_report") + "\nsave_last_cleanup_report", 0),
+                                    ("writer helper failure best effort", body("write_cleanup_metrics") + "\n" + body("write_last_report_file") + "\n" + body("save_last_cleanup_report") + "\nsave_last_cleanup_report", 0),
                                     ("discovery helper failure", discovery, 1),
                                     ("explicit config skips discovery helper", 'CONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
             probe = root / "helper-failure.sh"
@@ -10824,6 +10824,150 @@ else
   exit 1
 fi
 rm -rf "$tip_xdg"
+
+# LINUX_CLEANER_METRICS_FILE: write an atomic Prometheus node_exporter textfile
+# at every cleanup exit matching last-report.txt, refuse relative/LF/symlinked
+# paths with a warning without failing the run, and write nothing on dry-run,
+# read-only modes, or when unset.
+echo -e "\n${BOLD}Test Case: Prometheus Textfile Metrics${NC}"
+setup_mock_env
+metrics_dir="$TEST_ENV_DIR/metrics"
+mkdir -p "$metrics_dir" "$MOCK_HOME/.cache/metrics_target"
+metrics_file="$metrics_dir/linux_cleaner.prom"
+truncate -s 2049 "$MOCK_HOME/.cache/metrics_target/file.txt"
+cat > "$TEST_ENV_DIR/metrics.conf" <<EOF
+safe|Metrics Target|$MOCK_HOME/.cache/metrics_target/file.txt|Metrics test target|0||
+EOF
+
+# 1. Completed run writes a valid textfile matching last-report.txt.
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Completed Run" 0 "metrics_completed.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --trash --force \
+   || ! run_test_case "Prometheus Metrics Completed Report JSON" 0 "metrics_completed.json" --report --json \
+   || ! python3 - "$metrics_file" "$TEST_ENV_DIR/metrics_completed.json" <<'METRICS_PY'
+import json, pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+report = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+lines = text.splitlines()
+assert "# HELP linux_cleaner_last_run_timestamp_seconds" in text
+assert "# TYPE linux_cleaner_last_run_timestamp_seconds gauge" in lines
+assert "# HELP linux_cleaner_last_run_success" in text
+assert "# TYPE linux_cleaner_last_run_success gauge" in lines
+assert "# HELP linux_cleaner_targets" in text
+assert "# TYPE linux_cleaner_targets gauge" in lines
+assert "# HELP linux_cleaner_reclaimed_bytes" in text
+assert "# TYPE linux_cleaner_reclaimed_bytes gauge" in lines
+assert any(re.match(r"^linux_cleaner_last_run_timestamp_seconds [1-9][0-9]*$", l) for l in lines), lines
+assert "linux_cleaner_last_run_success 1" in lines, lines
+assert f'linux_cleaner_targets{{result="cleaned"}} {report["cleaned"]}' in lines, (lines, report)
+assert f'linux_cleaner_targets{{result="skipped"}} {report["skipped"]}' in lines, (lines, report)
+assert f'linux_cleaner_targets{{result="failed"}} {report["failed"]}' in lines, (lines, report)
+assert f'linux_cleaner_reclaimed_bytes{{kind="quarantined"}} {report["quarantined_bytes"]}' in lines, (lines, report)
+assert f'linux_cleaner_reclaimed_bytes{{kind="permanent"}} {report["permanent_bytes"]}' in lines, (lines, report)
+assert report["quarantined_bytes"] == 2049 and report["permanent_bytes"] == 0, report
+assert not list(pathlib.Path(sys.argv[1]).parent.glob(".linux-cleaner-metrics.*"))
+METRICS_PY
+then
+  echo -e "${RED}FAIL: completed cleanup did not write expected Prometheus metrics matching last-report.txt.${NC}"
+  cat "$metrics_file" "$TEST_ENV_DIR/metrics_completed.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: completed cleanup writes Prometheus metrics matching last-report.txt.${NC}"
+
+# 2. Nothing-to-clean exit writes 0 counts/bytes and success 1.
+rm -f "$metrics_file"
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Nothing To Clean" 0 "metrics_nothing.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --force \
+   || ! grep -qx 'linux_cleaner_last_run_success 1' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="cleaned"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="skipped"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="failed"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="quarantined"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="permanent"} 0' "$metrics_file"; then
+  echo -e "${RED}FAIL: nothing-to-clean exit did not write zeroed Prometheus metrics with success 1.${NC}"
+  cat "$metrics_file" "$TEST_ENV_DIR/metrics_nothing.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: nothing-to-clean cleanup exit writes zeroed Prometheus metrics with success 1.${NC}"
+
+# 3. Failed target writes linux_cleaner_last_run_success 0 and failed=1.
+cat > "$TEST_ENV_DIR/bin/uv" <<'FAIL_METRICS_UV'
+#!/usr/bin/env bash
+exit 1
+FAIL_METRICS_UV
+chmod +x "$TEST_ENV_DIR/bin/uv"
+mkdir -p "$MOCK_HOME/.cache/uv"
+printf 'safe|UV Cache|%s/.cache/uv|Failing UV cache|0||action:uv_cache_prune\n' "$MOCK_HOME" > "$TEST_ENV_DIR/metrics_fail.conf"
+rm -f "$metrics_file"
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Failed Target" 1 "metrics_failed.log" \
+       --config "$TEST_ENV_DIR/metrics_fail.conf" --clean --force \
+   || ! grep -qx 'linux_cleaner_last_run_success 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="cleaned"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="failed"} 1' "$metrics_file"; then
+  echo -e "${RED}FAIL: failed target cleanup did not write linux_cleaner_last_run_success 0 and failed=1.${NC}"
+  cat "$metrics_file" "$TEST_ENV_DIR/metrics_failed.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: failed target cleanup writes linux_cleaner_last_run_success 0 and failed=1.${NC}"
+
+# 4. Invalid relative path or line feed warns and does not fail the run or write a file.
+truncate -s 512 "$MOCK_HOME/.cache/metrics_target/file.txt"
+rm -f "$metrics_file"
+if ! LINUX_CLEANER_METRICS_FILE="relative/metrics.prom" \
+     run_test_case "Prometheus Metrics Relative Path Warning" 0 "metrics_rel.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --force \
+   || ! grep -q "Warning: LINUX_CLEANER_METRICS_FILE must be a literal absolute file path without line feeds" "$TEST_ENV_DIR/metrics_rel.log" \
+   || [[ -e "relative/metrics.prom" ]]; then
+  echo -e "${RED}FAIL: relative LINUX_CLEANER_METRICS_FILE did not warn and succeed without writing.${NC}"
+  cat "$TEST_ENV_DIR/metrics_rel.log" 2>/dev/null || true
+  exit 1
+fi
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file"$'\n/evil' \
+     run_test_case "Prometheus Metrics Line Feed Warning" 0 "metrics_lf.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --force \
+   || ! grep -q "Warning: LINUX_CLEANER_METRICS_FILE must be a literal absolute file path without line feeds" "$TEST_ENV_DIR/metrics_lf.log" \
+   || [[ -e "$metrics_file" ]]; then
+  echo -e "${RED}FAIL: line-feed LINUX_CLEANER_METRICS_FILE did not warn and succeed without writing.${NC}"
+  cat "$TEST_ENV_DIR/metrics_lf.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: invalid relative or line-feed LINUX_CLEANER_METRICS_FILE warns without failing the run.${NC}"
+
+# 5. Symlinked target path is refused with a warning without modifying the symlink destination.
+metrics_Real="$TEST_ENV_DIR/metrics_real_target.txt"
+printf 'keep target intact\n' > "$metrics_Real"
+ln -s "$metrics_Real" "$metrics_file"
+truncate -s 512 "$MOCK_HOME/.cache/metrics_target/file.txt"
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Symlink Target Refused" 0 "metrics_symlink.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --force \
+   || ! grep -q "Warning: refusing to write cleanup metrics; '$metrics_file' is a symlink" "$TEST_ENV_DIR/metrics_symlink.log" \
+   || [[ ! -L "$metrics_file" ]] \
+   || [[ "$(cat "$metrics_Real")" != "keep target intact" ]]; then
+  echo -e "${RED}FAIL: symlinked LINUX_CLEANER_METRICS_FILE was not refused or modified the target.${NC}"
+  cat "$TEST_ENV_DIR/metrics_symlink.log" "$metrics_Real" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$metrics_file" "$metrics_Real"
+echo -e "${GREEN}PASS: symlinked LINUX_CLEANER_METRICS_FILE is refused with a warning and leaves the target untouched.${NC}"
+
+# 6. Without LINUX_CLEANER_METRICS_FILE, or in dry-run / read-only modes, nothing is written.
+truncate -s 512 "$MOCK_HOME/.cache/metrics_target/file.txt"
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Dry Run Writes Nothing" 0 "metrics_dry.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --dry-run \
+   || ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Read Only Modes Write Nothing" 0 "metrics_ro.log" \
+       --report \
+   || ! run_test_case "Prometheus Metrics Unset Writes Nothing" 0 "metrics_unset.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --force \
+   || [[ -e "$metrics_file" ]]; then
+  echo -e "${RED}FAIL: dry-run, read-only mode, or unset LINUX_CLEANER_METRICS_FILE wrote a metrics file.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: dry-run, read-only modes, and unset LINUX_CLEANER_METRICS_FILE write nothing.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

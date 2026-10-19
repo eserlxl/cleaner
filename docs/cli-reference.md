@@ -66,11 +66,12 @@ Value-taking options (`-c/--config`, `-r/--risk`, `-e/--exclude`, `--restore`, `
 | `LINUX_CLEANER_EXCLUDE` | Non-empty comma-separated glob list enabling `--exclude` (overridden by `-e/--exclude`). |
 | `LINUX_CLEANER_FORCE` | When `1`, `true`, or `yes`, enables `--force` and non-interactive cleanup (an explicit CLI `--dry-run` still restores preview mode). |
 | `LINUX_CLEANER_YES_DANGER` | When `1`, `true`, or `yes`, enables `--yes-danger`. |
+| `LINUX_CLEANER_METRICS_FILE` | Literal absolute file path without line feeds where every non-dry-run cleanup atomically writes a Prometheus `node_exporter` textfile (`linux_cleaner_last_run_timestamp_seconds`, `linux_cleaner_last_run_success`, `linux_cleaner_targets{result="cleaned|skipped|failed"}`, `linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"}`); env-only (no CLI flag). Relative paths, line feeds, symlinked paths, and write errors warn without failing the run; dry-run and read-only modes ignore it. |
 | `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` | Deprecated no-op. When `1`, `true`, or `yes`, prints one warning on stderr; targets outside `$HOME` are always allowed. |
 
 Set `NO_COLOR` to any non-empty value to disable ANSI color codes (per [no-color.org](https://no-color.org)).
 
-Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `ONLY_PATH`, `EXCLUDE_PATH`, `MIN_RECLAIM`, `MIN_FREE`, `MIN_AGE`, `TRASH_KEEP_DAYS`, `LOCK_WAIT`) are replaced by their corresponding CLI flags. Boolean variables (`QUIET`, `DEBUG`, `NOTIFY`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
+Value variables (`CONFIG`, `LOG`, `RISK`, `EXCLUDE`, `ONLY_TARGET`, `EXCLUDE_TARGET`, `ONLY_PATH`, `EXCLUDE_PATH`, `MIN_RECLAIM`, `MIN_FREE`, `MIN_AGE`, `TRASH_KEEP_DAYS`, `LOCK_WAIT`) are replaced by their corresponding CLI flags (`METRICS_FILE` is env-only). Boolean variables (`QUIET`, `DEBUG`, `NOTIFY`, `JSON`, `TRASH`, `FORCE`, `YES_DANGER`) have no negative CLI flag; set them to `0` or unset them to disable for a single run.
 
 ## Exit status
 

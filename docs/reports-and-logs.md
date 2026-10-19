@@ -18,6 +18,25 @@ New reports retain an `Accounted bytes: quarantined=N permanent=N` record. The a
 
 With [`--notify`](cli-reference.md) or `LINUX_CLEANER_NOTIFY=1`, a cleanup run sends one desktop notification through `notify-send` (package `libnotify`) once the result is saved. Its body is the result's first line plus the `Reclaimed:`, `Interrupted:` and `Retention failed: true` lines when present. It is marked critical when a target failed, the run hit an operation failure, or it was interrupted. A cleanup that exits with an error before reporting sends one critical "Cleanup stopped with exit status N before finishing" notice instead. Dry-runs and read-only modes send nothing; without `notify-send` the run continues and prints one warning.
 
+## Prometheus textfile metrics (`LINUX_CLEANER_METRICS_FILE`)
+
+When `LINUX_CLEANER_METRICS_FILE` is set to a literal absolute file path without line feeds, every non-dry-run cleanup atomically writes a Prometheus `node_exporter` textfile alongside `last-report.txt`:
+
+```sh
+# Point node_exporter at the directory with:
+#   node_exporter --collector.textfile.directory=/var/lib/node_exporter/textfile_collector
+LINUX_CLEANER_METRICS_FILE=/var/lib/node_exporter/textfile_collector/linux_cleaner.prom cleaner --clean --force
+```
+
+The file emits `# HELP` and `# TYPE` lines for four gauge families derived from the same `Result:` and `Accounted bytes:` values saved in `last-report.txt` (`0` on nothing-to-clean, `--min-reclaim`, and `--min-free` skips):
+
+- `linux_cleaner_last_run_timestamp_seconds`: Unix timestamp of the cleanup exit.
+- `linux_cleaner_last_run_success`: `1` on a clean run, or `0` when any target or inline retention failed (`OPERATION_FAILED`) or the cleanup was interrupted by a signal.
+- `linux_cleaner_targets{result="cleaned|skipped|failed"}`: target counts from the result report.
+- `linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"}`: accounted bytes quarantined and permanently reclaimed.
+
+A relative path, a path containing a line feed, a symlinked target or parent directory, or a write error prints a warning on stderr without failing the cleanup. Unset or empty `LINUX_CLEANER_METRICS_FILE`, dry-runs, and read-only modes write nothing.
+
 ## Operation log (`--log` / `LINUX_CLEANER_LOG`)
 
 Operation logging is **opt-in and off by default**:

@@ -763,6 +763,27 @@ enables
 .BR \-\-yes\-danger
 (bypass danger confirmation). No CLI flag disables it; set it to 0 or unset it.
 .TP
+.B LINUX_CLEANER_METRICS_FILE
+When set to a literal absolute file path without line feeds, every non-dry-run
+cleanup atomically writes a Prometheus
+.B node_exporter
+textfile there after saving
+.I last\-report.txt
+with
+.B # HELP
+and
+.B # TYPE
+lines for
+.BR linux_cleaner_last_run_timestamp_seconds ,
+.B linux_cleaner_last_run_success
+(0 when any operation failed or the run was interrupted),
+.BR linux_cleaner_targets{result="cleaned|skipped|failed"} ,
+and
+.BR linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"} .
+Environment-only (no CLI flag). A relative path, line feed, symlinked target or
+parent directory, or write error prints a warning on stderr without failing the
+run. Dry-run and read-only modes never write the file.
+.TP
 .B LINUX_CLEANER_ALLOW_OUTSIDE_HOME
 Deprecated no-op. When set to
 .BR 1 ", " true ", or " yes ,

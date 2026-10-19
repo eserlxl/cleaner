@@ -2957,10 +2957,93 @@ suggest_daily_timer() {
   fi
 }
 
+# Write an opt-in Prometheus node_exporter textfile when LINUX_CLEANER_METRICS_FILE
+# is set. Non-fatal: a bad path or write error warns and never changes exit status.
+write_cleanup_metrics() {
+  local metrics_file="${LINUX_CLEANER_METRICS_FILE:-}"
+  [[ -n "$metrics_file" ]] || return 0
+  if [[ "$metrics_file" != /* || "$metrics_file" == *$'\n'* || "$metrics_file" == / ]]; then
+    echo "Warning: LINUX_CLEANER_METRICS_FILE must be a literal absolute file path without line feeds; skipping metrics export." >&2
+    return 0
+  fi
+  if [[ -L "$metrics_file" || -d "$metrics_file" ]]; then
+    echo "Warning: refusing to write cleanup metrics; '$metrics_file' is a symlink or directory." >&2
+    return 0
+  fi
+  local metrics_dir tmp line cleaned=0 skipped=0 failed=0 quarantined_bytes=0 permanent_bytes=0 interrupted="" success=1 now
+  metrics_dir=$(dirname -- "$metrics_file") || {
+    echo "Warning: could not resolve cleanup metrics directory for '$metrics_file'." >&2
+    return 0
+  }
+  if [[ -L "$metrics_dir" || ! -d "$metrics_dir" ]]; then
+    echo "Warning: could not write cleanup metrics; directory '$metrics_dir' does not exist or is a symlink." >&2
+    return 0
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "Result: cleaned="*)
+        if [[ "$line" =~ ^Result:\ cleaned=([0-9]+)\ skipped=([0-9]+)\ failed=([0-9]+)\ elapsed=([0-9]+)s$ ]]; then
+          cleaned="${BASH_REMATCH[1]}"
+          skipped="${BASH_REMATCH[2]}"
+          failed="${BASH_REMATCH[3]}"
+        fi
+        ;;
+      "Accounted bytes:"*)
+        if [[ "$line" =~ ^Accounted\ bytes:\ quarantined=(0|[1-9][0-9]*)\ permanent=(0|[1-9][0-9]*)$ ]]; then
+          quarantined_bytes="${BASH_REMATCH[1]}"
+          permanent_bytes="${BASH_REMATCH[2]}"
+        fi
+        ;;
+      "Interrupted: "*)
+        interrupted="${line#Interrupted: }"
+        ;;
+    esac
+  done <<< "${RESULT_REPORT_TEXT:-}"
+  if [[ "${OPERATION_FAILED:-false}" == true || -n "$interrupted" ]]; then
+    success=0
+  fi
+  now=$(date +%s 2>/dev/null) || now=0
+  tmp=$(mktemp "${metrics_dir}/.linux-cleaner-metrics.XXXXXX" 2>/dev/null) || {
+    echo "Warning: could not create temporary cleanup metrics file in '$metrics_dir'." >&2
+    return 0
+  }
+  chmod 0644 -- "$tmp" 2>/dev/null || true
+  if ! printf '%s\n' \
+    "# HELP linux_cleaner_last_run_timestamp_seconds Unix timestamp of the last cleanup run." \
+    "# TYPE linux_cleaner_last_run_timestamp_seconds gauge" \
+    "linux_cleaner_last_run_timestamp_seconds ${now}" \
+    "# HELP linux_cleaner_last_run_success Whether the last cleanup run succeeded (1) or failed/was interrupted (0)." \
+    "# TYPE linux_cleaner_last_run_success gauge" \
+    "linux_cleaner_last_run_success ${success}" \
+    "# HELP linux_cleaner_targets Number of targets processed in the last cleanup run by result." \
+    "# TYPE linux_cleaner_targets gauge" \
+    "linux_cleaner_targets{result=\"cleaned\"} ${cleaned}" \
+    "linux_cleaner_targets{result=\"skipped\"} ${skipped}" \
+    "linux_cleaner_targets{result=\"failed\"} ${failed}" \
+    "# HELP linux_cleaner_reclaimed_bytes Accounted bytes reclaimed in the last cleanup run by kind." \
+    "# TYPE linux_cleaner_reclaimed_bytes gauge" \
+    "linux_cleaner_reclaimed_bytes{kind=\"quarantined\"} ${quarantined_bytes}" \
+    "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}" > "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo "Warning: could not write cleanup metrics to '$metrics_file'." >&2
+    return 0
+  fi
+  if [[ -L "$metrics_dir" || -L "$metrics_file" || -d "$metrics_file" ]]; then
+    rm -f -- "$tmp" || true
+    echo "Warning: refusing to write cleanup metrics; '$metrics_file' is a symlink or directory." >&2
+    return 0
+  fi
+  if ! mv -f -- "$tmp" "$metrics_file"; then
+    rm -f -- "$tmp" || true
+    echo "Warning: could not save cleanup metrics to '$metrics_file'." >&2
+    return 0
+  fi
+}
+
 # Save the plan plus the result. Non-fatal: a bad state path or a write error
 # warns and leaves the cleanup's exit status unchanged. The state path is
 # untrusted, so a symlink is never followed and readers never see a partial file.
-save_last_cleanup_report() {
+write_last_report_file() {
   local state_dir report_file tmp body failed_name
   if ! state_dir=$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state" && printf '.'); then
     echo "Warning: could not resolve the cleanup report directory." >&2
@@ -3009,6 +3092,12 @@ save_last_cleanup_report() {
     echo "Warning: could not save the cleanup report." >&2
     return 0
   fi
+}
+
+# Every cleanup exit records its outcome in both the saved report and the metrics file.
+save_last_cleanup_report() {
+  write_last_report_file
+  write_cleanup_metrics
 }
 
 # Check if any specified process is running
