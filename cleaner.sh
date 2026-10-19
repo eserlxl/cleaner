@@ -3346,7 +3346,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         root_unavailable=false
         if { [[ "$custom_clean_cmd" == action:* ]] && ! action_is_user_level "$custom_clean_cmd"; } || \
            [[ -e "$path" && ! -r "$path" ]] || \
-           { [[ ! -e "$path" ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; }; then
+           { [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]] && \
+             { [[ ! -e "$path" ]] || { ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; }; }; then
           requires_sudo=true
           if [[ "$DRY_RUN" = false ]]; then
             if ensure_sudo; then

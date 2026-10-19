@@ -1555,6 +1555,48 @@ else
   exit 1
 fi
 
+# 21b. Test Case: an existing outside-HOME target under an unwritable parent requires root
+setup_mock_env
+outside_parent="$OUTSIDE_DIR/unwritable_parent"
+outside_full="$outside_parent/full_target"
+outside_aged="$outside_parent/aged_target"
+outside_excluded="$outside_parent/excluded_target"
+mkdir -p "$outside_full/sub" "$outside_aged" "$outside_excluded"
+echo keep_full > "$outside_full/sub/f"
+echo old_aged > "$outside_aged/old.txt"
+touch -d "10 days ago" "$outside_aged/old.txt"
+echo drop_exc > "$outside_excluded/drop.txt"
+echo keep_exc > "$outside_excluded/keep.lock"
+outside_full_canon="$(realpath "$outside_full")"
+chmod 555 "$outside_parent"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/sudo"
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+cat > "$TEST_ENV_DIR/outside_unwritable_parent.conf" <<EOF
+safe|Outside Full Unwritable Parent|$outside_full|whole outside target under unwritable parent|0||
+safe|Outside Aged Unwritable Parent|$outside_aged|aged outside target under unwritable parent|5||
+safe|Outside Excluded Unwritable Parent|$outside_excluded|excluded outside target under unwritable parent|0||exclude:*.lock
+EOF
+outside_root_log="$MOCK_HOME/outside-unwritable-parent.log"
+if run_test_case "Outside HOME Unwritable Parent Skip Without Privileges" 0 "outside_unwritable_parent_run.log" \
+     --config "$TEST_ENV_DIR/outside_unwritable_parent.conf" --clean --force --log "$outside_root_log"; then
+  chmod 755 "$outside_parent" 2>/dev/null || true
+  if grep -qF "Warning: skipping 'Outside Full Unwritable Parent' ($outside_full_canon): requires root privileges that are not available." "$TEST_ENV_DIR/outside_unwritable_parent_run.log" \
+     && grep -qF "outcome=skipped reason=requires-root" "$outside_root_log" \
+     && grep -qF "Skipped (requires root): Outside Full Unwritable Parent" "$TEST_ENV_DIR/outside_unwritable_parent_run.log" \
+     && [[ -f "$outside_full/sub/f" ]] \
+     && [[ ! -e "$outside_aged/old.txt" && -d "$outside_aged" ]] \
+     && [[ ! -e "$outside_excluded/drop.txt" && -f "$outside_excluded/keep.lock" ]]; then
+    echo -e "${GREEN}PASS: existing outside-HOME target under unwritable parent was skipped as requiring root with contents intact, while aged and excluded siblings cleaned file-by-file without sudo.${NC}"
+  else
+    echo -e "${RED}FAIL: outside-HOME target under unwritable parent was not handled as expected.${NC}"
+    cat "$TEST_ENV_DIR/outside_unwritable_parent_run.log" "$outside_root_log" 2>/dev/null
+    exit 1
+  fi
+else
+  chmod 755 "$outside_parent" 2>/dev/null || true
+  exit 1
+fi
+
 # 22. Test Case: format_bytes GB scaling (unit_idx reaching 3)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/gb_probe"
