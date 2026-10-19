@@ -103,6 +103,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Keep Bash session-name completion working under failglob by discovering session directories via compgen instead of expanding a pathname glob, offering selectors and sessions without aborting.
+
 - Keep the git-tracked target guard enabled for readable targets that require `sudo` (such as an outside-`HOME` target under an unwritable parent directory), skipping the git check only when the cleaner runs as root or the target is unreadable without `sudo`.
 
 - Complete file paths as well as directories for `--only-path` across Bash, Zsh, and Fish tab completions, and stop Zsh offering stacked short options that the parser rejects.

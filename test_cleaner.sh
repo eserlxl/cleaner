@@ -9822,6 +9822,21 @@ if ! (
     HOME="$MOCK_HOME" _cleaner
     [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
   done
+  (
+    shopt -s failglob
+    failglob_home="$TEST_ENV_DIR/failglob_empty_home"
+    mkdir -p "$failglob_home"
+    COMP_WORDS=(cleaner --restore "")
+    COMP_CWORD=2
+    HOME="$failglob_home" _cleaner
+    [[ "${COMPREPLY[*]}" == "latest" ]] || exit 1
+
+    COMP_WORDS=(cleaner --restore "")
+    COMP_CWORD=2
+    HOME="$MOCK_HOME" _cleaner
+    [[ "${COMPREPLY[*]}" == "latest 2026-10-18_12-34-56" ]] || exit 1
+    rm -rf "$failglob_home"
+  ) || exit 1
   echo -e "${GREEN}PASS: bash completes immediate quarantine session names and preserves selectors with no quarantine directory.${NC}"
 
   COMP_WORDBREAKS=$' \t\n"\'><=;|&(:'

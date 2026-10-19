@@ -24,11 +24,12 @@ _cleaner() {
   local -a sessions=()
   if [[ "$prev" == --restore || "$prev" == --purge-sessions ]]; then
     local session
-    for session in "$HOME/.cache/linux-cleaner/quarantine/"{*,.[!.]*,..?*}; do
+    while IFS= read -r session; do
       [[ -d "$session" && ! -L "$session" ]] || continue
       session="${session##*/}"
+      [[ "$session" == "." || "$session" == ".." ]] && continue
       [[ "$session" == "$cur"* ]] && sessions+=("$session")
-    done
+    done < <(compgen -d -- "$HOME/.cache/linux-cleaner/quarantine/$cur")
   fi
 
   case "$prev" in
