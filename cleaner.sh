@@ -837,13 +837,15 @@ fi
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given:
   # XDG user config > system config > dev-checkout config beside the script.
+  config_candidates=()
   if [[ -z "$CONFIG_FILE" ]]; then
     xdg_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || exit 1
     xdg_config_parent=${xdg_config_parent%.}
-    for candidate in \
-        "$xdg_config_parent/linux-cleaner/cleaner.conf" \
-        "/etc/linux-cleaner/cleaner.conf" \
-        "$SCRIPT_DIR/cleaner.conf"; do
+    config_candidates=(
+      "$xdg_config_parent/linux-cleaner/cleaner.conf"
+      "/etc/linux-cleaner/cleaner.conf"
+      "$SCRIPT_DIR/cleaner.conf")
+    for candidate in "${config_candidates[@]}"; do
       if [[ -f "$candidate" ]]; then
         CONFIG_FILE="$candidate"
         break
@@ -857,6 +859,10 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != 
   fi
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
+    if [[ ${#config_candidates[@]} -gt 0 ]]; then
+      printf '  searched: %s\n' "${config_candidates[@]}" >&2
+      echo "Run 'cleaner --doctor' to check the environment." >&2
+    fi
     exit 1
   fi
 fi

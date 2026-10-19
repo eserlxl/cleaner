@@ -30,6 +30,7 @@ cleaner                 # preview safe targets and estimated savings (dry-run de
 cleaner --clean         # clean safe targets after a single confirmation prompt
 cleaner --trash --clean # move files to a restorable quarantine instead of deleting
 cleaner --report        # view the saved plan and result from the last cleanup
+cleaner --doctor        # check the config location, helper tools, and timers before a first run
 ```
 
 Running from a repository checkout works the same way (`./cleaner.sh`, `./cleaner.sh --clean`, `./cleaner.sh --report`). Every option is listed in the [command-line reference](docs/cli-reference.md) and in `man cleaner`.

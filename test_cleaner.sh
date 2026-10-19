@@ -11234,5 +11234,32 @@ if ! run_test_case "Doctor With List Targets Rejected" 1 "doctor_mx_list.log" --
 fi
 echo -e "${GREEN}PASS: --doctor rejects other modes, filter flags, and --json.${NC}"
 
+# A discovery miss names every searched location and points at --doctor; the
+# /etc candidate is redirected in a copy so the host's own install cannot hide the miss.
+echo -e "\n${BOLD}Test Case: Config Not Found Lists Searched Locations${NC}"
+nc_dir="$TEST_ENV_DIR/no_config_checkout"
+mkdir -p "$nc_dir/xdg"
+sed 's|"/etc/linux-cleaner/cleaner.conf"|"'"$nc_dir"'/etc/cleaner.conf"|' "$CLEANER_SH" > "$nc_dir/cleaner.sh"
+nc_ec=0
+XDG_CONFIG_HOME="$nc_dir/xdg" HOME="$MOCK_HOME" bash "$nc_dir/cleaner.sh" < /dev/null > "$nc_dir/miss.log" 2>&1 || nc_ec=$?
+if [[ "$nc_ec" -ne 1 ]] \
+   || ! grep -qxF "  searched: $nc_dir/xdg/linux-cleaner/cleaner.conf" "$nc_dir/miss.log" \
+   || ! grep -qxF "  searched: $nc_dir/etc/cleaner.conf" "$nc_dir/miss.log" \
+   || ! grep -qxF "  searched: $nc_dir/cleaner.conf" "$nc_dir/miss.log" \
+   || ! grep -qxF "Run 'cleaner --doctor' to check the environment." "$nc_dir/miss.log"; then
+  echo -e "${RED}FAIL: a config discovery miss did not list the searched locations and the --doctor hint (ec=$nc_ec).${NC}"
+  cat "$nc_dir/miss.log" 2>/dev/null || true
+  exit 1
+fi
+nc_ec=0
+HOME="$MOCK_HOME" bash "$nc_dir/cleaner.sh" -c "$nc_dir/missing.conf" < /dev/null > "$nc_dir/explicit.log" 2>&1 || nc_ec=$?
+if [[ "$nc_ec" -ne 1 ]] || ! grep -qF "Configuration file not found at '$nc_dir/missing.conf'" "$nc_dir/explicit.log" \
+   || grep -q "searched:\|--doctor" "$nc_dir/explicit.log"; then
+  echo -e "${RED}FAIL: an explicit missing config path changed its error (ec=$nc_ec).${NC}"
+  cat "$nc_dir/explicit.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: a config discovery miss lists every searched location and the --doctor hint; an explicit path does not.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
