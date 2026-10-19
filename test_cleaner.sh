@@ -5481,6 +5481,59 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Exclude Path Parent Target${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/t/keep" "$MOCK_HOME/.cache/other"
+echo "keep_payload" > "$MOCK_HOME/.cache/t/keep/f"
+echo "other_payload" > "$MOCK_HOME/.cache/other/f"
+cat > "$TEST_ENV_DIR/exclude_path_parent.conf" <<'EOF'
+safe|Parent Target|$HOME/.cache/t|Parent target containing excluded subdir|0||
+safe|Other Target|$HOME/.cache/other|Unrelated target|0||
+EOF
+if run_test_case "Exclude Path Parent Target List Targets" 0 "exclude_path_parent_list.log" \
+     --config "$TEST_ENV_DIR/exclude_path_parent.conf" --exclude-path "$MOCK_HOME/.cache/t/keep" --list-targets \
+   && run_test_case "Exclude Path Parent Target Force Cleanup" 0 "exclude_path_parent_force.log" \
+     --config "$TEST_ENV_DIR/exclude_path_parent.conf" --exclude-path "$MOCK_HOME/.cache/t/keep" --force; then
+  if ! grep -q "Parent Target" "$TEST_ENV_DIR/exclude_path_parent_list.log" \
+     && grep -q "Other Target" "$TEST_ENV_DIR/exclude_path_parent_list.log" \
+     && [[ -f "$MOCK_HOME/.cache/t/keep/f" && ! -d "$MOCK_HOME/.cache/other" ]]; then
+    echo -e "${GREEN}PASS: --exclude-path skips parent target containing the excluded path in --list-targets and --force while cleaning unrelated rows.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-path did not skip parent target or failed to clean unrelated row.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_parent_list.log" "$TEST_ENV_DIR/exclude_path_parent_force.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Path Symlinked Parent${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache" "$OUTSIDE_DIR/x/build" "$MOCK_HOME/other"
+ln -s "$OUTSIDE_DIR/x" "$MOCK_HOME/.cache/x"
+echo "sym_payload" > "$OUTSIDE_DIR/x/build/f"
+echo "other_payload" > "$MOCK_HOME/other/f"
+cat > "$TEST_ENV_DIR/exclude_path_sym_parent.conf" <<'EOF'
+safe|Symlinked Parent Target|$HOME/.cache/x/build|Target under symlinked parent|0||
+safe|Other Target|$HOME/other|Unrelated target outside symlinked branch|0||
+EOF
+if run_test_case "Exclude Path Symlinked Parent List Targets" 0 "exclude_path_sym_list.log" \
+     --config "$TEST_ENV_DIR/exclude_path_sym_parent.conf" --exclude-path "$MOCK_HOME/.cache" --list-targets \
+   && run_test_case "Exclude Path Symlinked Parent Force Cleanup" 0 "exclude_path_sym_force.log" \
+     --config "$TEST_ENV_DIR/exclude_path_sym_parent.conf" --exclude-path "$MOCK_HOME/.cache" --force; then
+  if ! grep -q "Symlinked Parent Target" "$TEST_ENV_DIR/exclude_path_sym_list.log" \
+     && grep -q "Other Target" "$TEST_ENV_DIR/exclude_path_sym_list.log" \
+     && [[ -f "$OUTSIDE_DIR/x/build/f" && ! -d "$MOCK_HOME/other" ]]; then
+    echo -e "${GREEN}PASS: --exclude-path skips target reaching or reached through a symlinked parent in --list-targets and --force.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-path did not skip target under symlinked parent.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_sym_list.log" "$TEST_ENV_DIR/exclude_path_sym_force.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 
 # The shipped monitor command stays a preview with optional independent settings.
 python3 - "$CLEANER_SH" "$SCRIPT_DIR/examples/systemd/linux-cleaner-monitor.service" <<'MONITOR_PROFILE_PY'

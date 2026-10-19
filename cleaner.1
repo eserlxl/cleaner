@@ -391,10 +391,10 @@ or
 .TP
 .B \-\-exclude\-path \fIPATH\fR
 With cleanup or configured-target inventory, skip targets whose resolved physical
-path equals or lies below one existing absolute literal
+or expanded literal path equals, lies below, or contains one existing absolute literal
 .IR PATH
 (whole path components; action:* rows are excluded when their path matches;
-missing targets are never excluded). The last occurrence wins and overrides
+missing targets that do not match literally are never excluded). The last occurrence wins and overrides
 .BR LINUX_CLEANER_EXCLUDE_PATH ;
 unset or empty environment input means no exclusion. Exits 1 if
 .I PATH
@@ -692,8 +692,9 @@ retention (including
 .B LINUX_CLEANER_EXCLUDE_PATH
 When set to a non-empty existing absolute literal path without line feeds, enables
 .BR \-\-exclude\-path
-for cleanup or target inventory. Unset or empty means no exclusion. CLI flags
-override this variable.
+for cleanup or target inventory (skipping targets whose resolved physical or
+expanded literal path equals, lies below, or contains the path). Unset or empty
+means no exclusion. CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_LOCK_WAIT
 Literal decimal 0..2147483647 seconds for

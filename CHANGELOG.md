@@ -113,6 +113,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Make `--exclude-path` (and `LINUX_CLEANER_EXCLUDE_PATH`) also skip targets whose resolved physical or expanded literal path contains, equals, or lies below the excluded path, so a parent target cannot delete an excluded child directory and a target under a symlinked parent of the excluded literal path is still excluded.
+
 - Refuse a long option (`--...`) or `-d` as the argument of `-c/--config`, `-r/--risk`, `-e/--exclude`, `--restore`, `--only`, `--only-exact`, `--only-target`, `--exclude-target`, or `--purge-sessions` (`Error: <flag> requires a value, got option '<token>'.`), so an unquoted empty variable before `--dry-run` cannot swallow `--dry-run` and turn a preview into a deletion, while still accepting other dash-leading values such as `-x*` or a target `NAME` of `-n`.
 
 - Preserve a quarantine session's directory mtime when a partial (`--only` / `--only-exact`) or failed restore keeps the session, so `older-than` retention still retires the remaining targets on the session's original schedule.

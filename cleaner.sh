@@ -916,7 +916,7 @@ resolve_existing_path() {
 }
 
 select_target_path() {
-  local expanded
+  local expanded stripped excl_lit
   if [[ -n "$ONLY_PATH" ]]; then
     [[ "$2" == action:* ]] && return 1
     expanded=$(expand_path_safe "$1") || return 1
@@ -929,9 +929,16 @@ select_target_path() {
     fi
   fi
   if [[ -n "$EXCLUDE_PATH" ]]; then
-    if expanded=$(expand_path_safe "$1") && resolve_existing_path "$expanded"; then
-      if [[ "$EXCLUDE_PATH_CANONICAL" == / || "$RESOLVED_PATH" == "$EXCLUDE_PATH_CANONICAL" || "$RESOLVED_PATH" == "$EXCLUDE_PATH_CANONICAL"/* ]]; then
+    if expanded=$(expand_path_safe "$1"); then
+      stripped=$(strip_trailing_slashes "$expanded")
+      excl_lit=$(strip_trailing_slashes "$EXCLUDE_PATH")
+      if [[ "$excl_lit" == / || "$stripped" == "$excl_lit" || "$stripped" == "$excl_lit"/* || "$excl_lit" == "$stripped"/* ]]; then
         return 1
+      fi
+      if resolve_existing_path "$expanded"; then
+        if [[ "$EXCLUDE_PATH_CANONICAL" == / || "$RESOLVED_PATH" == "$EXCLUDE_PATH_CANONICAL" || "$RESOLVED_PATH" == "$EXCLUDE_PATH_CANONICAL"/* || "$EXCLUDE_PATH_CANONICAL" == "$RESOLVED_PATH"/* ]]; then
+          return 1
+        fi
       fi
     fi
     exclude_path_kept=true
