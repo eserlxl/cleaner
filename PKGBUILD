@@ -6,9 +6,10 @@ pkgdesc="Safe, configuration-driven cleaner for caches and temporary files"
 arch=('any')
 url="https://github.com/eserlxl/cleaner"
 license=('GPL-3.0-or-later')
-depends=('bash' 'findutils' 'coreutils')
+depends=('bash>=4.4' 'findutils' 'coreutils')
 optdepends=('pacman-contrib: paccache-based package-cache actions'
-            'libnotify: desktop notifications for --notify')
+            'libnotify: desktop notifications for --notify'
+            'git: skip cleanup targets that hold git-tracked files')
 backup=('etc/linux-cleaner/cleaner.conf')
 install=linux-cleaner.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
