@@ -620,13 +620,13 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --report, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --report, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -640,28 +640,28 @@ if [[ -n "$EXCLUDE_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LI
   exit 1
 fi
 
-if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$MIN_FREE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --min-free applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$MIN_FREE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --min-free applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ "$NOTIFY_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --report, --init-config, or --doctor).${NC}" >&2
+if [[ "$NOTIFY_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -696,41 +696,6 @@ session_mode_count=0
 [[ "$LIST_SESSIONS" == true ]] && session_mode_count=$((session_mode_count + 1))
 if [[ "$session_mode_count" -gt 1 ]]; then
   echo -e "${RED}Error: --restore, --purge-sessions and --list-sessions cannot be combined.${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$ONLY_TARGET" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --check-config).${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$EXCLUDE_TARGET" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --check-config).${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$MIN_RECLAIM" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --check-config).${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$MIN_FREE" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --min-free applies only to cleanup runs (not --check-config).${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$MIN_AGE_OVERRIDE" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --check-config).${NC}" >&2
-  exit 1
-fi
-
-if [[ -n "$TRASH_KEEP_DAYS" && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --check-config).${NC}" >&2
-  exit 1
-fi
-
-if [[ "$NOTIFY_CLI" == true && "$CHECK_CONFIG" == true ]]; then
-  echo -e "${RED}Error: --notify applies only to cleanup runs (not --check-config).${NC}" >&2
   exit 1
 fi
 

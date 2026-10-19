@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- `--only-target` and `--exclude-target` refuse `--check-config` with the full list `(not --restore, --purge-sessions, --list-sessions, --check-config, --report, --init-config, or --doctor)`, and `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, and `--notify` refuse it with `(not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor)`, replacing the separate `(not --check-config)` message.
+
 - Run the clean, retention and monitor systemd user units at `Nice=19` with
   idle IO scheduling, so a `Persistent=true` catch-up run at login or the
   six-hourly preview does not slow the desktop session.
