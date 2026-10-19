@@ -46,6 +46,8 @@ At runtime, the configuration file is resolved in this order:
 4. `/etc/linux-cleaner/cleaner.conf`
 5. `cleaner.conf` beside the script (development checkout)
 
+Steps 3-5 apply only when neither `-c, --config` nor `LINUX_CLEANER_CONFIG` names a file. When none of them exists, the error lists every searched location (`  searched: <path>` lines) and suggests `cleaner --doctor`; a file that exists but cannot be read is refused with `Error: Configuration file '<path>' is not readable`. Both exit `1` before any analysis. `cleaner --doctor` shows the file a run would use and whether it came from XDG, `/etc`, the checkout, or an explicit path, without needing the file to exist.
+
 Run `cleaner --init-config` to copy the active config to `${XDG_CONFIG_HOME:-~/.config}/linux-cleaner/cleaner.conf` (it never overwrites), then edit it.
 
 ## Supported platforms and requirements
