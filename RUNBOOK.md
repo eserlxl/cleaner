@@ -14,7 +14,7 @@ Scheduling examples live in this `RUNBOOK.md` plus `examples/systemd/` and `exam
 
 ## Unattended operations contract
 
-Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `purge-sessions older-than:DAYS` (or `max-size:SIZE` for a disk budget), or let the cleanup run retire old sessions itself with `--trash-keep-days DAYS`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
+Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `--purge-sessions older-than:DAYS` (or `max-size:SIZE` for a disk budget), or let the cleanup run retire old sessions itself with `--trash-keep-days DAYS`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
 
 Config resolution: `-c` / `LINUX_CLEANER_CONFIG`, XDG user config, `/etc/linux-cleaner/cleaner.conf`, script-adjacent `cleaner.conf`.
 
