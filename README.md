@@ -110,7 +110,7 @@ The exact `medium` rows and their age thresholds are listed in [docs/safety.md](
 - **System directories are refused**: `/`, `$HOME` itself, `/usr`, `/etc`, `/var`, `/opt`, `/tmp`, and other top-level system paths are skipped as `[UNSAFE]`; their descendants are allowed.
 - **No symlinks, no `eval`, no shell globbing**: symlinked targets are refused, and wildcards are expanded by `find` below a literal prefix.
 - **Running applications are left alone**: a target whose `CHECK_PROCESSES` are active is skipped as `[BLOCKED]`. These checks require `pgrep` (usually from `procps`/`procps-ng`); a missing or failed query skips that target as `[SKIP]` before sizing or cleanup. Targets without process checks remain usable.
-- **Your files are protected**: git-tracked files and `protect|PATH` directories are never cleaned, and a restore never overwrites an existing file.
+- **Your files are protected**: `protect|PATH` directories are never cleaned; a target inside a Git work tree that holds git-tracked files is skipped when the cleaner runs as a normal user on a target that needs no `sudo`; and a restore never overwrites an existing file.
 - **Quarantine is restorable**: `--trash` sessions can be listed with `--list-sessions` and brought back with `--restore latest`.
 
 The full safety model is in [docs/safety.md](docs/safety.md); recovery steps are in [docs/QUARANTINE-OPS.md](docs/QUARANTINE-OPS.md).
