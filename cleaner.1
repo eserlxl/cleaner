@@ -312,7 +312,10 @@ non-interactive
 .B "systemctl \-\-user is\-enabled"
 for the clean, retention, and monitor timers; a WARN when the enabled clean
 timer's env file sets LINUX_CLEANER_TRASH without LINUX_CLEANER_TRASH_KEEP_DAYS or
-an enabled retention timer; and the quarantine session count).
+an enabled retention timer; a WARN when
+.I ~/.config/linux\-cleaner/monitor.env
+is unreadable or sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS;
+and the quarantine session count).
 A readable file is schema-checked; an invalid file prints
 .B "WARN: config: path (source, error)"
 and the rest of the checklist still prints.

@@ -11585,6 +11585,67 @@ doc_retention_case "trash disabled by a later line" none
 rm -f "$doc_env_dir/env"
 echo -e "${GREEN}PASS: --doctor warns when the daily timer quarantines with no retention bound, and only then.${NC}"
 
+# monitor.env sits beside the home timer env file. A conflict or an unreadable
+# file warns; an absent file does not. XDG_CONFIG_HOME does not move either path.
+echo -e "\n${BOLD}Test Case: Doctor Monitor Env Warnings${NC}"
+mkdir -p "$doc_env_dir"
+doc_mon_xdg="$TEST_ENV_DIR/doctor_mon_xdg"
+mkdir -p "$doc_mon_xdg/linux-cleaner"
+cat > "$TEST_ENV_DIR/bin/systemctl" <<'DOC_MON_SYSTEMCTL_EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--user" && "${2:-}" == "is-enabled" ]]; then
+  case "${3:-}" in
+    linux-cleaner-clean.timer) echo "enabled"; exit 0 ;;
+    linux-cleaner-retention.timer) echo "disabled"; exit 1 ;;
+    linux-cleaner-monitor.timer) echo "disabled"; exit 1 ;;
+  esac
+fi
+exit 1
+DOC_MON_SYSTEMCTL_EOF
+chmod +x "$TEST_ENV_DIR/bin/systemctl"
+printf 'LINUX_CLEANER_TRASH=1\n' > "$doc_env_dir/env"
+printf 'LINUX_CLEANER_ONLY_PATH=/tmp\nLINUX_CLEANER_TRASH_KEEP_DAYS=7\n' > "$doc_env_dir/monitor.env"
+doc_mon_ec=0
+XDG_CONFIG_HOME="$doc_mon_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+  < /dev/null > "$TEST_ENV_DIR/doctor_monitor.log" 2>&1 || doc_mon_ec=$?
+if [[ "$doc_mon_ec" -ne 0 ]] \
+   || ! grep -qxF "WARN: monitor env: $doc_env_dir/monitor.env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS" "$TEST_ENV_DIR/doctor_monitor.log" \
+   || ! grep -qxF "WARN: quarantine retention: $doc_env_dir/env enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine" "$TEST_ENV_DIR/doctor_monitor.log"; then
+  echo -e "${RED}FAIL: --doctor did not warn about a conflicting monitor.env and the home timer env (ec=$doc_mon_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_monitor.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$doc_env_dir/monitor.env"
+doc_mon_ec=0
+XDG_CONFIG_HOME="$doc_mon_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+  < /dev/null > "$TEST_ENV_DIR/doctor_monitor.log" 2>&1 || doc_mon_ec=$?
+if [[ "$doc_mon_ec" -ne 0 ]] \
+   || grep -q "WARN: monitor env:" "$TEST_ENV_DIR/doctor_monitor.log"; then
+  echo -e "${RED}FAIL: --doctor printed a monitor env line when monitor.env was absent (ec=$doc_mon_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_monitor.log" 2>/dev/null || true
+  exit 1
+fi
+if [[ "$EUID" -ne 0 ]]; then
+  printf 'LINUX_CLEANER_ONLY_PATH=/tmp\n' > "$doc_env_dir/monitor.env"
+  chmod 000 "$doc_env_dir/monitor.env"
+  doc_mon_ec=0
+  XDG_CONFIG_HOME="$doc_mon_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+    < /dev/null > "$TEST_ENV_DIR/doctor_monitor.log" 2>&1 || doc_mon_ec=$?
+  chmod 600 "$doc_env_dir/monitor.env"
+  if [[ "$doc_mon_ec" -ne 0 ]] \
+     || ! grep -qxF "WARN: monitor env: $doc_env_dir/monitor.env (not readable)" "$TEST_ENV_DIR/doctor_monitor.log" \
+     || grep -q "combines LINUX_CLEANER_ONLY_PATH" "$TEST_ENV_DIR/doctor_monitor.log"; then
+    echo -e "${RED}FAIL: --doctor did not warn about an unreadable monitor.env (ec=$doc_mon_ec).${NC}"
+    cat "$TEST_ENV_DIR/doctor_monitor.log" 2>/dev/null || true
+    exit 1
+  fi
+fi
+rm -f "$doc_env_dir/env" "$doc_env_dir/monitor.env"
+echo -e "${GREEN}PASS: --doctor warns on a conflicting or unreadable monitor.env, stays silent when it is absent, and still reads the home timer env when XDG_CONFIG_HOME points elsewhere.${NC}"
+
 # Checkout fallback when XDG config is absent; the /etc candidate is redirected
 # in a copy so the host's own install cannot answer instead.
 rm -rf "$doctor_xdg" "$MOCK_HOME/.cache/linux-cleaner/quarantine"

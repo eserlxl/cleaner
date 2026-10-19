@@ -3404,7 +3404,8 @@ run_doctor() {
   printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
-  local timer_env="$HOME/.config/linux-cleaner/env" env_line env_trash="" env_keep=""
+  # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_trash="" env_keep="" mon_only="" mon_keep=""
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     while IFS= read -r env_line || [[ -n "$env_line" ]]; do
       env_line=$(trim "$env_line")
@@ -3422,6 +3423,22 @@ run_doctor() {
         fi
         ;;
     esac
+  fi
+  if [[ -f "$monitor_env" && -r "$monitor_env" ]]; then
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+      env_line=$(trim "$env_line")
+      case "$env_line" in
+        LINUX_CLEANER_ONLY_PATH=*) mon_only="${env_line#*=}" ;;
+        LINUX_CLEANER_TRASH_KEEP_DAYS=*) mon_keep="${env_line#*=}" ;;
+      esac
+    done < "$monitor_env"
+    mon_only="${mon_only//[\"\']/}"
+    mon_keep="${mon_keep//[\"\']/}"
+    if [[ -n "$mon_only" && -n "$mon_keep" ]]; then
+      printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
+    fi
+  elif [[ -e "$monitor_env" && ! -r "$monitor_env" ]]; then
+    printf 'WARN: monitor env: %s (not readable)\n' "$monitor_env"
   fi
 
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_dots=""
