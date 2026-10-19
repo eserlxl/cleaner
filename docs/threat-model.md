@@ -36,7 +36,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | 5 | Env-token abuse | Whole-token expansion | Whole-Token HOME/USER Expansion |
 | 6 | Path escape via quarantine SESSION name | `validate_quarantine_session_name` | Restore Invalid Session / Purge Invalid Session |
 | 7 | Over-broad wildcard in PATH_EXPRESSION | Fixed-depth `find` below a literal root (a `**` component at most 10 levels, `GLOB_RECURSION_MAX_DEPTH`) + per-match `check_path_safety` | Wildcard Path Expansion / Wildcard Root Refusal / Wildcard Line Number Fidelity / Wildcard Recursion Ceiling |
-| 8 | Build target contains source files | With Git available, `count_git_tracked` skips targets containing tracked files even with `--force`, unless the cleaner runs as root or the target requires sudo. | Git-Tracked Target Guard |
+| 8 | Build target contains source files | With Git available, `count_git_tracked` skips targets containing tracked files even with `--force`, unless the cleaner runs as root or the target is unreadable without sudo. | Git-Tracked Target Guard |
 | 9 | Target overlaps user-protected directory | `protect\|PATH` config directive skips any target whose canonical path equals, lies under, or contains a protected path | Protect Check Config Valid / Protect Clean Force / Protect Dry Run JSON |
 
 ## Config Tampering and Injection

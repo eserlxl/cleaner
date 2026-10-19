@@ -3376,7 +3376,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
 
         git_tracked_count=0
         git_tracked_status=0
-        if [[ "$root_unavailable" != true && -e "$path" && "$requires_sudo" != true ]]; then
+        if [[ "$root_unavailable" != true && -e "$path" && -r "$path" && ( ! -d "$path" || -x "$path" ) ]]; then
           git_tracked_count=$(count_git_tracked "$path") || git_tracked_status=$?
         fi
         if [[ "$root_unavailable" == true ]]; then

@@ -344,6 +344,33 @@ if ! run_test_case "Git-Tracked Target Guard Corrupt Index" 0 "git_guard_corrupt
 fi
 echo -e "${GREEN}PASS: Corrupt git index fails closed with [SKIP] and preserves work-tree targets.${NC}"
 
+# A readable outside-HOME target under an unwritable parent still runs the unprivileged git-tracked guard.
+setup_mock_env
+mkdir -p "$OUTSIDE_DIR/proj/sub/build"
+printf 'source\n' > "$OUTSIDE_DIR/proj/sub/build/tracked.c"
+HOME="$MOCK_HOME" git init -q "$OUTSIDE_DIR/proj"
+HOME="$MOCK_HOME" git -C "$OUTSIDE_DIR/proj" config user.name 'Cleaner Test'
+HOME="$MOCK_HOME" git -C "$OUTSIDE_DIR/proj" config user.email 'cleaner-test@example.invalid'
+HOME="$MOCK_HOME" git -C "$OUTSIDE_DIR/proj" add -- sub/build/tracked.c
+HOME="$MOCK_HOME" git -C "$OUTSIDE_DIR/proj" -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+  commit -qm 'Track source under unwritable parent'
+chmod 555 "$OUTSIDE_DIR/proj/sub"
+cat > "$TEST_ENV_DIR/git_guard_sudo_readable.conf" <<GIT_GUARD_SUDO_READABLE
+safe|Readable Sudo Repo Build|$OUTSIDE_DIR/proj/sub/build|Readable build under unwritable parent|0||
+GIT_GUARD_SUDO_READABLE
+if ! run_test_case "Git-Tracked Target Guard Readable Sudo Target" 0 "git_guard_sudo_readable.log" \
+     --config "$TEST_ENV_DIR/git_guard_sudo_readable.conf" --force \
+   || ! grep -qF "[SKIP] Readable Sudo Repo Build: skipped: contains 1 git-tracked file(s) under '$OUTSIDE_DIR/proj/sub/build'." \
+     "$TEST_ENV_DIR/git_guard_sudo_readable.log" \
+   || [[ ! -f "$OUTSIDE_DIR/proj/sub/build/tracked.c" ]]; then
+  chmod 755 "$OUTSIDE_DIR/proj/sub" 2>/dev/null || true
+  echo -e "${RED}FAIL: Readable sudo target with git-tracked file was not skipped or tracked file was removed.${NC}"
+  cat "$TEST_ENV_DIR/git_guard_sudo_readable.log"
+  exit 1
+fi
+chmod 755 "$OUTSIDE_DIR/proj/sub"
+echo -e "${GREEN}PASS: Readable sudo target under an unwritable parent preserves git-tracked files.${NC}"
+
 # Old transcripts and durable memory share a tree and cannot be separated by age.
 assert_row_exclusion() {
   local age="$1" mode="$2" global_source="${3:-none}"

@@ -910,7 +910,7 @@ never prompts for a password. User-defined
 .B protect|\fIPATH\fR
 lines in the configuration skip any target that equals, lies under, or contains a
 protected path.
-With Git available, targets containing git-tracked files are skipped even with \-\-force, unless the cleaner runs as root or the target requires sudo.
+With Git available, targets containing git-tracked files are skipped even with \-\-force, unless the cleaner runs as root or the target is unreadable without sudo.
 .SH FILES
 .TP
 .I ~/.config/linux\-cleaner/cleaner.conf
