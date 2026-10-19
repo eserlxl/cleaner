@@ -96,6 +96,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Complete file paths as well as directories for `--only-path` across Bash, Zsh, and Fish tab completions, and stop Zsh offering stacked short options that the parser rejects.
+
 - Treat an existing outside-`HOME` target under an unwritable parent directory as requiring `sudo` when the whole target is removed (no positive age threshold and no exclusion patterns), so unprivileged runs skip it with the requires-root warning instead of deleting its contents and failing on the directory itself.
 
 - Fail closed (`[SKIP]`, `git-tracked check failed`) when a target lies inside a Git work tree whose tracked files cannot be listed by `git ls-files` (such as a corrupt `.git/index`), instead of treating the failure as zero tracked files and cleaning the target.

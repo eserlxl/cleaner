@@ -20,7 +20,7 @@ complete -c cleaner -l only -x -d 'With --restore: restore only targets whose or
 complete -c cleaner -l only-exact -x -d 'With --restore: match a literal original path from session inventory; excludes --only'
 complete -c cleaner -l only-target -x -d 'With cleanup or --list-targets: select config targets whose NAME contains PATTERN'
 complete -c cleaner -l exclude-target -x -d 'With cleanup or --list-targets: skip config targets whose NAME contains PATTERN'
-complete -c cleaner -l only-path -x -a '(__fish_complete_directories)' -d 'With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH)'
+complete -c cleaner -l only-path -r -F -d 'With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH)'
 complete -c cleaner -l lock-wait -x -d 'With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT)'
 complete -c cleaner -l min-reclaim -x -d 'With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G)'
 complete -c cleaner -l min-free -x -d 'With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)'

@@ -58,7 +58,7 @@ _cleaner() {
       return 0
       ;;
     --only-path)
-      mapfile -t COMPREPLY < <(compgen -d -- "$cur")
+      mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;
     -e|--exclude|--only|--only-exact|--only-target|--exclude-target|--lock-wait|--min-reclaim|--min-free|--trash-keep-days|--min-age)
