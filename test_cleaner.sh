@@ -6117,39 +6117,56 @@ fi
 # link footer; the rolled section must round-trip through extract unchanged, and every
 # refusal must leave the changelog byte-identical.
 echo -e "\n${BOLD}Test Case: Release Notes Roll${NC}"
+# A self-contained fixture: the repository's own [Unreleased] is empty right after
+# every real release, so rolling a copy of it would fail the suite on that day.
 rn_roll="$TEST_ENV_DIR/roll-changelog.md"
-cp "$SCRIPT_DIR/CHANGELOG.md" "$rn_roll"
-chmod 0644 "$rn_roll"
-rn_base=$(sed -n 's|^\[Unreleased\]: \(.*\)/compare/v[0-9][0-9.]*\.\.\.HEAD$|\1|p' "$rn_roll")
+rn_base="https://example.invalid/owner/repo"
+write_roll_fixture() {
+  local unreleased="$1"
+  {
+    printf '# Changelog\n\n## [Unreleased]\n\n%s\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- First release.\n\n' "$unreleased"
+    printf '[Unreleased]: %s/compare/v1.0.0...HEAD\n[1.0.0]: %s/releases/tag/v1.0.0\n' "$rn_base" "$rn_base"
+  } > "$rn_roll"
+  chmod 0644 "$rn_roll"
+}
+write_roll_fixture $'### Fixed\n\n- A bullet that quotes the heading ## [9.9.9] in its text.\n'
 CHANGELOG="$rn_roll" "$rn_sh" extract Unreleased > "$TEST_ENV_DIR/roll_before.md"
 rn_roll_ec=0
 CHANGELOG="$rn_roll" "$rn_sh" roll 9.9.9 2026-01-02 > "$TEST_ENV_DIR/roll.log" 2>&1 || rn_roll_ec=$?
 CHANGELOG="$rn_roll" "$rn_sh" extract 9.9.9 > "$TEST_ENV_DIR/roll_after.md" 2>&1 || rn_roll_ec=$?
-if [[ $rn_roll_ec -ne 0 ]] || [[ -z "$rn_base" ]] \
+if [[ $rn_roll_ec -ne 0 ]] \
    || ! cmp -s "$TEST_ENV_DIR/roll_before.md" "$TEST_ENV_DIR/roll_after.md" \
    || ! grep -qxF '## [9.9.9] - 2026-01-02' "$rn_roll" \
    || [[ "$(awk '/^## \[Unreleased\]/ {f = 1; next} f && /^## \[/ {exit} f && NF {n++} END {print n + 0}' "$rn_roll")" -ne 0 ]] \
    || [[ "$(grep -c '^\[Unreleased\]: ' "$rn_roll")" -ne 1 ]] \
    || ! grep -qxF "[Unreleased]: $rn_base/compare/v9.9.9...HEAD" "$rn_roll" \
    || ! grep -qxF "[9.9.9]: $rn_base/releases/tag/v9.9.9" "$rn_roll" \
+   || ! grep -qxF "[1.0.0]: $rn_base/releases/tag/v1.0.0" "$rn_roll" \
    || [[ "$(stat -c %a "$rn_roll")" != 644 ]]; then
   echo -e "${RED}FAIL: release-notes.sh roll did not move [Unreleased] under 9.9.9 with a rewritten footer (ec=$rn_roll_ec).${NC}"
-  cat "$TEST_ENV_DIR/roll.log"
+  cat "$TEST_ENV_DIR/roll.log" "$TEST_ENV_DIR/roll_after.md"
   exit 1
 fi
-for rn_bad in "9.9.9 2026-01-02:already has a section" "9.9.10 2026-01-02:has no entries to roll" "9.9 2026-01-02:is not X.Y.Z" "9.9.11 02-01-2026:is not YYYY-MM-DD"; do
-  rn_bad_args=${rn_bad%%:*}
+roll_refused() {
+  local args="$1" expect="$2" ec=0
   cp "$rn_roll" "$TEST_ENV_DIR/roll_snapshot.md"
-  rn_bad_ec=0
   # shellcheck disable=SC2086
-  CHANGELOG="$rn_roll" "$rn_sh" roll $rn_bad_args > "$TEST_ENV_DIR/roll_bad.log" 2>&1 || rn_bad_ec=$?
-  if [[ $rn_bad_ec -eq 0 ]] || ! grep -qF "${rn_bad#*:}" "$TEST_ENV_DIR/roll_bad.log" \
+  CHANGELOG="$rn_roll" "$rn_sh" roll $args > "$TEST_ENV_DIR/roll_bad.log" 2>&1 || ec=$?
+  if [[ $ec -eq 0 ]] || ! grep -qF "$expect" "$TEST_ENV_DIR/roll_bad.log" \
      || ! cmp -s "$rn_roll" "$TEST_ENV_DIR/roll_snapshot.md"; then
-    echo -e "${RED}FAIL: release-notes.sh roll $rn_bad_args was not refused cleanly (ec=$rn_bad_ec).${NC}"
+    echo -e "${RED}FAIL: release-notes.sh roll $args was not refused cleanly (ec=$ec).${NC}"
     cat "$TEST_ENV_DIR/roll_bad.log"
     exit 1
   fi
-done
+}
+roll_refused "9.9.9 2026-01-02" "already has a section"
+roll_refused "9.9.10 2026-01-02" "has no entries to roll"
+write_roll_fixture $'### Added\n'
+roll_refused "9.9.10 2026-01-02" "has no entries to roll"
+write_roll_fixture $'- An entry.\n'
+roll_refused "9.9 2026-01-02" "is not X.Y.Z"
+roll_refused "9.9.11 02-01-2026" "is not YYYY-MM-DD"
+roll_refused "9.9.11 2026-02-31" "is not YYYY-MM-DD"
 echo -e "${GREEN}PASS: release-notes.sh roll rolls [Unreleased] into a dated section that round-trips through extract, and refuses bad input without touching the changelog.${NC}"
 
 # extract without a version argument must fail with a clear error.

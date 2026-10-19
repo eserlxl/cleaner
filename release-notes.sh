@@ -63,7 +63,7 @@ roll() {
     echo "Error: version '$version' is not X.Y.Z." >&2
     exit 1
   fi
-  if [[ ! "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  if [[ ! "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [[ "$(date -d "$date" +%F 2>/dev/null)" != "$date" ]]; then
     echo "Error: date '$date' is not YYYY-MM-DD." >&2
     exit 1
   fi
@@ -71,11 +71,11 @@ roll() {
     echo "Error: changelog not found at '$CHANGELOG'." >&2
     exit 1
   fi
-  if grep -qF "## [$version]" "$CHANGELOG"; then
+  if grep -q "^## \[${version//./\\.}\]" "$CHANGELOG"; then
     echo "Error: '$CHANGELOG' already has a section for version '$version'." >&2
     exit 1
   fi
-  if ! base=$(sed -n 's|^\[Unreleased\]: \(.*\)/compare/v[0-9][0-9.]*\.\.\.HEAD$|\1|p' "$CHANGELOG" | head -n 1) \
+  if ! base=$(sed -n 's|^\[Unreleased\]: \(.*\)/compare/v[0-9][0-9.]*\.\.\.HEAD$|\1|p;T;q' "$CHANGELOG") \
      || [[ -z "$base" ]]; then
     echo "Error: no '[Unreleased]: <url>/compare/v<version>...HEAD' link found in '$CHANGELOG'." >&2
     exit 1
@@ -83,7 +83,7 @@ roll() {
   if ! awk '
     /^## \[Unreleased\]/ { inblk = 1; next }
     inblk && (/^## \[/ || /^\[[^]]+\]: /) { exit }
-    inblk && NF { found = 1; exit }
+    inblk && NF && !/^#/ { found = 1; exit }
     END { exit !found }
   ' "$CHANGELOG"; then
     echo "Error: the [Unreleased] section of '$CHANGELOG' has no entries to roll." >&2
