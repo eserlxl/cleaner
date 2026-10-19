@@ -137,6 +137,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Stop fish completion from offering working-directory files for a bare `cleaner` argument, which the CLI refuses as an unknown option; `--config`, `--log`, `--only-path` and `--exclude-path` still complete files.
+
 - Refuse a long option (`--...`) or `-d` as the argument of `--only-path`, `--lock-wait`, `--min-reclaim`, `--min-free`, `--min-age`, or `--trash-keep-days` (`Error: <flag> requires a value, got option '<token>'.`), so an unquoted empty variable before `--dry-run` cannot swallow `--dry-run` and turn a preview into a deletion. A missing `--only-path` value still reports the literal-absolute-path error, and negative integers such as `--lock-wait -1` and `--trash-keep-days -5` still reach their numeric checks.
 
 - Refuse a cross-filesystem `--restore` when the full payload or aged staging directory exceeds destination free space, keeping the payload and recovery record in quarantine for a retry; same-filesystem moves and unreadable device or free-space probes behave as before.
