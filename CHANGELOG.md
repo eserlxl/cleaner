@@ -113,6 +113,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Refuse `--purge-sessions keep-latest:0` (and zero-padded zeros) with an error (`Error: Invalid count in '<target>'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5.`), preventing a zero count selector from purging every session like `all`.
+
 - Make `--exclude-path` (and `LINUX_CLEANER_EXCLUDE_PATH`) also skip targets whose resolved physical or expanded literal path contains, equals, or lies below the excluded path, so a parent target cannot delete an excluded child directory and a target under a symlinked parent of the excluded literal path is still excluded.
 
 - Refuse a long option (`--...`) or `-d` as the argument of `-c/--config`, `-r/--risk`, `-e/--exclude`, `--restore`, `--only`, `--only-exact`, `--only-target`, `--exclude-target`, or `--purge-sessions` (`Error: <flag> requires a value, got option '<token>'.`), so an unquoted empty variable before `--dry-run` cannot swallow `--dry-run` and turn a preview into a deletion, while still accepting other dash-leading values such as `-x*` or a target `NAME` of `-n`.

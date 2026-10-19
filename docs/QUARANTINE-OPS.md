@@ -121,7 +121,7 @@ Restore and purge have no dry-run mode. An active explicit `--dry-run` with eith
 
 > **WARNING:** Supported predefined `action:*` handlers (for example, `action:apt_clean`) bypass quarantine and delete in place. There is no generic `action:custom`; unknown actions are rejected. Review `cleaner.conf` before any automated `--force` run.
 
-Selectors: `latest`, `all`, timestamp, `older-than:DAYS`, `max-size:SIZE` (keep the newest sessions within SIZE; `Purge Sessions Max Size Keeps Newest`), `keep-latest:N` (keep the newest `N` sessions; `Purge Sessions Keep Latest Keeps Newest`). A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
+Selectors: `latest`, `all`, timestamp, `older-than:DAYS`, `max-size:SIZE` (keep the newest sessions within SIZE; `Purge Sessions Max Size Keeps Newest`), `keep-latest:N` (keep the newest `N` sessions, N >= 1 (use all to purge everything); `Purge Sessions Keep Latest Keeps Newest`). A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
 
 Interactive: run without `--force` to see `This cannot be undone`; declining prints `No sessions were purged` (`Purge Preview Names Targets`, `Purge Declined Keeps Sessions`).
 

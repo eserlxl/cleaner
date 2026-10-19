@@ -563,7 +563,7 @@ The
 .I keep\-latest:N
 selector lists sessions newest-first and purges every session after the first
 .I N
-(a non-negative decimal integer), exiting 0 when at most
+(a decimal integer, N >= 1 (use all to purge everything)), exiting 0 when at most
 .I N
 sessions exist (or when no quarantine directory exists) and exiting 1 on a
 malformed count.

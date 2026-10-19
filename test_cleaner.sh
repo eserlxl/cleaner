@@ -9887,9 +9887,49 @@ fi
 
 if ! run_test_case "Purge Sessions Keep Latest Invalid" 1 "purge_keep_latest_invalid.log" \
        --purge-sessions keep-latest:x --force \
-   || ! grep -qF "Error: Invalid count in 'keep-latest:x'. Use keep-latest:<count>, e.g. keep-latest:5." "$TEST_ENV_DIR/purge_keep_latest_invalid.log"; then
+   || ! grep -qF "Error: Invalid count in 'keep-latest:x'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5." "$TEST_ENV_DIR/purge_keep_latest_invalid.log"; then
   echo -e "${RED}FAIL: --purge-sessions keep-latest:x did not reject an invalid count.${NC}"
   cat "$TEST_ENV_DIR/purge_keep_latest_invalid.log" 2>/dev/null || true
+  exit 1
+fi
+
+# keep-latest:0 and zero-padded zeros must exit 1, leave every session in place,
+# and refuse to purge; positive counts like keep-latest:01 keep the requested count.
+mkdir -p "$kl_s1" "$kl_s2" "$kl_s3"
+printf 'one\n' > "$kl_s1/payload.txt"
+printf 'two\n' > "$kl_s2/payload.txt"
+printf 'three\n' > "$kl_s3/payload.txt"
+
+if ! run_test_case "Purge Sessions Keep Latest Zero Rejected" 1 "purge_keep_latest_zero.log" \
+       --purge-sessions keep-latest:0 --force \
+   || ! grep -qF "Error: Invalid count in 'keep-latest:0'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5." "$TEST_ENV_DIR/purge_keep_latest_zero.log" \
+   || [[ ! -d "$kl_s1" ]] \
+   || [[ ! -d "$kl_s2" ]] \
+   || [[ ! -d "$kl_s3" ]]; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:0 did not exit 1 or purged a session.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_zero.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Purge Sessions Keep Latest Zero Padded Rejected" 1 "purge_keep_latest_zero_padded.log" \
+       --purge-sessions keep-latest:000 --force \
+   || ! grep -qF "Error: Invalid count in 'keep-latest:000'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5." "$TEST_ENV_DIR/purge_keep_latest_zero_padded.log" \
+   || [[ ! -d "$kl_s1" ]] \
+   || [[ ! -d "$kl_s2" ]] \
+   || [[ ! -d "$kl_s3" ]]; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:000 did not exit 1 or purged a session.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_zero_padded.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Purge Sessions Keep Latest Zero Padded Positive" 0 "purge_keep_latest_zero_padded_pos.log" \
+       --purge-sessions keep-latest:01 --force \
+   || [[ -d "$kl_s1" ]] \
+   || [[ -d "$kl_s2" ]] \
+   || [[ ! -d "$kl_s3" ]] \
+   || ! grep -q "Purged 2 session(s)." "$TEST_ENV_DIR/purge_keep_latest_zero_padded_pos.log"; then
+  echo -e "${RED}FAIL: --purge-sessions keep-latest:01 did not keep exactly one newest session and purge older.${NC}"
+  cat "$TEST_ENV_DIR/purge_keep_latest_zero_padded_pos.log" 2>/dev/null || true
   exit 1
 fi
 echo -e "${GREEN}PASS: --purge-sessions keep-latest:N keeps newest sessions within count and validates count.${NC}"

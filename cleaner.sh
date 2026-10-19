@@ -1869,8 +1869,9 @@ purge_quarantine_sessions() {
     fi
   elif [[ "$target" == keep-latest:* ]]; then
     keep_count="${target#keep-latest:}"
-    if [[ ! "$keep_count" =~ ^[0-9]+$ ]]; then
-      echo -e "${RED}Error: Invalid count in '$target'. Use keep-latest:<count>, e.g. keep-latest:5.${NC}" >&2
+    local keep_n_norm="${keep_count#"${keep_count%%[!0]*}"}"
+    if [[ ! "$keep_count" =~ ^[0-9]+$ || -z "$keep_n_norm" ]]; then
+      echo -e "${RED}Error: Invalid count in '$target'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5.${NC}" >&2
       exit 1
     fi
     if [[ ! -d "$quarantine_base" ]]; then
