@@ -63,3 +63,5 @@ Run `cleaner --init-config` to copy the active config to `${XDG_CONFIG_HOME:-~/.
 | `pacman-contrib` | `PKGBUILD optdepends` | Required for `action:paccache_keep*` (`paccache` binary) |
 | `notify-send` (`libnotify`) | `PKGBUILD optdepends` | Required for `--notify` / `LINUX_CLEANER_NOTIFY`; without it the cleanup runs and prints one warning |
 | `sudo` | runtime | Required for root-owned paths and predefined `action:*` system package-cache commands |
+| `git` | optional runtime | Enables the git-tracked target guard; without it that guard is skipped and targets inside a Git work tree are cleaned like any other |
+| `flock` (`util-linux`) | optional runtime | Takes the run lock for mutating runs; without it they proceed unlocked, and a positive `--lock-wait` exits `1` |
