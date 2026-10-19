@@ -137,6 +137,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Re-check each target's `CHECK_PROCESSES` immediately before deleting, quarantining, or running its action, so a process that starts after analysis is left alone (`[BLOCKED]`, counted as skipped rather than failed) instead of having its cache removed; a failed re-check skips the target, and targets with no process check are unchanged.
+
 - Refuse a symlinked `~/.cache/linux-cleaner/quarantine` directory during trash cleanup, `--list-sessions`, `--restore`, and `--purge-sessions` (`Error: Refusing symlinked quarantine directory '<path>'.`) so sessions behind the link are not reported as missing and nothing is moved, and warn from `--doctor` (`WARN: quarantine: symlinked quarantine directory refused (<path>)`).
 
 - Stop an aged `--trash` quarantine from moving more files once its `quarantine.meta` record cannot be written, so the rest of the target stays in place instead of landing as unrecorded payload that `--restore` cannot bring back.

@@ -3600,6 +3600,7 @@ parsed_ages=()
 parsed_idle=()
 parsed_risks=()
 parsed_cmds=()
+parsed_procs=()
 parsed_sudos=()
 parsed_statuses=()
 parsed_reasons=()
@@ -3913,6 +3914,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   parsed_idle+=("$idle_age")
   parsed_risks+=("$risk")
   parsed_cmds+=("$custom_clean_cmd")
+  parsed_procs+=("$check_procs")
   parsed_sudos+=("$use_sudo")
   parsed_statuses+=("${target_status:-skipped}")
   parsed_reasons+=("${target_reason:-}")
@@ -4121,7 +4123,24 @@ for i in "${!parsed_names[@]}"; do
       continue
     fi
   fi
-  
+
+  # A process can start after analysis, while the user confirms or earlier
+  # targets are cleaned. Leave it in place and count the skip, not a failure.
+  check_procs="${parsed_procs[$i]:-}"
+  if [[ -n "$check_procs" ]]; then
+    process_status=0
+    running_proc=$(is_process_running "$check_procs") || process_status=$?
+    if [[ "$process_status" -eq 2 ]]; then
+      status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: process check failed for '$running_proc'."
+      result_skipped=$((result_skipped + 1))
+      continue
+    elif [[ "$process_status" -eq 0 ]]; then
+      status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
+      result_skipped=$((result_skipped + 1))
+      continue
+    fi
+  fi
+
   # Handle Cleanup
   custom_clean_cmd="${parsed_cmds[$i]:-}"
   set_target_exclusions "$custom_clean_cmd"

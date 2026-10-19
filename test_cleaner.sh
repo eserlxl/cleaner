@@ -8812,6 +8812,46 @@ fi
 unset MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: running process blocks its user-action row while siblings still run.${NC}"
 
+# A process idle at analysis and active before this target is cleaned must block it.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/late-proc"
+printf 'keep-me\n' > "$MOCK_HOME/.cache/late-proc/cache.txt"
+cat > "$TEST_ENV_DIR/late_proc.conf" <<'EOF'
+safe|Late Process|$HOME/.cache/late-proc|cache whose process starts after analysis|0|late_proc|
+EOF
+cat > "$TEST_ENV_DIR/bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+count_file="$TEST_ENV_DIR/pgrep_late_calls"
+count=0
+if [[ -f "$count_file" ]]; then
+  count=$(cat "$count_file")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+if [[ "$count" -eq 1 ]]; then
+  exit 1
+fi
+exit 0
+EOF
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+if run_test_case "Process Started After Analysis Blocks Cleanup" 0 "late_proc.log" \
+     --config "$TEST_ENV_DIR/late_proc.conf" --clean --force; then
+  late_block=$(grep -n 'BLOCKED' "$TEST_ENV_DIR/late_proc.log" | head -1 | cut -d: -f1) || true
+  late_start=$(grep -n 'Starting cleanup' "$TEST_ENV_DIR/late_proc.log" | head -1 | cut -d: -f1) || true
+  if [[ -n "$late_block" && -n "$late_start" && "$late_start" -lt "$late_block" ]] \
+     && grep -q "BLOCKED.*Late Process: Skip cleanup because process 'late_proc' is active." "$TEST_ENV_DIR/late_proc.log" \
+     && grep -q '^Result: cleaned=0 skipped=1 failed=0 ' "$TEST_ENV_DIR/late_proc.log" \
+     && [[ -f "$MOCK_HOME/.cache/late-proc/cache.txt" ]]; then
+    echo -e "${GREEN}PASS: a process that starts after analysis blocks cleanup and leaves the cache in place.${NC}"
+  else
+    echo -e "${RED}FAIL: late process did not block cleanup.${NC}"
+    cat "$TEST_ENV_DIR/late_proc.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 3a. Shipped commented Nix Store row, once uncommented, is not blocked when nix-daemon is running, runs, and still blocks during nix-store/nix-build.
 setup_mock_env
 shipped_nix_row=$(sed -n 's/^[[:space:]]*#[[:space:]]*\(safe|Nix Store|.*\)$/\1/p' "$SCRIPT_DIR/cleaner.conf")
