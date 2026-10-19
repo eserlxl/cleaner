@@ -6550,6 +6550,74 @@ else
   exit 1
 fi
 
+# The pair matrix above accepts any applies-only line. These cases pin the full
+# parenthetical, including --check-config, and show that an inherited notify
+# variable is not the --notify flag.
+echo -e "\n${BOLD}Test Case: Check Config Filter Exclusion Messages${NC}"
+for check_spec in \
+  "Only Target With Check Config Rejected|only_target_check_config.log|--only-target|NPM" \
+  "Exclude Target With Check Config Rejected|exclude_target_check_config.log|--exclude-target|NPM"
+do
+  IFS='|' read -r check_name check_log check_flag check_value <<< "$check_spec"
+  if run_test_case "$check_name" 1 "$check_log" \
+       "$check_flag" "$check_value" --check-config; then
+    if grep -qF "applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
+      echo -e "${GREEN}PASS: $check_flag with --check-config names the seven-mode list.${NC}"
+    else
+      echo -e "${RED}FAIL: $check_flag with --check-config omitted the seven-mode list.${NC}"
+      cat "$TEST_ENV_DIR/$check_log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+done
+for check_spec in \
+  "Min Reclaim With Check Config Rejected|min_reclaim_check_config.log|--min-reclaim|1G" \
+  "Min Free With Check Config Rejected|min_free_check_config.log|--min-free|1G" \
+  "Min Age With Check Config Rejected|min_age_check_config.log|--min-age|7" \
+  "Trash Keep Days With Check Config Rejected|trash_keep_check_config.log|--trash-keep-days|7" \
+  "Notify With Check Config Rejected|notify_check_config.log|--notify|"
+do
+  IFS='|' read -r check_name check_log check_flag check_value <<< "$check_spec"
+  if [[ -n "$check_value" ]]; then
+    check_args=("$check_flag" "$check_value" --check-config)
+  else
+    check_args=("$check_flag" --check-config)
+  fi
+  if run_test_case "$check_name" 1 "$check_log" "${check_args[@]}"; then
+    if grep -qF "applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
+      echo -e "${GREEN}PASS: $check_flag with --check-config names the eight-mode list.${NC}"
+    else
+      echo -e "${RED}FAIL: $check_flag with --check-config omitted the eight-mode list.${NC}"
+      cat "$TEST_ENV_DIR/$check_log"
+      exit 1
+    fi
+  else
+    exit 1
+  fi
+done
+
+echo -e "\n${BOLD}Test Case: Check Config Inherited Notify${NC}"
+setup_mock_env
+check_notify_inherit_ec=0
+LINUX_CLEANER_NOTIFY=1 \
+  PATH="$TEST_ENV_DIR/bin:$PATH" \
+  HOME="$MOCK_HOME" \
+  "$CLEANER_SH" \
+  --check-config \
+  --config "$TEST_ENV_DIR/test_cleaner.conf" \
+  < /dev/null \
+  > "$TEST_ENV_DIR/check_config_notify_inherit.log" 2>&1 || check_notify_inherit_ec=$?
+if [[ "$check_notify_inherit_ec" -eq 0 ]] \
+   && grep -q '^OK: ' "$TEST_ENV_DIR/check_config_notify_inherit.log"; then
+  echo -e "${GREEN}PASS: Check Config Inherited Notify exited 0.${NC}"
+else
+  echo -e "${RED}FAIL: Check Config Inherited Notify exited $check_notify_inherit_ec.${NC}"
+  cat "$TEST_ENV_DIR/check_config_notify_inherit.log"
+  exit 1
+fi
+
 # 59. Test Case: a wildcard PATH_EXPRESSION expands into one independently analyzed
 # target per matching directory, through find rather than a shell glob or eval, and
 # every match still passes the ordinary safety pipeline.
