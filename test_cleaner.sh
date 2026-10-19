@@ -2626,6 +2626,57 @@ else
   exit 1
 fi
 
+# Value-taking options named by require_non_option_value, cleaner.1, and docs/cli-reference.md.
+echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
+vt_expected=$(printf '%s\n' \
+  --config --risk --exclude --restore --only --only-exact --only-target \
+  --exclude-target --only-path --exclude-path --lock-wait --min-reclaim \
+  --min-free --min-age --trash-keep-days --purge-sessions | sort)
+vt_parser=$(awk '
+  function emit(    n, i, p) {
+    if (lab == "") return
+    n = split(lab, p, "|")
+    for (i = 1; i <= n; i++) if (p[i] ~ /^--/) print p[i]
+  }
+  /^[[:space:]]*(--?[A-Za-z0-9-]+(\|--?[A-Za-z0-9-]+)*)\)[[:space:]]*$/ {
+    lab = $0
+    sub(/^[[:space:]]+/, "", lab)
+    sub(/\)[[:space:]]*$/, "", lab)
+  }
+  /require_non_option_value/ && !/require_non_option_value\(\)/ { hit = 1 }
+  /^[[:space:]]*;;[[:space:]]*$/ {
+    if (hit) emit()
+    lab = ""
+    hit = 0
+  }
+' "$SCRIPT_DIR/cleaner.sh" | sort -u)
+vt_man=$(awk '
+  $0 == "Value-taking options" { p = 1 }
+  p && /^\.SH / { exit }
+  p { print }
+' "$SCRIPT_DIR/cleaner.1" | sed 's/\\-/-/g')
+vt_man=${vt_man%%refuse*}
+vt_man_flags=$(printf '%s\n' "$vt_man" | grep -oE -- '--[a-z][a-z0-9-]*' | sort -u || true)
+vt_doc=$(grep -m1 '^Value-taking options' "$SCRIPT_DIR/docs/cli-reference.md" || true)
+vt_doc=${vt_doc%%refuse*}
+vt_doc_flags=$(printf '%s\n' "$vt_doc" | grep -oE -- '--[a-z][a-z0-9-]*' | sort -u || true)
+vt_fail=""
+if [[ "$vt_parser" != "$vt_expected" ]]; then
+  vt_fail+=" require_non_option_value"
+fi
+if [[ "$vt_man_flags" != "$vt_expected" ]]; then
+  vt_fail+=" cleaner.1"
+fi
+if [[ "$vt_doc_flags" != "$vt_expected" ]]; then
+  vt_fail+=" cli-reference.md"
+fi
+if [[ -z "$vt_fail" ]]; then
+  echo -e "${GREEN}PASS: require_non_option_value, cleaner.1, and docs/cli-reference.md name the same value-taking options.${NC}"
+else
+  echo -e "${RED}FAIL: value-taking options differ from the 16-flag contract:$vt_fail${NC}"
+  exit 1
+fi
+
 # 34. Test Case: CHANGELOG top released version matches --version, and so do the
 # packaging manifests -- a partial bump would otherwise ship an AUR package whose
 # pkgver disagrees with the installed script (RELEASING.md pre-release gate).
