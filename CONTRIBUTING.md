@@ -10,7 +10,7 @@ a change ship without both gates green.
 Every change must pass both gate commands locally before it is merged or pushed:
 
 ```bash
-shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # lint — must be clean
+make lint                             # shellcheck every tracked shell file — must be clean
 make check                            # runbook example validation + full safety suite
 ```
 

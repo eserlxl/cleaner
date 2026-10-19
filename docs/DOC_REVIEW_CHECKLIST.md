@@ -1,7 +1,7 @@
 # Documentation review checklist
 
 ## Automated gates
-- [ ] `shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh`
+- [ ] `make lint`
 - [ ] `make check`
 
 ## CLI / help / man

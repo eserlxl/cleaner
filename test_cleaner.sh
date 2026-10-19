@@ -6475,33 +6475,51 @@ else
   exit 1
 fi
 
-# 58. Test Case: every documented lint command names the same files as CI does. This
-# drifted once already, silently — README.md and CONTRIBUTING.md told contributors to
-# lint two files while CI linted three, so a contributor could run the documented
-# command, see green, and still fail the build.
-echo -e "\n${BOLD}Test Case: ShellCheck Invocation Parity${NC}"
-# CI is the source of truth: extract the file list from its shellcheck step.
-ci_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$SCRIPT_DIR/.github/workflows/ci.yml" \
-  | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
+# 58. Test Case: the shellcheck file list lives only in the Makefile's SHELLCHECK_FILES.
+# The list was once restated in nine places and drifted; every documented or CI lint
+# step now runs `make lint`, and every tracked shell file must be on that one list.
+echo -e "\n${BOLD}Test Case: ShellCheck Single Source${NC}"
+# Print SHELLCHECK_FILES from a Makefile, one name per line, following continuations.
+shellcheck_files_from() {
+  awk '
+    /^SHELLCHECK_FILES[[:space:]]*=/ { on = 1; sub(/^[^=]*=/, "") }
+    on { line = $0; cont = sub(/\\[[:space:]]*$/, "", line); printf "%s ", line; if (!cont) exit }
+  ' "$1" | tr -s ' \t' '\n' | sed '/^$/d'
+}
+# Print tracked files that shellcheck can lint: shell extensions, the pacman
+# scriptlet, the PKGBUILD, and sh/bash shebang scripts.
+tracked_shell_files() {
+  local f
+  git -C "$SCRIPT_DIR" ls-files | while IFS= read -r f; do
+    case "$f" in
+      *.sh|*.bash|*.install|PKGBUILD) printf '%s\n' "$f" ;;
+      *) head -n1 "$SCRIPT_DIR/$f" 2>/dev/null | grep -qE '^#!.*[/ ](ba)?sh([[:space:]]|$)' && printf '%s\n' "$f" ;;
+    esac
+  done | sort -u
+}
 sc_drift=""
-for f in ".github/workflows/release.yml" "README.md" "RELEASING.md" "CONTRIBUTING.md" "Makefile"; do
-  site_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$SCRIPT_DIR/$f" \
-    | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
-  if [[ "$site_files" != "$ci_files" ]]; then
-    sc_drift+=" $f(=$site_files)"
+for f in README.md CONTRIBUTING.md RELEASING.md docs/DOC_REVIEW_CHECKLIST.md docs/contract-baseline.md \
+         .github/workflows/ci.yml .github/workflows/release.yml; do
+  if ! grep -qF 'make lint' "$SCRIPT_DIR/$f" || grep -qE 'shellcheck +[A-Za-z0-9_./-]+\.(sh|bash|install)([[:space:]]|$)|shellcheck +.*PKGBUILD' "$SCRIPT_DIR/$f"; then
+    sc_drift+=" $f(not make lint)"
   fi
 done
-# Prove the Makefile site is really read: a recipe that drops one file must differ.
-sed 's/ release-notes\.sh//' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
-drift_files=$(grep -m1 -oE 'shellcheck( [a-zA-Z0-9_.-]+\.sh)+' "$TEST_ENV_DIR/Makefile.drift" \
-  | sed 's/^shellcheck //' | tr ' ' '\n' | sort | tr '\n' ' ')
-if [[ "$drift_files" == "$ci_files" ]]; then
-  sc_drift+=" Makefile-fixture(drift not detected)"
+if ! grep -qx $'\tshellcheck $(SHELLCHECK_FILES)' "$SCRIPT_DIR/Makefile"; then
+  sc_drift+=" Makefile(lint recipe)"
 fi
-if [[ -z "$sc_drift" && -n "$ci_files" ]]; then
-  echo -e "${GREEN}PASS: all six shellcheck invocations lint the same files (${ci_files% }).${NC}"
+if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+  missing=$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$SCRIPT_DIR/Makefile" | sort -u) | tr '\n' ' ')
+  [[ -z "$missing" ]] || sc_drift+=" SHELLCHECK_FILES(missing: ${missing% })"
+  # Prove the check reads the list: dropping one tracked file from it must be caught.
+  sed 's/ PKGBUILD$//' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
+  if [[ -z "$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$TEST_ENV_DIR/Makefile.drift" | sort -u))" ]]; then
+    sc_drift+=" Makefile-fixture(drift not detected)"
+  fi
+fi
+if [[ -z "$sc_drift" ]]; then
+  echo -e "${GREEN}PASS: every lint step runs make lint, and SHELLCHECK_FILES names every tracked shell file.${NC}"
 else
-  echo -e "${RED}FAIL: shellcheck invocation drift — CI lints '${ci_files% }' but:$sc_drift${NC}"
+  echo -e "${RED}FAIL: shellcheck list drift:$sc_drift${NC}"
   exit 1
 fi
 
@@ -6513,15 +6531,13 @@ check_prerelease_makefile() {
   if ! awk '
     /^pre-release:[[:space:]]*/ {
       in_pre = 1
-      if ($0 ~ /(^|[[:space:]])check-runbook-examples([[:space:]]|$)/) step = 1
+      if ($0 ~ /(^|[[:space:]])check-runbook-examples[[:space:]]+lint([[:space:]]|$)/) step = 2
       next
     }
     in_pre && /^[^[:space:]#]/ { in_pre = 0 }
     in_pre && /^\t/ {
       sub(/^\t+/, "")
-      if (step == 0 && $0 ~ /(^|[[:space:]])scripts\/validate-runbook-examples\.sh([[:space:]]|$)/) step = 1
-      else if (step == 1 && $0 == "shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh") step = 2
-      else if (step == 2 && $0 == "bash test_cleaner.sh") step = 3
+      if (step == 2 && $0 == "bash test_cleaner.sh") step = 3
     }
     END { exit (step == 3 ? 0 : 1) }
   ' "$mf"; then
@@ -6534,9 +6550,9 @@ check_prerelease_makefile() {
     else
       plan=$(make -n --no-print-directory -C "$SCRIPT_DIR" -f "$mf" pre-release 2>/dev/null) || return 1
     fi
-    printf '%s\n' "$plan" | awk '
+    printf '%s\n' "$plan" | awk -v lint_line="shellcheck $(shellcheck_files_from "$mf" | tr '\n' ' ' | sed 's/ $//')" '
       step == 0 && /(^|[[:space:]])scripts\/validate-runbook-examples\.sh([[:space:]]|$)/ { step = 1; next }
-      step == 1 && $0 == "shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh" { step = 2; next }
+      step == 1 && $0 == lint_line { step = 2; next }
       step == 2 && $0 == "bash test_cleaner.sh" { step = 3; next }
       END { exit (step == 3 ? 0 : 1) }
     ' || return 1

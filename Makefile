@@ -13,12 +13,17 @@ SYSTEMDUSERUNITDIR ?= $(PREFIX)/lib/systemd/user
 BINNAME    ?= cleaner
 PKGNAME    ?= linux-cleaner
 
-.PHONY: all help install uninstall install-man check clean pre-release check-aur-ready check-runbook-examples
+# Every tracked shell file; make lint, the pre-release gate and CI read only this list.
+SHELLCHECK_FILES = cleaner.sh test_cleaner.sh install.sh release-notes.sh \
+	scripts/validate-runbook-examples.sh completions/cleaner.bash \
+	linux-cleaner.install PKGBUILD
+
+.PHONY: all help install uninstall install-man check lint clean pre-release check-aur-ready check-runbook-examples
 
 all: help
 
 help:
-	@echo "Targets: install, uninstall, install-man, check, clean, pre-release, check-aur-ready, check-runbook-examples"
+	@echo "Targets: install, uninstall, install-man, check, lint, clean, pre-release, check-aur-ready, check-runbook-examples"
 	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR SYSTEMDUSERUNITDIR (=$(SYSTEMDUSERUNITDIR))"
 
 install: install-man
@@ -83,8 +88,10 @@ check: check-runbook-examples
 clean:
 	@echo "Nothing to clean."
 
-pre-release: check-runbook-examples
-	shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh
+lint:
+	shellcheck $(SHELLCHECK_FILES)
+
+pre-release: check-runbook-examples lint
 	bash test_cleaner.sh
 
 check-aur-ready:

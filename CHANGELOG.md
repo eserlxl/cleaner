@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- Add `make lint`, which runs shellcheck over every tracked shell file listed once in the Makefile's `SHELLCHECK_FILES` (now also `scripts/validate-runbook-examples.sh`, `completions/cleaner.bash`, `linux-cleaner.install` and `PKGBUILD`); `make pre-release`, CI and the contributor docs all run it, and the suite fails when a tracked shell file is missing from the list.
+
 - The weekly `linux-cleaner-retention.service` now runs with `--lock-wait 3600`, so a Sunday purge waits for a cleanup that still holds the run lock instead of exiting 1 and skipping that week's retention.
 
 - `--doctor` warns when `~/.config/linux-cleaner/monitor.env` is unreadable (`WARN: monitor env: <path> (not readable)`) or sets both `LINUX_CLEANER_ONLY_PATH` and `LINUX_CLEANER_TRASH_KEEP_DAYS`, and still reads the clean timer's `~/.config/linux-cleaner/env` when `XDG_CONFIG_HOME` points elsewhere.

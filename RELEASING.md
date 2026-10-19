@@ -44,7 +44,7 @@ This project ships as a single script; releases are cut from `main` as annotated
 
 A release must never be cut on a failing safety suite. Before tagging, confirm all of:
 
-- `shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh` is clean;
+- `make lint` is clean;
 - `bash test_cleaner.sh` (or `make check`) passes;
 - `bash scripts/validate-runbook-examples.sh` (`make check-runbook-examples`, which `make pre-release` runs first) passes;
 - the version-consistency check passes (the CHANGELOG top version equals

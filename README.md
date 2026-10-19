@@ -169,7 +169,7 @@ Fields, shipped targets, actions, wildcard paths, and `protect` lines are descri
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing anything, and record user-facing changes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md). The local gate runs before every push or release:
 
 ```bash
-shellcheck cleaner.sh test_cleaner.sh install.sh release-notes.sh   # static analysis / lint
+make lint                             # shellcheck every tracked shell file (SHELLCHECK_FILES in the Makefile)
 make check                            # runbook example validation + full safety suite (test_cleaner.sh)
 ```
 

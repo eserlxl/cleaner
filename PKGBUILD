@@ -1,4 +1,6 @@
 # Maintainer: Eser KUBALI <eserlxl@gmail.com>
+# makepkg reads these variables and supplies srcdir/pkgdir.
+# shellcheck shell=bash disable=SC2034,SC2154
 pkgname=linux-cleaner
 pkgver=1.5.0
 pkgrel=1
@@ -19,6 +21,6 @@ source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('0221620d52298aac163923f454bf0cd00e782709aade532b9998bc19a0c16c9f')
 
 package() {
-  cd "$srcdir/cleaner-$pkgver"
+  cd "$srcdir/cleaner-$pkgver" || return 1
   make install DESTDIR="$pkgdir" PREFIX=/usr
 }

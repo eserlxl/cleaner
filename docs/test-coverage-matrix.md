@@ -177,7 +177,7 @@ Rows below moved here after the 1.5.0 release; add new unreleased rows only whil
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
 | Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, .SRCINFO, CHANGELOG.md |
 | Package Install Scriptlet Is Hint Only | pacman scriptlet prints the opt-in hint, calls no systemctl, no post_upgrade | linux-cleaner.install, PKGBUILD, .SRCINFO |
-| ShellCheck Invocation Parity | lint parity | ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, Makefile |
+| ShellCheck Single Source | one shellcheck list (`SHELLCHECK_FILES`) covering every tracked shell file; every lint step runs `make lint` | Makefile, ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, docs/DOC_REVIEW_CHECKLIST.md, docs/contract-baseline.md |
 | Makefile Pre-Release Gate Parity | `pre-release` runs `scripts/validate-runbook-examples.sh` (`check-runbook-examples`), `shellcheck`, and `bash test_cleaner.sh` in order | Makefile |
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |
 | Config Guide Target Count | docs/configuration.md quotes the shipped config's `--check-config` count | docs/configuration.md, cleaner.conf |

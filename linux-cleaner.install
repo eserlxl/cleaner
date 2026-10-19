@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# shellcheck shell=bash
 # pacman install scriptlet: print an opt-in hint only. It must never enable,
 # start or reload any unit; upgrades stay quiet.
 
