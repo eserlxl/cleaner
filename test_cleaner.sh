@@ -8061,9 +8061,11 @@ setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
 user_missing_bin="$TEST_ENV_DIR/user_missing_bin"
 mkdir -p "$user_missing_bin"
-for tool in bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp pgrep; do
+for tool in bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp; do
   ln -s "$(command -v "$tool")" "$user_missing_bin/$tool"
 done
+# The mock pgrep keeps a real uv/hf process on the host from blocking these rows.
+ln -s "$TEST_ENV_DIR/bin/pgrep" "$user_missing_bin/pgrep"
 ln -s "$TEST_ENV_DIR/bin/uv" "$user_missing_bin/uv"
 ln -s "$TEST_ENV_DIR/bin/hf" "$user_missing_bin/hf"
 # pnpm intentionally omitted from user_missing_bin
