@@ -6,7 +6,9 @@ After=linux-cleaner-clean.service
 [Service]
 Type=oneshot
 # Tune older-than:DAYS here (RUNBOOK default 30; aggressive tier: 7).
-ExecStart=/usr/bin/env cleaner --purge-sessions older-than:30 --force
+# This unit reads no env profile; wait for a cleanup still holding the run lock
+# instead of failing and losing the week's purge.
+ExecStart=/usr/bin/env cleaner --purge-sessions older-than:30 --force --lock-wait 3600
 SyslogIdentifier=linux-cleaner
 # Idle priority keeps a catch-up or periodic run from slowing the desktop session.
 Nice=19

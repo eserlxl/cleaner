@@ -29,6 +29,8 @@ Exit codes: skips exit 0; failed operations exit 1, as does a mutating run that 
 Scheduled mutations may opt in to bounded lock contention waiting with
 `LINUX_CLEANER_LOCK_WAIT=30` in their existing environment profile, or
 `--lock-wait 30` on a command. Unset/empty means `0`, preserving fail-fast behavior.
+The retention unit reads no profile, so its command line already waits up to
+`--lock-wait 3600` seconds for a cleanup that still holds the lock.
 Use literal decimal seconds `0..2147483647` (leading zeros allowed); last CLI
 value overrides inherited input. A positive wait requires `flock`. Timeout exits
 `1` before target/session/report/log effects; lock-file opening may still occur.

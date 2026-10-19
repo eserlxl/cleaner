@@ -17,6 +17,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- The weekly `linux-cleaner-retention.service` now runs with `--lock-wait 3600`, so a Sunday purge waits for a cleanup that still holds the run lock instead of exiting 1 and skipping that week's retention.
+
 - `--doctor` warns when `~/.config/linux-cleaner/monitor.env` is unreadable (`WARN: monitor env: <path> (not readable)`) or sets both `LINUX_CLEANER_ONLY_PATH` and `LINUX_CLEANER_TRASH_KEEP_DAYS`, and still reads the clean timer's `~/.config/linux-cleaner/env` when `XDG_CONFIG_HOME` points elsewhere.
 
 - `--doctor` schema-checks a readable configuration and prints `WARN: config: <path> (<source>, <error>)` with exit `1` when the schema is invalid, while still printing the rest of the checklist; a valid file still prints `OK: config: <path> (<source>)`.

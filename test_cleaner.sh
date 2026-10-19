@@ -3484,6 +3484,15 @@ if [[ "$(grep -c '^After=linux-cleaner-clean.service$' "$SCRIPT_DIR/examples/sys
 fi
 echo -e "${GREEN}PASS: the retention unit is ordered after the cleanup unit.${NC}"
 
+# The retention unit reads no env profile, so its own command line must wait for a
+# cleanup that still holds the lock, within its two-hour start timeout.
+retention_wait=$(sed -n 's/^ExecStart=.* --lock-wait \([0-9][0-9]*\)\( .*\)\{0,1\}$/\1/p' "$SCRIPT_DIR/examples/systemd/linux-cleaner-retention.service")
+if [[ -z "$retention_wait" ]] || (( 10#$retention_wait <= 0 || 10#$retention_wait >= 7200 )); then
+  echo -e "${RED}FAIL: linux-cleaner-retention.service does not wait for the run lock within its start timeout (got '${retention_wait}').${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: the retention unit waits up to ${retention_wait}s for the run lock.${NC}"
+
 if command -v make > /dev/null 2>&1; then
   freshroot="$TEST_ENV_DIR/freshroot"
   makeroot="$TEST_ENV_DIR/makeroot"
