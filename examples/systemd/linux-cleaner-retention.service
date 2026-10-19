@@ -11,3 +11,5 @@ SyslogIdentifier=linux-cleaner
 # Idle priority keeps a catch-up or periodic run from slowing the desktop session.
 Nice=19
 IOSchedulingClass=idle
+# Oneshot units default to no start timeout: bound a hung run so later timer slots still fire.
+TimeoutStartSec=2h
