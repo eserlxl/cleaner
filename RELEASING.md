@@ -91,8 +91,8 @@ See `docs/release-workflow-audit.md` for the step-by-step cross-walk.
 ### Ordered AUR packaging checklist
 
 1. Confirm the `vX.Y.Z` tag exists on the remote (`git ls-remote --tags origin`).
-2. Run `updpkgsums` — rewrites the `SKIP` sha256 for the release tarball.
-3. Verify `sha256sums` is a 64-hex digest, e.g. `sha256sums=("<64-hex>")` — **never publish with SKIP**.
+2. Run `updpkgsums` — rewrites the previous release's sha256 for the new release tarball.
+3. `AUR_PREP=1 make check-aur-ready` — verify `sha256sums` is one 64-hex digest, e.g. `sha256sums=("<64-hex>")` — **never publish with SKIP**.
 4. `makepkg -f` — build the package locally.
 5. `namcap PKGBUILD` — lint the recipe.
 6. `namcap *.pkg.tar.zst` — lint the built package.
