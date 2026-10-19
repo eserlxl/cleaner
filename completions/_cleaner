@@ -26,6 +26,7 @@ _cleaner() {
     '--only-target[With cleanup or --list-targets: select config targets whose NAME contains PATTERN]:pattern:' \
     '--exclude-target[With cleanup or --list-targets: skip config targets whose NAME contains PATTERN]:pattern:' \
     '--only-path[With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH)]:file:_files' \
+    '--exclude-path[With cleanup or --list-targets: skip targets at/below an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH)]:file:_files' \
     '--lock-wait[With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT)]:seconds:' \
     '--min-reclaim[With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G)]:size:' \
     '--min-free[With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)]:size:' \

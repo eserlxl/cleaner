@@ -5348,6 +5348,139 @@ with tempfile.TemporaryDirectory(prefix="cleaner-only-path-", dir="/tmp") as dir
     assert not (home / "plain/aged/old").exists() and (home / "plain/aged/payload").is_file()
 ONLY_PATH_PY
 
+echo -e "\n${BOLD}Test Case: Exclude Path Wildcard Dry Run JSON${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/proj_a/build" "$MOCK_HOME/proj_b/build" "$MOCK_HOME/proj_ab/build"
+echo "obj_a" > "$MOCK_HOME/proj_a/build/a.o"
+echo "obj_b" > "$MOCK_HOME/proj_b/build/b.o"
+echo "obj_ab" > "$MOCK_HOME/proj_ab/build/ab.o"
+cat > "$TEST_ENV_DIR/exclude_path.conf" <<'EOF'
+safe|C++ Build Dirs|$HOME/**/build*|Wildcard build directories|0||
+safe|Action In Excluded|$HOME/proj_a/build|Action under excluded path|0||action:uv_cache_prune
+safe|Missing Target|$HOME/never_created|Missing target is never excluded|0||
+EOF
+if run_test_case "Exclude Path Wildcard Dry Run JSON" 0 "exclude_path_json.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "$MOCK_HOME/proj_a" --dry-run --json \
+   && run_test_case "Exclude Path List Targets" 0 "exclude_path_list.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "$MOCK_HOME/proj_a" --list-targets \
+   && run_test_case "Exclude Path List Targets JSON" 0 "exclude_path_list_json.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "$MOCK_HOME/proj_a" --list-targets --json; then
+  if python3 - "$TEST_ENV_DIR/exclude_path_json.log" "$TEST_ENV_DIR/exclude_path_list.log" "$TEST_ENV_DIR/exclude_path_list_json.log" "$MOCK_HOME" <<'PY'
+import json, sys
+dry_log, list_log, list_json_log, home = sys.argv[1:]
+dry = json.load(open(dry_log))
+dry_paths = [t["path"] for t in dry["targets"]]
+assert f"{home}/proj_a/build" not in dry_paths, dry_paths
+assert f"{home}/proj_b/build" in dry_paths, dry_paths
+assert f"{home}/proj_ab/build" in dry_paths, dry_paths
+assert f"{home}/never_created" in dry_paths, dry_paths
+list_text = open(list_log).read()
+assert f"{home}/proj_a/build" not in list_text, list_text
+assert f"{home}/proj_b/build" in list_text and f"{home}/proj_ab/build" in list_text, list_text
+assert "$HOME/never_created" in list_text, list_text
+lt = json.load(open(list_json_log))
+lt_paths = [t["path"] for t in lt["targets"]]
+assert f"{home}/proj_a/build" not in lt_paths, lt_paths
+assert f"{home}/proj_b/build" in lt_paths and f"{home}/proj_ab/build" in lt_paths, lt_paths
+assert "$HOME/never_created" in lt_paths, lt_paths
+PY
+  then
+    echo -e "${GREEN}PASS: --exclude-path omits targets at/below the path in --dry-run --json and --list-targets while keeping other matches and missing targets.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-path did not filter expected targets in --dry-run --json or --list-targets.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_json.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Path Wildcard Force Cleanup${NC}"
+if run_test_case "Exclude Path Wildcard Force Cleanup" 0 "exclude_path_force.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "$MOCK_HOME/proj_a" --force; then
+  if [[ -f "$MOCK_HOME/proj_a/build/a.o" && ! -d "$MOCK_HOME/proj_b/build" && ! -d "$MOCK_HOME/proj_ab/build" ]]; then
+    echo -e "${GREEN}PASS: --exclude-path leaves excluded wildcard match intact under --force while cleaning other matches.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-path --force did not preserve only the excluded path.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_force.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Path Env Mirror${NC}"
+mkdir -p "$MOCK_HOME/proj_a/build" "$MOCK_HOME/proj_b/build"
+echo "obj_a" > "$MOCK_HOME/proj_a/build/a.o"
+echo "obj_b" > "$MOCK_HOME/proj_b/build/b.o"
+if LINUX_CLEANER_EXCLUDE_PATH="$MOCK_HOME/proj_a" \
+     run_test_case "Exclude Path Env Mirror" 0 "exclude_path_env.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --dry-run --json \
+   && LINUX_CLEANER_EXCLUDE_PATH="$MOCK_HOME/proj_a" \
+     run_test_case "Exclude Path CLI Overrides Env" 0 "exclude_path_cli_override.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "$MOCK_HOME/proj_b" --force; then
+  if python3 - "$TEST_ENV_DIR/exclude_path_env.log" "$MOCK_HOME" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+home = sys.argv[2]
+paths = [t["path"] for t in data["targets"]]
+assert f"{home}/proj_a/build" not in paths and f"{home}/proj_b/build" in paths, paths
+PY
+  then
+    if [[ ! -d "$MOCK_HOME/proj_a/build" && -f "$MOCK_HOME/proj_b/build/b.o" ]]; then
+      echo -e "${GREEN}PASS: LINUX_CLEANER_EXCLUDE_PATH filters targets and is overridden by CLI --exclude-path.${NC}"
+    else
+      echo -e "${RED}FAIL: CLI --exclude-path did not override LINUX_CLEANER_EXCLUDE_PATH during --force.${NC}"
+      cat "$TEST_ENV_DIR/exclude_path_cli_override.log"
+      exit 1
+    fi
+  else
+    echo -e "${RED}FAIL: LINUX_CLEANER_EXCLUDE_PATH did not exclude the expected target in --dry-run --json.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_env.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Path Nonexistent Path${NC}"
+if run_test_case "Exclude Path Nonexistent Path" 1 "exclude_path_nonexistent.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "$MOCK_HOME/no_such_dir" --dry-run \
+   && run_test_case "Exclude Path Missing Value Refused" 1 "exclude_path_optval.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path --dry-run \
+   && run_test_case "Exclude Path Relative Path Refused" 1 "exclude_path_rel.log" \
+     --config "$TEST_ENV_DIR/exclude_path.conf" --exclude-path "relative/path" --dry-run; then
+  if grep -qF "Error: --exclude-path must resolve to an existing path without line feeds: '$MOCK_HOME/no_such_dir'." "$TEST_ENV_DIR/exclude_path_nonexistent.log" \
+     && grep -qF "Error: --exclude-path requires a value, got option '--dry-run'." "$TEST_ENV_DIR/exclude_path_optval.log" \
+     && grep -qF "Error: --exclude-path requires a literal absolute path without line feeds." "$TEST_ENV_DIR/exclude_path_rel.log"; then
+    echo -e "${GREEN}PASS: --exclude-path rejects nonexistent, option-like, and relative paths with exit 1.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-path validation errors did not match expected messages.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_nonexistent.log" "$TEST_ENV_DIR/exclude_path_optval.log" "$TEST_ENV_DIR/exclude_path_rel.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+echo -e "\n${BOLD}Test Case: Exclude Path Left No Targets${NC}"
+mkdir -p "$MOCK_HOME/proj_a/build"
+cat > "$TEST_ENV_DIR/exclude_path_only_a.conf" <<'EOF'
+safe|Only A Build|$HOME/proj_a/build|Only target|0||
+EOF
+if run_test_case "Exclude Path Left No Targets" 1 "exclude_path_empty.log" \
+     --config "$TEST_ENV_DIR/exclude_path_only_a.conf" --exclude-path "$MOCK_HOME/proj_a" --dry-run; then
+  if grep -qF "Error: --exclude-path $MOCK_HOME/proj_a left no config targets to process." "$TEST_ENV_DIR/exclude_path_empty.log"; then
+    echo -e "${GREEN}PASS: --exclude-path exits 1 when it removes every remaining target.${NC}"
+  else
+    echo -e "${RED}FAIL: --exclude-path did not emit the expected left-no-targets error.${NC}"
+    cat "$TEST_ENV_DIR/exclude_path_empty.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 
 # The shipped monitor command stays a preview with optional independent settings.
 python3 - "$CLEANER_SH" "$SCRIPT_DIR/examples/systemd/linux-cleaner-monitor.service" <<'MONITOR_PROFILE_PY'
@@ -6068,13 +6201,13 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --only-target --exclude-target --only-path --min-reclaim --min-free --min-age --trash-keep-days --notify)
+  --init-config --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
     --purge-sessions) echo "--purge-sessions all" ;;
     --only-target|--exclude-target) echo "$1 NPM" ;;
-    --only-path) echo "--only-path $MOCK_HOME" ;;
+    --only-path|--exclude-path) echo "$1 $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
     --min-free) echo "--min-free 1G" ;;
     --min-age) echo "--min-age 30" ;;
@@ -6082,7 +6215,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --min-reclaim --min-free --min-age --trash-keep-days --notify --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify --list-targets
   --check-config --init-config --report --restore --purge-sessions --list-sessions)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do

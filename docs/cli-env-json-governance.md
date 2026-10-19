@@ -16,6 +16,7 @@
 - **CLI overrides value mirrors** (config, log, risk, exclude, target filters, min reclaim, min free, min age, retention days, lock wait) when both are set. On/off mirrors can only enable a behavior from the CLI; disable one by setting it to a non-truthy value or unsetting it.
 - `LINUX_CLEANER_YES_DANGER` stays off in default examples. `LINUX_CLEANER_ALLOW_OUTSIDE_HOME` and `--allow-outside-home` are deprecated no-ops (one warning per run); targets outside `$HOME` are always allowed.
 - `--only-path` overrides `LINUX_CLEANER_ONLY_PATH` with last-occurrence precedence. Unset or empty means no scope; the effective value must be an existing absolute literal path without line feeds. No additional JSON fields.
+- `--exclude-path` overrides `LINUX_CLEANER_EXCLUDE_PATH` with last-occurrence precedence. Unset or empty means no exclusion; the effective value must be an existing absolute literal path without line feeds. No additional JSON fields.
 - `--lock-wait` overrides `LINUX_CLEANER_LOCK_WAIT` with last-occurrence precedence; unset/empty environment means zero. Validate the effective decimal `0..2147483647` after overrides and normalize leading zeros before use. No mode mutex or JSON key; valid settings do not lock nonlocking modes.
 - JSON target `status` no longer emits `rejected`. Older clients that accept that value keep working; current runs use the other statuses (`found`, `skipped`, and the rest).
 
@@ -39,6 +40,7 @@ Documented mutual exclusions (enforced in code):
 - `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--only-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--trash-keep-days` (including its environment mirror)
+- `--exclude-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--min-free` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--min-age` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
@@ -50,7 +52,7 @@ Documented mutual exclusions (enforced in code):
 - `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`
 - `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`
 - `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`
-- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
+- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
 - `--restore` vs `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--purge-sessions` vs `--restore`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`
 - `--list-sessions` vs `--restore`, `--purge-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`

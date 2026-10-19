@@ -70,7 +70,7 @@ _cleaner() {
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;
-    --only-path)
+    --only-path|--exclude-path)
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;
@@ -100,6 +100,7 @@ _cleaner() {
     --only-target
     --exclude-target
     --only-path
+    --exclude-path
     --lock-wait
     --min-reclaim
     --min-free

@@ -63,6 +63,7 @@ Options:
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
+  --exclude-path PATH        With cleanup or --list-targets: skip targets at/below an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --min-free SIZE            With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G).
@@ -103,6 +104,8 @@ ONLY_TARGET=""
 EXCLUDE_TARGET=""
 ONLY_PATH=""
 ONLY_PATH_CANONICAL=""
+EXCLUDE_PATH=""
+EXCLUDE_PATH_CANONICAL=""
 MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
 MIN_FREE=""
@@ -164,6 +167,9 @@ if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_ONLY_PATH:-}" ]]; then
   ONLY_PATH="$LINUX_CLEANER_ONLY_PATH"
+fi
+if [[ -n "${LINUX_CLEANER_EXCLUDE_PATH:-}" ]]; then
+  EXCLUDE_PATH="$LINUX_CLEANER_EXCLUDE_PATH"
 fi
 if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
   MIN_RECLAIM="$LINUX_CLEANER_MIN_RECLAIM"
@@ -359,6 +365,19 @@ while [[ $# -gt 0 ]]; do
       ONLY_PATH="$2"
       shift 2
       ;;
+    --exclude-path)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --exclude-path requires a literal absolute path without line feeds." >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      if [[ "$2" != /* || "$2" == *$'\n'* ]]; then
+        echo "Error: --exclude-path requires a literal absolute path without line feeds." >&2
+        exit 1
+      fi
+      EXCLUDE_PATH="$2"
+      shift 2
+      ;;
     --lock-wait)
       if [[ -z "${2:-}" ]]; then
         echo "Error: --lock-wait requires a seconds argument." >&2
@@ -463,6 +482,11 @@ done
 
 if [[ -n "$ONLY_PATH" && ( "$ONLY_PATH" != /* || "$ONLY_PATH" == *$'\n'* ) ]]; then
   echo "Error: --only-path requires a literal absolute path without line feeds." >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_PATH" && ( "$EXCLUDE_PATH" != /* || "$EXCLUDE_PATH" == *$'\n'* ) ]]; then
+  echo "Error: --exclude-path requires a literal absolute path without line feeds." >&2
   exit 1
 fi
 
@@ -584,6 +608,11 @@ fi
 
 if [[ -n "$ONLY_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || -n "$TRASH_KEEP_DAYS" ) ]]; then
   echo "Error: --only-path applies only to cleanup runs or --list-targets and cannot be combined with --trash-keep-days." >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
+  echo "Error: --exclude-path applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, or --init-config)." >&2
   exit 1
 fi
 
@@ -860,6 +889,7 @@ split_name_patterns --exclude-target "$EXCLUDE_TARGET" EXCLUDE_TARGET_PATTERNS
 only_target_matched=false
 name_filter_kept=false
 path_filter_matched=false
+exclude_path_kept=false
 age_filter_matched=false
 SELECTED_TARGET_PATH=""
 
@@ -886,17 +916,27 @@ resolve_existing_path() {
 }
 
 select_target_path() {
-  [[ -z "$ONLY_PATH" ]] && return 0
-  [[ "$2" == action:* ]] && return 1
   local expanded
-  expanded=$(expand_path_safe "$1") || return 1
-  resolve_existing_path "$expanded" || return 1
-  SELECTED_TARGET_PATH="$RESOLVED_PATH"
-  if [[ "$ONLY_PATH_CANONICAL" == / || "$SELECTED_TARGET_PATH" == "$ONLY_PATH_CANONICAL" || "$SELECTED_TARGET_PATH" == "$ONLY_PATH_CANONICAL"/* ]]; then
-    path_filter_matched=true
-    return 0
+  if [[ -n "$ONLY_PATH" ]]; then
+    [[ "$2" == action:* ]] && return 1
+    expanded=$(expand_path_safe "$1") || return 1
+    resolve_existing_path "$expanded" || return 1
+    SELECTED_TARGET_PATH="$RESOLVED_PATH"
+    if [[ "$ONLY_PATH_CANONICAL" == / || "$SELECTED_TARGET_PATH" == "$ONLY_PATH_CANONICAL" || "$SELECTED_TARGET_PATH" == "$ONLY_PATH_CANONICAL"/* ]]; then
+      path_filter_matched=true
+    else
+      return 1
+    fi
   fi
-  return 1
+  if [[ -n "$EXCLUDE_PATH" ]]; then
+    if expanded=$(expand_path_safe "$1") && resolve_existing_path "$expanded"; then
+      if [[ "$EXCLUDE_PATH_CANONICAL" == / || "$RESOLVED_PATH" == "$EXCLUDE_PATH_CANONICAL" || "$RESOLVED_PATH" == "$EXCLUDE_PATH_CANONICAL"/* ]]; then
+        return 1
+      fi
+    fi
+    exclude_path_kept=true
+  fi
+  return 0
 }
 
 check_target_selection() {
@@ -910,6 +950,10 @@ check_target_selection() {
   fi
   if [[ -n "$ONLY_PATH" && "$path_filter_matched" != true ]]; then
     echo "Error: No eligible config target resolves at or below '--only-path ${ONLY_PATH}'." >&2
+    return 1
+  fi
+  if [[ -n "$EXCLUDE_PATH" && "$exclude_path_kept" != true ]]; then
+    echo "Error: --exclude-path ${EXCLUDE_PATH} left no config targets to process." >&2
     return 1
   fi
   if [[ -n "$MIN_AGE_OVERRIDE" && "$age_filter_matched" != true ]]; then
@@ -3154,6 +3198,14 @@ if [[ -n "$ONLY_PATH" ]]; then
     exit 1
   fi
   ONLY_PATH_CANONICAL="$RESOLVED_PATH"
+fi
+
+if [[ -n "$EXCLUDE_PATH" ]]; then
+  if ! resolve_existing_path "$EXCLUDE_PATH"; then
+    echo "Error: --exclude-path must resolve to an existing path without line feeds: '$EXCLUDE_PATH'." >&2
+    exit 1
+  fi
+  EXCLUDE_PATH_CANONICAL="$RESOLVED_PATH"
 fi
 
 if [[ "$LIST_TARGETS" == true ]]; then

@@ -25,6 +25,12 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--exclude-path PATH` and `LINUX_CLEANER_EXCLUDE_PATH` skip cleanup and
+  `--list-targets` targets whose resolved physical path equals or lies below an
+  existing absolute path (`action:*` rows included when their path matches;
+  missing targets never excluded), exiting `1` when `PATH` does not exist or
+  removes every remaining target.
+
 - `--purge-sessions keep-latest:N` keeps the newest `N` quarantine sessions and
   purges older ones (oldest first), exiting `0` when at most `N` sessions exist or no
   quarantine directory exists and exiting `1` on an invalid count.

@@ -240,7 +240,9 @@ and
 .BR \-\-exclude\-target
 uses the same matching and empty-selection errors as cleanup.
 .B \-\-only\-path
-selects eligible physical paths with the same rules as cleanup. Inventory includes
+and
+.B \-\-exclude\-path
+select or skip physical paths with the same rules as cleanup. Inventory includes
 all risk levels. Read-only; requires a configuration file. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
@@ -280,6 +282,7 @@ combined with
 .BR \-\-only\-target ,
 .BR \-\-exclude\-target ,
 .BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-age ,
@@ -385,6 +388,25 @@ without analysis. Cannot be combined with
 or
 .BR \-\-trash\-keep\-days
 (including its environment mirror).
+.TP
+.B \-\-exclude\-path \fIPATH\fR
+With cleanup or configured-target inventory, skip targets whose resolved physical
+path equals or lies below one existing absolute literal
+.IR PATH
+(whole path components; action:* rows are excluded when their path matches;
+missing targets are never excluded). The last occurrence wins and overrides
+.BR LINUX_CLEANER_EXCLUDE_PATH ;
+unset or empty environment input means no exclusion. Exits 1 if
+.I PATH
+is not a literal absolute path without line feeds, does not resolve to an
+existing path, or removes every remaining target. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+or
+.BR \-\-init\-config .
 .TP
 .B \-\-lock\-wait \fISECONDS\fR
 Wait up to a literal decimal 0..2147483647 seconds for the existing mutation lock
@@ -666,6 +688,12 @@ expansion is performed. CLI overrides even malformed inherited values. Excludes
 action:* rows and cannot combine with session/config/report modes or global
 retention (including
 .BR LINUX_CLEANER_TRASH_KEEP_DAYS ).
+.TP
+.B LINUX_CLEANER_EXCLUDE_PATH
+When set to a non-empty existing absolute literal path without line feeds, enables
+.BR \-\-exclude\-path
+for cleanup or target inventory. Unset or empty means no exclusion. CLI flags
+override this variable.
 .TP
 .B LINUX_CLEANER_LOCK_WAIT
 Literal decimal 0..2147483647 seconds for
