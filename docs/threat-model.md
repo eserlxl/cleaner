@@ -86,7 +86,7 @@ A target that needs root and cannot obtain it is skipped with a warning and an o
 
 ### GNU userland
 
-GNU guard refuses --clean/--trash on non-GNU userland (misconfiguration protection).
+GNU guard refuses every real cleanup (--clean, --force, --interactive, or LINUX_CLEANER_FORCE=1, quarantine included) on a non-GNU userland while --dry-run stays a best-effort preview (misconfiguration protection).
 
 ## Quarantine Integrity and Collisions
 

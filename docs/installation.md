@@ -52,7 +52,7 @@ Run `cleaner --init-config` to copy the active config to `${XDG_CONFIG_HOME:-~/.
 
 ## Supported platforms and requirements
 
-`cleaner` requires Linux with a **GNU userland** (`bash`, GNU `coreutils` for `du -sb`, `stat -c`, `realpath`, and GNU `findutils` for `find -print0`/`-quit`). On a non-GNU userland it refuses `--clean`/`--trash` with an error while still allowing a best-effort `--dry-run` preview. Run `cleaner --doctor` to check the requirements below on your system: it reports the config file it would use, GNU userland support, the optional helper tools, and the systemd user timer states without needing a config or changing anything.
+`cleaner` requires Linux with a **GNU userland** (`bash`, GNU `coreutils` for `du -sb`, `stat -c`, `realpath`, and GNU `findutils` for `find -print0`/`-quit`). On a non-GNU userland it refuses every real cleanup (`--clean`, `--force`, `--interactive`, or `LINUX_CLEANER_FORCE=1`, quarantine included) with an error while still allowing a best-effort `--dry-run` preview. Run `cleaner --doctor` to check the requirements below on your system: it reports the config file it would use, GNU userland support, the optional helper tools, and the systemd user timer states without needing a config or changing anything.
 
 | Requirement | Source | Notes |
 |-------------|--------|-------|
