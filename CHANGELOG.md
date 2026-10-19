@@ -25,6 +25,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Complete existing quarantine session names for `--restore` and `--purge-sessions`
+  in Bash, Zsh and Fish, alongside the existing session selectors.
+
 - `--min-free SIZE` and `LINUX_CLEANER_MIN_FREE` skip cleanup when the filesystem holding `HOME` already has at least `SIZE` free (e.g. `10G`), printing a skip note on `--dry-run` and recording `Result: skipped at or above --min-free SIZE` in `last-report.txt`. `0` disables the check, and an unreadable free-space value prints a warning and the run proceeds as without `--min-free`.
 
 - Send a critical desktop notification (`Cleanup stopped with exit status <N> before finishing; see journalctl --user -t linux-cleaner.`) when an opted-in cleanup (`--notify` or `LINUX_CLEANER_NOTIFY=1`) exits non-zero before reaching its result report, while preserving the exit status and leaving dry-run, non-cleanup, and already-notified runs unchanged.

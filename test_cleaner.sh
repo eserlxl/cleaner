@@ -9706,48 +9706,68 @@ if ! (
   source "$comp_file"
   COMP_WORDS=(cleaner -r "")
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "safe medium danger" ]] || exit 1
 
   COMP_WORDS=(cleaner --ri)
   COMP_CWORD=1
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "--risk" ]] || exit 1
 
   COMP_WORDS=(cleaner --restore "")
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "latest" ]] || exit 1
 
   COMP_WORDS=(cleaner --purge-sessions "")
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "latest all older-than: max-size:" ]] || exit 1
+
+  echo -e "\n${BOLD}Test Case: Bash Quarantine Session Completion${NC}"
+  mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
+  touch "$MOCK_HOME/.cache/linux-cleaner/quarantine/not-a-session"
+  for session_option in --restore --purge-sessions; do
+    COMP_WORDS=(cleaner "$session_option" "")
+    HOME="$MOCK_HOME" _cleaner
+    if [[ "$session_option" == --restore ]]; then
+      [[ "${COMPREPLY[*]}" == "latest 2026-10-18_12-34-56" ]] || exit 1
+    else
+      [[ "${COMPREPLY[*]}" == "latest all older-than: max-size: 2026-10-18_12-34-56" ]] || exit 1
+    fi
+    COMP_WORDS=(cleaner "$session_option" 2026-)
+    HOME="$MOCK_HOME" _cleaner
+    [[ "${COMPREPLY[*]}" == "2026-10-18_12-34-56" ]] || exit 1
+    COMP_WORDS=(cleaner "$session_option" missing)
+    HOME="$MOCK_HOME" _cleaner
+    [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+  done
+  echo -e "${GREEN}PASS: bash completes immediate quarantine session names and preserves selectors with no quarantine directory.${NC}"
 
   COMP_WORDBREAKS=$' \t\n"\'><=;|&(:'
   COMP_WORDS=(cleaner --purge-sessions older-than :)
   COMP_CWORD=3
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
 
   COMP_WORDS=(cleaner --log --qu)
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "--quiet" ]] || exit 1
 
   COMP_WORDS=(cleaner --log "$comp_file")
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "$comp_file" ]] || exit 1
 
   COMP_WORDS=(cleaner --only-path "$comp_file")
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ "${COMPREPLY[*]}" == "$comp_file" ]] || exit 1
 
   COMP_WORDS=(cleaner --min-age "")
   COMP_CWORD=2
-  _cleaner
+  HOME="$MOCK_HOME" _cleaner
   [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
 ); then
   echo -e "${RED}FAIL: completions/cleaner.bash functional completion check failed.${NC}"
@@ -9782,7 +9802,7 @@ ZSH_PROBE
   for zcase in "ol|<cleaner --purge-sessions older-than:>" "ma|<cleaner --purge-sessions max-size:>" \
                "la|<cleaner --purge-sessions latest >" "al|<cleaner --purge-sessions all >"; do
     rm -f "$TEST_ENV_DIR/zsh_comp.out"
-    if ! timeout 20 zsh -f "$TEST_ENV_DIR/zsh_comp_probe.zsh" "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/zsh_comp.out" \
+    if ! HOME="$MOCK_HOME" timeout 20 zsh -f "$TEST_ENV_DIR/zsh_comp_probe.zsh" "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/zsh_comp.out" \
            "cleaner --purge-sessions ${zcase%%|*}" > /dev/null 2>&1 \
        || [[ "$(cat "$TEST_ENV_DIR/zsh_comp.out")" != "${zcase#*|}" ]]; then
       zsh_comp_failed+=" ${zcase%%|*}->'$(cat "$TEST_ENV_DIR/zsh_comp.out" 2>/dev/null)'"
@@ -9793,10 +9813,59 @@ ZSH_PROBE
     exit 1
   fi
   echo -e "${GREEN}PASS: zsh completes the --purge-sessions selectors, without a space after older-than: and max-size:.${NC}"
+  echo -e "\n${BOLD}Test Case: Zsh Quarantine Session Completion${NC}"
+  mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
+  touch "$MOCK_HOME/.cache/linux-cleaner/quarantine/not-a-session"
+  for session_option in --restore --purge-sessions; do
+    rm -f "$TEST_ENV_DIR/zsh_comp.out"
+    if ! HOME="$MOCK_HOME" timeout 20 zsh -f "$TEST_ENV_DIR/zsh_comp_probe.zsh" "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/zsh_comp.out" \
+           "cleaner $session_option 2026-" > /dev/null 2>&1 \
+       || [[ "$(cat "$TEST_ENV_DIR/zsh_comp.out")" != "<cleaner $session_option 2026-10-18_12-34-56 >" ]]; then
+      echo -e "${RED}FAIL: zsh did not complete a quarantine session name for $session_option.${NC}"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}PASS: zsh completes quarantine session names for --restore and --purge-sessions.${NC}"
 else
   echo -e "${GREEN}PASS (skipped): zsh is not installed; cannot run the zsh completion check.${NC}"
 fi
 if command -v fish > /dev/null 2>&1; then
+  echo -e "\n${BOLD}Test Case: Fish Quarantine Session Completion${NC}"
+  rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  for session_layout in absent present; do
+    if [[ "$session_layout" == present ]]; then
+      mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
+      touch "$MOCK_HOME/.cache/linux-cleaner/quarantine/not-a-session"
+    fi
+    # The single-quoted script is expanded by fish.
+    # shellcheck disable=SC2016
+    if ! HOME="$MOCK_HOME" XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
+         fish --no-config -c '
+      source "$argv[1]"
+      for option in --restore --purge-sessions
+        set expected latest
+        if test "$option" = --purge-sessions
+          set -a expected all older-than: max-size:
+        end
+        if test "$argv[2]" = present
+          set -a expected 2026-10-18_12-34-56
+        end
+        set candidates (string split -f 1 \t -- (complete -C "cleaner $option "))
+        test (count $candidates) -eq (count $expected); or exit 1
+        for candidate in $expected
+          contains -- "$candidate" $candidates; or exit 1
+        end
+        if test "$argv[2]" = present
+          set candidates (string split -f 1 \t -- (complete -C "cleaner $option 2026-"))
+          test "$candidates" = 2026-10-18_12-34-56; or exit 1
+        end
+      end
+    ' -- "$fish_comp_file" "$session_layout"; then
+      echo -e "${RED}FAIL: fish quarantine session completion failed with $session_layout quarantine directory.${NC}"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}PASS: fish completes only immediate quarantine directories and preserves selectors with no quarantine directory.${NC}"
   fish_comp_failed=""
   for fcase in --exclude --only --only-exact --only-target --exclude-target --lock-wait \
                --min-reclaim --min-free --min-age --trash-keep-days; do

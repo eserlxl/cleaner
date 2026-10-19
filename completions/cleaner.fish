@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Fish tab completion for cleaner / cleaner.sh.
 
+function __cleaner_sessions
+  for session in "$HOME/.cache/linux-cleaner/quarantine/"*/ "$HOME/.cache/linux-cleaner/quarantine/".*/
+    if not test -L (string replace -r '/$' '' -- $session)
+      string replace -r '^.*/([^/]+)/$' '$1' -- $session
+    end
+  end
+end
+
 complete -c cleaner -s c -l config -r -F -d 'Path to a configuration file (default search order: XDG user config, then /etc/linux-cleaner/cleaner.conf, then cleaner.conf beside the script)'
 complete -c cleaner -s d -l dry-run -d 'Calculate and display potential space savings without deleting anything (default)'
 complete -c cleaner -l clean -d 'Perform cleanup with a summary confirmation prompt'
@@ -15,7 +23,7 @@ complete -c cleaner -l report -d 'Print the saved last cleanup report and exit'
 complete -c cleaner -l list-targets -d 'List configured cleanup targets (read-only) and exit'
 complete -c cleaner -l check-config -d 'Validate the configuration file and exit (no disk analysis)'
 complete -c cleaner -l init-config -d 'Copy the active config to your user config path (never overwrites)'
-complete -c cleaner -l restore -x -a latest -d 'Restore files from quarantine session (latest or timestamp)'
+complete -c cleaner -l restore -x -a 'latest (__cleaner_sessions)' -d 'Restore files from quarantine session (latest or timestamp)'
 complete -c cleaner -l only -x -d 'With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined'
 complete -c cleaner -l only-exact -x -d 'With --restore: match a literal original path from session inventory; excludes --only'
 complete -c cleaner -l only-target -x -d 'With cleanup or --list-targets: select config targets whose NAME contains PATTERN'
@@ -26,7 +34,7 @@ complete -c cleaner -l min-reclaim -x -d 'With cleanup: skip the run when the pl
 complete -c cleaner -l min-free -x -d 'With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)'
 complete -c cleaner -l min-age -x -d "With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)"
 complete -c cleaner -l trash-keep-days -x -d 'With cleanup: purge quarantine sessions older than DAYS days after cleaning'
-complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size:' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible'
+complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size: (__cleaner_sessions)' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible'
 complete -c cleaner -l allow-outside-home -d 'Deprecated no-op; targets outside HOME are always allowed'
 complete -c cleaner -l log -F -d 'Append an operation log (opt-in, off by default; kept under your HOME)'
 complete -c cleaner -s q -l quiet -d 'Suppress per-target status lines; keep errors, totals, and final summary'

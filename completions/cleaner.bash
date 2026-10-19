@@ -21,6 +21,16 @@ _cleaner() {
     prev="${COMP_WORDS[idx - 3]}"
   fi
 
+  local -a sessions=()
+  if [[ "$prev" == --restore || "$prev" == --purge-sessions ]]; then
+    local session
+    for session in "$HOME/.cache/linux-cleaner/quarantine/"{*,.[!.]*,..?*}; do
+      [[ -d "$session" && ! -L "$session" ]] || continue
+      session="${session##*/}"
+      [[ "$session" == "$cur"* ]] && sessions+=("$session")
+    done
+  fi
+
   case "$prev" in
     -r|--risk)
       mapfile -t COMPREPLY < <(compgen -W "safe medium danger" -- "$cur")
@@ -28,10 +38,12 @@ _cleaner() {
       ;;
     --restore)
       mapfile -t COMPREPLY < <(compgen -W "latest" -- "$cur")
+      COMPREPLY+=("${sessions[@]}")
       return 0
       ;;
     --purge-sessions)
       mapfile -t COMPREPLY < <(compgen -W "latest all older-than: max-size:" -- "$cur")
+      COMPREPLY+=("${sessions[@]}")
       if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *: ]]; then
         compopt -o nospace 2>/dev/null || true
       fi

@@ -3,6 +3,8 @@
 # Zsh tab completion for cleaner / cleaner.sh.
 
 _cleaner() {
+  local -a sessions
+  sessions=("$HOME/.cache/linux-cleaner/quarantine/"*(ND/:t))
   _arguments \
     '(-c --config)'{-c,--config}'[Path to a configuration file (default search order: XDG user config, then /etc/linux-cleaner/cleaner.conf, then cleaner.conf beside the script)]:file:_files' \
     '(-d --dry-run)'{-d,--dry-run}'[Calculate and display potential space savings without deleting anything (default)]' \
@@ -18,7 +20,7 @@ _cleaner() {
     '--list-targets[List configured cleanup targets (read-only) and exit]' \
     '--check-config[Validate the configuration file and exit (no disk analysis)]' \
     '--init-config[Copy the active config to your user config path (never overwrites)]' \
-    '--restore[Restore files from quarantine session (latest or timestamp)]:session:(latest)' \
+    '--restore[Restore files from quarantine session (latest or timestamp)]:session:{compadd -- latest "${sessions[@]}"}' \
     '--only[With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined]:pattern:' \
     '--only-exact[With --restore: match a literal original path from session inventory; excludes --only]:path:' \
     '--only-target[With cleanup or --list-targets: select config targets whose NAME contains PATTERN]:pattern:' \
@@ -29,7 +31,7 @@ _cleaner() {
     '--min-free[With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)]:size:' \
     '--min-age[With cleanup: raise every ordinary target'\''s age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)]:days:' \
     '--trash-keep-days[With cleanup: purge quarantine sessions older than DAYS days after cleaning]:days:' \
-    '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible]:session:{compadd -- latest all; compadd -S "" -- older-than\: max-size\:}' \
+    '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, or timestamp). Irreversible]:session:{compadd -- latest all "${sessions[@]}"; compadd -S "" -- older-than\: max-size\:}' \
     '--allow-outside-home[Deprecated no-op; targets outside HOME are always allowed]' \
     '--log[Append an operation log (opt-in, off by default; kept under your HOME)]::file:_files' \
     '(-q --quiet)'{-q,--quiet}'[Suppress per-target status lines; keep errors, totals, and final summary]' \
