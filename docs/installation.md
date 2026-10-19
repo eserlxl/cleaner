@@ -29,7 +29,7 @@ The `systemctl --user` commands are per user: each user who enabled the timers r
 
 Copy `/usr/local/share/linux-cleaner/linux-cleaner.env.example` (or `/usr/share/linux-cleaner/linux-cleaner.env.example` with distro `PREFIX=/usr`) to `~/.config/linux-cleaner/env` to customize the cleanup service. A checkout can use `examples/linux-cleaner.env.example`. Custom `DATADIR` and `PKGNAME` move the installed template accordingly. Uninstall removes the shipped template and removes its directory only if empty; user environment copies, system config, and unrelated sibling files are preserved.
 
-For Arch Linux (`PKGBUILD`), `package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`, placing the command at `/usr/bin/cleaner` and the user units at `/usr/lib/systemd/user/`. See [RELEASING.md](../RELEASING.md#ordered-aur-packaging-checklist) and [docs/packager-handoff.md](packager-handoff.md).
+For Arch Linux (`aur/PKGBUILD`; build a local package with `cd aur && makepkg -si`), `package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`, placing the command at `/usr/bin/cleaner` and the user units at `/usr/lib/systemd/user/`. See [RELEASING.md](../RELEASING.md#ordered-aur-packaging-checklist) and [docs/packager-handoff.md](packager-handoff.md).
 
 A reinstall never overwrites an existing `/etc/linux-cleaner/cleaner.conf`; it writes `/etc/linux-cleaner/cleaner.conf.example` alongside it instead.
 
@@ -56,12 +56,12 @@ Run `cleaner --init-config` to copy the active config to `${XDG_CONFIG_HOME:-~/.
 
 | Requirement | Source | Notes |
 |-------------|--------|-------|
-| `bash` | `PKGBUILD depends` | Script interpreter, 4.4 or later (waits on process substitutions) |
-| `findutils` | `PKGBUILD depends` | Age filter and bounded wildcard discovery |
-| `coreutils` | `PKGBUILD depends` | `du`, `stat`, `realpath`, `rm`, etc. |
+| `bash` | `aur/PKGBUILD depends` | Script interpreter, 4.4 or later (waits on process substitutions) |
+| `findutils` | `aur/PKGBUILD depends` | Age filter and bounded wildcard discovery |
+| `coreutils` | `aur/PKGBUILD depends` | `du`, `stat`, `realpath`, `rm`, etc. |
 | `pgrep` (`procps`/`procps-ng`) | conditional runtime | Required for targets with `CHECK_PROCESSES`; missing or failed queries skip those targets before sizing, sudo or cleanup. Targets without process checks still work. |
-| `pacman-contrib` | `PKGBUILD optdepends` | Required for `action:paccache_keep*` (`paccache` binary) |
-| `notify-send` (`libnotify`) | `PKGBUILD optdepends` | Required for `--notify` / `LINUX_CLEANER_NOTIFY`; without it the cleanup runs and prints one warning |
+| `pacman-contrib` | `aur/PKGBUILD optdepends` | Required for `action:paccache_keep*` (`paccache` binary) |
+| `notify-send` (`libnotify`) | `aur/PKGBUILD optdepends` | Required for `--notify` / `LINUX_CLEANER_NOTIFY`; without it the cleanup runs and prints one warning |
 | `sudo` | runtime | Required for root-owned paths and predefined `action:*` system package-cache commands |
-| `git` | `PKGBUILD optdepends` | Enables the git-tracked target guard; without it that guard is skipped and targets inside a Git work tree are cleaned like any other |
+| `git` | `aur/PKGBUILD optdepends` | Enables the git-tracked target guard; without it that guard is skipped and targets inside a Git work tree are cleaned like any other |
 | `flock` (`util-linux`) | optional runtime | Takes the run lock for mutating runs; without it they proceed unlocked, and a positive `--lock-wait` exits `1` |

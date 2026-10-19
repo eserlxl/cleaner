@@ -13,14 +13,14 @@ This project ships as a single script; releases are cut from `main` as annotated
 1. **Pick the version** `X.Y.Z` per the [bump policy](CHANGELOG.md#versioning)
    (major = config/CLI break, minor = feature / safety-guard / new action,
    patch = fix / docs).
-2. **Bump the version everywhere it is carried** — `cleaner.sh`, `cleaner.1`, `PKGBUILD`, and
-   `.SRCINFO`. The pre-release gate (below) checks all three against the changelog,
+2. **Bump the version everywhere it is carried** — `cleaner.sh`, `cleaner.1`, `aur/PKGBUILD`, and
+   `aur/.SRCINFO`. The pre-release gate (below) checks all three against the changelog,
    so a partial bump fails it:
    ```sh
    sed -i 's/^readonly VERSION=.*/readonly VERSION="X.Y.Z"/' cleaner.sh
    sed -i '1s/"linux-cleaner [^"]*"/"linux-cleaner X.Y.Z"/' cleaner.1
-   sed -i -e 's/^pkgver=.*/pkgver=X.Y.Z/' -e 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
-   makepkg --printsrcinfo > .SRCINFO   # rewrites .SRCINFO's pkgver and source line
+   sed -i -e 's/^pkgver=.*/pkgver=X.Y.Z/' -e 's/^pkgrel=.*/pkgrel=1/' aur/PKGBUILD
+   (cd aur && makepkg --printsrcinfo > .SRCINFO)   # rewrites .SRCINFO's pkgver and source line
    ```
    Confirm `./cleaner.sh --version` prints the new version. (The tarball checksum
    cannot be computed yet — it needs the pushed tag, so it stays in *Packaging (AUR)*.)
@@ -48,7 +48,7 @@ A release must never be cut on a failing safety suite. Before tagging, confirm a
 - `bash test_cleaner.sh` (or `make check`) passes;
 - `bash scripts/validate-runbook-examples.sh` (`make check-runbook-examples`, which `make pre-release` runs first) passes;
 - the version-consistency check passes (the CHANGELOG top version equals
-  `cleaner.sh --version`, `cleaner.1`'s `.TH` version matches, and `PKGBUILD`/`.SRCINFO`
+  `cleaner.sh --version`, `cleaner.1`'s `.TH` version matches, and `aur/PKGBUILD`/`aur/.SRCINFO`
   carry the same `pkgver`);
 - the **stranded-entries guard** passes: once HEAD is tagged, `bash test_cleaner.sh`
   fails if `## [Unreleased]` still holds entries. The release workflow builds its notes
@@ -66,11 +66,13 @@ warning to the bad GitHub Release's notes (or mark it a pre-release).
 
 ## Packaging (AUR)
 
-The repository ships an Arch `PKGBUILD` and `.SRCINFO` whose `package()` delegates to
-`make install DESTDIR="$pkgdir" PREFIX=/usr`. To build and publish a package for a release:
+The repository ships the Arch packaging files in `aur/` (`PKGBUILD`, `.SRCINFO` and the
+`linux-cleaner.install` scriptlet); `package()` delegates to
+`make install DESTDIR="$pkgdir" PREFIX=/usr`. Build locally with `cd aur && makepkg -si`.
+`aur/.gitignore` keeps tarballs, `src/` and `pkg/` out of git. To build and publish a package for a release:
 
 `pkgver` was already bumped by release step 2; everything below needs the pushed tag,
-so it runs only after the release is cut. The `source` URL in `PKGBUILD` points at
+so it runs only after the release is cut. The `source` URL in `aur/PKGBUILD` points at
 `$url/archive/refs/tags/v$pkgver.tar.gz` — **`updpkgsums` cannot succeed until that tag
 exists on the remote.** Never publish with `sha256sums=('SKIP')`.
 
@@ -91,14 +93,14 @@ See `docs/release-workflow-audit.md` for the step-by-step cross-walk.
 ### Ordered AUR packaging checklist
 
 1. Confirm the `vX.Y.Z` tag exists on the remote (`git ls-remote --tags origin`).
-2. Run `updpkgsums` — rewrites the previous release's sha256 for the new release tarball.
-3. `AUR_PREP=1 make check-aur-ready` — verify `sha256sums` is one 64-hex digest, e.g. `sha256sums=("<64-hex>")` — **never publish with SKIP**.
-4. `makepkg -f` — build the package locally.
-5. `namcap PKGBUILD` — lint the recipe.
-6. `namcap *.pkg.tar.zst` — lint the built package.
-7. `makepkg --printsrcinfo > .SRCINFO` — regenerate metadata.
-8. Commit `PKGBUILD` and `.SRCINFO`.
-9. Human AUR push (never automated): copy `PKGBUILD`, `.SRCINFO` and `linux-cleaner.install` (the `install=` scriptlet) into the AUR repo.
+2. In `aur/`, run `updpkgsums` — rewrites the previous release's sha256 for the new release tarball.
+3. From the repository root, `AUR_PREP=1 make check-aur-ready` — verify `aur/PKGBUILD`'s `sha256sums` is one 64-hex digest, e.g. `sha256sums=("<64-hex>")` — **never publish with SKIP**.
+4. In `aur/`, `makepkg -f` — build the package locally.
+5. `namcap PKGBUILD` (in `aur/`) — lint the recipe.
+6. `namcap *.pkg.tar.zst` (in `aur/`) — lint the built package.
+7. `(cd aur && makepkg --printsrcinfo > .SRCINFO)` — regenerate metadata.
+8. Commit `aur/PKGBUILD` and `aur/.SRCINFO`.
+9. Human AUR push (never automated): copy `aur/PKGBUILD`, `aur/.SRCINFO` and `aur/linux-cleaner.install` (the `install=` scriptlet) into the AUR repo.
 
 - Documentation review: walk `docs/DOC_REVIEW_CHECKLIST.md` before tagging.
 

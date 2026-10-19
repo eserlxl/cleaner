@@ -2741,8 +2741,8 @@ fi
 setup_mock_env
 changelog_version=$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$SCRIPT_DIR/CHANGELOG.md" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 tool_version=$(HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" "$CLEANER_SH" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-pkgbuild_version=$(awk -F= '/^pkgver=/ {print $2; exit}' "$SCRIPT_DIR/PKGBUILD")
-srcinfo_version=$(awk -F' = ' '/^[[:space:]]*pkgver = / {print $2; exit}' "$SCRIPT_DIR/.SRCINFO")
+pkgbuild_version=$(awk -F= '/^pkgver=/ {print $2; exit}' "$SCRIPT_DIR/aur/PKGBUILD")
+srcinfo_version=$(awk -F' = ' '/^[[:space:]]*pkgver = / {print $2; exit}' "$SCRIPT_DIR/aur/.SRCINFO")
 echo -e "\n${BOLD}Test Case: Changelog/Version Consistency${NC}"
 if [[ -n "$changelog_version" && "$changelog_version" == "$tool_version" ]]; then
   echo -e "${GREEN}PASS: CHANGELOG top version ($changelog_version) matches --version ($tool_version).${NC}"
@@ -6492,7 +6492,7 @@ tracked_shell_files() {
   local f
   git -C "$SCRIPT_DIR" ls-files | while IFS= read -r f; do
     case "$f" in
-      *.sh|*.bash|*.install|PKGBUILD) printf '%s\n' "$f" ;;
+      *.sh|*.bash|*.install|PKGBUILD|*/PKGBUILD) printf '%s\n' "$f" ;;
       *) head -n1 "$SCRIPT_DIR/$f" 2>/dev/null | grep -qE '^#!.*[/ ](ba)?sh([[:space:]]|$)' && printf '%s\n' "$f" ;;
     esac
   done | sort -u
@@ -6511,7 +6511,7 @@ if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   missing=$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$SCRIPT_DIR/Makefile" | sort -u) | tr '\n' ' ')
   [[ -z "$missing" ]] || sc_drift+=" SHELLCHECK_FILES(missing: ${missing% })"
   # Prove the check reads the list: dropping one tracked file from it must be caught.
-  sed 's/ PKGBUILD$//' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
+  sed 's| aur/PKGBUILD$||' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
   if [[ -z "$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$TEST_ENV_DIR/Makefile.drift" | sort -u))" ]]; then
     sc_drift+=" Makefile-fixture(drift not detected)"
   fi
@@ -7914,29 +7914,30 @@ for aur_case in single-quoted-skip double-quoted-skip unquoted-skip multiline-sk
                 pinned multiline-pinned append indexed dynamic empty unclosed missing; do
   echo -e "\n${BOLD}Test Case: AUR Checksum Gate $aur_case${NC}"
   aur_dir="$TEST_ENV_DIR/aur-$aur_case"
-  mkdir -p "$aur_dir"
+  aur_pkg="$aur_dir/aur/PKGBUILD"
+  mkdir -p "$aur_dir/aur"
   cp "$SCRIPT_DIR/Makefile" "$aur_dir/"
   aur_expect_failure=true
   case "$aur_case" in
-    single-quoted-skip) printf "sha256sums=('SKIP')\n" > "$aur_dir/PKGBUILD" ;;
-    double-quoted-skip) printf 'sha256sums=("SKIP")\n' > "$aur_dir/PKGBUILD" ;;
-    unquoted-skip) printf 'sha256sums=(SKIP)\n' > "$aur_dir/PKGBUILD" ;;
-    multiline-skip) printf "sha256sums=(\n  '%s'\n  'SKIP' # placeholder\n)\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
+    single-quoted-skip) printf "sha256sums=('SKIP')\n" > "$aur_pkg" ;;
+    double-quoted-skip) printf 'sha256sums=("SKIP")\n' > "$aur_pkg" ;;
+    unquoted-skip) printf 'sha256sums=(SKIP)\n' > "$aur_pkg" ;;
+    multiline-skip) printf "sha256sums=(\n  '%s'\n  'SKIP' # placeholder\n)\n" "$aur_hash" > "$aur_pkg" ;;
     # A fixture, not the live PKGBUILD: the tagged release commit cannot carry its own
     # tarball checksum, so the live file is checked at publish time (AUR_PREP=1).
-    pinned) printf "sha256sums=('%s')\n" "$aur_hash" > "$aur_dir/PKGBUILD"; aur_expect_failure=false ;;
+    pinned) printf "sha256sums=('%s')\n" "$aur_hash" > "$aur_pkg"; aur_expect_failure=false ;;
     multiline-pinned)
       printf '# SKIP is forbidden\nsha256sums=(\n  %s\n  "%s" # pinned\n  '\''%s'\''\n)\n' \
-        "$aur_hash" "$aur_hash" "$aur_hash" > "$aur_dir/PKGBUILD"
+        "$aur_hash" "$aur_hash" "$aur_hash" > "$aur_pkg"
       aur_expect_failure=false ;;
-    append) printf "sha256sums=('%s')\nsha256sums+=('SKIP')\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
-    indexed) printf "sha256sums=('%s')\nsha256sums[0]='SKIP'\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
-    dynamic) printf 'sha256sums=("%s")\n' "\$CHECKSUM" > "$aur_dir/PKGBUILD" ;;
-    empty) printf 'sha256sums=()\n' > "$aur_dir/PKGBUILD" ;;
-    unclosed) printf "sha256sums=(\n  '%s'\n" "$aur_hash" > "$aur_dir/PKGBUILD" ;;
-    missing) printf '# no checksum assignment\n' > "$aur_dir/PKGBUILD" ;;
+    append) printf "sha256sums=('%s')\nsha256sums+=('SKIP')\n" "$aur_hash" > "$aur_pkg" ;;
+    indexed) printf "sha256sums=('%s')\nsha256sums[0]='SKIP'\n" "$aur_hash" > "$aur_pkg" ;;
+    dynamic) printf 'sha256sums=("%s")\n' "\$CHECKSUM" > "$aur_pkg" ;;
+    empty) printf 'sha256sums=()\n' > "$aur_pkg" ;;
+    unclosed) printf "sha256sums=(\n  '%s'\n" "$aur_hash" > "$aur_pkg" ;;
+    missing) printf '# no checksum assignment\n' > "$aur_pkg" ;;
   esac
-  cat <<'EOF' >> "$aur_dir/PKGBUILD"
+  cat <<'EOF' >> "$aur_pkg"
 printf executed > "$TEST_ENV_DIR/aur-package-executed"
 EOF
   aur_rc=0
@@ -7956,7 +7957,7 @@ done
 # systemctl, and upgrades stay quiet (no post_upgrade).
 echo -e "\n${BOLD}Test Case: Package Install Scriptlet Is Hint Only${NC}"
 setup_mock_env
-install_file=$(awk -F= '/^install=/ {print $2; exit}' "$SCRIPT_DIR/PKGBUILD")
+install_file=$(awk -F= '/^install=/ {print $2; exit}' "$SCRIPT_DIR/aur/PKGBUILD")
 mkdir -p "$TEST_ENV_DIR/scriptlet-bin"
 printf '#!/usr/bin/env bash\necho "$*" >> "%s"\n' "$TEST_ENV_DIR/scriptlet-systemctl.calls" > "$TEST_ENV_DIR/scriptlet-bin/systemctl"
 chmod +x "$TEST_ENV_DIR/scriptlet-bin/systemctl"
@@ -7967,16 +7968,16 @@ scriptlet_out=$(PATH="$TEST_ENV_DIR/scriptlet-bin:$PATH" bash -c '
   declare -F post_install >/dev/null
   if declare -F post_upgrade >/dev/null; then exit 3; fi
   post_install
-' _ "$SCRIPT_DIR/$install_file" 2>&1) || scriptlet_rc=$?
-if [[ -n "$install_file" && -f "$SCRIPT_DIR/$install_file" ]] \
-   && bash -n "$SCRIPT_DIR/$install_file" \
+' _ "$SCRIPT_DIR/aur/$install_file" 2>&1) || scriptlet_rc=$?
+if [[ -n "$install_file" && -f "$SCRIPT_DIR/aur/$install_file" ]] \
+   && bash -n "$SCRIPT_DIR/aur/$install_file" \
    && [[ "$scriptlet_rc" -eq 0 ]] \
    && [[ ! -e "$TEST_ENV_DIR/scriptlet-systemctl.calls" ]] \
    && grep -qF "nothing was enabled" <<<"$scriptlet_out" \
    && grep -qF "cleaner --dry-run" <<<"$scriptlet_out" \
    && grep -qF "systemctl --user enable --now linux-cleaner-clean.timer" <<<"$scriptlet_out" \
    && grep -qF "LINUX_CLEANER_TRASH=1" <<<"$scriptlet_out" \
-   && grep -qE "^[[:space:]]*install = ${install_file}$" "$SCRIPT_DIR/.SRCINFO"; then
+   && grep -qE "^[[:space:]]*install = ${install_file}$" "$SCRIPT_DIR/aur/.SRCINFO"; then
   echo -e "${GREEN}PASS: the install scriptlet prints the opt-in hint, calls no systemctl, and has no post_upgrade.${NC}"
 else
   echo -e "${RED}FAIL: install scriptlet '$install_file' rc=$scriptlet_rc is missing, calls systemctl, defines post_upgrade, or lacks the hint.${NC}"

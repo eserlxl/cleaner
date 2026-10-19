@@ -16,7 +16,7 @@ PKGNAME    ?= linux-cleaner
 # Every tracked shell file; make lint, the pre-release gate and CI read only this list.
 SHELLCHECK_FILES = cleaner.sh test_cleaner.sh install.sh release-notes.sh \
 	scripts/validate-runbook-examples.sh completions/cleaner.bash \
-	linux-cleaner.install PKGBUILD
+	aur/linux-cleaner.install aur/PKGBUILD
 
 .PHONY: all help install uninstall install-man check lint clean pre-release check-aur-ready check-runbook-examples
 
@@ -116,4 +116,4 @@ check-aur-ready:
 				if (length(value) != 64 || value ~ /[^[:xdigit:]]/) bad = 1; \
 			} \
 			exit (bad || !count); \
-		}' PKGBUILD
+		}' aur/PKGBUILD

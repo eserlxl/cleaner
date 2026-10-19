@@ -1,6 +1,6 @@
 # Install path parity
 
-| installation.md row | Makefile | install.sh | PKGBUILD package() |
+| installation.md row | Makefile | install.sh | aur/PKGBUILD package() |
 |------------|----------|------------|---------------------|
 | bin/cleaner | BINDIR | install | make install |
 | man | MANDIR | install | make install |

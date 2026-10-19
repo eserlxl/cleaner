@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Changed
+
+- Move the Arch packaging files (`PKGBUILD`, `.SRCINFO`, `linux-cleaner.install`) into `aur/`, with an `aur/.gitignore` that keeps build output out of git; build a local package with `cd aur && makepkg -si`.
+
 ## [1.6.0] - 2026-10-19
 
 ### Changed

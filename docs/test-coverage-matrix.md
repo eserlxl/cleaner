@@ -181,8 +181,8 @@ Rows below moved here after the 1.5.0 release; add new unreleased rows only whil
 | Man Page Env Var Parity | env vars in man | cleaner.sh, cleaner.1, README.md, docs/cli-reference.md |
 | Stranded [Unreleased] Entries Are Detected | no stranded changelog | CHANGELOG.md, test_cleaner.sh |
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
-| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, PKGBUILD, .SRCINFO, CHANGELOG.md |
-| Package Install Scriptlet Is Hint Only | pacman scriptlet prints the opt-in hint, calls no systemctl, no post_upgrade | linux-cleaner.install, PKGBUILD, .SRCINFO |
+| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, aur/PKGBUILD, aur/.SRCINFO, CHANGELOG.md |
+| Package Install Scriptlet Is Hint Only | pacman scriptlet prints the opt-in hint, calls no systemctl, no post_upgrade | aur/linux-cleaner.install, aur/PKGBUILD, aur/.SRCINFO |
 | ShellCheck Single Source | one shellcheck list (`SHELLCHECK_FILES`) covering every tracked shell file; every lint step runs `make lint` | Makefile, ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, docs/DOC_REVIEW_CHECKLIST.md, docs/contract-baseline.md |
 | Makefile Pre-Release Gate Parity | `pre-release` runs `scripts/validate-runbook-examples.sh` (`check-runbook-examples`), `shellcheck`, and `bash test_cleaner.sh` in order | Makefile |
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |
