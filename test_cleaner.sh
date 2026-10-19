@@ -10989,5 +10989,59 @@ if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
 fi
 echo -e "${GREEN}PASS: dry-run, read-only modes, and unset LINUX_CLEANER_METRICS_FILE write nothing.${NC}"
 
+# 7. Early non-zero cleanup exit before saving report (e.g. quarantine session creation failure) overwrites stale metrics with success 0 and a current timestamp while preserving exit status.
+mkdir -p "$MOCK_HOME/.cache/metrics_target"
+truncate -s 512 "$MOCK_HOME/.cache/metrics_target/file.txt"
+cat > "$metrics_file" <<'STALE_METRICS'
+# HELP linux_cleaner_last_run_timestamp_seconds Unix timestamp of the last cleanup run.
+# TYPE linux_cleaner_last_run_timestamp_seconds gauge
+linux_cleaner_last_run_timestamp_seconds 100
+# HELP linux_cleaner_last_run_success Whether the last cleanup run succeeded (1) or failed/was interrupted (0).
+# TYPE linux_cleaner_last_run_success gauge
+linux_cleaner_last_run_success 1
+# HELP linux_cleaner_targets Number of targets processed in the last cleanup run by result.
+# TYPE linux_cleaner_targets gauge
+linux_cleaner_targets{result="cleaned"} 5
+linux_cleaner_targets{result="skipped"} 0
+linux_cleaner_targets{result="failed"} 0
+# HELP linux_cleaner_reclaimed_bytes Accounted bytes reclaimed in the last cleanup run by kind.
+# TYPE linux_cleaner_reclaimed_bytes gauge
+linux_cleaner_reclaimed_bytes{kind="quarantined"} 2048
+linux_cleaner_reclaimed_bytes{kind="permanent"} 0
+STALE_METRICS
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+mkdir -p "$MOCK_HOME/.cache/linux-cleaner"
+printf 'not a directory\n' > "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+early_metrics_before=$(date +%s)
+if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+     run_test_case "Prometheus Metrics Early Non-Zero Exit" 1 "metrics_early_fail.log" \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --trash --force \
+   || ! grep -qx 'linux_cleaner_last_run_success 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="cleaned"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="skipped"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="failed"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="quarantined"} 0' "$metrics_file" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="permanent"} 0' "$metrics_file" \
+   || ! python3 - "$metrics_file" "$early_metrics_before" <<'EARLY_METRICS_PY'
+import pathlib, re, sys, time
+lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+before = int(sys.argv[2])
+after = int(time.time()) + 2
+ts_lines = [l for l in lines if l.startswith("linux_cleaner_last_run_timestamp_seconds ")]
+assert len(ts_lines) == 1, lines
+m = re.match(r"^linux_cleaner_last_run_timestamp_seconds ([1-9][0-9]*)$", ts_lines[0])
+assert m is not None, ts_lines
+ts = int(m.group(1))
+assert before <= ts <= after, (before, ts, after)
+EARLY_METRICS_PY
+then
+  rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  echo -e "${RED}FAIL: early non-zero cleanup exit did not record linux_cleaner_last_run_success 0 with a current timestamp.${NC}"
+  cat "$metrics_file" "$TEST_ENV_DIR/metrics_early_fail.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+echo -e "${GREEN}PASS: early non-zero cleanup exit records linux_cleaner_last_run_success 0 with a current timestamp.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

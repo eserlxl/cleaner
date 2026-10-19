@@ -123,6 +123,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Record `linux_cleaner_last_run_success 0` with a current timestamp (and zero target and byte counts) in `LINUX_CLEANER_METRICS_FILE` when a cleanup exits non-zero before saving its report (such as a preflight or quarantine-session creation failure), while preserving the exit status and leaving dry-run, read-only, and already-written runs unchanged.
+
 - Refuse `--purge-sessions keep-latest:0` (and zero-padded zeros) with an error (`Error: Invalid count in '<target>'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5.`), preventing a zero count selector from purging every session like `all`.
 
 - Make `--exclude-path` (and `LINUX_CLEANER_EXCLUDE_PATH`) also skip targets whose resolved physical or expanded literal path contains, equals, or lies below the excluded path, so a parent target cannot delete an excluded child directory and a target under a symlinked parent of the excluded literal path is still excluded.

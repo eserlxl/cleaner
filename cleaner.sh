@@ -132,6 +132,7 @@ RESULT_FAILED_TARGETS=()
 # privileges are not available, an action whose binary
 # is absent) are not failures and leave this false.
 OPERATION_FAILED=false
+CLEANUP_METRICS_WRITTEN=false
 
 # Operation log (opt-in, OFF by default). Enable via --log or by setting the
 # LINUX_CLEANER_LOG environment variable. The log lives under $HOME (see the
@@ -209,7 +210,14 @@ esac
 
 notify_failed_exit() {
   local status=$?
-  if [[ "${NOTIFY:-false}" != true || "${NOTIFY_SENT:-false}" == true || "$status" -eq 0 || "${DRY_RUN:-true}" != false || -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true ]]; then
+  if [[ "$status" -eq 0 || "${DRY_RUN:-true}" != false || -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true ]]; then
+    return "$status"
+  fi
+  if [[ "${CLEANUP_METRICS_WRITTEN:-false}" != true ]] && declare -F write_cleanup_metrics >/dev/null 2>&1; then
+    OPERATION_FAILED=true
+    write_cleanup_metrics || true
+  fi
+  if [[ "${NOTIFY:-false}" != true || "${NOTIFY_SENT:-false}" == true ]]; then
     return "$status"
   fi
   if command -v notify-send >/dev/null 2>&1; then
@@ -3038,6 +3046,7 @@ write_cleanup_metrics() {
     echo "Warning: could not save cleanup metrics to '$metrics_file'." >&2
     return 0
   fi
+  CLEANUP_METRICS_WRITTEN=true
 }
 
 # Save the plan plus the result. Non-fatal: a bad state path or a write error
