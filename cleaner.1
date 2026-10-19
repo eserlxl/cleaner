@@ -123,8 +123,9 @@ notifier never changes the exit status. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-json
 With
@@ -199,8 +200,9 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-list\-sessions
 List quarantine sessions (read-only) and exit. Each session is shown with its
@@ -228,8 +230,9 @@ or deletion, including forced purge and inline retention. Cannot be combined wit
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-list\-targets
 List targets defined in the configuration file
@@ -249,8 +252,9 @@ all risk levels. Read-only; requires a configuration file. Cannot be combined wi
 .BR \-\-list\-sessions ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-check\-config
 Validate the configuration file with the same structural checks as a cleanup
@@ -263,8 +267,9 @@ on success. Cannot be combined with
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-init\-config
 Copy the active configuration file to
@@ -279,6 +284,42 @@ combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-doctor ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+.BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
+.BR \-\-min\-reclaim ,
+.BR \-\-min\-free ,
+.BR \-\-min\-age ,
+.BR \-\-trash\-keep\-days ,
+.BR \-\-notify ,
+or
+.BR \-\-json .
+.TP
+.B \-\-doctor
+Print a read-only checklist of the runtime environment a cleanup depends on
+.RB ( OK / WARN / INFO
+lines for the resolved configuration path and whether it came from XDG, /etc,
+checkout, or explicit;
+.BR check_gnu_userland ;
+.BR pgrep ;
+.BR flock ;
+.BR git ;
+non-interactive
+.BR "sudo \-n" ;
+.BR notify\-send ;
+.B "systemctl \-\-user is\-enabled"
+for the clean, retention, and monitor timers; and the quarantine session count)
+and exit 0 when cleanup can run or 1 when GNU userland is missing. Requires no
+configuration file. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
 .BR \-\-only\-target ,
 .BR \-\-exclude\-target ,
 .BR \-\-only\-path ,
@@ -339,8 +380,9 @@ Cannot be combined with
 .BR \-\-list\-sessions ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-exclude\-target \fIPATTERN\fR
 Used with cleanup or configured-target inventory: skip config targets whose
@@ -360,8 +402,9 @@ Cannot be combined with
 .BR \-\-list\-sessions ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-only\-path \fIPATH\fR
 With cleanup or configured-target inventory, select ordinary targets whose physical
@@ -385,6 +428,7 @@ without analysis. Cannot be combined with
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
+.BR \-\-doctor ,
 or
 .BR \-\-trash\-keep\-days
 (including its environment mirror).
@@ -405,15 +449,16 @@ existing path, or removes every remaining target. Cannot be combined with
 .BR \-\-list\-sessions ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-lock\-wait \fISECONDS\fR
 Wait up to a literal decimal 0..2147483647 seconds for the existing mutation lock
 (default 0; leading zeros normalized). Zero retains immediate contention failure
 and allows missing flock. Positive waits require flock and exit 1 on acquisition
 failure before target, session, report or log effects; lock-file opening may occur.
-Valid values are ignored by dry-run, inventories, report, check-config and init-config.
+Valid values are ignored by dry-run, inventories, report, check-config, init-config and doctor.
 Last CLI value overrides inherited input. Missing/empty CLI and invalid effective
 values fail before initialization or state creation. No retry loop is used.
 .TP
@@ -441,8 +486,9 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-min\-free \fISIZE\fR
 Used with cleanup: skip the run when the filesystem holding
@@ -467,8 +513,9 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-min\-age \fIDAYS\fR
 Used with cleanup: raise every ordinary target's
@@ -494,8 +541,9 @@ rows. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-trash\-keep\-days \fIDAYS\fR
 Used with cleanup: purge quarantine sessions older than
@@ -515,8 +563,9 @@ or if any session purge fails. Cannot be combined with
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-only\-path ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
@@ -531,8 +580,9 @@ are rejected. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .B \-\-purge\-sessions \fISESSION\fR
 Permanently delete quarantine session(s) to reclaim space:
@@ -576,8 +626,9 @@ is given. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-init\-config ,
 or
-.BR \-\-init\-config .
+.BR \-\-doctor .
 .TP
 .BR \-V ", " \-\-version
 Print the tool version and exit.

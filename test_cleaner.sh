@@ -5970,7 +5970,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
         # Inject a failing stdout helper only around the actual consumers, keeping
         # failure propagation observable without changing the executable under test.
         failure = '_xdg_dir() { printf "%s" "$HOME/partial\\n"; return 23; }\n'
-        discovery_start = source.index('if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true ]]; then')
+        discovery_start = source.index('if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then')
         discovery = source[discovery_start:source.index("\n# Trim whitespace", discovery_start)]
         for label, code, status in (("init helper failure", body("init_user_config") + "\ninit_user_config", 1),
                                     ("reader helper failure", body("show_last_report") + "\nshow_last_report", 1),
@@ -5978,7 +5978,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
                                     ("discovery helper failure", discovery, 1),
                                     ("explicit config skips discovery helper", 'CONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
             probe = root / "helper-failure.sh"
-            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\n' + failure + code + "\n")
+            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\nDOCTOR=false\n' + failure + code + "\n")
             before = snapshot()
             print("Test Case: XDG Storage " + label, flush=True)
             result = subprocess.run(["bash", str(probe)], env=env | {"EXPLICIT": str(explicit)}, capture_output=True, text=True, timeout=20)
@@ -6255,7 +6255,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify)
+  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -6270,7 +6270,7 @@ mx_args() {
   esac
 }
 mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify --list-targets
-  --check-config --init-config --report --restore --purge-sessions --list-sessions)
+  --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
   mx_refused=""
@@ -6300,7 +6300,7 @@ man_lines = open(man).read().splitlines()
 # A mode flag's own list must name every refused mode; it may also name the cleanup
 # filters (each filter documents its own restriction), but never a partner that works.
 modes = {'--restore', '--purge-sessions', '--list-sessions', '--list-targets',
-         '--check-config', '--report', '--init-config'}
+         '--check-config', '--report', '--init-config', '--doctor'}
 def ok(subj, got, want):
     if got is None:
         return False
@@ -11110,6 +11110,129 @@ then
 fi
 rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
 echo -e "${GREEN}PASS: early non-zero cleanup exit records linux_cleaner_last_run_success 0 with a current timestamp.${NC}"
+
+# --doctor: read-only environment checklist (config resolution, check_gnu_userland,
+# pgrep, flock, git, sudo -n, notify-send, user timers, quarantine session count).
+echo -e "\n${BOLD}Test Case: Doctor Mode Environment Checklist${NC}"
+setup_mock_env
+doctor_xdg="$TEST_ENV_DIR/doctor_xdg"
+mkdir -p "$doctor_xdg/linux-cleaner" \
+         "$MOCK_HOME/.cache/linux-cleaner/quarantine/20260101_000000" \
+         "$MOCK_HOME/.cache/linux-cleaner/quarantine/20260102_000000"
+cp "$TEST_ENV_DIR/test_cleaner.conf" "$doctor_xdg/linux-cleaner/cleaner.conf"
+for doc_bin in pgrep flock git notify-send; do
+  cat > "$TEST_ENV_DIR/bin/$doc_bin" <<'DOC_BIN_EOF'
+#!/usr/bin/env bash
+exit 0
+DOC_BIN_EOF
+  chmod +x "$TEST_ENV_DIR/bin/$doc_bin"
+done
+cat > "$TEST_ENV_DIR/bin/sudo" <<'DOC_SUDO_EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-n" && "${2:-}" == "true" ]]; then
+  exit 0
+fi
+exit 1
+DOC_SUDO_EOF
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+cat > "$TEST_ENV_DIR/bin/systemctl" <<'DOC_SYSTEMCTL_EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--user" && "${2:-}" == "is-enabled" ]]; then
+  case "${3:-}" in
+    linux-cleaner-clean.timer) echo "enabled"; exit 0 ;;
+    linux-cleaner-retention.timer) echo "disabled"; exit 1 ;;
+    linux-cleaner-monitor.timer) echo "enabled"; exit 0 ;;
+  esac
+fi
+exit 1
+DOC_SYSTEMCTL_EOF
+chmod +x "$TEST_ENV_DIR/bin/systemctl"
+
+doc_all_ec=0
+XDG_CONFIG_HOME="$doctor_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_all.log" 2>&1 || doc_all_ec=$?
+if [[ "$doc_all_ec" -ne 0 ]] \
+   || ! grep -qF "OK: config: $doctor_xdg/linux-cleaner/cleaner.conf (XDG)" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^OK: check_gnu_userland:" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^OK: pgrep: $TEST_ENV_DIR/bin/pgrep$" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^OK: flock: $TEST_ENV_DIR/bin/flock$" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^OK: git: $TEST_ENV_DIR/bin/git$" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^OK: sudo -n:" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^OK: notify-send: $TEST_ENV_DIR/bin/notify-send$" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -q "^INFO: timers (systemctl --user is-enabled): clean=enabled retention=disabled monitor=enabled$" "$TEST_ENV_DIR/doctor_all.log" \
+   || ! grep -qF "INFO: quarantine: 2 session(s) ($MOCK_HOME/.cache/linux-cleaner/quarantine)" "$TEST_ENV_DIR/doctor_all.log" \
+   || [[ -e "$MOCK_HOME/.cache/linux-cleaner/cleaner.lock" ]]; then
+  echo -e "${RED}FAIL: --doctor in an all-present environment did not print the expected checklist and exit 0 (ec=$doc_all_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_all.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor prints OK/INFO lines for an all-present environment without touching any lock or file.${NC}"
+
+# Checkout fallback when XDG config is absent.
+rm -rf "$doctor_xdg" "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+doc_checkout_ec=0
+XDG_CONFIG_HOME="$doctor_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor < /dev/null > "$TEST_ENV_DIR/doctor_checkout.log" 2>&1 || doc_checkout_ec=$?
+if [[ "$doc_checkout_ec" -ne 0 ]] \
+   || ! grep -qE "^OK: config: .*cleaner\.conf \((/etc|checkout)\)$" "$TEST_ENV_DIR/doctor_checkout.log" \
+   || ! grep -qF "INFO: quarantine: 0 session(s) ($MOCK_HOME/.cache/linux-cleaner/quarantine)" "$TEST_ENV_DIR/doctor_checkout.log" \
+   || [[ -e "$MOCK_HOME/.cache/linux-cleaner/quarantine" ]]; then
+  echo -e "${RED}FAIL: --doctor without XDG config did not resolve fallback config or created quarantine dir (ec=$doc_checkout_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_checkout.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor resolves fallback config and reports 0 quarantine sessions without creating the directory.${NC}"
+
+# Missing pgrep/flock/git and missing config file emit WARN lines and still exit 0.
+doc_min_bin="$TEST_ENV_DIR/doctor_min_bin"
+mkdir -p "$doc_min_bin"
+for base_tool in bash du stat find realpath mktemp rm id dirname basename tr sed awk cut sort tail cat date chmod mkdir mv cp rmdir timeout; do
+  if tool_real=$(command -v "$base_tool" 2>/dev/null); then
+    ln -sf "$tool_real" "$doc_min_bin/$base_tool"
+  fi
+done
+doc_warn_ec=0
+PATH="$doc_min_bin" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/no_such_doctor.conf" \
+  < /dev/null > "$TEST_ENV_DIR/doctor_warn.log" 2>&1 || doc_warn_ec=$?
+if [[ "$doc_warn_ec" -ne 0 ]] \
+   || ! grep -qF "WARN: config: $TEST_ENV_DIR/no_such_doctor.conf (explicit, not found)" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^OK: check_gnu_userland:" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^WARN: pgrep: not found" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^WARN: flock: not found" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^WARN: git: not found" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^INFO: sudo -n:" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^INFO: notify-send: not found" "$TEST_ENV_DIR/doctor_warn.log" \
+   || ! grep -q "^INFO: timers (systemctl --user is-enabled): clean=unavailable retention=unavailable monitor=unavailable$" "$TEST_ENV_DIR/doctor_warn.log"; then
+  echo -e "${RED}FAIL: --doctor with missing pgrep/flock/git and missing config did not emit WARN lines and exit 0 (ec=$doc_warn_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_warn.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor emits WARN lines for missing pgrep/flock/git and missing config while exiting 0.${NC}"
+
+# Failing GNU userland probe prints WARN and exits 1.
+cat > "$TEST_ENV_DIR/bin/stat" <<'DOC_BAD_STAT_EOF'
+#!/usr/bin/env bash
+exit 1
+DOC_BAD_STAT_EOF
+chmod +x "$TEST_ENV_DIR/bin/stat"
+if ! run_test_case "Doctor Failing GNU Probe Exits 1" 1 "doctor_bad_gnu.log" --doctor \
+   || ! grep -q "^WARN: check_gnu_userland:" "$TEST_ENV_DIR/doctor_bad_gnu.log"; then
+  rm -f "$TEST_ENV_DIR/bin/stat"
+  echo -e "${RED}FAIL: --doctor did not exit 1 with WARN: check_gnu_userland when GNU probe failed.${NC}"
+  cat "$TEST_ENV_DIR/doctor_bad_gnu.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/bin/stat"
+echo -e "${GREEN}PASS: --doctor exits 1 when check_gnu_userland fails.${NC}"
+
+if ! run_test_case "Doctor With List Targets Rejected" 1 "doctor_mx_list.log" --doctor --list-targets \
+   || ! run_test_case "Doctor With Only Target Rejected" 1 "doctor_mx_only.log" --doctor --only-target NPM \
+   || ! run_test_case "Doctor With JSON Rejected" 1 "doctor_mx_json.log" --doctor --json; then
+  echo -e "${RED}FAIL: --doctor did not reject incompatible mode, filter, or --json flags.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor rejects other modes, filter flags, and --json.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

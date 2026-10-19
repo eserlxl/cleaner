@@ -25,6 +25,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--doctor` prints a read-only environment checklist (`OK`/`WARN`/`INFO` lines for the resolved config path and origin, `check_gnu_userland`, `pgrep`, `flock`, `git`, non-interactive `sudo -n`, `notify-send`, `systemctl --user is-enabled` for the `clean`/`retention`/`monitor` timers, and the quarantine session count) without requiring a configuration file, exiting `0` when cleanup can run or `1` when GNU userland is missing.
+
 - `action:nix_store_gc` runs `nix-store --gc` as a user-level prune action without `sudo` (sized from the filesystem free-space delta at run time and skipped when `nix-store` is absent), with a commented `Nix Store` (`/nix/store`) example row in `cleaner.conf`.
 
 - `LINUX_CLEANER_METRICS_FILE` atomically writes a Prometheus `node_exporter`

@@ -20,6 +20,7 @@ _cleaner() {
     '--list-targets[List configured cleanup targets (read-only) and exit]' \
     '--check-config[Validate the configuration file and exit (no disk analysis)]' \
     '--init-config[Copy the active config to your user config path (never overwrites)]' \
+    '--doctor[Check the runtime environment a cleanup depends on (read-only) and exit]' \
     '--restore[Restore files from quarantine session (latest or timestamp)]:session:{compadd -- latest "${sessions[@]}"}' \
     '--only[With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined]:pattern:' \
     '--only-exact[With --restore: match a literal original path from session inventory; excludes --only]:path:' \

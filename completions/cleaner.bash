@@ -94,6 +94,7 @@ _cleaner() {
     --list-targets
     --check-config
     --init-config
+    --doctor
     --restore
     --only
     --only-exact
