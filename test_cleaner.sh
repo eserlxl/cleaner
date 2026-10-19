@@ -137,9 +137,9 @@ EOF
     chmod +x "$TEST_ENV_DIR/bin/$_mgr"
   done
 
-  # User-level prune action mocks (uv, pnpm, hf)
+  # User-level prune action mocks (uv, pnpm, hf, nix-store)
   local _uact
-  for _uact in uv pnpm hf; do
+  for _uact in uv pnpm hf nix-store; do
     cat > "$TEST_ENV_DIR/bin/$_uact" << EOF
 #!/usr/bin/env bash
 # Mock $_uact command
@@ -2832,6 +2832,7 @@ arb_ok=true
 [[ "$(arb action:uv_cache_prune)" == "uv" ]] || arb_ok=false
 [[ "$(arb action:pnpm_store_prune)" == "pnpm" ]] || arb_ok=false
 [[ "$(arb action:hf_cache_prune)" == "hf" ]] || arb_ok=false
+[[ "$(arb action:nix_store_gc)" == "nix-store" ]] || arb_ok=false
 [[ -z "$(arb action:bogus)" ]] || arb_ok=false
 if [[ "$arb_ok" == true ]]; then
   echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf/zypper/apk map to their real binaries.${NC}"
@@ -8300,20 +8301,23 @@ echo -e "\n${BOLD}Test Case: User-Level Prune Actions${NC}"
 
 # 1. --clean --force runs each user action with exact argv, zero sudo calls, no "requires root".
 setup_mock_env
-mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub" "$OUTSIDE_DIR/nix_parent/store"
 printf 'uv-entry\n' > "$MOCK_HOME/.cache/uv/entry.bin"
 printf 'pnpm-entry\n' > "$MOCK_HOME/.local/share/pnpm/store/entry.bin"
 printf 'hf-entry\n' > "$MOCK_HOME/.cache/huggingface/hub/entry.bin"
+printf 'nix-entry\n' > "$OUTSIDE_DIR/nix_parent/store/entry.bin"
+chmod 555 "$OUTSIDE_DIR/nix_parent"
 cat > "$TEST_ENV_DIR/bin/sudo" <<'FAIL_SUDO'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$TEST_ENV_DIR/sudo_unexpected.calls"
 exit 1
 FAIL_SUDO
 chmod +x "$TEST_ENV_DIR/bin/sudo"
-cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
-safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
-safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
-safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+cat > "$TEST_ENV_DIR/user_actions.conf" <<EOF
+safe|UV Cache|\$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|\$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|\$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+safe|Nix Store|$OUTSIDE_DIR/nix_parent/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-daemon|action:nix_store_gc
 EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_action.calls"
 : > "$MOCK_USER_ACTION_LOG"
@@ -8323,21 +8327,23 @@ if ! run_test_case "User Actions Clean Force Without Sudo" 0 "user_actions_clean
    || [[ -e "$TEST_ENV_DIR/sudo_unexpected.calls" ]] \
    || grep -qi "requires root" "$TEST_ENV_DIR/user_actions_clean.log" \
    || grep -qF "[FOUND] UV Cache" "$TEST_ENV_DIR/user_actions_clean.log" \
-   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'uv cache prune --cache-dir %s\npnpm store prune --store-dir %s\nhf cache prune --yes --cache-dir %s\n' \
+   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'uv cache prune --cache-dir %s\npnpm store prune --store-dir %s\nhf cache prune --yes --cache-dir %s\nnix-store --gc\n' \
           "$(realpath "$MOCK_HOME/.cache/uv")" \
           "$(realpath "$MOCK_HOME/.local/share/pnpm/store")" \
           "$(realpath "$MOCK_HOME/.cache/huggingface/hub")") \
-   || ! grep -q '^Result: cleaned=3 skipped=0 failed=0 ' "$TEST_ENV_DIR/user_actions_clean.log"; then
+   || ! grep -q '^Result: cleaned=4 skipped=0 failed=0 ' "$TEST_ENV_DIR/user_actions_clean.log"; then
+  chmod 755 "$OUTSIDE_DIR/nix_parent" 2>/dev/null || true
   echo -e "${RED}FAIL: user actions did not run with exact argv, invoked sudo, or reported requires root.${NC}"
   cat "$TEST_ENV_DIR/user_actions_clean.log" "$MOCK_USER_ACTION_LOG" "$TEST_ENV_DIR/sudo_unexpected.calls" 2>/dev/null || true
   exit 1
 fi
+chmod 755 "$OUTSIDE_DIR/nix_parent"
 unset MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: user-level prune actions run with exact argv, zero sudo calls, and no 'requires root'.${NC}"
 
 # 2. Missing binary skips its row cleanly (no failure, exits 0, no sudo calls).
 setup_mock_env
-mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub" "$OUTSIDE_DIR/nix/store"
 user_missing_bin="$TEST_ENV_DIR/user_missing_bin"
 mkdir -p "$user_missing_bin"
 for tool in bash basename cat dirname realpath sed du df awk tr id sort find stat date rm mktemp; do
@@ -8347,17 +8353,18 @@ done
 ln -s "$TEST_ENV_DIR/bin/pgrep" "$user_missing_bin/pgrep"
 ln -s "$TEST_ENV_DIR/bin/uv" "$user_missing_bin/uv"
 ln -s "$TEST_ENV_DIR/bin/hf" "$user_missing_bin/hf"
-# pnpm intentionally omitted from user_missing_bin
+# pnpm and nix-store intentionally omitted from user_missing_bin
 cat > "$user_missing_bin/sudo" <<'FAIL_SUDO2'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$TEST_ENV_DIR/sudo_missing_unexpected.calls"
 exit 1
 FAIL_SUDO2
 chmod +x "$user_missing_bin/sudo"
-cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
-safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
-safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
-safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+cat > "$TEST_ENV_DIR/user_actions.conf" <<EOF
+safe|UV Cache|\$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|\$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|\$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+safe|Nix Store|$OUTSIDE_DIR/nix/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-daemon|action:nix_store_gc
 EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_missing.calls"
 : > "$MOCK_USER_ACTION_LOG"
@@ -8370,10 +8377,11 @@ unset MOCK_USER_ACTION_LOG
 if [[ "$missing_ec" -ne 0 ]] \
    || [[ -e "$TEST_ENV_DIR/sudo_missing_unexpected.calls" ]] \
    || ! grep -q "PNPM Store: skipped: 'pnpm' not available on this platform." "$TEST_ENV_DIR/user_actions_missing.log" \
+   || ! grep -q "Nix Store: skipped: 'nix-store' not available on this platform." "$TEST_ENV_DIR/user_actions_missing.log" \
    || ! cmp -s "$TEST_ENV_DIR/user_missing.calls" <(printf 'uv cache prune --cache-dir %s\nhf cache prune --yes --cache-dir %s\n' \
           "$(realpath "$MOCK_HOME/.cache/uv")" \
           "$(realpath "$MOCK_HOME/.cache/huggingface/hub")") \
-   || ! grep -q '^Result: cleaned=2 skipped=1 failed=0 ' "$TEST_ENV_DIR/user_actions_missing.log"; then
+   || ! grep -q '^Result: cleaned=2 skipped=2 failed=0 ' "$TEST_ENV_DIR/user_actions_missing.log"; then
   echo -e "${RED}FAIL: missing user-action binary did not skip cleanly (ec=$missing_ec).${NC}"
   cat "$TEST_ENV_DIR/user_actions_missing.log" "$TEST_ENV_DIR/user_missing.calls" 2>/dev/null || true
   exit 1
@@ -8414,12 +8422,13 @@ echo -e "${GREEN}PASS: running process blocks its user-action row while siblings
 
 # 4. --dry-run invokes none of the mocks and reports 0 B reclaimable with run-time size message.
 setup_mock_env
-mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub"
+mkdir -p "$MOCK_HOME/.cache/uv" "$MOCK_HOME/.local/share/pnpm/store" "$MOCK_HOME/.cache/huggingface/hub" "$OUTSIDE_DIR/nix/store"
 truncate -s 3M "$MOCK_HOME/.cache/uv/large.bin"
-cat > "$TEST_ENV_DIR/user_actions.conf" <<'EOF'
-safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
-safe|PNPM Store|$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
-safe|Hugging Face Cache|$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+cat > "$TEST_ENV_DIR/user_actions.conf" <<EOF
+safe|UV Cache|\$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+safe|PNPM Store|\$HOME/.local/share/pnpm/store|pnpm content-addressable store (pnpm store prune: unreferenced packages only)|0|pnpm|action:pnpm_store_prune
+safe|Hugging Face Cache|\$HOME/.cache/huggingface/hub|Hugging Face hub cache (hf cache prune: detached revisions and incomplete downloads only)|0|hf|action:hf_cache_prune
+safe|Nix Store|$OUTSIDE_DIR/nix/store|Nix package store (nix-store --gc: unreachable store paths only)|0|nix,nix-daemon|action:nix_store_gc
 EOF
 export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/user_dry.calls"
 : > "$MOCK_USER_ACTION_LOG"
@@ -8429,6 +8438,7 @@ if ! run_test_case "User Actions Dry Run Invokes No Mocks" 0 "user_actions_dry.l
    || ! grep -qF "[FOUND] UV Cache: size measured at run time (uv cache prune)" "$TEST_ENV_DIR/user_actions_dry.log" \
    || ! grep -qF "[FOUND] PNPM Store: size measured at run time (pnpm store prune)" "$TEST_ENV_DIR/user_actions_dry.log" \
    || ! grep -qF "[FOUND] Hugging Face Cache: size measured at run time (hf cache prune --yes)" "$TEST_ENV_DIR/user_actions_dry.log" \
+   || ! grep -qF "[FOUND] Nix Store: size measured at run time (nix-store --gc) (outside HOME)" "$TEST_ENV_DIR/user_actions_dry.log" \
    || ! grep -q "Total potential space savings: .*0 B" "$TEST_ENV_DIR/user_actions_dry.log" \
    || ! grep -q "^Reclaimable by risk: safe=0 B medium=0 B danger=0 B$" "$TEST_ENV_DIR/user_actions_dry.log" \
    || ! grep -q "^  (size at run time) safe UV Cache " "$TEST_ENV_DIR/user_actions_dry.log" \
@@ -8439,6 +8449,16 @@ if ! run_test_case "User Actions Dry Run Invokes No Mocks" 0 "user_actions_dry.l
 fi
 unset MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: --dry-run invokes none of the user-action mocks and contributes 0 B to planned savings.${NC}"
+
+# 4a. --only-path refuses action:nix_store_gc like every action row.
+if ! run_test_case "Nix Store GC Refused By --only-path" 1 "nix_only_path.log" \
+       --config "$TEST_ENV_DIR/user_actions.conf" --only-target "Nix Store" --only-path "$OUTSIDE_DIR/nix" --dry-run \
+   || ! grep -qF "Error: No eligible config target resolves at or below '--only-path $OUTSIDE_DIR/nix'." "$TEST_ENV_DIR/nix_only_path.log"; then
+  echo -e "${RED}FAIL: --only-path did not refuse action:nix_store_gc.${NC}"
+  cat "$TEST_ENV_DIR/nix_only_path.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: action:nix_store_gc is refused by --only-path like every action row.${NC}"
 
 # 4b. --dry-run --json marks user-level prune actions with size_at_run_time:true and size_human:"size at run time", while ordinary targets have size_at_run_time:false.
 setup_mock_env

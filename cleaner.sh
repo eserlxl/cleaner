@@ -1625,7 +1625,7 @@ validate_config_file() {
             exit 1
           fi
           ;;
-        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|filter:cxx_build)
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc|filter:cxx_build)
           ;;
         *)
           echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
@@ -3223,6 +3223,7 @@ action_required_binary() {
     uv_cache_prune) echo "uv" ;;
     pnpm_store_prune) echo "pnpm" ;;
     hf_cache_prune) echo "hf" ;;
+    nix_store_gc) echo "nix-store" ;;
     *) echo "" ;;
   esac
 }
@@ -3231,7 +3232,7 @@ action_required_binary() {
 # measures reclaimed bytes from filesystem free-space delta at run time.
 action_is_user_level() {
   case "${1:-}" in
-    action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune) return 0 ;;
+    action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -3241,6 +3242,7 @@ action_display_command() {
     action:uv_cache_prune) echo "uv cache prune" ;;
     action:pnpm_store_prune) echo "pnpm store prune" ;;
     action:hf_cache_prune) echo "hf cache prune --yes" ;;
+    action:nix_store_gc) echo "nix-store --gc" ;;
     *) echo "" ;;
   esac
 }
@@ -3573,7 +3575,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         root_unavailable=false
         if { [[ "$custom_clean_cmd" == action:* ]] && ! action_is_user_level "$custom_clean_cmd"; } || \
            [[ -e "$path" && ! -r "$path" ]] || \
-           { [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]] && \
+           { [[ "$custom_clean_cmd" != action:* ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]] && \
              { [[ ! -e "$path" ]] || { ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; }; }; then
           requires_sudo=true
           if [[ "$DRY_RUN" = false ]]; then
@@ -3991,6 +3993,11 @@ for i in "${!parsed_names[@]}"; do
         ;;
       action:hf_cache_prune)
         if hf cache prune --yes --cache-dir "$path"; then
+          action_success=true
+        fi
+        ;;
+      action:nix_store_gc)
+        if nix-store --gc; then
           action_success=true
         fi
         ;;

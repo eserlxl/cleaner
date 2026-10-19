@@ -34,12 +34,12 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
   - `action:dnf_clean` (`sudo dnf clean all`)
   - `action:zypper_clean` (`sudo zypper clean -a`)
   - `action:apk_clean` (`sudo apk cache clean`)
-  - `action:uv_cache_prune` (`uv cache prune`), `action:pnpm_store_prune` (`pnpm store prune`), `action:hf_cache_prune` (`hf cache prune --yes`)
+  - `action:uv_cache_prune` (`uv cache prune`), `action:pnpm_store_prune` (`pnpm store prune`), `action:hf_cache_prune` (`hf cache prune --yes`), `action:nix_store_gc` (`nix-store --gc`)
   - `filter:cxx_build`: Keeps a literal path or wildcard match only if it contains a C/C++ build-system marker (`CMakeCache.txt`, `CMakeFiles`, `build.ninja`, `meson-info`, `compile_commands.json`, or `.qmake.stash`) directly or one level below.
   - `exclude:NAME[,NAME...]`: Adds comma-separated `find` glob/path exclusions for this row only (merging with `-e/--exclude` / `LINUX_CLEANER_EXCLUDE`). Preserves matching files and directories during dry-run sizing, deletion, quarantine, and empty-directory pruning, and processes files individually even when `MIN_AGE_DAYS` is `0`.
 
 > [!WARNING]
-> Predefined `action:*` commands bypass quarantine (`--trash`) and run directly, resulting in irreversible deletion. System package-cache actions run via `sudo`; user-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo` and measure their freed size on disk at run time. See [docs/action-registry-governance.md](action-registry-governance.md).
+> Predefined `action:*` commands bypass quarantine (`--trash`) and run directly, resulting in irreversible deletion. System package-cache actions run via `sudo`; user-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`, `action:nix_store_gc`) run as the invoking user without `sudo` and measure their freed size on disk at run time. See [docs/action-registry-governance.md](action-registry-governance.md).
 
 ## Action cross-walk
 
@@ -56,8 +56,9 @@ RISK_LEVEL|NAME|PATH_EXPRESSION|DESCRIPTION|MIN_AGE_DAYS|CHECK_PROCESSES|CUSTOM_
 | `action:uv_cache_prune` | `uv cache prune --cache-dir PATH` | `UV Cache` | CONFIGURATION |
 | `action:pnpm_store_prune` | `pnpm store prune --store-dir PATH` | `PNPM Store` | CONFIGURATION |
 | `action:hf_cache_prune` | `hf cache prune --yes --cache-dir PATH` | `Hugging Face Cache` | CONFIGURATION |
+| `action:nix_store_gc` | `nix-store --gc` | `Nix Store` (commented) | CONFIGURATION |
 
-User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`) run as the invoking user without `sudo` against the target's configured PATH (`uv --cache-dir`, `pnpm --store-dir`, `hf --cache-dir`), and their freed size is measured on disk from the filesystem free-space change rather than directory `du`.
+User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`, `action:nix_store_gc`) run as the invoking user without `sudo` (`uv --cache-dir`, `pnpm --store-dir`, and `hf --cache-dir` against the target's configured PATH; `nix-store --gc` against the Nix store), and their freed size is measured on disk from the filesystem free-space change rather than directory `du`.
 
 ## Wildcard paths
 

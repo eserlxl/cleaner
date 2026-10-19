@@ -25,6 +25,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `action:nix_store_gc` runs `nix-store --gc` as a user-level prune action without `sudo` (sized from the filesystem free-space delta at run time and skipped when `nix-store` is absent), with a commented `Nix Store` (`/nix/store`) example row in `cleaner.conf`.
+
 - `LINUX_CLEANER_METRICS_FILE` atomically writes a Prometheus `node_exporter`
   textfile (`linux_cleaner_last_run_timestamp_seconds`,
   `linux_cleaner_last_run_success`,

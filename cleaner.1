@@ -427,7 +427,7 @@ Used with cleanup: skip the run when the planned reclaimable total is below
 or
 .BR 2G ).
 User-level prune actions
-.RB ( uv / pnpm / hf )
+.RB ( uv / pnpm / hf / nix\-store )
 are sized at run time and do not count toward the threshold. In dry-run mode,
 prints a note when a cleanup run would skip; in a cleanup run, prints why
 nothing was cleaned, saves
@@ -973,6 +973,9 @@ runs \fBpnpm store prune \-\-store\-dir\fR against the target's configured path
 .IP \(bu 3
 .BR action:hf_cache_prune
 runs \fBhf cache prune \-\-yes \-\-cache\-dir\fR against the target's configured path
+.IP \(bu 3
+.BR action:nix_store_gc
+runs \fBnix\-store \-\-gc\fR as the invoking user
 .RE
 .SH SAFETY
 Deletions are blocked for the filesystem root, system directories
