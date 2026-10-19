@@ -10865,21 +10865,29 @@ if command -v fish > /dev/null 2>&1; then
       fish_comp_failed+=" $fcase"
     fi
   done
-  if ! (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
-          fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner --config '") \
-        | grep -qx 'comp_file.txt'; then
-    fish_comp_failed+=" --config(no file offered)"
+  # cleaner takes no positional arguments, so a bare word must not complete files.
+  if (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
+        fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner '") \
+      | grep -q 'comp_file.txt'; then
+    fish_comp_failed+=" bare-argument(file offered)"
   fi
+  for file_option in --config --log; do
+    if ! (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
+            fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $file_option '") \
+          | grep -qx 'comp_file.txt'; then
+      fish_comp_failed+=" $file_option(no file offered)"
+    fi
+  done
   if ! (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
           fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner --only-path '") \
         | grep -qx 'comp_file.txt'; then
     fish_comp_failed+=" --only-path(no file offered)"
   fi
   if [[ -n "$fish_comp_failed" ]]; then
-    echo -e "${RED}FAIL: fish completion offered file names for value options, or none for --config/--only-path:$fish_comp_failed.${NC}"
+    echo -e "${RED}FAIL: fish completion offered file names for bare arguments or value options, or none for --config/--log/--only-path:$fish_comp_failed.${NC}"
     exit 1
   fi
-  echo -e "${GREEN}PASS: fish offers no file names for pattern, size and number values, and still offers files for --config and --only-path.${NC}"
+  echo -e "${GREEN}PASS: fish offers no file names for bare arguments or pattern, size and number values, and still offers files for --config, --log and --only-path.${NC}"
 else
   echo -e "${GREEN}PASS (skipped): fish is not installed; cannot run the fish completion check.${NC}"
 fi

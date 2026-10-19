@@ -9,6 +9,8 @@ function __cleaner_sessions
   end
 end
 
+# cleaner takes no positional arguments; options that take a file re-enable it.
+complete -c cleaner -f
 complete -c cleaner -s c -l config -r -F -d 'Path to a configuration file (default search order: XDG user config, then /etc/linux-cleaner/cleaner.conf, then cleaner.conf beside the script)'
 complete -c cleaner -s d -l dry-run -d 'Calculate and display potential space savings without deleting anything (default)'
 complete -c cleaner -l clean -d 'Perform cleanup with a summary confirmation prompt'
@@ -38,7 +40,7 @@ complete -c cleaner -l min-age -x -d "With cleanup: raise every ordinary target'
 complete -c cleaner -l trash-keep-days -x -d 'With cleanup: purge quarantine sessions older than DAYS days after cleaning'
 complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size: keep-latest: (__cleaner_sessions)' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible'
 complete -c cleaner -l allow-outside-home -d 'Deprecated no-op; targets outside HOME are always allowed'
-complete -c cleaner -l log -F -d 'Append an operation log (opt-in, off by default; kept under your HOME)'
+complete -c cleaner -l log -r -F -d 'Append an operation log (opt-in, off by default; kept under your HOME)'
 complete -c cleaner -s q -l quiet -d 'Suppress per-target status lines; keep errors, totals, and final summary'
 complete -c cleaner -l debug -d 'Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)'
 complete -c cleaner -l notify -d 'With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)'
