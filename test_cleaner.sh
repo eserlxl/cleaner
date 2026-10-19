@@ -11249,6 +11249,25 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 echo -e "${GREEN}PASS: --doctor exits 1 for a missing or unreadable config, and cleanup refuses an unreadable config with a clear error.${NC}"
 
+# An unreadable quarantine directory is reported as a WARN, never as zero sessions.
+if [[ "$EUID" -ne 0 ]]; then
+  doc_q="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  mkdir -p "$doc_q/20260101_000000"
+  chmod 000 "$doc_q"
+  doc_q_ec=0
+  HOME="$MOCK_HOME" "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+    < /dev/null > "$TEST_ENV_DIR/doctor_quarantine.log" 2>&1 || doc_q_ec=$?
+  chmod 700 "$doc_q"
+  if [[ "$doc_q_ec" -ne 0 ]] \
+     || ! grep -qxF "WARN: quarantine: cannot enumerate sessions ($doc_q)" "$TEST_ENV_DIR/doctor_quarantine.log" \
+     || grep -q "session(s)" "$TEST_ENV_DIR/doctor_quarantine.log"; then
+    echo -e "${RED}FAIL: --doctor did not warn about an unreadable quarantine directory (ec=$doc_q_ec).${NC}"
+    cat "$TEST_ENV_DIR/doctor_quarantine.log" 2>/dev/null || true
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: --doctor warns when the quarantine directory cannot be enumerated.${NC}"
+fi
+
 # Failing GNU userland probe prints WARN and exits 1.
 cat > "$TEST_ENV_DIR/bin/stat" <<'DOC_BAD_STAT_EOF'
 #!/usr/bin/env bash

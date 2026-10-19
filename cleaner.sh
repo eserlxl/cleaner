@@ -3394,13 +3394,13 @@ run_doctor() {
   fi
   printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
 
-  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_count=0 s
-  if [[ -d "$quarantine_base" && ! -L "$quarantine_base" ]]; then
-    while IFS= read -r s; do
-      [[ -n "$s" ]] && session_count=$((session_count + 1))
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_dots=""
+  if [[ -d "$quarantine_base" && ! -L "$quarantine_base" ]] && \
+     ! session_dots=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -printf '.' 2>/dev/null); then
+    printf 'WARN: quarantine: cannot enumerate sessions (%s)\n' "$quarantine_base"
+  else
+    printf 'INFO: quarantine: %d session(s) (%s)\n' "${#session_dots}" "$quarantine_base"
   fi
-  printf 'INFO: quarantine: %d session(s) (%s)\n' "$session_count" "$quarantine_base"
   return "$doctor_rc"
 }
 
