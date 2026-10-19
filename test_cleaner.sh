@@ -1442,6 +1442,150 @@ else
   exit 1
 fi
 
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --only-path --dry-run)" 1 "opt_val_only_path.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --only-path --dry-run \
+   && grep -qF "Error: --only-path requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_only_path.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --only-path --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --only-path --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_only_path.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --only-path -d)" 1 "opt_val_only_path_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --only-path -d \
+   && grep -qF "Error: --only-path requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_only_path_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --only-path -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --only-path -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_only_path_short.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --lock-wait --dry-run)" 1 "opt_val_lock_wait.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --lock-wait --dry-run \
+   && grep -qF "Error: --lock-wait requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_lock_wait.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --lock-wait --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --lock-wait --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_lock_wait.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --lock-wait -d)" 1 "opt_val_lock_wait_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --lock-wait -d \
+   && grep -qF "Error: --lock-wait requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_lock_wait_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --lock-wait -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --lock-wait -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_lock_wait_short.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --min-reclaim --dry-run)" 1 "opt_val_min_reclaim.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --min-reclaim --dry-run \
+   && grep -qF "Error: --min-reclaim requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_min_reclaim.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --min-reclaim --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --min-reclaim --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_min_reclaim.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --min-reclaim -d)" 1 "opt_val_min_reclaim_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --min-reclaim -d \
+   && grep -qF "Error: --min-reclaim requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_min_reclaim_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --min-reclaim -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --min-reclaim -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_min_reclaim_short.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --min-free --dry-run)" 1 "opt_val_min_free.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --min-free --dry-run \
+   && grep -qF "Error: --min-free requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_min_free.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --min-free --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --min-free --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_min_free.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --min-free -d)" 1 "opt_val_min_free_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --min-free -d \
+   && grep -qF "Error: --min-free requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_min_free_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --min-free -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --min-free -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_min_free_short.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --min-age --dry-run)" 1 "opt_val_min_age.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --min-age --dry-run \
+   && grep -qF "Error: --min-age requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_min_age.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --min-age --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --min-age --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_min_age.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --min-age -d)" 1 "opt_val_min_age_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --min-age -d \
+   && grep -qF "Error: --min-age requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_min_age_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --min-age -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --min-age -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_min_age_short.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Option Value (--force --trash-keep-days --dry-run)" 1 "opt_val_trash_keep_days.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --trash-keep-days --dry-run \
+   && grep -qF "Error: --trash-keep-days requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_trash_keep_days.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --trash-keep-days --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --trash-keep-days --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_trash_keep_days.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --trash-keep-days -d)" 1 "opt_val_trash_keep_days_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --trash-keep-days -d \
+   && grep -qF "Error: --trash-keep-days requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_trash_keep_days_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --trash-keep-days -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --trash-keep-days -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_trash_keep_days_short.log" 2>/dev/null || true
+  exit 1
+fi
+
 # 16. Test Case: Canonicalization ..-traversal escape is FOUND at the canonical outside path
 setup_mock_env
 dotdot_canon="$(realpath -m "$MOCK_HOME/../dotdot_escape_probe")"
