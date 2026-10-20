@@ -2735,25 +2735,17 @@ else
   exit 1
 fi
 
-# 34. Test Case: CHANGELOG top released version matches --version, and so do the
-# packaging manifests -- a partial bump would otherwise ship an AUR package whose
-# pkgver disagrees with the installed script (RELEASING.md pre-release gate).
+# 34. Test Case: CHANGELOG top released version matches --version, and so does
+# the man page (RELEASING.md pre-release gate). AUR pkgver is not tracked;
+# aurgen aur takes it from the v* tag.
 setup_mock_env
 changelog_version=$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$SCRIPT_DIR/CHANGELOG.md" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 tool_version=$(HOME="$MOCK_HOME" PATH="$TEST_ENV_DIR/bin:$PATH" "$CLEANER_SH" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-pkgbuild_version=$(awk -F= '/^pkgver=/ {print $2; exit}' "$SCRIPT_DIR/aur/PKGBUILD")
-srcinfo_version=$(awk -F' = ' '/^[[:space:]]*pkgver = / {print $2; exit}' "$SCRIPT_DIR/aur/.SRCINFO")
 echo -e "\n${BOLD}Test Case: Changelog/Version Consistency${NC}"
 if [[ -n "$changelog_version" && "$changelog_version" == "$tool_version" ]]; then
   echo -e "${GREEN}PASS: CHANGELOG top version ($changelog_version) matches --version ($tool_version).${NC}"
 else
   echo -e "${RED}FAIL: CHANGELOG version '$changelog_version' != --version '$tool_version'.${NC}"
-  exit 1
-fi
-if [[ "$pkgbuild_version" == "$tool_version" && "$srcinfo_version" == "$tool_version" ]]; then
-  echo -e "${GREEN}PASS: PKGBUILD and .SRCINFO pkgver both match --version ($tool_version).${NC}"
-else
-  echo -e "${RED}FAIL: packaging version mismatch — PKGBUILD='$pkgbuild_version' .SRCINFO='$srcinfo_version' --version='$tool_version'.${NC}"
   exit 1
 fi
 man_th_version=$(sed -n '1s/.*"linux-cleaner \([^"]*\)".*/\1/p' "$SCRIPT_DIR/cleaner.1")
@@ -6511,7 +6503,7 @@ if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   missing=$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$SCRIPT_DIR/Makefile" | sort -u) | tr '\n' ' ')
   [[ -z "$missing" ]] || sc_drift+=" SHELLCHECK_FILES(missing: ${missing% })"
   # Prove the check reads the list: dropping one tracked file from it must be caught.
-  sed 's| aur/PKGBUILD$||' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
+  sed 's| completions/cleaner.bash||' "$SCRIPT_DIR/Makefile" > "$TEST_ENV_DIR/Makefile.drift"
   if [[ -z "$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$TEST_ENV_DIR/Makefile.drift" | sort -u))" ]]; then
     sc_drift+=" Makefile-fixture(drift not detected)"
   fi
@@ -7907,82 +7899,37 @@ if [[ "$chown_ok" != true ]] \
 fi
 echo -e "${GREEN}PASS: aged quarantine chown failure is recorded and later targets still run.${NC}"
 
-# check-aur-ready reads literal arrays without executing package code.
-setup_mock_env
-aur_hash=$(printf '%064d' 0)
-for aur_case in single-quoted-skip double-quoted-skip unquoted-skip multiline-skip \
-                pinned multiline-pinned append indexed dynamic empty unclosed missing; do
-  echo -e "\n${BOLD}Test Case: AUR Checksum Gate $aur_case${NC}"
-  aur_dir="$TEST_ENV_DIR/aur-$aur_case"
-  aur_pkg="$aur_dir/aur/PKGBUILD"
-  mkdir -p "$aur_dir/aur"
-  cp "$SCRIPT_DIR/Makefile" "$aur_dir/"
-  aur_expect_failure=true
-  case "$aur_case" in
-    single-quoted-skip) printf "sha256sums=('SKIP')\n" > "$aur_pkg" ;;
-    double-quoted-skip) printf 'sha256sums=("SKIP")\n' > "$aur_pkg" ;;
-    unquoted-skip) printf 'sha256sums=(SKIP)\n' > "$aur_pkg" ;;
-    multiline-skip) printf "sha256sums=(\n  '%s'\n  'SKIP' # placeholder\n)\n" "$aur_hash" > "$aur_pkg" ;;
-    # A fixture, not the live PKGBUILD: the tagged release commit cannot carry its own
-    # tarball checksum, so the live file is checked at publish time (AUR_PREP=1).
-    pinned) printf "sha256sums=('%s')\n" "$aur_hash" > "$aur_pkg"; aur_expect_failure=false ;;
-    multiline-pinned)
-      printf '# SKIP is forbidden\nsha256sums=(\n  %s\n  "%s" # pinned\n  '\''%s'\''\n)\n' \
-        "$aur_hash" "$aur_hash" "$aur_hash" > "$aur_pkg"
-      aur_expect_failure=false ;;
-    append) printf "sha256sums=('%s')\nsha256sums+=('SKIP')\n" "$aur_hash" > "$aur_pkg" ;;
-    indexed) printf "sha256sums=('%s')\nsha256sums[0]='SKIP'\n" "$aur_hash" > "$aur_pkg" ;;
-    dynamic) printf 'sha256sums=("%s")\n' "\$CHECKSUM" > "$aur_pkg" ;;
-    empty) printf 'sha256sums=()\n' > "$aur_pkg" ;;
-    unclosed) printf "sha256sums=(\n  '%s'\n" "$aur_hash" > "$aur_pkg" ;;
-    missing) printf '# no checksum assignment\n' > "$aur_pkg" ;;
-  esac
-  cat <<'EOF' >> "$aur_pkg"
-printf executed > "$TEST_ENV_DIR/aur-package-executed"
-EOF
-  aur_rc=0
-  AUR_PREP=1 make -s -C "$aur_dir" check-aur-ready > "$aur_dir/check.log" 2>&1 || aur_rc=$?
-  if { [[ "$aur_expect_failure" == true && "$aur_rc" -eq 0 ]] \
-       || [[ "$aur_expect_failure" == false && "$aur_rc" -ne 0 ]]; } \
-     || ! env -u AUR_PREP make -s -C "$aur_dir" check-aur-ready > "$aur_dir/no-prep.log" 2>&1 \
-     || [[ -e "$TEST_ENV_DIR/aur-package-executed" ]]; then
-    echo -e "${RED}FAIL: AUR checksum gate $aur_case: exit=$aur_rc expected_failure=$aur_expect_failure, or no-prep/execution boundary failed.${NC}"
-    cat "$aur_dir/check.log" "$aur_dir/no-prep.log" 2>/dev/null || true
-    exit 1
-  fi
-  echo -e "${GREEN}PASS: AUR checksum gate $aur_case preserves checksum and no-execution boundaries.${NC}"
-done
-
-# The pacman install scriptlet only prints an opt-in hint: it must never call
-# systemctl, and upgrades stay quiet (no post_upgrade).
+# package.install_messages is printed verbatim as the pacman scriptlet. Every
+# timer it names must be a unit this repository ships, and upgrades stay quiet.
 echo -e "\n${BOLD}Test Case: Package Install Scriptlet Is Hint Only${NC}"
-setup_mock_env
-install_file=$(awk -F= '/^install=/ {print $2; exit}' "$SCRIPT_DIR/aur/PKGBUILD")
-mkdir -p "$TEST_ENV_DIR/scriptlet-bin"
-printf '#!/usr/bin/env bash\necho "$*" >> "%s"\n' "$TEST_ENV_DIR/scriptlet-systemctl.calls" > "$TEST_ENV_DIR/scriptlet-bin/systemctl"
-chmod +x "$TEST_ENV_DIR/scriptlet-bin/systemctl"
-scriptlet_rc=0
-scriptlet_out=$(PATH="$TEST_ENV_DIR/scriptlet-bin:$PATH" bash -c '
-  set -eu
-  . "$1"
-  declare -F post_install >/dev/null
-  if declare -F post_upgrade >/dev/null; then exit 3; fi
-  post_install
-' _ "$SCRIPT_DIR/aur/$install_file" 2>&1) || scriptlet_rc=$?
-if [[ -n "$install_file" && -f "$SCRIPT_DIR/aur/$install_file" ]] \
-   && bash -n "$SCRIPT_DIR/aur/$install_file" \
-   && [[ "$scriptlet_rc" -eq 0 ]] \
-   && [[ ! -e "$TEST_ENV_DIR/scriptlet-systemctl.calls" ]] \
-   && grep -qF "nothing was enabled" <<<"$scriptlet_out" \
-   && grep -qF "cleaner --dry-run" <<<"$scriptlet_out" \
-   && grep -qF "systemctl --user enable --now linux-cleaner-clean.timer" <<<"$scriptlet_out" \
-   && grep -qF "LINUX_CLEANER_TRASH=1" <<<"$scriptlet_out" \
-   && grep -qE "^[[:space:]]*install = ${install_file}$" "$SCRIPT_DIR/aur/.SRCINFO"; then
-  echo -e "${GREEN}PASS: the install scriptlet prints the opt-in hint, calls no systemctl, and has no post_upgrade.${NC}"
+install_yaml="$SCRIPT_DIR/aur/aurgen.install.yaml"
+install_msgs=$(awk '
+  /^  install_messages:/ { on = 1; next }
+  on && /^  [^[:space:]]/ { exit }
+  on { print }
+' "$install_yaml")
+install_timers=$(printf '%s\n' "$install_msgs" | grep -oE 'linux-cleaner[-a-z0-9]*\.timer' | sort -u || true)
+install_missing=""
+if ! printf '%s\n' "$install_timers" | grep -qx 'linux-cleaner-clean.timer'; then
+  install_missing+=" linux-cleaner-clean.timer"
+fi
+if printf '%s\n' "$install_msgs" | grep -qE '^    post_upgrade:'; then
+  install_missing+=" post_upgrade"
+fi
+if ! printf '%s\n' "$install_msgs" | grep -qF 'nothing was enabled'; then
+  install_missing+=" hint"
+fi
+while IFS= read -r unit; do
+  [[ -n "$unit" ]] || continue
+  if [[ ! -f "$SCRIPT_DIR/examples/systemd/$unit" ]]; then
+    install_missing+=" $unit"
+  fi
+done <<<"$install_timers"
+if [[ -z "$install_missing" ]]; then
+  echo -e "${GREEN}PASS: install messages name shipped timer units and do not define post_upgrade.${NC}"
 else
-  echo -e "${RED}FAIL: install scriptlet '$install_file' rc=$scriptlet_rc is missing, calls systemctl, defines post_upgrade, or lacks the hint.${NC}"
-  printf '%s\n' "$scriptlet_out"
-  cat "$TEST_ENV_DIR/scriptlet-systemctl.calls" 2>/dev/null
+  echo -e "${RED}FAIL: install messages in aur/aurgen.install.yaml:$install_missing${NC}"
+  printf '%s\n' "$install_msgs"
   exit 1
 fi
 

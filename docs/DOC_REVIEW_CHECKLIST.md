@@ -27,7 +27,7 @@
 
 ## Operations and packaging
 - [ ] `docs/QUARANTINE-OPS.md` cross-links and retention matrix current
-- [ ] `docs/packager-handoff.md` `aur/PKGBUILD`/install parity current
+- [ ] `docs/packager-handoff.md` `aur/aurgen.install.yaml` install-message parity current
 - [ ] `docs/release-workflow-audit.md` release gate inventory current
 
 ## Sign-off

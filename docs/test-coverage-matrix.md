@@ -11,7 +11,6 @@ Rows below moved here after the 1.6.0 release; add new unreleased rows only whil
 | ID | Feature | Test case |
 |----|---------|-----------|
 | U-86 | Restore creates missing aged, nested, and full-target parent directories with mode `0700` under umask `022`, including a sudo shim that resets umask, while preserving existing directory modes and contents | Restore Private Directories Direct / Restore Private Directories Sudo |
-| U-87 | AUR preparation rejects literal `SKIP` regardless of quoting or multiline formatting and rejects unsupported/nonliteral arrays without executing package code; pinned checksums with comments pass, and absent `AUR_PREP` remains a no-op | AUR Checksum Gate |
 | U-88 | Completed aged restores checkpoint atomically before staging cleanup, survive process interruption and metadata failures, preserve marked payload and pending siblings, and keep public inventory types unchanged | Aged Restore Interrupted (after-root, before-marker, after-marker, before-reconcile) / Aged Restore Interrupted Retry (after-root, before-marker, after-marker, before-reconcile) / Aged Restore Metadata Failure (checkpoint-fail, reconcile-fail) / Aged Restore Metadata Failure Retry (checkpoint-fail, reconcile-fail) / Aged Restore Marked Payload Kept (file, fifo, symlink, dangling, root-symlink, root-dangling) / Aged Restore Marker Human Inventory / Aged Restore Marker JSON Inventory / Aged Restore Marker Selective / Aged Restore Marker Selective Retry |
 | U-89 | Saved reports expose inline retention removal/enumeration failures at all cleanup exits, keep target counts independent, distinguish cancellation, preserve the current report during retention interruption and legacy/no-retention null, and retain standalone purge failure status | Retention Report (completed, nothing, min-reclaim, enumeration, target-failed, cancelled) / Retention Report JSON (completed, nothing, min-reclaim, enumeration, target-failed, cancelled) / Retention Interrupted Keeps Current Report / Retention Interrupted Report JSON / Retention Standalone Purge Failure / Report JSON After Cleanup / Report JSON After Interrupted Cleanup |
 | U-90 | Both installers ship the environment template byte-for-byte with mode `0644`, honor custom `DATADIR`/`PKGNAME`, and uninstall only the shipped copy and empty directory while preserving config, user copies, and sibling files | Installer DESTDIR Smoke Test / Environment Template Custom Paths (sh) / Environment Template Custom Paths (make) |
@@ -139,7 +138,6 @@ Rows below moved here after the 1.5.0 release; add new unreleased rows only whil
 | U-30 | --restore and --purge-sessions outcomes in the opt-in operation log | Log Restore / Log Purge / Unlogged Purge |
 | U-31 | Restore mkdir failure keeps metadata aligned | Restore Mkdir Failure |
 | U-32 | Aged quarantine chown failure is recorded and later targets run | Aged Quarantine Chown Failure |
-| U-33 | check-aur-ready rejects a SKIP checksum | AUR Checksum Gate |
 | U-34 | Failed sudo authentication during restore keeps metadata aligned | Restore Sudo Auth Failure |
 | U-35 | Plain CHECK_PROCESSES names longer than 15 characters match the kernel process name | Dry Run Mode (Default) / Bare Token Still Matches Comm |
 | U-36 | action:apk_clean | Cross-Distro Actions / Action Required Binary Mapping / Apk Safe Degradation |
@@ -181,8 +179,8 @@ Rows below moved here after the 1.5.0 release; add new unreleased rows only whil
 | Man Page Env Var Parity | env vars in man | cleaner.sh, cleaner.1, README.md, docs/cli-reference.md |
 | Stranded [Unreleased] Entries Are Detected | no stranded changelog | CHANGELOG.md, test_cleaner.sh |
 | Release Notes Extraction | release-notes.sh contract | release-notes.sh, .github/workflows/release.yml |
-| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, aur/PKGBUILD, aur/.SRCINFO, CHANGELOG.md |
-| Package Install Scriptlet Is Hint Only | pacman scriptlet prints the opt-in hint, calls no systemctl, no post_upgrade | aur/linux-cleaner.install, aur/PKGBUILD, aur/.SRCINFO |
+| Changelog/Version Consistency | version sync | cleaner.sh, cleaner.1, CHANGELOG.md |
+| Package Install Scriptlet Is Hint Only | install messages name shipped timer units and define no post_upgrade | aur/aurgen.install.yaml, examples/systemd |
 | ShellCheck Single Source | one shellcheck list (`SHELLCHECK_FILES`) covering every tracked shell file; every lint step runs `make lint` | Makefile, ci.yml, release.yml, README.md, RELEASING.md, CONTRIBUTING.md, docs/DOC_REVIEW_CHECKLIST.md, docs/contract-baseline.md |
 | Makefile Pre-Release Gate Parity | `pre-release` runs `scripts/validate-runbook-examples.sh` (`check-runbook-examples`), `shellcheck`, and `bash test_cleaner.sh` in order | Makefile |
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |

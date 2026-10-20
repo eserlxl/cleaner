@@ -14,20 +14,19 @@ Pre-release checklist for AUR/distro packagers. Complete every row before publis
 - [ ] `make install` ships the shell completions with mode `0644` — `$DATADIR/bash-completion/completions/cleaner`, `$DATADIR/zsh/site-functions/_cleaner` and `$DATADIR/fish/vendor_completions.d/cleaner.fish` — and `make uninstall` removes them
 - [ ] Removal docs (`make uninstall`, `pacman -R`) tell each user who enabled the timers to first run `systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer` and `systemctl --user daemon-reload` after removal
 - [ ] Docs for switching from `make install` to the package say to move or remove the leftover `/etc/linux-cleaner/cleaner.conf` first (pacman "exists in filesystem"), how to clear a stale `timers.target.wants` link, and that `Persistent=true` runs a missed slot at once on enable
-- [ ] `aur/linux-cleaner.install` (`install=` in `aur/PKGBUILD`) only prints the opt-in timer hint from `post_install`: no `systemctl` call, no `post_upgrade`; it ships to the AUR repo with `PKGBUILD` and `.SRCINFO`
-- [ ] `aur/PKGBUILD` `depends` (`bash`, `findutils`, `coreutils`) and `optdepends` (`pacman-contrib`, `libnotify`) align with the requirements table in [installation.md](installation.md#supported-platforms-and-requirements)
+- [ ] `aur/aurgen.install.yaml` `package.install_messages` (`post_install` / `pre_remove`, printed verbatim) names the real timer unit (`linux-cleaner-clean.timer`) and has no `post_upgrade`; `aurgen aur-deploy` copies `PKGBUILD`, `.SRCINFO` and the install scriptlet into the AUR clone and pushes
+- [ ] `aur/aurgen.install.yaml` `depends` (`bash`) and `optdepends` (`pacman-contrib`, `libnotify`, `git`) align with the requirements table in [installation.md](installation.md#supported-platforms-and-requirements)
 
 ## Version consistency
 
-- [ ] `cleaner.sh --version` == `aur/PKGBUILD pkgver` == `aur/.SRCINFO pkgver` == CHANGELOG top version
+- [ ] `cleaner.sh --version` == CHANGELOG top version (`aurgen aur` takes `pkgver` from the `v*` tag; it is not a tracked file)
 - [ ] `cleaner.1` `.TH` version matches
 
 ## AUR gate
 
-- [ ] Remote tag exists before `updpkgsums`
-- [ ] `sha256sums` is **not** `SKIP` (see [RELEASING.md](../RELEASING.md#ordered-aur-packaging-checklist))
-- [ ] `makepkg -f` succeeds locally
-- [ ] `namcap PKGBUILD` and `namcap *.pkg.tar.zst` clean (run in `aur/`)
+- [ ] `vX.Y.Z` tag exists, then `aurgen aur` (see [RELEASING.md](../RELEASING.md#ordered-aur-packaging-checklist))
+- [ ] `aurgen local` or `aurgen test` succeeds
+- [ ] `aurgen aur-deploy` publishes `PKGBUILD`, `.SRCINFO` and the install scriptlet
 
 ## Action contract
 
