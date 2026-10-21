@@ -15,9 +15,15 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
-### Added
+## [1.7.1] - 2026-10-22
 
-- `make check-package`: a seconds-long smoke test (syntax, `--version`, `--help`, and the shipped config) that needs no git, network, or home directory. The AUR package runs it while building; `make check` stays the full test suite.
+### Changed
+
+- The AUR package now runs `make check-package` while building: a seconds-long smoke test (syntax, `--version`, `--help`, and the shipped config) that needs no git, network, or home directory. `make check` stays the full test suite.
+
+### Fixed
+
+- The test suite no longer fails when run from a release tarball unpacked inside another git repository (for example an AUR helper's build directory).
 
 ## [1.7.0] - 2026-10-21
 
@@ -626,7 +632,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.1
 [1.7.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.0
 [1.6.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.6.0
 [1.5.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.5.0
