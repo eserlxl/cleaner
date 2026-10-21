@@ -121,6 +121,8 @@ package:
   license:
     - 'GPL-3.0-or-later'
   source: 'archive'
+  # The suite takes minutes and assumes a repository checkout; run it with make check.
+  check: false
   depends:
     - 'bash>=4.4'
   optdepends:
