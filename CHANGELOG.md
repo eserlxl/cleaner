@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- A process-blocked target reports the bytes it would reclaim (status-line suffix, `Held by active processes`, and plan/result `In use:` lines) without including them in the savings total, `--min-reclaim`, or JSON `bytes`.
+
 ### Changed
 
 - Move the Arch packaging files (`PKGBUILD`, `.SRCINFO`, `linux-cleaner.install`) into `aur/`, with an `aur/.gitignore` that keeps build output out of git; build a local package with `cd aur && makepkg -si`.

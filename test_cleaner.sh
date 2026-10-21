@@ -611,6 +611,133 @@ else
   exit 1
 fi
 
+# Blocked targets report an in-use size without adding it to the savings total.
+mkdir -p "$MOCK_HOME/.cache"
+truncate -s 2M "$MOCK_HOME/.cache/in-use-held.bin"
+cat > "$TEST_ENV_DIR/in_use_held.conf" <<'EOF'
+safe|Held Cache|$HOME/.cache/in-use-held.bin|cache held by a running process|0|mock_running_proc|
+EOF
+if run_test_case "Blocked Target In-Use Size Dry Run" 0 "in_use_held.log" \
+     --config "$TEST_ENV_DIR/in_use_held.conf" --dry-run; then
+  if grep -qF "Skip cleanup because process 'mock_running_proc' is active; 2 MB would be reclaimable otherwise." "$TEST_ENV_DIR/in_use_held.log" \
+     && grep -qF "Held by active processes: 2 MB (not counted above)" "$TEST_ENV_DIR/in_use_held.log" \
+     && grep -qF "Blocked (process 'mock_running_proc' is active): Held Cache (2 MB)" "$TEST_ENV_DIR/in_use_held.log" \
+     && grep -qF "In use: blocked=1 would_reclaim=2 MB" "$TEST_ENV_DIR/in_use_held.log" \
+     && grep -qF "Total potential space savings: 0 B" "$TEST_ENV_DIR/in_use_held.log" \
+     && awk '
+          /Reclaimable by risk:/ { risk=NR }
+          /In use: blocked=1 would_reclaim=2 MB/ && !seen { inuse=NR; seen=1 }
+          END { exit !(risk && inuse && inuse > risk) }
+        ' "$TEST_ENV_DIR/in_use_held.log"; then
+    echo -e "${GREEN}PASS: blocked target shows its in-use size and leaves it out of the savings total.${NC}"
+  else
+    echo -e "${RED}FAIL: blocked in-use size missing from the status line, held line, or plan report.${NC}"
+    cat "$TEST_ENV_DIR/in_use_held.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+if run_test_case "Blocked Target In-Use Size JSON Unchanged" 0 "in_use_held.json" \
+     --config "$TEST_ENV_DIR/in_use_held.conf" --dry-run --json \
+   && python3 - "$TEST_ENV_DIR/in_use_held.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+assert data["total_reclaimable_bytes"] == 0, data
+target = data["targets"][0]
+assert target["name"] == "Held Cache" and target["status"] == "blocked", target
+assert target["bytes"] == 0, target
+PY
+then
+  echo -e "${GREEN}PASS: blocked in-use size stays out of JSON bytes and total_reclaimable_bytes.${NC}"
+else
+  echo -e "${RED}FAIL: blocked in-use size changed the JSON bytes contract.${NC}"
+  cat "$TEST_ENV_DIR/in_use_held.json"
+  exit 1
+fi
+
+# A missing path and an action row are not measurable, so they add no in-use size.
+mkdir -p "$MOCK_HOME/.cache/in-use-action"
+truncate -s 2M "$MOCK_HOME/.cache/in-use-action/blob.bin"
+cat > "$TEST_ENV_DIR/in_use_unmeasurable.conf" <<'EOF'
+safe|Missing Blocked|$HOME/.cache/in-use-missing|path does not exist|0|mock_running_proc|
+safe|Action Blocked|$HOME/.cache/in-use-action|user action|0|mock_running_proc|action:uv_cache_prune
+EOF
+if run_test_case "Blocked Target Unmeasurable In-Use Size" 0 "in_use_unmeasurable.log" \
+     --config "$TEST_ENV_DIR/in_use_unmeasurable.conf" --dry-run; then
+  if grep -qF "Missing Blocked: Skip cleanup because process 'mock_running_proc' is active." "$TEST_ENV_DIR/in_use_unmeasurable.log" \
+     && grep -qF "Action Blocked: Skip cleanup because process 'mock_running_proc' is active." "$TEST_ENV_DIR/in_use_unmeasurable.log" \
+     && grep -qF "Blocked (process 'mock_running_proc' is active): Missing Blocked, Action Blocked" "$TEST_ENV_DIR/in_use_unmeasurable.log" \
+     && ! grep -q "would be reclaimable otherwise" "$TEST_ENV_DIR/in_use_unmeasurable.log" \
+     && ! grep -qF "Held by active processes:" "$TEST_ENV_DIR/in_use_unmeasurable.log" \
+     && ! grep -q '^In use:' "$TEST_ENV_DIR/in_use_unmeasurable.log"; then
+    echo -e "${GREEN}PASS: missing and action blocked targets show no in-use size.${NC}"
+  else
+    echo -e "${RED}FAIL: unmeasurable blocked target showed an in-use size.${NC}"
+    cat "$TEST_ENV_DIR/in_use_unmeasurable.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# A real run records the plan-blocked in-use size in the result report and --report.
+truncate -s 2M "$MOCK_HOME/.cache/in-use-held.bin"
+printf 'sibling\n' > "$MOCK_HOME/.cache/in-use-sibling.bin"
+cat > "$TEST_ENV_DIR/in_use_result.conf" <<'EOF'
+safe|Held Cache|$HOME/.cache/in-use-held.bin|cache held by a running process|0|mock_running_proc|
+safe|Sibling Cache|$HOME/.cache/in-use-sibling.bin|cleaned sibling|0||
+EOF
+cat > "$TEST_ENV_DIR/bin/notify-send" <<'NOTIFY_STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$TEST_ENV_DIR/in_use_notify.log"
+exit 0
+NOTIFY_STUB
+chmod +x "$TEST_ENV_DIR/bin/notify-send"
+export LINUX_CLEANER_METRICS_FILE="$TEST_ENV_DIR/in_use_blocked.prom"
+if run_test_case "Blocked Target In-Use Result Report" 0 "in_use_result.log" \
+     --config "$TEST_ENV_DIR/in_use_result.conf" --clean --force --notify; then
+  in_use_result_ok=0
+  if grep -qF "In use: blocked=1 would_reclaim=2 MB" "$TEST_ENV_DIR/in_use_result.log" \
+     && awk '
+          /^Reclaimed:/ { seen=1 }
+          seen && /^In use: blocked=1 would_reclaim=2 MB$/ { found=1 }
+          END { exit !found }
+        ' "$TEST_ENV_DIR/in_use_result.log" \
+     && [[ -f "$MOCK_HOME/.cache/in-use-held.bin" ]] \
+     && [[ ! -f "$MOCK_HOME/.cache/in-use-sibling.bin" ]] \
+     && grep -qF 'linux_cleaner_targets{result="cleaned"} 1' "$TEST_ENV_DIR/in_use_blocked.prom" \
+     && ! grep -q 'In use:' "$TEST_ENV_DIR/in_use_notify.log" \
+     && grep -q '^Reclaimed: ' "$TEST_ENV_DIR/in_use_notify.log"; then
+    in_use_result_ok=1
+  fi
+else
+  in_use_result_ok=0
+fi
+unset LINUX_CLEANER_METRICS_FILE
+rm -f "$TEST_ENV_DIR/bin/notify-send"
+if [[ "$in_use_result_ok" -ne 1 ]] \
+   || ! run_test_case "Blocked Target In-Use Saved Report" 0 "in_use_report.log" --report \
+   || ! awk '
+        /^Reclaimed:/ { seen=1 }
+        seen && /^In use: blocked=1 would_reclaim=2 MB$/ { found=1 }
+        END { exit !found }
+      ' "$TEST_ENV_DIR/in_use_report.log" \
+   || ! run_test_case "Blocked Target In-Use Report JSON" 0 "in_use_report.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/in_use_report.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+assert data["result"] == "completed", data
+assert data["cleaned"] == 1, data
+assert "would_reclaim" not in data, data
+PY
+then
+  echo -e "${RED}FAIL: plan-blocked in-use size missing from the result report or --report.${NC}"
+  cat "$TEST_ENV_DIR/in_use_result.log" "$TEST_ENV_DIR/in_use_report.log" "$TEST_ENV_DIR/in_use_notify.log" "$TEST_ENV_DIR/in_use_blocked.prom" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: plan-blocked in-use size is in the result report and saved --report, and parsers ignore it.${NC}"
+
 # 2. Test Case: Risk Levels Filter
 # Default --risk safe: Medium Risk Target should NOT be in dry_run.log as FOUND or WARNING
 if grep -q "Medium Risk Target" "$TEST_ENV_DIR/dry_run.log"; then
@@ -7222,7 +7349,14 @@ with tempfile.TemporaryDirectory(prefix="cleaner-process-query-", dir="/tmp") as
                     assert not (home / "ungated").exists(), (label, output)
                     if expected != "found":
                         assert all((home / leaf / "payload").read_text() == "preserve\n" for leaf in ("guarded", "guarded-user", "guarded-system")), label
-                        assert not trace.exists(), (label, trace.read_text())
+                        if expected == "blocked":
+                            # Preview and --force each du the ordinary path for the in-use estimate.
+                            # Action rows stay unsized, and sudo/action binaries stay uncalled.
+                            calls = trace.read_text()
+                            assert calls == "guarded du\nguarded du\n", (label, calls)
+                            assert all(target["bytes"] == 0 for target in guarded), (label, guarded)
+                        else:
+                            assert not trace.exists(), (label, trace.read_text() if trace.exists() else "")
                     else:
                         assert not (home / "guarded").exists(), label
                         calls = trace.read_text()
@@ -8812,6 +8946,50 @@ if run_test_case "Process Started After Analysis Blocks Cleanup" 0 "late_proc.lo
   else
     echo -e "${RED}FAIL: late process did not block cleanup.${NC}"
     cat "$TEST_ENV_DIR/late_proc.log"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
+# The size planned before the process started is the result report's in-use total.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache"
+truncate -s 2M "$MOCK_HOME/.cache/late-in-use.bin"
+cat > "$TEST_ENV_DIR/late_in_use.conf" <<'EOF'
+safe|Late In Use|$HOME/.cache/late-in-use.bin|cache whose process starts after analysis|0|late_proc|
+EOF
+cat > "$TEST_ENV_DIR/bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+count_file="$TEST_ENV_DIR/pgrep_late_in_use_calls"
+count=0
+if [[ -f "$count_file" ]]; then
+  count=$(cat "$count_file")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+if [[ "$count" -eq 1 ]]; then
+  exit 1
+fi
+exit 0
+EOF
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+if run_test_case "Late Process In-Use Result Size" 0 "late_in_use.log" \
+     --config "$TEST_ENV_DIR/late_in_use.conf" --clean --force; then
+  late_in_use_block=$(grep -n 'BLOCKED' "$TEST_ENV_DIR/late_in_use.log" | head -1 | cut -d: -f1) || true
+  late_in_use_start=$(grep -n 'Starting cleanup' "$TEST_ENV_DIR/late_in_use.log" | head -1 | cut -d: -f1) || true
+  if [[ -n "$late_in_use_block" && -n "$late_in_use_start" && "$late_in_use_start" -lt "$late_in_use_block" ]] \
+     && grep -qF "Late In Use: Skip cleanup because process 'late_proc' is active; 2 MB would be reclaimable otherwise." "$TEST_ENV_DIR/late_in_use.log" \
+     && awk '
+          /^Reclaimed:/ { seen=1 }
+          seen && /^In use: blocked=1 would_reclaim=2 MB$/ { found=1 }
+          END { exit !found }
+        ' "$TEST_ENV_DIR/late_in_use.log" \
+     && [[ -f "$MOCK_HOME/.cache/late-in-use.bin" ]]; then
+    echo -e "${GREEN}PASS: a process that starts after analysis counts its planned size in the result In use line.${NC}"
+  else
+    echo -e "${RED}FAIL: late process in-use size missing from the result report.${NC}"
+    cat "$TEST_ENV_DIR/late_in_use.log"
     exit 1
   fi
 else

@@ -2710,6 +2710,50 @@ get_size_bytes() {
   fi
 }
 
+# Print "<bytes> <true|false>": the get_size_bytes count, and whether the same
+# should_clean rule as a found target holds. The caller has already rejected
+# actions, missing paths, and idle-recent trees. Exclusions are TARGET_EXCLUDE_PATTERNS.
+measure_eligible_size() {
+  local target_path="$1" age_days="$2" use_sudo="$3" size_bytes should_clean=false
+  size_bytes=$(get_size_bytes "$target_path" "$age_days" "$use_sudo")
+  if has_positive_age "$age_days" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+    if has_matching_files "$target_path" "$age_days" "$use_sudo"; then
+      should_clean=true
+    fi
+  elif ! path_is_real_dir "$use_sudo" "$target_path" || [[ "$size_bytes" -gt 0 ]]; then
+    should_clean=true
+  fi
+  printf '%s %s\n' "$size_bytes" "$should_clean"
+}
+
+# Bytes a process-blocked target would reclaim if it were not in use.
+# No sudo, and the result is not stored in size_bytes: action:* rows are not
+# measurable ahead of time, and a missing, unreadable, or recently idle path is 0.
+blocked_in_use_bytes() {
+  local path="$1" effective_age="$2" idle_age="$3" custom_clean_cmd="$4"
+  local size_bytes should_clean
+  if [[ "$custom_clean_cmd" == action:* ]]; then
+    echo 0
+    return
+  fi
+  if [[ ! -r "$path" ]] || { [[ -d "$path" ]] && [[ ! -x "$path" ]]; }; then
+    echo 0
+    return
+  fi
+  # Same recent-file probe as the plan's idle CLEAN branch, without sudo.
+  if has_positive_age "$idle_age" \
+     && [[ -n $(with_sudo false find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) ]]; then
+    echo 0
+    return
+  fi
+  read -r size_bytes should_clean < <(measure_eligible_size "$path" "$effective_age" false)
+  if [[ "$should_clean" == true ]]; then
+    echo "$size_bytes"
+  else
+    echo 0
+  fi
+}
+
 # Format bytes to human readable format
 format_bytes() {
   local bytes=$1
@@ -2740,7 +2784,7 @@ print_plan_report() {
   local i status bytes mode=dry-run shown=0
   local found=0 clean_missing=0 skipped=0 blocked=0 unsafe_symlink=0 root_n=0 protected_n=0
   local safe_b=0 med_b=0 dang_b=0
-  local reason name age_note size_label protected_names=""
+  local reason name name_label age_note size_label protected_names=""
   local -a rank=()
   local -A skip_groups=() block_groups=()
   [[ "$DRY_RUN" != true ]] && mode=clean
@@ -2760,7 +2804,11 @@ print_plan_report() {
       blocked)
         blocked=$((blocked + 1))
         reason="${parsed_reasons[$i]:-unspecified}"
-        block_groups["$reason"]="${block_groups[$reason]:+${block_groups[$reason]}, }$name"
+        name_label="$name"
+        if [[ "${parsed_in_use_bytes[$i]:-0}" -gt 0 ]]; then
+          name_label="$name ($(format_bytes "${parsed_in_use_bytes[$i]}"))"
+        fi
+        block_groups["$reason"]="${block_groups[$reason]:+${block_groups[$reason]}, }$name_label"
         ;;
       protected)
         protected_n=$((protected_n + 1))
@@ -2779,6 +2827,9 @@ print_plan_report() {
   done
   printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} protected=${protected_n} unsafe/symlink=${unsafe_symlink} root=${root_n}"
   printf '%s\n' "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
+  if [[ "$total_in_use_bytes" -gt 0 ]]; then
+    printf '%s\n' "In use: blocked=${blocked} would_reclaim=$(format_bytes "$total_in_use_bytes")"
+  fi
   if [[ "$found" -gt 0 ]]; then
     mapfile -t rank < <(
       for i in "${!parsed_names[@]}"; do
@@ -2821,6 +2872,7 @@ print_plan_report() {
 # Always printed, like the final summary. Counts are filled in by the cleanup loop.
 print_result_report() {
   local quarantined=0 permanent="$total_deleted_bytes" elapsed
+  local plan_blocked=0 blocked_n=0 in_use_total=0 i
   if [[ "$TRASH_MODE" = true ]]; then
     quarantined=$((total_deleted_bytes - total_action_bytes))
     permanent=$total_action_bytes
@@ -2831,6 +2883,17 @@ print_result_report() {
     echo "Failed targets: ${result_failed_names}"
   fi
   echo "Reclaimed: quarantined=$(format_bytes "$quarantined") permanent=$(format_bytes "$permanent")"
+  # Plan-blocked rows never reach the cleanup loop; runtime blocks are counted apart.
+  for i in "${!parsed_statuses[@]}"; do
+    if [[ "${parsed_statuses[$i]}" == blocked ]]; then
+      plan_blocked=$((plan_blocked + 1))
+    fi
+  done
+  blocked_n=$((plan_blocked + runtime_blocked_count))
+  if [[ "$blocked_n" -gt 0 ]]; then
+    in_use_total=$((total_in_use_bytes + runtime_blocked_bytes))
+    echo "In use: blocked=${blocked_n} would_reclaim=$(format_bytes "$in_use_total")"
+  fi
   echo "Accounted bytes: quarantined=$quarantined permanent=$permanent"
   if [[ -n "$QUARANTINE_DIR" ]]; then
     echo "Quarantine session: ${QUARANTINE_DIR}"
@@ -3594,6 +3657,9 @@ parsed_names=()
 parsed_paths=()
 parsed_descs=()
 parsed_sizes=()
+# Blocked targets keep parsed_sizes at 0 so JSON bytes and --min-reclaim ignore
+# them. This parallel array holds the would-reclaim estimate instead.
+parsed_in_use_bytes=()
 parsed_exists=()
 parsed_safety=()
 parsed_ages=()
@@ -3616,6 +3682,10 @@ json_descs=()
 json_ages=()
 
 total_reclaimable_bytes=0
+total_in_use_bytes=0
+# Targets whose process starts after planning, blocked again in the cleanup loop.
+runtime_blocked_count=0
+runtime_blocked_bytes=0
 
 # Collect canonical paths from protect|PATH config lines before target analysis.
 PROTECTED_PATHS=()
@@ -3738,6 +3808,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   
   exists=false
   size_bytes=0
+  in_use_bytes=0
   runtime_sized=false
   use_sudo=false
   target_status=""
@@ -3774,7 +3845,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       elif [[ "$process_status" -eq 0 ]]; then
         target_status=blocked
         target_reason="process '$running_proc' is active"
-        status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
+        # set_target_exclusions already ran for this row, so the estimate uses its patterns.
+        in_use_bytes=$(blocked_in_use_bytes "$path" "$effective_age" "$idle_age" "$custom_clean_cmd")
+        in_use_note=""
+        if [[ "$in_use_bytes" -gt 0 ]]; then
+          in_use_note="; $(format_bytes "$in_use_bytes") would be reclaimable otherwise"
+        fi
+        status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active${in_use_note}."
       else
         # Determine if sudo is needed. A dry-run only probes with sudo -n and
         # never prompts. A real run skips the target when privileges are unavailable.
@@ -3845,20 +3922,9 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               target_status=clean
               debug_echo "  [${BLUE}CLEAN${NC}] $name: active within $idle_age days."
             else
-              size_bytes=$(get_size_bytes "$path" "$effective_age" "$use_sudo")
+              read -r size_bytes should_clean < <(measure_eligible_size "$path" "$effective_age" "$use_sudo")
               readable_size=$(format_bytes "$size_bytes")
-              
-              should_clean=false
-              if has_positive_age "$effective_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
-                if has_matching_files "$path" "$effective_age" "$use_sudo"; then
-                  should_clean=true
-                fi
-              else
-                if ! path_is_real_dir "$use_sudo" "$path" || [[ "$size_bytes" -gt 0 ]]; then
-                  should_clean=true
-                fi
-              fi
-              
+
               if [[ "$should_clean" = true ]]; then
                 exists=true
                 total_reclaimable_bytes=$((total_reclaimable_bytes + size_bytes))
@@ -3908,6 +3974,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   parsed_paths+=("$path")
   parsed_descs+=("$desc")
   parsed_sizes+=("$size_bytes")
+  parsed_in_use_bytes+=("$in_use_bytes")
+  total_in_use_bytes=$((total_in_use_bytes + in_use_bytes))
   parsed_exists+=("$exists")
   parsed_safety+=("$safety_status")
   parsed_ages+=("$effective_age")
@@ -3926,6 +3994,9 @@ check_target_selection || exit 1
 if [[ "$JSON_OUTPUT" != true ]]; then
   echo
   echo -e "${BOLD}Total potential space savings: ${GREEN}$(format_bytes "$total_reclaimable_bytes")${NC}"
+  if [[ "$total_in_use_bytes" -gt 0 ]]; then
+    echo "Held by active processes: $(format_bytes "$total_in_use_bytes") (not counted above)"
+  fi
   echo
 
   # Captured once, with no color codes (the printer uses printf, not the color vars).
@@ -4135,7 +4206,13 @@ for i in "${!parsed_names[@]}"; do
       result_skipped=$((result_skipped + 1))
       continue
     elif [[ "$process_status" -eq 0 ]]; then
-      status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active."
+      runtime_blocked_count=$((runtime_blocked_count + 1))
+      runtime_blocked_bytes=$((runtime_blocked_bytes + size))
+      runtime_note=""
+      if [[ "$size" -gt 0 ]]; then
+        runtime_note="; $(format_bytes "$size") would be reclaimable otherwise"
+      fi
+      status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active${runtime_note}."
       result_skipped=$((result_skipped + 1))
       continue
     fi
