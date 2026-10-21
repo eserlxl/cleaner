@@ -6626,7 +6626,9 @@ done
 if ! grep -qx $'\tshellcheck $(SHELLCHECK_FILES)' "$SCRIPT_DIR/Makefile"; then
   sc_drift+=" Makefile(lint recipe)"
 fi
-if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+# Only in a checkout of this repo: a release tarball unpacked inside another git
+# tree (an AUR helper's clone) would list none of its files and fail the fixture.
+if [[ "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$SCRIPT_DIR" && pwd -P)" ]]; then
   missing=$(comm -23 <(tracked_shell_files) <(shellcheck_files_from "$SCRIPT_DIR/Makefile" | sort -u) | tr '\n' ' ')
   [[ -z "$missing" ]] || sc_drift+=" SHELLCHECK_FILES(missing: ${missing% })"
   # Prove the check reads the list: dropping one tracked file from it must be caught.
