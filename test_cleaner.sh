@@ -8069,6 +8069,23 @@ else
   exit 1
 fi
 
+# The AUR check() runs make check-package, not the full suite: it must pass on its
+# own and stay the target the packaging config names.
+echo -e "\n${BOLD}Test Case: Package Check Target${NC}"
+if ! grep -qx '  check: make check-package' "$install_yaml"; then
+  echo -e "${RED}FAIL: aur/aurgen.install.yaml does not set package.check to make check-package.${NC}"
+  exit 1
+fi
+if command -v make > /dev/null 2>&1; then
+  if ! pkgcheck_out=$(make -s --no-print-directory -C "$SCRIPT_DIR" check-package 2>&1) \
+     || [[ "$pkgcheck_out" != *"check-package: OK"* ]]; then
+    echo -e "${RED}FAIL: make check-package did not pass:${NC}"
+    printf '%s\n' "$pkgcheck_out"
+    exit 1
+  fi
+fi
+echo -e "${GREEN}PASS: aurgen check() runs make check-package, which passes.${NC}"
+
 # Debug output: --debug and LINUX_CLEANER_DEBUG expose [FOUND] and [CLEAN] lines; hidden by default and --quiet.
 echo -e "\n${BOLD}Test Case: Debug Dry Run Output${NC}"
 setup_mock_env

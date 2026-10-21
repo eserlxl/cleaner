@@ -12,6 +12,7 @@ Every change must pass both gate commands locally before it is merged or pushed:
 ```bash
 make lint                             # shellcheck every tracked shell file — must be clean
 make check                            # runbook example validation + full safety suite
+make check-package                    # seconds-long packaging smoke test (the AUR check())
 ```
 
 The suite is hermetic: it builds a mock `$HOME` and stubs `sudo`, the package

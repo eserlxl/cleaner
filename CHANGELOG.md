@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- `make check-package`: a seconds-long smoke test (syntax, `--version`, `--help`, and the shipped config) that needs no git, network, or home directory. The AUR package runs it while building; `make check` stays the full test suite.
+
 ## [1.7.0] - 2026-10-21
 
 ### Added

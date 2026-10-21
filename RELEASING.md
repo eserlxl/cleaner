@@ -69,7 +69,10 @@ output out of git). Edit that file: `package.install_messages` (`post_install` /
 `pre_remove`) is the pacman install scriptlet text, printed verbatim. `aurgen aur`
 writes the release `PKGBUILD` (`pkgver` comes from the `v<version>` git tag), `.SRCINFO`
 and the install scriptlet; `aurgen git` writes the `-git` package. The generated
-`package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`. Test with `aurgen local`
+`package()` runs `make install DESTDIR="$pkgdir" PREFIX=/usr`; `check()` runs
+`make check-package` (`package.check` in the YAML), a seconds-long smoke test that needs no
+git, network or home directory, so it passes inside an AUR helper's clone. `make check`
+stays the full developer suite. Test with `aurgen local`
 (build and install a local package) or `aurgen test` (dry-run every mode).
 `aurgen --dry-run <mode>` writes only under `aur/dry-run/`.
 

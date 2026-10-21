@@ -121,8 +121,8 @@ package:
   license:
     - 'GPL-3.0-or-later'
   source: 'archive'
-  # The suite takes minutes and assumes a repository checkout; run it with make check.
-  check: false
+  # make check is the full developer suite; the package runs the hermetic smoke test.
+  check: make check-package
   depends:
     - 'bash>=4.4'
   optdepends:

@@ -17,12 +17,12 @@ PKGNAME    ?= linux-cleaner
 SHELLCHECK_FILES = cleaner.sh test_cleaner.sh install.sh release-notes.sh \
 	scripts/validate-runbook-examples.sh completions/cleaner.bash
 
-.PHONY: all help install uninstall install-man check lint clean pre-release check-runbook-examples
+.PHONY: all help install uninstall install-man check check-package lint clean pre-release check-runbook-examples
 
 all: help
 
 help:
-	@echo "Targets: install, uninstall, install-man, check, lint, clean, pre-release, check-runbook-examples"
+	@echo "Targets: install, uninstall, install-man, check, check-package, lint, clean, pre-release, check-runbook-examples"
 	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR SYSTEMDUSERUNITDIR (=$(SYSTEMDUSERUNITDIR))"
 
 install: install-man
@@ -83,6 +83,16 @@ check-runbook-examples:
 
 check: check-runbook-examples
 	bash test_cleaner.sh
+
+# Package-time smoke test (the AUR check()): seconds, from an unpacked tarball, with
+# no git, network, root, user environment or home writes. make check is the full suite.
+check-package:
+	bash -n cleaner.sh
+	bash -n completions/cleaner.bash
+	@tmp=$$(mktemp -d) && trap 'rm -r "$$tmp"' EXIT && \
+	for args in --version --help '--check-config --config cleaner.conf'; do \
+		env -i PATH="$$PATH" HOME="$$tmp" LC_ALL=C bash cleaner.sh $$args > /dev/null || exit 1; \
+	done && echo "check-package: OK"
 
 clean:
 	@echo "Nothing to clean."
