@@ -3305,13 +3305,17 @@ is_process_running() {
       # pattern appears in our own argv (a config path, or --only-target naming the
       # tool), which would block every target forever. Drop our own PIDs first and
       # treat an otherwise-empty result as "not running".
-      _cmdline_match "${proc#cmdline:}" || query_status=$?
+      # Whitespace after the colon is not part of the pattern: "cmdline: /path"
+      # and "cmdline:/path" name the same command line. A blank remainder is
+      # already rejected by validate_config_file.
+      _cmdline_match "$(trim "${proc#cmdline:}")" || query_status=$?
     else
       # The kernel keeps only the first 15 characters of a process name, and
       # pgrep -x refuses a longer plain name outright, so compare such a name on
-      # its first 15. Regex-bearing tokens are the user's own and pass unchanged.
+      # its first 15. A plain name may contain '.' (python3.13-debug). Regex-bearing
+      # tokens are the user's own and pass unchanged.
       local comm="$proc"
-      [[ ${#comm} -gt 15 && "$comm" =~ ^[A-Za-z0-9_-]+$ ]] && comm="${comm:0:15}"
+      [[ ${#comm} -gt 15 && "$comm" =~ ^[A-Za-z0-9._-]+$ ]] && comm="${comm:0:15}"
       pgrep -x "$comm" >/dev/null 2>&1 || query_status=$?
     fi
     case "$query_status" in

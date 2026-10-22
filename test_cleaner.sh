@@ -54,7 +54,7 @@ setup_mock_env() {
 # -x matches the whole process name as a regular expression, like the real pgrep.
 # The mocked binary is "mock_running_proc", but the kernel stores only its first 15
 # characters, and real pgrep refuses a plain -x pattern longer than that.
-if [[ "$1" == "-x" && ${#2} -gt 15 && "$2" =~ ^[A-Za-z0-9_-]+$ ]]; then
+if [[ "$1" == "-x" && ${#2} -gt 15 && "$2" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "pgrep: pattern that searches for process name longer than 15 characters will result in zero matches" >&2
   exit 1
 fi
@@ -7410,6 +7410,85 @@ if run_test_case "Bare Token Still Matches Comm" 0 "cmdline_bare.log" \
     exit 1
   fi
 else
+  exit 1
+fi
+
+# A plain name may contain '.'. The kernel still stores only 15 characters, and
+# pgrep -x refuses the longer form, so python3.13-debug must be compared as
+# python3.13-debu. A space after "cmdline:" is not part of the pattern.
+cp "$TEST_ENV_DIR/bin/pgrep" "$TEST_ENV_DIR/pgrep.default"
+cat > "$TEST_ENV_DIR/bin/pgrep" <<'PGREP_TOKEN'
+#!/usr/bin/env bash
+# Record the pattern this stub actually searched for.
+record_pattern() {
+  printf '%s\n' "$1" >> "$TEST_ENV_DIR/pgrep_patterns"
+}
+if [[ "$1" == "-x" ]]; then
+  record_pattern "$2"
+  if [[ ${#2} -gt 15 && "$2" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "pgrep: pattern that searches for process name longer than 15 characters will result in zero matches" >&2
+    exit 1
+  fi
+  [[ "$2" == "python3.13-debu" ]]
+  exit $?
+fi
+if [[ "$1" == "-f" ]]; then
+  shift
+  [[ "$1" == "--" ]] && shift
+  record_pattern "$1"
+  if [[ "$1" == "/some/path" && -r "${TEST_ENV_DIR:-}/mock_cmdline_pid" ]]; then
+    cat "${TEST_ENV_DIR}/mock_cmdline_pid"
+    exit 0
+  fi
+  exit 1
+fi
+exit 1
+PGREP_TOKEN
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+mkdir -p "$MOCK_HOME/token-guard/dotted" "$MOCK_HOME/token-guard/spaced"
+echo "payload" > "$MOCK_HOME/token-guard/dotted/data.txt"
+echo "payload" > "$MOCK_HOME/token-guard/spaced/data.txt"
+cat > "$TEST_ENV_DIR/token_forms.conf" <<'TOKENFORMS'
+safe|Dotted Comm|$HOME/token-guard/dotted|Long plain name with a dot|0|python3.13-debug|
+safe|Spaced Cmdline|$HOME/token-guard/spaced|Space after the cmdline colon|0|cmdline: /some/path|
+TOKENFORMS
+sleep 60 &
+token_forms_pid=$!
+echo "$token_forms_pid" > "$TEST_ENV_DIR/mock_cmdline_pid"
+: > "$TEST_ENV_DIR/pgrep_patterns"
+token_forms_ok=true
+if ! run_test_case "Dotted Comm And Spaced Cmdline Block" 0 "token_forms.log" \
+     --dry-run --config "$TEST_ENV_DIR/token_forms.conf" \
+   || ! grep -q "BLOCKED.*Dotted Comm.*'python3.13-debug'" "$TEST_ENV_DIR/token_forms.log" \
+   || ! grep -q "BLOCKED.*Spaced Cmdline.*'cmdline: /some/path'" "$TEST_ENV_DIR/token_forms.log" \
+   || ! grep -qx 'python3.13-debu' "$TEST_ENV_DIR/pgrep_patterns" \
+   || ! grep -qx '/some/path' "$TEST_ENV_DIR/pgrep_patterns" \
+   || grep -qx 'python3.13-debug' "$TEST_ENV_DIR/pgrep_patterns" \
+   || grep -q ' /some/path' "$TEST_ENV_DIR/pgrep_patterns"; then
+  token_forms_ok=false
+fi
+: > "$TEST_ENV_DIR/pgrep_patterns"
+if [[ "$token_forms_ok" == true ]] \
+   && run_test_case "Dotted Comm And Spaced Cmdline Stay" 0 "token_forms_clean.log" \
+        --clean --force --config "$TEST_ENV_DIR/token_forms.conf" \
+   && grep -q "BLOCKED.*Dotted Comm.*'python3.13-debug'" "$TEST_ENV_DIR/token_forms_clean.log" \
+   && grep -q "BLOCKED.*Spaced Cmdline.*'cmdline: /some/path'" "$TEST_ENV_DIR/token_forms_clean.log" \
+   && [[ -f "$MOCK_HOME/token-guard/dotted/data.txt" ]] \
+   && [[ -f "$MOCK_HOME/token-guard/spaced/data.txt" ]] \
+   && grep -qx 'python3.13-debu' "$TEST_ENV_DIR/pgrep_patterns" \
+   && grep -qx '/some/path' "$TEST_ENV_DIR/pgrep_patterns"; then
+  echo -e "${GREEN}PASS: a dotted 16-character name and a spaced cmdline: token both block, and neither target is deleted.${NC}"
+else
+  token_forms_ok=false
+  echo -e "${RED}FAIL: a dotted long name or a spaced cmdline: token did not block cleanup.${NC}"
+  cat "$TEST_ENV_DIR/token_forms.log" "$TEST_ENV_DIR/token_forms_clean.log" "$TEST_ENV_DIR/pgrep_patterns" 2>/dev/null || true
+fi
+kill "$token_forms_pid" 2>/dev/null || true
+wait "$token_forms_pid" 2>/dev/null || true
+cp "$TEST_ENV_DIR/pgrep.default" "$TEST_ENV_DIR/bin/pgrep"
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+rm -f "$TEST_ENV_DIR/pgrep.default" "$TEST_ENV_DIR/mock_cmdline_pid"
+if [[ "$token_forms_ok" != true ]]; then
   exit 1
 fi
 

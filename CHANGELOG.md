@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Compare a plain `CHECK_PROCESSES` name that contains `.` (such as `python3.13-debug`) on its first 15 characters, and ignore whitespace after `cmdline:`, so both forms match a running process instead of cleaning its cache.
 - Exclude CMake and Meson source roots and symlink-only markers from `filter:cxx_build`, while retaining real build markers up to two levels deep, so broad build patterns cannot delete these source trees.
 - Skip targets whose resolved path contains `|` (for example through a symlinked parent) before deletion or quarantine, with a reason in text and JSON. Such a path was written unescaped to `quarantine.meta`, and `--restore` moved the data to a truncated path while reporting success.
 - Fail closed (`[SKIP]`, `git-tracked check failed`) when git refuses a repository (dubious ownership) during the git-tracked target guard, instead of treating the refusal as zero tracked files and cleaning the target. A path outside any repository is still treated as having no tracked files.
