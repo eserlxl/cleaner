@@ -227,7 +227,18 @@ journal_error_line() {
 
 notify_failed_exit() {
   local status=$?
-  if [[ "$status" -eq 0 || "${DRY_RUN:-true}" != false || -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${DOCTOR:-false}" == true ]]; then
+  [[ "$status" -ne 0 ]] || return 0
+  # The retention unit runs purge mode; its early exits (lock timeout, bad selector) count too.
+  if [[ -n "${PURGE_TARGET:-}" ]]; then
+    journal_error_line "Quarantine purge ${PURGE_TARGET} failed with exit status ${status}."
+    return "$status"
+  fi
+  if [[ -n "${RESTORE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${DOCTOR:-false}" == true ]]; then
+    return "$status"
+  fi
+  # Scheduled previews (the monitor unit) and argument errors stop before any cleanup.
+  if [[ "${DRY_RUN:-true}" != false ]]; then
+    journal_error_line "Run stopped with exit status ${status} before cleaning."
     return "$status"
   fi
   if [[ "${CLEANUP_METRICS_WRITTEN:-false}" != true ]] && declare -F write_cleanup_metrics >/dev/null 2>&1; then
@@ -3748,10 +3759,8 @@ fi
 
 # Check if purge mode is active
 if [[ -n "${PURGE_TARGET:-}" ]]; then
-  # Errexit would skip the journal line on a failed purge.
-  purge_quarantine_sessions "$PURGE_TARGET" || OPERATION_FAILED=true
+  purge_quarantine_sessions "$PURGE_TARGET"
   if [[ "$OPERATION_FAILED" = true ]]; then
-    journal_error_line "Quarantine purge failed: ${PURGE_TARGET}."
     exit 1
   fi
   exit 0

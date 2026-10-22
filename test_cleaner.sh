@@ -10922,21 +10922,34 @@ if ! run_test_case "Retention Standalone Purge Failure" 1 "retention_standalone.
   exit 1
 fi
 # Under systemd, failed retention purges name themselves at error priority.
-for retention_journal in standalone min-reclaim; do
+# Previews and early purge exits name their exit status.
+for retention_journal in standalone selector preview min-reclaim; do
   setup_retention_report "$retention_journal"
   retention_journal_err="$TEST_ENV_DIR/retention_journal.err"
   : > "$retention_journal_err"
-  if [[ "$retention_journal" == standalone ]]; then
-    retention_journal_args=(--purge-sessions older-than:7 --force)
-    retention_journal_text='Quarantine purge failed: older-than:7.'
-  else
-    retention_journal_args=(--config "$TEST_ENV_DIR/retention_report.conf" --clean --trash-keep-days 7 --force --min-reclaim 1G)
-    retention_journal_text='Retention purge failed after the cleanup was skipped.'
-  fi
+  retention_journal_risk=safe
+  retention_journal_args=(--config "$TEST_ENV_DIR/retention_report.conf" --clean --trash-keep-days 7 --force)
+  retention_journal_text='Retention purge failed after the cleanup was skipped.'
+  case "$retention_journal" in
+    standalone)
+      retention_journal_args=(--purge-sessions older-than:7 --force)
+      retention_journal_text='Quarantine purge older-than:7 failed with exit status 1.'
+      ;;
+    selector)
+      retention_journal_args=(--purge-sessions older-than:30d --force)
+      retention_journal_text='Quarantine purge older-than:30d failed with exit status 1.'
+      ;;
+    preview)
+      retention_journal_risk=bogus
+      retention_journal_args=(--config "$TEST_ENV_DIR/retention_report.conf" --dry-run)
+      retention_journal_text='Run stopped with exit status 1 before cleaning.'
+      ;;
+    min-reclaim) retention_journal_args+=(--min-reclaim 1G) ;;
+  esac
   retention_journal_exit=0
   retention_journal_stream=$(stat -L -c '%d:%i' "$retention_journal_err")
   JOURNAL_STREAM="$retention_journal_stream" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
-    "$CLEANER_SH" "${retention_journal_args[@]}" < /dev/null > /dev/null 2> "$retention_journal_err" || retention_journal_exit=$?
+    LINUX_CLEANER_RISK="$retention_journal_risk" "$CLEANER_SH" "${retention_journal_args[@]}" < /dev/null > /dev/null 2> "$retention_journal_err" || retention_journal_exit=$?
   if [[ "$retention_journal_exit" -ne 1 ]] \
      || [[ "$(grep -c '^<3>linux-cleaner:' "$retention_journal_err" || true)" -ne 1 ]] \
      || ! grep -Fqx "<3>linux-cleaner: $retention_journal_text" "$retention_journal_err"; then
