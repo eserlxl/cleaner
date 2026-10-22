@@ -213,6 +213,18 @@ case "${LINUX_CLEANER_ALLOW_OUTSIDE_HOME:-}" in
     ;;
 esac
 
+journal_error_line() {
+  [[ -n "${JOURNAL_STREAM:-}" && "${JOURNAL_ERROR_WRITTEN:-false}" != true ]] || return 0
+  local stderr_stream msg="$*"
+  # Duplicate stderr before suppressing stat errors so the stream check stays valid.
+  stderr_stream=$(stat -L -c '%d:%i' /dev/fd/3 3>&2 2>/dev/null) || return 0
+  [[ "$JOURNAL_STREAM" == "$stderr_stream" ]] || return 0
+  msg=${msg//$'\n'/ }
+  msg=${msg//$'\r'/ }
+  printf '<3>linux-cleaner: %s\n' "$msg" >&2 || return 0
+  JOURNAL_ERROR_WRITTEN=true
+}
+
 notify_failed_exit() {
   local status=$?
   if [[ "$status" -eq 0 || "${DRY_RUN:-true}" != false || -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${DOCTOR:-false}" == true ]]; then
@@ -222,6 +234,7 @@ notify_failed_exit() {
     OPERATION_FAILED=true
     write_cleanup_metrics || true
   fi
+  journal_error_line "Cleanup stopped with exit status ${status} before finishing."
   if [[ "${NOTIFY:-false}" != true || "${NOTIFY_SENT:-false}" == true ]]; then
     return "$status"
   fi
@@ -4261,6 +4274,7 @@ handle_cleanup_signal() {
   trap - INT TERM
   RESULT_REPORT_TEXT="$(print_result_report)"$'\n'"Interrupted: ${sig} before all targets finished"
   printf '%s\n' "$RESULT_REPORT_TEXT"
+  journal_error_line "Cleanup interrupted: ${sig} before all targets finished."
   save_last_cleanup_report
   notify_cleanup_result
   log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=run outcome=interrupted signal=${sig}"
@@ -4640,6 +4654,9 @@ RESULT_REPORT_TEXT=$(print_result_report)
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
 apply_trash_keep_days
+if [[ "$OPERATION_FAILED" == true ]] || (( result_failed > 0 )); then
+  journal_error_line "Cleanup failed: failed=${result_failed}; targets: ${result_failed_names:-none}; operation_failed=${OPERATION_FAILED}."
+fi
 notify_cleanup_result
 
 echo

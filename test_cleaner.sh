@@ -11666,6 +11666,73 @@ else
   echo -e "${GREEN}PASS (skipped): fish is not installed; cannot run the fish completion check.${NC}"
 fi
 
+# Match stderr directly: run_test_case merges it into stdout's log stream.
+echo -e "\n${BOLD}Test Case: Journal Error Priority Line${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv"
+printf 'safe|UV Cache|%s/.cache/uv|Journal priority fixture|0||action:uv_cache_prune\n' "$MOCK_HOME" > "$TEST_ENV_DIR/journal.conf"
+cat > "$TEST_ENV_DIR/bin/uv" <<'JOURNAL_UV'
+#!/usr/bin/env bash
+if [[ "${MOCK_JOURNAL_INTERRUPT:-false}" == true ]]; then
+  kill -TERM "$PPID"
+fi
+exit "${MOCK_JOURNAL_UV_EXIT:-1}"
+JOURNAL_UV
+chmod +x "$TEST_ENV_DIR/bin/uv"
+for journal_case in failed unset mismatched success early interrupted stat_failure; do
+  journal_stderr="$TEST_ENV_DIR/journal_${journal_case}.err"
+  : > "$journal_stderr"
+  journal_stream=$(stat -L -c '%d:%i' "$journal_stderr")
+  journal_expected_exit=1
+  journal_expected_lines=1
+  journal_expected_text='Cleanup failed: failed=1; targets: UV Cache;'
+  journal_uv_exit=1
+  journal_risk=safe
+  journal_interrupt=false
+  case "$journal_case" in
+    unset) journal_expected_lines=0 ;;
+    mismatched) journal_stream=0:0; journal_expected_lines=0 ;;
+    success) journal_uv_exit=0; journal_expected_exit=0; journal_expected_lines=0 ;;
+    early) journal_risk=bogus; journal_expected_text='Cleanup stopped with exit status 1' ;;
+    interrupted)
+      journal_interrupt=true
+      journal_expected_exit=143
+      journal_expected_text='Cleanup interrupted: SIGTERM'
+      ;;
+    stat_failure)
+      journal_expected_lines=0
+      cat > "$TEST_ENV_DIR/bin/stat" <<'JOURNAL_STAT'
+#!/usr/bin/env bash
+if [[ "$*" == *'/dev/fd/3'* ]]; then
+  echo 'stat fixture failure' >&2
+  exit 1
+fi
+real_stat=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v stat)
+exec "$real_stat" "$@"
+JOURNAL_STAT
+      chmod +x "$TEST_ENV_DIR/bin/stat"
+      ;;
+  esac
+  journal_exit=0
+  (
+    export JOURNAL_STREAM="$journal_stream"
+    [[ "$journal_case" != unset ]] || unset JOURNAL_STREAM
+    PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+      LINUX_CLEANER_RISK="$journal_risk" MOCK_JOURNAL_UV_EXIT="$journal_uv_exit" \
+      MOCK_JOURNAL_INTERRUPT="$journal_interrupt" \
+      "$CLEANER_SH" --config "$TEST_ENV_DIR/journal.conf" --clean --force
+  ) < /dev/null > "$TEST_ENV_DIR/journal_${journal_case}.log" 2> "$journal_stderr" || journal_exit=$?
+  if [[ "$journal_exit" -ne "$journal_expected_exit" ]] \
+     || [[ "$(grep -c '^<3>linux-cleaner:' "$journal_stderr" || true)" -ne "$journal_expected_lines" ]] \
+     || { [[ "$journal_expected_lines" -eq 1 ]] && ! grep -Fq "<3>linux-cleaner: $journal_expected_text" "$journal_stderr"; } \
+     || grep -q 'stat fixture failure' "$journal_stderr"; then
+    echo -e "${RED}FAIL: journal priority case $journal_case (exit=$journal_exit).${NC}"
+    cat "$journal_stderr" "$TEST_ENV_DIR/journal_${journal_case}.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: journal errors match stderr, name failures once, and preserve exit statuses.${NC}"
+
 # --notify / LINUX_CLEANER_NOTIFY: send a desktop notification summarizing the
 # cleanup result via notify-send, pass --urgency=critical on failed targets,
 # ignore dry-runs and runs without the option, tolerate failing/missing

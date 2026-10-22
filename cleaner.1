@@ -1167,6 +1167,23 @@ and, after removal,
 Shell completions for bash, zsh and fish, installed by both installers with
 .B PREFIX=/usr
 (mode 0644).
+.SH JOURNAL ERROR PRIORITY
+Failed cleanups emit one
+.B <3>linux\-cleaner:
+summary on stderr with the failed target count and names. Interrupted cleanups
+name the signal; early non-zero cleanup exits name the exit status.
+This is independent of
+.BR \-\-notify
+and leaves exit statuses unchanged. The line is emitted only when
+.B JOURNAL_STREAM
+exactly matches stderr's device and inode. An unset or mismatched value, a failed
+or unavailable
+.BR stat (1),
+or a successful run emits no priority line. Terminal and redirected output
+normally receive no such line. With systemd's default
+.BR SyslogLevelPrefix=yes ,
+the prefix gives the line error priority, visible with
+.BR "journalctl \-\-user \-t linux\-cleaner \-p err" .
 .SH EXIT STATUS
 Returns 0 on success, 130
 .RB ( SIGINT )

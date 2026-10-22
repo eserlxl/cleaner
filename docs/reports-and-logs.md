@@ -14,6 +14,12 @@ When `--trash-keep-days` is requested, the saved cleanup report includes `Retent
 
 New reports retain an `Accounted bytes: quarantined=N permanent=N` record. The additive JSON integers `quarantined_bytes` and `permanent_bytes` preserve these values without human-readable rounding; historical or malformed records yield `null`. Nothing-to-clean, minimum-reclaim and minimum-free skips explicitly record zero. These are the existing cleanup estimates credited after successful work: ordinary targets and system package actions use planned sizes, while user-level prune actions use the free-space delta clamped at zero. They do not guarantee physically freed blocks. Interrupted runs include only already-credited work, excluding any unfinished target; retention purge volume is excluded. A cancelled cleanup before work begins preserves the previous report.
 
+## Journal error priority under systemd
+
+A failed cleanup emits one `<3>linux-cleaner:` summary on stderr, naming the failed target count and targets. Interrupted cleanups name the signal; early non-zero cleanup exits name the exit status. This is independent of `--notify` and leaves exit statuses unchanged. The line is emitted only when `JOURNAL_STREAM` exactly matches stderr's device and inode; an unset or mismatched value, a failed or unavailable `stat`, or a successful run emits no priority line. Terminal and redirected output normally receive no such line.
+
+With systemd's default `SyslogLevelPrefix=yes`, the prefix gives the line error priority, making failed scheduled cleanups visible with `journalctl --user -t linux-cleaner -p err`.
+
 ## Desktop notification (`--notify`)
 
 With [`--notify`](cli-reference.md) or `LINUX_CLEANER_NOTIFY=1`, a cleanup run sends one desktop notification through `notify-send` (package `libnotify`) once the result is saved. Its body is the result's first line plus the `Reclaimed:`, `Interrupted:` and `Retention failed: true` lines when present. It is marked critical when a target failed, the run hit an operation failure, inline retention failed, or it was interrupted. A cleanup that exits with an error before reporting sends one critical "Cleanup stopped with exit status N before finishing" notice instead. Dry-runs and read-only modes send nothing; without `notify-send` the run continues and prints one warning.
