@@ -389,10 +389,19 @@ more than two days old. An unreadable report prints
 .BR "WARN: last cleanup: report not readable" .
 These warnings do not change the exit status.
 When the clean timer is enabled, also prints
-.B "INFO: daily timer plan: risk=<value|safe> deletion=<quarantine|permanent> keep-days=<N|none> (<env path|no env file>)"
+.B "INFO: daily timer plan: risk=<value|safe> deletion=<quarantine|permanent> keep-days=<N|none> [config=<path>] (<env path|no env file>)"
 from
 .IR ~/.config/linux\-cleaner/env .
 Without an env file, the plan is risk=safe, deletion=permanent, keep-days=none.
+config= appears when the env file sets LINUX_CLEANER_CONFIG.
+The line uses WARN and appends
+.B "; invalid risk"
+or
+.B "; config not readable"
+when the env risk is not safe, medium or danger, or that config is not a readable file.
+An env file that exists but cannot be read prints
+.B "WARN: daily timer plan: env file not readable (path)"
+because systemd then fails every timer run.
 No plan line is printed when the clean timer is disabled.
 The retention warning and exit status are unchanged.
 A readable file is schema-checked; an invalid file prints

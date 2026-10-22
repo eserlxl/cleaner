@@ -13039,7 +13039,7 @@ doc_plan_case() {
       "$CLEANER_SH" --doctor --config "$cfg" \
       < /dev/null > "$TEST_ENV_DIR/doctor_plan.log" 2>&1 || ec=$?
     if [[ "$ec" -ne "$expected_ec" ]] \
-       || [[ "$(grep '^INFO: daily timer plan:' "$TEST_ENV_DIR/doctor_plan.log" || true)" != "$expected" ]]; then
+       || [[ "$(grep -E '^(INFO|WARN): daily timer plan:' "$TEST_ENV_DIR/doctor_plan.log" || true)" != "$expected" ]]; then
       echo -e "${RED}FAIL: --doctor daily timer plan ($label), expected '$expected' and exit $expected_ec (ec=$ec).${NC}"
       cat "$TEST_ENV_DIR/doctor_plan.log"
       exit 1
@@ -13052,6 +13052,17 @@ doc_plan_case configured "INFO: daily timer plan: risk=medium deletion=quarantin
 printf 'LINUX_CLEANER_RISK="medium"\nLINUX_CLEANER_TRASH="1"\nLINUX_CLEANER_TRASH_KEEP_DAYS="14"\n' > "$doc_plan_env"
 doc_plan_case quoted "INFO: daily timer plan: risk=medium deletion=quarantine keep-days=14 ($doc_plan_env)"
 doc_plan_case disabled '' disabled
+printf 'LINUX_CLEANER_RISK=high\n' > "$doc_plan_env"
+doc_plan_case invalid_risk "WARN: daily timer plan: risk=high deletion=permanent keep-days=none ($doc_plan_env); invalid risk"
+printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/no_such_timer.conf" > "$doc_plan_env"
+doc_plan_case missing_config "WARN: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/no_such_timer.conf ($doc_plan_env); config not readable"
+printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/test_cleaner.conf" > "$doc_plan_env"
+doc_plan_case readable_config "INFO: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/test_cleaner.conf ($doc_plan_env)"
+if [[ "$EUID" -ne 0 ]]; then
+  chmod 000 "$doc_plan_env"
+  doc_plan_case unreadable "WARN: daily timer plan: env file not readable ($doc_plan_env)"
+  chmod 600 "$doc_plan_env"
+fi
 rm -f "$doc_plan_env"
 echo -e "${GREEN}PASS: --doctor shows configured and default daily timer plans only when enabled and preserves exit codes.${NC}"
 

@@ -3691,7 +3691,7 @@ run_doctor() {
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
-  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_risk="" env_trash="" env_keep="" mon_only="" mon_keep=""
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_risk="" env_config="" env_trash="" env_keep="" mon_only="" mon_keep=""
   local timer_env_source="no env file" timer_deletion=permanent
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     timer_env_source="$timer_env"
@@ -3699,11 +3699,13 @@ run_doctor() {
       env_line=$(trim "$env_line")
       case "$env_line" in
         LINUX_CLEANER_RISK=*) env_risk="${env_line#*=}" ;;
+        LINUX_CLEANER_CONFIG=*) env_config="${env_line#*=}" ;;
         LINUX_CLEANER_TRASH=*) env_trash="${env_line#*=}" ;;
         LINUX_CLEANER_TRASH_KEEP_DAYS=*) env_keep="${env_line#*=}" ;;
       esac
     done < "$timer_env"
     env_risk="${env_risk//[\"\']/}"
+    env_config="${env_config//[\"\']/}"
     env_trash="${env_trash//[\"\']/}"
     env_keep="${env_keep//[\"\']/}"
     case "$env_trash" in
@@ -3716,10 +3718,22 @@ run_doctor() {
     esac
   fi
   if [[ "$clean_timer" == enabled && -e "$timer_env" && "$timer_env_source" == "no env file" ]]; then
-    timer_env_source="unreadable env file $timer_env"
-  fi
-  if [[ "$clean_timer" == enabled ]]; then
-    printf 'INFO: daily timer plan: risk=%s deletion=%s keep-days=%s (%s)\n' "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$timer_env_source"
+    # systemd's EnvironmentFile=- skips only a missing file, so every timer run fails.
+    printf 'WARN: daily timer plan: env file not readable (%s)\n' "$timer_env"
+  elif [[ "$clean_timer" == enabled ]]; then
+    local plan_level=INFO plan_config="" plan_problems=""
+    case "${env_risk,,}" in
+      ""|safe|medium|danger|dangerous) ;;
+      *) plan_level=WARN; plan_problems+="; invalid risk" ;;
+    esac
+    if [[ -n "$env_config" ]]; then
+      plan_config=" config=$env_config"
+      if [[ ! -f "$env_config" || ! -r "$env_config" ]]; then
+        plan_level=WARN
+        plan_problems+="; config not readable"
+      fi
+    fi
+    printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_config" "$timer_env_source" "$plan_problems"
   fi
   if [[ -f "$monitor_env" && -r "$monitor_env" ]]; then
     while IFS= read -r env_line || [[ -n "$env_line" ]]; do
