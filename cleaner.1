@@ -404,7 +404,9 @@ when the env risk is not safe, medium, danger or dangerous (in any case), or tha
 .B "; invalid keep-days"
 when LINUX_CLEANER_TRASH_KEEP_DAYS is not a non-negative integer; and
 .B "; config invalid"
-when that config fails the schema check.
+when that config fails the schema check; and
+.B "; only-path with keep-days"
+when the file sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS, which the clean run refuses.
 A relative LINUX_CLEANER_CONFIG is checked under HOME, where the user service starts.
 Values are trimmed of surrounding whitespace, as systemd does.
 An env file that exists but cannot be read prints

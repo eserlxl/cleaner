@@ -3733,7 +3733,7 @@ run_doctor() {
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
-  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_risk="" env_config="" env_trash="" env_keep="" mon_only="" mon_keep=""
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_risk="" env_config="" env_only="" env_trash="" env_keep="" mon_only="" mon_keep=""
   local timer_env_source="no env file" timer_deletion=permanent
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     timer_env_source="$timer_env"
@@ -3742,17 +3742,20 @@ run_doctor() {
       case "$env_line" in
         LINUX_CLEANER_RISK=*) env_risk="${env_line#*=}" ;;
         LINUX_CLEANER_CONFIG=*) env_config="${env_line#*=}" ;;
+        LINUX_CLEANER_ONLY_PATH=*) env_only="${env_line#*=}" ;;
         LINUX_CLEANER_TRASH=*) env_trash="${env_line#*=}" ;;
         LINUX_CLEANER_TRASH_KEEP_DAYS=*) env_keep="${env_line#*=}" ;;
       esac
     done < "$timer_env"
     env_risk="${env_risk//[\"\']/}"
     env_config="${env_config//[\"\']/}"
+    env_only="${env_only//[\"\']/}"
     env_trash="${env_trash//[\"\']/}"
     env_keep="${env_keep//[\"\']/}"
     # systemd strips whitespace around EnvironmentFile values.
     env_risk=$(trim "$env_risk")
     env_config=$(trim "$env_config")
+    env_only=$(trim "$env_only")
     env_trash=$(trim "$env_trash")
     env_keep=$(trim "$env_keep")
     case "$env_trash" in
@@ -3773,6 +3776,11 @@ run_doctor() {
       ""|safe|medium|danger|dangerous) ;;
       *) plan_level=WARN; plan_problems+="; invalid risk" ;;
     esac
+    # The clean run refuses --only-path together with --trash-keep-days.
+    if [[ -n "$env_only" && -n "$env_keep" ]]; then
+      plan_level=WARN
+      plan_problems+="; only-path with keep-days"
+    fi
     if [[ -n "$env_keep" && "$env_keep" == *[![:digit:]]* ]]; then
       plan_level=WARN
       plan_problems+="; invalid keep-days"

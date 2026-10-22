@@ -13062,6 +13062,8 @@ printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/test_cleaner.conf" > "$doc_pla
 doc_plan_case readable_config "INFO: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/test_cleaner.conf ($doc_plan_env)"
 printf 'LINUX_CLEANER_RISK= DaNgErOuS \n' > "$doc_plan_env"
 doc_plan_case risk_alias_spaces "INFO: daily timer plan: risk=DaNgErOuS deletion=permanent keep-days=none ($doc_plan_env)"
+printf 'LINUX_CLEANER_TRASH_KEEP_DAYS=14\nLINUX_CLEANER_ONLY_PATH=%s\n' "$MOCK_HOME/.cache" > "$doc_plan_env"
+doc_plan_case only_path_keep_days "WARN: daily timer plan: risk=safe deletion=permanent keep-days=14 ($doc_plan_env); only-path with keep-days"
 if locale -a 2>/dev/null | grep -qix 'tr_TR.utf8'; then
   # Under tr_TR, bash lowercases I to a dotless i; risk names must still match.
   printf 'LINUX_CLEANER_RISK=MEDIUM\n' > "$doc_plan_env"
