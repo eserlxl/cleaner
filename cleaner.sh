@@ -137,6 +137,7 @@ RESULT_FAILED_TARGETS=()
 # privileges are not available, an action whose binary
 # is absent) are not failures and leave this false.
 OPERATION_FAILED=false
+RETENTION_FAILED=false
 CLEANUP_METRICS_WRITTEN=false
 
 # Operation log (opt-in, OFF by default). Enable via --log or by setting the
@@ -2108,6 +2109,7 @@ apply_trash_keep_days() {
     if ! purge_quarantine_sessions "older-than:$TRASH_KEEP_DAYS"; then
       failed=true
       OPERATION_FAILED=true
+      RETENTION_FAILED=true
     fi
     RESULT_REPORT_TEXT+=$'\n'"Retention failed: $failed"
     printf 'Retention failed: %s\n' "$failed"
@@ -4680,7 +4682,7 @@ printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
 apply_trash_keep_days
 if [[ "$OPERATION_FAILED" == true ]] || (( result_failed > 0 )); then
-  journal_error_line "Cleanup failed: failed=${result_failed}; targets: ${result_failed_names:-none}; operation_failed=${OPERATION_FAILED}."
+  journal_error_line "Cleanup failed: failed=${result_failed}; targets: ${result_failed_names:-none}; operation_failed=${OPERATION_FAILED}; retention_failed=${RETENTION_FAILED:-false}."
 fi
 notify_cleanup_result
 

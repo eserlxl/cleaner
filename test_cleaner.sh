@@ -10922,8 +10922,8 @@ if ! run_test_case "Retention Standalone Purge Failure" 1 "retention_standalone.
   exit 1
 fi
 # Under systemd, failed retention purges name themselves at error priority.
-# Previews and early purge exits name their exit status.
-for retention_journal in standalone selector preview min-reclaim; do
+# Previews and early purge exits name their exit status; cleanup reports name retention.
+for retention_journal in standalone selector preview min-reclaim completed; do
   setup_retention_report "$retention_journal"
   retention_journal_err="$TEST_ENV_DIR/retention_journal.err"
   : > "$retention_journal_err"
@@ -10945,6 +10945,7 @@ for retention_journal in standalone selector preview min-reclaim; do
       retention_journal_text='Run stopped with exit status 1 before cleaning.'
       ;;
     min-reclaim) retention_journal_args+=(--min-reclaim 1G) ;;
+    completed) retention_journal_text='Cleanup failed: failed=0; targets: none; operation_failed=true; retention_failed=true.' ;;
   esac
   retention_journal_exit=0
   retention_journal_stream=$(stat -L -c '%d:%i' "$retention_journal_err")
