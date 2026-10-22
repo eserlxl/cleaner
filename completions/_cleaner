@@ -43,6 +43,7 @@ _cleaner() {
     '--debug[Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)]' \
     '--show-matches[List eligible paths under each ordinary target in a text dry run (overridden by --quiet)]' \
     '--notify[With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)]' \
+    '--fail-fast[With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST)]' \
     '--json[Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary)]' \
     '(- *)'{-h,--help}'[Display this help message and exit]' \
     '(- *)'{-V,--version}'[Print the tool version and exit]'

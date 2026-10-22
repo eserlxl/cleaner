@@ -80,6 +80,7 @@ Options:
   --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
   --show-matches             List eligible paths under each ordinary target in a text dry run (overridden by --quiet).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
+  --fail-fast                With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
@@ -100,6 +101,8 @@ NOTIFY=false
 # Only the flag is refused outside cleanup; an inherited mirror is ignored there.
 NOTIFY_CLI=false
 NOTIFY_SENT=false
+FAIL_FAST=false
+FAIL_FAST_CLI=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
@@ -169,6 +172,9 @@ case "${LINUX_CLEANER_DEBUG:-}" in
 esac
 case "${LINUX_CLEANER_NOTIFY:-}" in
   1|true|TRUE|yes|YES) NOTIFY=true ;;
+esac
+case "${LINUX_CLEANER_FAIL_FAST:-}" in
+  1|true|TRUE|yes|YES) FAIL_FAST=true ;;
 esac
 case "${LINUX_CLEANER_JSON:-}" in
   1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
@@ -334,6 +340,11 @@ while [[ $# -gt 0 ]]; do
     --notify)
       NOTIFY=true
       NOTIFY_CLI=true
+      shift
+      ;;
+    --fail-fast)
+      FAIL_FAST=true
+      FAIL_FAST_CLI=true
       shift
       ;;
     --json)
@@ -687,8 +698,8 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
         || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
-        || "$NOTIFY_CLI" == true || "$SHOW_MATCHES" == true || "$DRY_RUN_EXPLICIT" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --show-matches, --dry-run, or --json.${NC}" >&2
+        || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$DRY_RUN_EXPLICIT" == true || "$JSON_OUTPUT" == true ]]; then
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --dry-run, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -759,6 +770,11 @@ fi
 
 if [[ "$NOTIFY_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
+  exit 1
+fi
+
+if [[ "$FAIL_FAST_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --fail-fast applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -4581,6 +4597,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$EXCLUDE_PATH" ]] && next_args+=(--exclude-path "$EXCLUDE_PATH")
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
     [[ -n "$TRASH_KEEP_DAYS" ]] && next_args+=(--trash-keep-days "$TRASH_KEEP_DAYS")
+    [[ "$FAIL_FAST" == true ]] && next_args+=(--fail-fast)
     if [[ ${#next_args[@]} -eq 2 ]]; then
       status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
     else
@@ -4687,6 +4704,7 @@ for i in "${!parsed_statuses[@]}"; do
 done
 result_failed=0
 result_failed_names=""
+fail_fast_stopped=""
 
 QUARANTINE_DIR=""
 
@@ -4913,6 +4931,10 @@ for i in "${!parsed_names[@]}"; do
       result_failed_names+="${result_failed_names:+, }${name}"
       RESULT_FAILED_TARGETS+=("$name")
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=failed"
+      if [[ "$FAIL_FAST" == true ]]; then
+        fail_fast_stopped="$name"
+        break
+      fi
     fi
     continue
   fi
@@ -5074,6 +5096,10 @@ for i in "${!parsed_names[@]}"; do
     result_failed=$((result_failed + 1))
     result_failed_names+="${result_failed_names:+, }${name}"
     RESULT_FAILED_TARGETS+=("$name")
+    if [[ "$FAIL_FAST" == true ]]; then
+      fail_fast_stopped="$name"
+      break
+    fi
   else
     result_cleaned=$((result_cleaned + 1))
   fi
@@ -5081,9 +5107,14 @@ done
 trap - INT TERM
 
 RESULT_REPORT_TEXT=$(print_result_report)
+if [[ -n "$fail_fast_stopped" ]]; then
+  RESULT_REPORT_TEXT+=$'\n'"Stopped early: --fail-fast after ${fail_fast_stopped}; $((${#parsed_names[@]} - i - 1)) targets not attempted"
+fi
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
-apply_trash_keep_days
+if [[ -z "$fail_fast_stopped" ]]; then
+  apply_trash_keep_days
+fi
 if [[ "$OPERATION_FAILED" == true ]] || (( result_failed > 0 )); then
   journal_error_line "Cleanup failed: failed=${result_failed}; targets: ${result_failed_names:-none}; operation_failed=${OPERATION_FAILED}; retention_failed=${RETENTION_FAILED:-false}."
 fi

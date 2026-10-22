@@ -7181,7 +7181,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report
-  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify)
+  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -7197,7 +7197,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
   --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions --hold-session --release-session)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -7300,7 +7300,8 @@ for check_spec in \
   "Min Age With Check Config Rejected|min_age_check_config.log|--min-age|7" \
   "Action Timeout With Check Config Rejected|action_timeout_check_config.log|--action-timeout|60" \
   "Trash Keep Days With Check Config Rejected|trash_keep_check_config.log|--trash-keep-days|7" \
-  "Notify With Check Config Rejected|notify_check_config.log|--notify|"
+  "Notify With Check Config Rejected|notify_check_config.log|--notify|" \
+  "Fail Fast With Check Config Rejected|fail_fast_check_config.log|--fail-fast|"
 do
   IFS='|' read -r check_name check_log check_flag check_value <<< "$check_spec"
   if [[ -n "$check_value" ]]; then
@@ -12657,6 +12658,159 @@ if [[ "$notify_early_dry_ec" -ne 1 || -s "$notify_log" ]]; then
 fi
 unset MOCK_NOTIFY_LOG MOCK_NOTIFY_EXIT
 echo -e "${GREEN}PASS: --notify and LINUX_CLEANER_NOTIFY send result notifications safely and reject non-cleanup modes.${NC}"
+
+# Fail-fast stops only after a failed target is accounted and logged. All
+# payloads, retention sessions and command stubs stay in the disposable HOME.
+echo -e "\n${BOLD}Test Case: Fail Fast Cleanup${NC}"
+for ff_kind in delete move action; do
+  for ff_enabled in true false; do
+    setup_mock_env
+    ff_first="$MOCK_HOME/.cache/uv"
+    ff_later="$MOCK_HOME/.cache/fail_fast_later"
+    ff_old="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+    mkdir -p "$ff_first" "$ff_later" "$ff_old"
+    printf 'first payload\n' > "$ff_first/file"
+    printf 'later payload\n' > "$ff_later/file"
+    printf 'recovery payload\n' > "$ff_old/payload"
+    printf 'full|payload|%s/prior|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$ff_old/quarantine.meta"
+    touch -d '10 days ago' "$ff_old"
+    ff_cmd=""
+    ff_args=()
+    [[ "$ff_enabled" == true ]] && ff_args+=(--fail-fast)
+    case "$ff_kind" in
+      delete|move)
+        ff_bin="rm"
+        if [[ "$ff_kind" == move ]]; then
+          ff_bin="mv"
+          ff_args+=(--trash)
+        fi
+        # Fail only this target, leaving report writes and retention functional.
+        cat > "$TEST_ENV_DIR/bin/$ff_bin" <<EOF
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  [[ "\$arg" == "$ff_first" ]] && exit 1
+done
+exec /bin/$ff_bin "\$@"
+EOF
+        chmod +x "$TEST_ENV_DIR/bin/$ff_bin"
+        ;;
+      action)
+        ff_cmd=action:uv_cache_prune
+        printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/uv"
+        chmod +x "$TEST_ENV_DIR/bin/uv"
+        ;;
+    esac
+    printf 'safe|First|%s|first fixture|0||%s\nsafe|Later|%s|later fixture|0||\n' \
+      "$ff_first" "$ff_cmd" "$ff_later" > "$TEST_ENV_DIR/fail_fast.conf"
+    LINUX_CLEANER_FAIL_FAST=0 run_test_case "Fail Fast Cleanup ($ff_kind enabled=$ff_enabled)" 1 "fail_fast.log" \
+      --config "$TEST_ENV_DIR/fail_fast.conf" --clean --force --trash-keep-days 1 \
+      --log "$MOCK_HOME/ff-operations.log" "${ff_args[@]}" || exit 1
+    ff_saved="$XDG_STATE_HOME/linux-cleaner/last-report.txt"
+    if [[ ! -f "$ff_first/file" ]] \
+       || ! grep -q "target='First'.*outcome=failed" "$MOCK_HOME/ff-operations.log" \
+       || ! grep -qx 'Failed target: First' "$ff_saved"; then
+      echo -e "${RED}FAIL: $ff_kind failure lost payload, log or exact failed-target accounting.${NC}"
+      exit 1
+    fi
+    if [[ "$ff_enabled" == true ]]; then
+      if [[ ! -f "$ff_later/file" || ! -f "$ff_old/payload" ]] \
+         || ! grep -q 'Result: cleaned=0 skipped=0 failed=1 ' "$ff_saved" \
+         || ! grep -qx 'Stopped early: --fail-fast after First; 1 targets not attempted' "$ff_saved" \
+         || ! grep -qx 'Stopped early: --fail-fast after First; 1 targets not attempted' "$TEST_ENV_DIR/fail_fast.log" \
+         || grep -q '^Retention failed:' "$ff_saved" \
+         || grep -q "target='Later'" "$MOCK_HOME/ff-operations.log"; then
+        echo -e "${RED}FAIL: --fail-fast after $ff_kind failure touched later work or lost the stop report.${NC}"
+        exit 1
+      fi
+    elif [[ -e "$ff_later" || -e "$ff_old" ]] \
+         || ! grep -q 'Result: cleaned=1 skipped=0 failed=1 ' "$ff_saved" \
+         || grep -q '^Stopped early:' "$ff_saved" \
+         || ! grep -qx 'Retention failed: false' "$ff_saved"; then
+      echo -e "${RED}FAIL: cleanup without --fail-fast no longer continues targets and retention.${NC}"
+      exit 1
+    fi
+  done
+done
+
+# Match notify's exact truthy set, including uppercase values on Turkish hosts;
+# the inherited modifier also appears in the dry-run Next command.
+setup_mock_env
+for ff_value in 1 true TRUE yes YES 0 false; do
+  ff_ec=0
+  LINUX_CLEANER_FAIL_FAST="$ff_value" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+    < /dev/null > "$TEST_ENV_DIR/ff_env_preview.log" 2>&1 || ff_ec=$?
+  ff_hint=false
+  grep -q '^  cleaner --clean .*--fail-fast' "$TEST_ENV_DIR/ff_env_preview.log" && ff_hint=true
+  ff_expected=true
+  case "$ff_value" in 0|false) ff_expected=false ;; esac
+  if [[ "$ff_ec" -ne 0 || "$ff_hint" != "$ff_expected" ]]; then
+    echo -e "${RED}FAIL: LINUX_CLEANER_FAIL_FAST=$ff_value preview hint drifted.${NC}"
+    exit 1
+  fi
+done
+run_test_case "Fail Fast Cleanup (CLI preview)" 0 "ff_preview.log" \
+  --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --fail-fast || exit 1
+grep -q '^  cleaner --clean .*--fail-fast' "$TEST_ENV_DIR/ff_preview.log" || exit 1
+
+# The final target's failure still skips retention, with no remaining targets.
+ff_old="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+mkdir -p "$ff_old" "$MOCK_HOME/.cache/uv"
+printf 'recovery\n' > "$ff_old/payload"
+printf 'full|payload|%s/prior|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$ff_old/quarantine.meta"
+touch -d '10 days ago' "$ff_old"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/uv"
+chmod +x "$TEST_ENV_DIR/bin/uv"
+cat > "$TEST_ENV_DIR/bin/notify-send" <<'FF_NOTIFY'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/ff_notification.log"
+FF_NOTIFY
+chmod +x "$TEST_ENV_DIR/bin/notify-send"
+printf 'safe|Last|%s/.cache/uv|last fixture|0||action:uv_cache_prune\n' "$MOCK_HOME" > "$TEST_ENV_DIR/ff_last.conf"
+LINUX_CLEANER_FAIL_FAST=1 LINUX_CLEANER_METRICS_FILE="$MOCK_HOME/ff.prom" \
+  run_test_case "Fail Fast Cleanup (inherited, final target)" 1 "ff_last.log" \
+  --config "$TEST_ENV_DIR/ff_last.conf" --clean --force --notify --trash-keep-days 1 || exit 1
+if [[ ! -f "$ff_old/payload" ]] \
+   || ! grep -qx 'Stopped early: --fail-fast after Last; 0 targets not attempted' "$TEST_ENV_DIR/ff_last.log" \
+   || [[ "$(grep -c '^--app-name=' "$TEST_ENV_DIR/ff_notification.log" || true)" -ne 1 ]] \
+   || ! grep -q '^--app-name=linux-cleaner --urgency=critical linux-cleaner Result: cleaned=0 skipped=0 failed=1 ' "$TEST_ENV_DIR/ff_notification.log" \
+   || ! grep -q '^Reclaimed:' "$TEST_ENV_DIR/ff_notification.log" \
+   || grep -q '^Stopped early:' "$TEST_ENV_DIR/ff_notification.log" \
+   || ! grep -qx 'linux_cleaner_last_run_success 0' "$MOCK_HOME/ff.prom" \
+   || ! grep -qx 'linux_cleaner_targets{result="failed"} 1' "$MOCK_HOME/ff.prom"; then
+  echo -e "${RED}FAIL: inherited fail-fast lost retention protection, notification or metrics accounting.${NC}"
+  exit 1
+fi
+
+# Unsafe and process-blocked targets are skips; the later target still cleans.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/ff_blocked" "$MOCK_HOME/.cache/ff_safe"
+printf 'blocked\n' > "$MOCK_HOME/.cache/ff_blocked/file"
+printf 'cleanable\n' > "$MOCK_HOME/.cache/ff_safe/file"
+printf 'safe|Unsafe|/|unsafe fixture|0||\nsafe|Blocked|%s/.cache/ff_blocked|blocked fixture|0|mock_running_pr|\nsafe|Safe|%s/.cache/ff_safe|safe fixture|0||\n' \
+  "$MOCK_HOME" "$MOCK_HOME" > "$TEST_ENV_DIR/ff_skips.conf"
+run_test_case "Fail Fast Cleanup (safety skip and blocked target)" 0 "ff_skips.log" \
+  --config "$TEST_ENV_DIR/ff_skips.conf" --clean --force --fail-fast || exit 1
+if [[ ! -f "$MOCK_HOME/.cache/ff_blocked/file" || -e "$MOCK_HOME/.cache/ff_safe" ]] \
+   || ! grep -q 'Result: cleaned=1 skipped=.*failed=0 ' "$TEST_ENV_DIR/ff_skips.log" \
+   || grep -q '^Stopped early:' "$TEST_ENV_DIR/ff_skips.log"; then
+  echo -e "${RED}FAIL: --fail-fast stopped on a safety skip or blocked target.${NC}"
+  exit 1
+fi
+
+# Inherited automation defaults must not reject non-cleanup commands, including
+# the hold/release guard; explicit combinations are covered by the pair matrix.
+for ff_mode in --check-config --list-targets --list-sessions --report; do
+  LINUX_CLEANER_FAIL_FAST=1 run_test_case "Fail Fast Cleanup (inherited $ff_mode)" 0 "ff_mode.log" \
+    --config "$TEST_ENV_DIR/test_cleaner.conf" "$ff_mode" || exit 1
+done
+ff_session=2020-01-01_00-00-00
+mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/$ff_session"
+for ff_mode in --hold-session --release-session; do
+  LINUX_CLEANER_FAIL_FAST=1 run_test_case "Fail Fast Cleanup (inherited $ff_mode)" 0 "ff_hold.log" \
+    "$ff_mode" "$ff_session" || exit 1
+done
+echo -e "${GREEN}PASS: fail-fast preserves later targets and retention after failures and ignores skips.${NC}"
 
 # Confirmed manual cleanup prints a tip when linux-cleaner-clean.timer is
 # installed but disabled; forced, quiet, failed, timer-enabled, and

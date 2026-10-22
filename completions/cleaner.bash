@@ -120,6 +120,7 @@ _cleaner() {
     --debug
     --show-matches
     --notify
+    --fail-fast
     --json
     -h --help
     -V --version

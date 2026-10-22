@@ -48,6 +48,7 @@ complete -c cleaner -s q -l quiet -d 'Suppress per-target status lines; keep err
 complete -c cleaner -l debug -d 'Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)'
 complete -c cleaner -l show-matches -d 'List eligible paths under each ordinary target in a text dry run (overridden by --quiet)'
 complete -c cleaner -l notify -d 'With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)'
+complete -c cleaner -l fail-fast -d 'With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST)'
 complete -c cleaner -l json -d 'Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary)'
 complete -c cleaner -s h -l help -d 'Display this help message and exit'
 complete -c cleaner -s V -l version -d 'Print the tool version and exit'

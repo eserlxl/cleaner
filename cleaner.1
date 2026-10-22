@@ -160,6 +160,28 @@ suppresses the listing. CLI-only (no environment mirror). Cannot be combined wit
 or
 .BR \-\-doctor .
 .TP
+.B \-\-fail\-fast
+With cleanup: after the first failed target's accounting and log entry, stop
+before the next target and skip inline retention, even if the last target failed.
+The run exits 1 and the printed and saved result report includes
+.BR "Stopped early: \-\-fail-fast after <name>; <N> targets not attempted" .
+Safety skips and blocked targets do not trigger a stop. Without this option,
+cleanup and retention continue after target failures as before. Dry-run performs
+no cleanup and carries this option in its
+.B Next:
+command. Notifications and metrics are unchanged. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
 .B \-\-notify
 With cleanup: send one desktop notification via
 .BR notify\-send (1)
@@ -376,6 +398,7 @@ combined with
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
+.BR \-\-fail\-fast ,
 or
 .BR \-\-json .
 .TP
@@ -461,6 +484,7 @@ the checklist. Cannot be combined with
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
+.BR \-\-fail\-fast ,
 or
 .BR \-\-json .
 .TP
@@ -874,6 +898,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
+.BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
 .BR \-\-dry\-run ,
 or
@@ -904,6 +929,7 @@ Cannot be combined with
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
+.BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
 .BR \-\-dry\-run ,
 or
@@ -984,6 +1010,15 @@ When set to
 enables
 .BR \-\-notify
 (send a desktop notification summarizing the cleanup result; no-op on dry-run). Non-cleanup modes ignore it. No CLI flag disables it; set it to 0 or unset it.
+.TP
+.B LINUX_CLEANER_FAIL_FAST
+When set to
+.BR 1 ", " true ", or " yes ,
+enables
+.BR \-\-fail\-fast
+(stop after the first failed cleanup target and skip inline retention).
+Also accepts TRUE and YES, like LINUX_CLEANER_NOTIFY. Non-cleanup modes ignore it.
+No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to
