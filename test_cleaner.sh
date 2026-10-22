@@ -675,6 +675,8 @@ cat > "$TEST_ENV_DIR/hidden_risk.conf" <<'EOF'
 safe|Visible Cache|$HOME/.cache/risk-safe.bin|safe cache|0||
 medium|Hidden Cache|$HOME/.cache/risk-medium.bin|medium cache|0||
 medium|Wild Cache|$HOME/.cache/risk-wild-*|wildcard row named once|0||
+medium|Browser, GPU|$HOME/.cache/risk-browser-gpu|name holding the separator|0||
+medium|GPU|$HOME/.cache/risk-gpu|distinct name inside another|0||
 danger|Danger Cache|$HOME/.cache/risk-danger.bin|danger cache|0||
 EOF
 # case#args#expected Above line#expected Hidden line (empty Above = neither line)
@@ -705,9 +707,9 @@ while IFS='#' read -r hidden_risk_case hidden_risk_arg hidden_risk_above hidden_
     exit 1
   fi
 done <<'HIDDEN_RISK_CASES'
-default##safe (not analysed): medium=3 danger=1; preview with --risk danger#Hidden Cache, Wild Cache, Danger Cache
+default##safe (not analysed): medium=5 danger=1; preview with --risk danger#Hidden Cache, Wild Cache, Browser, GPU, GPU, Danger Cache
 medium#risk-medium#medium (not analysed): medium=0 danger=1; preview with --risk danger#Danger Cache
-no-danger#no-danger#safe (not analysed): medium=3 danger=0; preview with --risk medium#Hidden Cache, Wild Cache
+no-danger#no-danger#safe (not analysed): medium=5 danger=0; preview with --risk medium#Hidden Cache, Wild Cache, Browser, GPU, GPU
 only-safe#only-safe##
 danger#risk-danger##
 HIDDEN_RISK_CASES

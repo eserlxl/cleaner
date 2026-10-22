@@ -3919,6 +3919,7 @@ total_in_use_bytes=0
 hidden_medium=0
 hidden_danger=0
 hidden_risk_names=""
+declare -A hidden_risk_seen=()
 # Targets whose process starts after planning, blocked again in the cleanup loop.
 runtime_blocked_count=0
 runtime_blocked_bytes=0
@@ -3994,7 +3995,10 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       3) hidden_danger=$((hidden_danger + 1)) ;;
     esac
     # A wildcard row expands to one record per match; name it once.
-    [[ ", $hidden_risk_names, " == *", $name, "* ]] || hidden_risk_names+="${hidden_risk_names:+, }$name"
+    if [[ -z "${hidden_risk_seen[$name]+set}" ]]; then
+      hidden_risk_seen[$name]=1
+      hidden_risk_names+="${hidden_risk_names:+, }$name"
+    fi
     continue
   fi
   
