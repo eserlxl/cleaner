@@ -10822,7 +10822,7 @@ setup_retention_report() {
 #!/usr/bin/env bash
 for arg; do
   case "$MOCK_RETENTION_MODE" in
-    completed|nothing|min-reclaim|standalone)
+    completed|nothing|min-reclaim|min-free|standalone)
       [[ "$arg" == "$MOCK_RETENTION_OLD" ]] && exit 1 ;;
     target-failed)
       [[ "$arg" == "$MOCK_RETENTION_TARGET" ]] && exit 1 ;;
@@ -10923,7 +10923,7 @@ if ! run_test_case "Retention Standalone Purge Failure" 1 "retention_standalone.
 fi
 # Under systemd, failed retention purges name themselves at error priority.
 # Previews and early purge exits name their exit status; cleanup reports name retention.
-for retention_journal in standalone selector preview min-reclaim completed; do
+for retention_journal in standalone selector preview min-reclaim min-free nothing completed; do
   setup_retention_report "$retention_journal"
   retention_journal_err="$TEST_ENV_DIR/retention_journal.err"
   : > "$retention_journal_err"
@@ -10945,6 +10945,8 @@ for retention_journal in standalone selector preview min-reclaim completed; do
       retention_journal_text='Run stopped with exit status 1 before cleaning.'
       ;;
     min-reclaim) retention_journal_args+=(--min-reclaim 1G) ;;
+    min-free) retention_journal_args+=(--min-free 1) ;;
+    nothing) rm -rf "$retention_target" ;;
     completed) retention_journal_text='Cleanup failed: failed=0; targets: none; operation_failed=true; retention_failed=true.' ;;
   esac
   retention_journal_exit=0
