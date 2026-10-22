@@ -1618,6 +1618,11 @@ validate_config_file() {
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
       exit 1
     fi
+    if [[ ( "$raw_path" == *'*'* || "$raw_path" == *'?'* ) &&
+          ( "$raw_path" == *'['* || "$raw_path" == *']'* ) ]]; then
+      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH cannot contain '[' or ']' in a wildcard path${NC}" >&2
+      exit 1
+    fi
     if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
       exit 1

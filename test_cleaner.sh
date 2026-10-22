@@ -7701,6 +7701,35 @@ for invalid_record in \
 done
 echo -e "${GREEN}PASS: all config consumers reject malformed unmatched wildcard records before mutation.${NC}"
 
+# Brackets must not become character classes in wildcard target paths.
+# shellcheck disable=SC2016  # literal $HOME is expanded by the cleaner
+for bracket_path in '$HOME/src/*/file[1]' '$HOME/src/*/file1]' \
+                    '$HOME/src/?/file[1' '$HOME/src/?/file1]'; do
+  printf '# header\nsafe|Bracket|%s|d|0||\n' "$bracket_path" > "$TEST_ENV_DIR/bracket_wildcard.conf"
+  for bracket_mode in --check-config --dry-run; do
+    if ! run_test_case "Bracket Wildcard Validation ($bracket_mode $bracket_path)" 1 "bracket_wildcard.log" \
+         --config "$TEST_ENV_DIR/bracket_wildcard.conf" "$bracket_mode" \
+       || ! grep -qF "bracket_wildcard.conf:2: PATH cannot contain '[' or ']' in a wildcard path" \
+         "$TEST_ENV_DIR/bracket_wildcard.log"; then
+      echo -e "${RED}FAIL: $bracket_mode accepted a bracketed wildcard or omitted its line-numbered error.${NC}"
+      cat "$TEST_ENV_DIR/bracket_wildcard.log"
+      exit 1
+    fi
+  done
+done
+mkdir -p "$MOCK_HOME/src/app/file[1]" "$MOCK_HOME/src/app/file1"
+# shellcheck disable=SC2016  # literal $HOME is expanded by the cleaner
+printf 'safe|Bracket|$HOME/src/app/file[1]|d|0||\n' > "$TEST_ENV_DIR/bracket_literal.conf"
+for bracket_mode in --check-config --dry-run; do
+  if ! run_test_case "Literal Bracket Path ($bracket_mode)" 0 "bracket_literal.log" \
+       --config "$TEST_ENV_DIR/bracket_literal.conf" "$bracket_mode"; then
+    echo -e "${RED}FAIL: $bracket_mode rejected a literal bracketed path.${NC}"
+    cat "$TEST_ENV_DIR/bracket_literal.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: wildcard brackets are refused and literal bracketed paths remain valid.${NC}"
+
 # --check-config validates definitions, never their current expansion or contents.
 mkdir -p "$MOCK_HOME/count/a" "$MOCK_HOME/count/b"
 printf '%s\n' \
