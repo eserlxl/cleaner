@@ -12762,6 +12762,71 @@ if [[ "$doc_all_ec" -ne 0 ]] \
 fi
 echo -e "${GREEN}PASS: --doctor prints OK/INFO lines for an all-present environment without touching any lock or file.${NC}"
 
+# Last-cleanup diagnostics use disposable state and never change doctor's status.
+echo -e "\n${BOLD}Test Case: Doctor Last Cleanup Outcome${NC}"
+doc_state="$MOCK_HOME/doctor-state"
+doc_report="$doc_state/linux-cleaner/last-report.txt"
+doc_saved=$(date '+%Y-%m-%dT%H:%M:%S')
+doc_result='cleaned=1 skipped=0 failed=0 elapsed=1s'
+cat > "$TEST_ENV_DIR/bin/systemctl" <<'DOC_LAST_SYSTEMCTL_EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--user" && "${2:-}" == "is-enabled" ]]; then
+  case "${3:-}" in
+    linux-cleaner-clean.timer) echo "${DOCTOR_CLEAN_TIMER_STATE:-enabled}"; exit 0 ;;
+    linux-cleaner-retention.timer|linux-cleaner-monitor.timer) echo disabled; exit 1 ;;
+  esac
+fi
+exit 1
+DOC_LAST_SYSTEMCTL_EOF
+chmod +x "$TEST_ENV_DIR/bin/systemctl"
+doc_last_case() {
+  local label="$1" expected="$2" timer_state="${3:-enabled}" expected_ec ec cfg
+  for expected_ec in 0 1; do
+    cfg="$TEST_ENV_DIR/test_cleaner.conf"
+    [[ "$expected_ec" -eq 1 ]] && cfg="$TEST_ENV_DIR/no_such_doctor.conf"
+    ec=0
+    XDG_STATE_HOME="$doc_state" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+      DOCTOR_CLEAN_TIMER_STATE="$timer_state" \
+      "$CLEANER_SH" --doctor --config "$cfg" \
+      < /dev/null > "$TEST_ENV_DIR/doctor_last.log" 2>&1 || ec=$?
+    if [[ "$ec" -ne "$expected_ec" ]] \
+       || [[ "$(grep '^\(INFO\|WARN\): last cleanup:' "$TEST_ENV_DIR/doctor_last.log")" != "$expected" ]]; then
+      echo -e "${RED}FAIL: --doctor last cleanup ($label), expected '$expected' and exit $expected_ec (ec=$ec).${NC}"
+      cat "$TEST_ENV_DIR/doctor_last.log"
+      exit 1
+    fi
+  done
+}
+doc_last_case missing 'INFO: last cleanup: none recorded'
+[[ ! -e "$doc_state" ]] || { echo 'FAIL: --doctor created report state'; exit 1; }
+mkdir -p "$doc_state/linux-cleaner"
+printf 'Saved: %s\nResult: %s\n' "$doc_saved" "$doc_result" > "$doc_report"
+doc_last_case ok "INFO: last cleanup: $doc_saved $doc_result"
+if [[ "$EUID" -ne 0 ]]; then
+  chmod 000 "$doc_report"
+  doc_last_case unreadable 'WARN: last cleanup: report not readable'
+  chmod 600 "$doc_report"
+fi
+printf 'Saved: %s\nResult: cleaned=0 skipped=0 failed=2 elapsed=1s\n' "$doc_saved" > "$doc_report"
+doc_last_case failed "WARN: last cleanup: $doc_saved cleaned=0 skipped=0 failed=2 elapsed=1s"
+printf 'Saved: %s\nResult: %s\nInterrupted: TERM before all targets finished\n' "$doc_saved" "$doc_result" > "$doc_report"
+doc_last_case interrupted "WARN: last cleanup: $doc_saved $doc_result"
+printf 'Saved: %s\nResult: %s\n' "$doc_saved" "$doc_result" > "$doc_report"
+touch -d '3 days ago' "$doc_report"
+doc_last_case stale "WARN: last cleanup: $doc_saved $doc_result"
+doc_last_case stale_disabled "INFO: last cleanup: $doc_saved $doc_result" disabled
+mv "$doc_report" "$doc_state/report-target.txt"
+ln -s "$doc_state/report-target.txt" "$doc_report"
+doc_last_case symlink 'INFO: last cleanup: none recorded'
+rm "$doc_report"
+rmdir "$doc_state/linux-cleaner"
+mkdir "$doc_state/report-dir"
+mv "$doc_state/report-target.txt" "$doc_state/report-dir/last-report.txt"
+ln -s "$doc_state/report-dir" "$doc_state/linux-cleaner"
+doc_last_case symlink_directory 'INFO: last cleanup: none recorded'
+rm -rf "$doc_state"
+echo -e "${GREEN}PASS: --doctor reports missing, successful, failed, interrupted and stale cleanups, refuses report symlinks, and preserves exit codes.${NC}"
+
 # The clean unit's env file enabling trash mode needs a retention bound; --doctor
 # warns only when the clean timer is enabled and neither bound is configured.
 echo -e "\n${BOLD}Test Case: Doctor Quarantine Retention Warning${NC}"

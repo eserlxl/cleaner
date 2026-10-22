@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--doctor` shows the last cleanup's saved time and result, or `INFO: last cleanup: none recorded`; failed or interrupted runs and reports modified more than two days ago with the clean timer enabled produce `WARN` without changing the exit status. Symlinked reports and state directories are not followed.
 - A `--trash` cleanup that quarantined something prints `Undo: cleaner --restore <session>` after its summary; `--quiet`, `--report`, and notifications are unchanged.
 - Plan reports count and name selected targets above the `--risk` ceiling as not analysed, with a hint to preview medium or danger targets; JSON and metrics are unchanged.
 - Failed cleanups emit one journal error-priority summary when stderr matches `JOURNAL_STREAM`, including interrupted and early non-zero cleanup exits, failed or early-exiting `--purge-sessions` runs, failed dry runs, and retention failures, so `journalctl --user -t linux-cleaner -p err` finds failed scheduled runs.

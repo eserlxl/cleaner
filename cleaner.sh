@@ -3515,7 +3515,7 @@ check_gnu_userland() {
 }
 
 # Read-only environment checklist: explain config resolution, GNU userland,
-# optional helper binaries, user timer states, and quarantine session count.
+# optional helper binaries, user timer states, last cleanup, and quarantine count.
 # Exits 0 when cleanup can run, or 1 when the config is missing, unreadable,
 # or invalid, or GNU userland is missing.
 run_doctor() {
@@ -3614,6 +3614,33 @@ run_doctor() {
     done
   fi
   printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
+
+  local state_dir report_file report_line saved="" result="" last_level=INFO report_mtime now
+  state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
+  report_file="${state_dir}/last-report.txt"
+  if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
+    printf 'INFO: last cleanup: none recorded\n'
+  elif [[ ! -r "$report_file" ]]; then
+    printf 'WARN: last cleanup: report not readable\n'
+  else
+    while IFS= read -r report_line || [[ -n "$report_line" ]]; do
+      case "$report_line" in
+        "Saved: "*) saved="${report_line#Saved: }" ;;
+        "Result: "*) result="${report_line#Result: }" ;;
+        Interrupted:*) last_level=WARN ;;
+      esac
+    done < "$report_file"
+    if [[ "$result" =~ (^|[[:space:]])failed=0*[1-9][0-9]*($|[[:space:]]) ]]; then
+      last_level=WARN
+    fi
+    if [[ "$clean_timer" == enabled ]] \
+       && report_mtime=$(stat -c %Y "$report_file" 2>/dev/null) \
+       && now=$(date +%s) \
+       && (( now - report_mtime > 2 * 24 * 60 * 60 )); then
+      last_level=WARN
+    fi
+    printf '%s: last cleanup: %s %s\n' "$last_level" "$saved" "$result"
+  fi
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
