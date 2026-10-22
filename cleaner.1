@@ -47,6 +47,9 @@ Use a custom configuration file instead of the resolved default.
 .TP
 .BR \-d ", " \-\-dry\-run
 Calculate and display potential space savings without deleting anything (default).
+With
+.BR \-\-restore ,
+preview recovery instead (see below).
 A text preview that found something to clean ends with a
 .B Next:
 line. A bare preview names
@@ -653,6 +656,19 @@ or
 .TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
+Add an explicit
+.B \-\-dry\-run
+to print one outcome per selected original path:
+\(lqwould restore\(rq, \(lqconflict\(rq, \(lqalready restored\(rq, or \(lqmissing\(rq,
+followed by two spaces and the path.
+The preview honours
+.B \-\-only
+and
+.BR \-\-only\-exact ,
+ends with \(lqDry-run: nothing restored.\(rq, and exits 0 even for conflicts or missing payload.
+An unmatched selector still exits 1.
+It takes no lock, invokes no sudo, and leaves payload, logs, metadata and session mtime unchanged.
+Probes use the current user's access; a preview does not guarantee permissions or free space for a later restore.
 Each target records one UID/GID pair, applied on a best-effort basis during
 restore. Distinct ownership within a mixed-owner tree is not preserved.
 A named session must be an immediate child of the quarantine directory;
@@ -704,7 +720,9 @@ malformed count.
 Irreversible; the confirmation prompt names every target it would destroy, and is
 skipped only when
 .B \-\-force
-is given. Cannot be combined with
+is given. An explicit
+.B \-\-dry\-run
+is rejected. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-list\-sessions ,
 .BR \-\-list\-targets ,

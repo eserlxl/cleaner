@@ -63,6 +63,17 @@ Message on no match includes: `No quarantine sessions older than`
 
 Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does not use `--force` for overwrite; conflicts skip.
 
+Preview first with `cleaner --restore latest --dry-run`, optionally adding `--only`
+or `--only-exact`. Each selected record prints `would restore`, `conflict`,
+`already restored`, or `missing`, followed by two spaces and its original path.
+An aged record reports `conflict` if any destination file or symlinked parent
+conflicts; other files in that record may still be recoverable in a real restore.
+The preview ends with `Dry-run: nothing restored.` and exits `0` even when records
+conflict or payload is missing. An unmatched selector still exits `1`.
+It does not invoke sudo, move files, write logs or metadata, reset session mtime,
+or create/acquire a lock. Probes use the current user's access and do not guarantee
+permissions or free space for a later restore (`Restore Preview` tests).
+
 A `--trash` cleanup that quarantined something ends with `Undo: cleaner --restore <session>`, naming its own session (`Trash Prints Undo Command`). The line is suppressed by `--quiet` and omitted from `--report` and notifications.
 
 Before a cross-filesystem restore, the destination must have enough free space
@@ -115,18 +126,19 @@ purge before confirmation/deletion, including inline retention.
 |------------------|------|------|
 | `--restore SESSION --only-target PATTERN` | 1 | Only Target With Restore Rejected |
 | `--only PATTERN` without `--restore` | 1 | Only Without Restore Rejected |
-| `--restore SESSION --dry-run` | 1 | Dry Run With Restore Rejected |
+| `--restore SESSION --dry-run` | 0 | Dry Run With Restore Preview |
+| `--purge-sessions SESSION --dry-run` | 1 | Dry Run With Purge Rejected |
 | `--restore SESSION --json` | 1 | JSON With Restore Rejected |
 | `--restore SESSION` with default `--lock-wait 0` while another cleanup, restore or purge holds `~/.cache/linux-cleaner/cleaner.lock` | 1 | Concurrent Run Lock Restore |
 
-Restore and purge share the cleanup lock. `--lock-wait SECONDS` or
+Mutating restore and purge share the cleanup lock. `--lock-wait SECONDS` or
 `LINUX_CLEANER_LOCK_WAIT` may opt in to bounded waiting (`0..2147483647` literal
 decimal seconds, leading zeros allowed; last CLI overrides; unset/empty env is
 zero). Zero keeps fail-fast behavior and optional `flock`; a positive wait requires
 `flock` and exits `1` on acquisition failure before session/report/log effects.
-Read-only inventory never locks or waits. Lock-file opening can precede timeout.
+Restore previews and read-only inventory never lock or wait. Lock-file opening can precede timeout.
 
-Restore and purge have no dry-run mode. An active explicit `--dry-run` with either is rejected before mutation (`Dry Run With Restore Rejected`, `Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`.
+Only purge rejects an active explicit `--dry-run` before mutation (`Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore.
 
 ## Purge reference
 

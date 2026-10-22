@@ -5289,11 +5289,12 @@ echo "quarantined" > "$json_qsession/payload"
 printf 'full|payload|%s|false|%s|%s\n' \
   "$json_restore_dest" "$(id -u)" "$(id -g)" > "$json_qsession/quarantine.meta"
 
-if run_test_case "Dry Run With Restore Rejected" 1 "dry_run_restore.log" \
+if run_test_case "Dry Run With Restore Preview" 0 "dry_run_restore.log" \
      --restore 2020-01-01_00-00-00 --dry-run; then
-  if grep -q "dry-run cannot be combined" "$TEST_ENV_DIR/dry_run_restore.log" \
+  if grep -Fxq "would restore  $json_restore_dest" "$TEST_ENV_DIR/dry_run_restore.log" \
+     && grep -Fxq "Dry-run: nothing restored." "$TEST_ENV_DIR/dry_run_restore.log" \
      && [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
-    echo -e "${GREEN}PASS: explicit --dry-run blocked restore before moving quarantined data.${NC}"
+    echo -e "${GREEN}PASS: explicit --dry-run previews restore without moving quarantined data.${NC}"
   else
     echo -e "${RED}FAIL: explicit --dry-run with restore mutated data or returned the wrong error.${NC}"
     cat "$TEST_ENV_DIR/dry_run_restore.log"
@@ -5317,12 +5318,14 @@ else
   exit 1
 fi
 
-if run_test_case "Dry Run Before Restore Rejected" 1 "dry_run_before_restore.log" \
+if run_test_case "Dry Run Before Restore Preview" 0 "dry_run_before_restore.log" \
      --dry-run --restore 2020-01-01_00-00-00 \
    && run_test_case "Dry Run Before Purge Rejected" 1 "dry_run_before_purge.log" \
      --force --dry-run --purge-sessions 2020-01-01_00-00-00; then
-  if [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
-    echo -e "${GREEN}PASS: explicit --dry-run blocked restore and purge in either mode-argument position.${NC}"
+  if grep -Fxq "would restore  $json_restore_dest" "$TEST_ENV_DIR/dry_run_before_restore.log" \
+     && grep -Fxq "Dry-run: nothing restored." "$TEST_ENV_DIR/dry_run_before_restore.log" \
+     && [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
+    echo -e "${GREEN}PASS: explicit --dry-run previews restore and blocks purge in either mode-argument position.${NC}"
   else
     echo -e "${RED}FAIL: reverse-position --dry-run restore/purge mutated quarantined data.${NC}"
     exit 1
@@ -5330,6 +5333,122 @@ if run_test_case "Dry Run Before Restore Rejected" 1 "dry_run_before_restore.log
 else
   exit 1
 fi
+
+# Restore previews preserve payload, recovery metadata, retention age, and lock state.
+python3 - "$CLEANER_SH" <<'RESTORE_PREVIEW_PY'
+import hashlib, os, pathlib, subprocess, sys, tempfile
+
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory(prefix="cleaner-restore-preview-", dir="/tmp") as directory:
+    root = pathlib.Path(directory)
+    home = root / "home"
+    config = root / "cleaner.conf"
+    names = ("conflict", "ready", "already", "missing")
+    for name in names:
+        target = home / name
+        target.mkdir(parents=True)
+        (target / "payload").write_text(name + "\n")
+    config.write_text("".join(f"safe|{name}|$HOME/{name}|preview|0||\n" for name in names))
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    env.update(HOME=str(home), XDG_STATE_HOME=str(home / "state"), NO_COLOR="1")
+    result = subprocess.run([cleaner, "--config", str(config), "--trash", "--force"],
+                            env=env, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result
+    session, = (home / ".cache/linux-cleaner/quarantine").iterdir()
+    meta = session / "quarantine.meta"
+    records = [line.split("|") for line in meta.read_text().splitlines() if line and not line.startswith("#")]
+    assert len(records) == len(names), records
+    for record in records:
+        if pathlib.Path(record[2]).name in ("already", "missing"):
+            payload = session / record[1]
+            (payload / "payload").unlink()
+            payload.rmdir()
+        record[3] = "true"  # Privileged records must never invoke sudo during preview.
+    for name in ("conflict", "already"):
+        (home / name).mkdir()
+        (home / name / "new-data").write_text("keep destination\n")
+    expected = {name: status for name, status in zip(names, ("conflict", "would restore", "already restored", "missing"))}
+    for name, status in (("aged-ready", "would restore"), ("aged-conflict", "conflict"),
+                         ("aged-symlink", "conflict"), ("aged-parent-symlink", "conflict"),
+                         ("aged-complete", "already restored")):
+        staging = session / name
+        staging.mkdir()
+        original = home / name
+        if name != "aged-complete":
+            (staging / "nested").mkdir()
+            (staging / "nested/file").write_text("old data\n")
+        if name == "aged-conflict":
+            (original / "nested").mkdir(parents=True)
+            (original / "nested/file").write_text("new data\n")
+        elif name == "aged-symlink":
+            original.symlink_to(home / "absent", target_is_directory=True)
+        elif name == "aged-parent-symlink":
+            original.mkdir()
+            (original / "nested").symlink_to(home / "absent", target_is_directory=True)
+        record_type = "aged-restored" if name == "aged-complete" else "aged"
+        records.append([record_type, name, str(original), "true", str(os.getuid()), str(os.getgid())])
+        expected[name] = status
+    meta.write_text("\n".join("|".join(record) for record in records) + "\n")
+    os.utime(session, (1577836800, 1577836800))
+    lock = home / ".cache/linux-cleaner/cleaner.lock"
+    lock.unlink(missing_ok=True)
+    bindir = root / "bin"
+    bindir.mkdir()
+    trace = root / "forbidden-calls"
+    for command in ("sudo", "mv", "cp", "rm", "mkdir", "rmdir", "chown", "touch", "mktemp", "flock"):
+        stub = bindir / command
+        stub.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$RESTORE_PREVIEW_TRACE"\nexit 99\n')
+        stub.chmod(0o755)
+    env.update(PATH=str(bindir) + ":" + env["PATH"], RESTORE_PREVIEW_TRACE=str(trace))
+
+    def snapshot(path):
+        listing = subprocess.check_output(["find", str(path), "-printf", "%P|%y|%m|%s|%T@|%l\n"])
+        checksums = {str(p.relative_to(path)): hashlib.sha256(p.read_bytes()).hexdigest()
+                     for p in path.rglob("*") if p.is_file() and not p.is_symlink()}
+        return sorted(listing.splitlines()), checksums
+
+    before = snapshot(home)
+    meta_before, mtime_before = meta.read_bytes(), session.stat().st_mtime_ns
+    cases = [
+        ("all outcomes after trash", ["--restore", "latest", "--dry-run"], expected, 0),
+        ("dry-run first", ["--dry-run", "--restore", session.name], expected, 0),
+        ("substring selector", ["--restore", "latest", "--dry-run", "--only", "ready"],
+         {name: status for name, status in expected.items() if "ready" in str(home / name)}, 0),
+        ("exact selector", ["--restore", "latest", "--dry-run", "--only-exact", str(home / "ready")],
+         {"ready": "would restore"}, 0),
+        ("unmatched selector", ["--restore", "latest", "--dry-run", "--only-exact", str(home / "absent")], {}, 1),
+    ]
+    for label, args, selected, status in cases:
+        result = subprocess.run([cleaner, "--log", str(home / "preview.log")] + args,
+                                env=env, capture_output=True, text=True, timeout=20)
+        assert result.returncode == status, (label, result)
+        lines = result.stdout.splitlines()
+        outcomes = [line for line in lines if line.startswith(("would restore  ", "conflict  ", "already restored  ", "missing  "))]
+        assert sorted(outcomes) == sorted(f"{value}  {home / name}" for name, value in selected.items()), (label, result)
+        if status == 0:
+            assert lines[-1] == "Dry-run: nothing restored.", (label, result)
+        else:
+            assert "No quarantined target" in result.stderr, (label, result)
+        assert snapshot(home) == before, (label, "tree listing or checksums changed")
+        assert meta.read_bytes() == meta_before, (label, "metadata bytes changed")
+        assert session.stat().st_mtime_ns == mtime_before, (label, "session mtime changed")
+        assert not lock.exists() and not trace.exists(), (label, "lock or mutation call")
+        print("PASS: Restore Preview " + label, flush=True)
+
+    # A fresh HOME has no cleanup-created lock to reuse.
+    fresh = root / "fresh-home"
+    fresh_session = fresh / ".cache/linux-cleaner/quarantine" / session.name
+    fresh_session.mkdir(parents=True)
+    (fresh_session / "payload").write_text("keep quarantined\n")
+    (fresh_session / "quarantine.meta").write_text(f"full|payload|{fresh}/destination|true|0|0\n")
+    fresh_before = snapshot(fresh)
+    result = subprocess.run([cleaner, "--restore", "latest", "--dry-run", "--lock-wait", "1"],
+                            env=env | {"HOME": str(fresh)}, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0 and f"would restore  {fresh}/destination" in result.stdout, result
+    assert snapshot(fresh) == fresh_before and not trace.exists(), "fresh HOME changed or mutation tool called"
+    assert not (fresh / ".cache/linux-cleaner/cleaner.lock").exists(), "preview created a lock"
+    print("PASS: Restore Preview Fresh HOME Has No Lock", flush=True)
+RESTORE_PREVIEW_PY
 
 if run_test_case "JSON With Restore Rejected" 1 "json_restore.log" \
      --restore 2020-01-01_00-00-00 --json; then

@@ -58,7 +58,7 @@ Options:
   --check-config             Validate the configuration file and exit (no disk analysis).
   --init-config              Copy the active config to your user config path (never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only) and exit.
-  --restore SESSION          Restore files from quarantine session (latest or timestamp).
+  --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-exact PATH          With --restore: match a literal original path from session inventory; excludes --only.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
@@ -646,11 +646,9 @@ if [[ "$SHOW_MATCHES" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == tr
   exit 1
 fi
 
-# Restore and purge are mutating modes that bypass the cleanup dry-run exit.
-# Distinguish an explicit active --dry-run from the default DRY_RUN=true so
-# ordinary restore/purge requests keep their established behavior.
-if [[ "$DRY_RUN_EXPLICIT" == true && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" ) ]]; then
-  echo -e "${RED}Error: --dry-run cannot be combined with --restore or --purge-sessions.${NC}" >&2
+# Purge has no preview; the default DRY_RUN=true still permits ordinary purges.
+if [[ "$DRY_RUN_EXPLICIT" == true && -n "$PURGE_TARGET" ]]; then
+  echo -e "${RED}Error: --dry-run cannot be combined with --purge-sessions.${NC}" >&2
   exit 1
 fi
 
@@ -2336,6 +2334,44 @@ restore_quarantine() {
     fi
     
     local src_path="$restore_dir/$rel_path"
+    if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
+      # Preview probes never elevate privileges or enter the mutating restore path.
+      local preview_status="would restore" preview_file preview_dest preview_parent
+      if [[ "$type" == aged-restored ]]; then
+        preview_status="already restored"
+      elif [[ ! -e "$src_path" ]]; then
+        if [[ "$type" == full ]] && path_present false "$original_path"; then
+          preview_status="already restored"
+        else
+          preview_status="missing"
+        fi
+      elif [[ "$type" == full ]]; then
+        if path_present false "$original_path"; then
+          preview_status="conflict"
+        fi
+      elif [[ "$type" == aged ]]; then
+        if [[ -L "$original_path" ]]; then
+          preview_status="conflict"
+        else
+          while IFS= read -r -d '' preview_file; do
+            preview_dest="$original_path/${preview_file#"$src_path"/}"
+            if path_present false "$preview_dest"; then
+              preview_status="conflict"
+            fi
+            preview_parent="${preview_dest%/*}"
+            while [[ "$preview_parent" != "$original_path" && "$preview_parent" != / ]]; do
+              if [[ -L "$preview_parent" ]]; then
+                preview_status="conflict"
+              fi
+              preview_parent="${preview_parent%/*}"
+            done
+          done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+          wait "$!" || preview_status="missing"
+        fi
+      fi
+      printf '%s  %s\n' "$preview_status" "$original_path"
+      continue
+    fi
     if [[ "$type" == aged-restored ]]; then
       if retire_aged_staging "$src_path"; then
         restored_rels+=("$rel_path")
@@ -2499,6 +2535,11 @@ restore_quarantine() {
   if [[ -n "${RESTORE_ONLY:-}" && "$matched_any" != true ]]; then
     echo -e "${RED}Error: No quarantined target in this session matches '${RESTORE_ONLY_MODE} ${RESTORE_ONLY}'.${NC}" >&2
     exit 1
+  fi
+
+  if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
+    echo "Dry-run: nothing restored."
+    return 0
   fi
 
   # Keep metadata aligned with the files still in quarantine. This is required
@@ -3760,11 +3801,11 @@ if [[ "$CHECK_CONFIG" == true ]]; then
   exit 0
 fi
 
-# Serialize mutating runs (restore, purge, and non-dry-run cleanup) with an
+# Serialize mutating runs (non-preview restore, purge, and cleanup) with an
 # exclusive flock so overlapping timer and manual invocations cannot race on
 # the same files or quarantine sessions. Zero waits fail fast and permit missing
 # flock; positive waits require flock. Nonlocking modes ignore valid wait values.
-if [[ -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$DRY_RUN" != true ]]; then
+if [[ ( -n "${RESTORE_TARGET:-}" && "$DRY_RUN_EXPLICIT" != true ) || -n "${PURGE_TARGET:-}" || "$DRY_RUN" != true ]]; then
   if command -v flock >/dev/null 2>&1; then
     lock_dir="$HOME/.cache/linux-cleaner"
     lock_file="$lock_dir/cleaner.lock"
