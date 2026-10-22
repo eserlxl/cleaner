@@ -2713,7 +2713,13 @@ print_matching_paths() {
       printf '%s\0' "$target_path"
     fi
   } | while IFS= read -r -d '' match_path; do
-    printf '%s\n' "    $match_path"
+    # Cache file names are not trusted: a control character (escape, newline)
+    # could drive the terminal or forge a match line, so show those quoted.
+    if [[ "$match_path" == *[[:cntrl:]]* ]]; then
+      printf '    %q\n' "$match_path"
+    else
+      printf '    %s\n' "$match_path"
+    fi
   done
 }
 

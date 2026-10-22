@@ -11299,6 +11299,23 @@ if ! run_test_case "Single File And Symlink Matches" 0 "show_matches_files.log" 
   echo -e "${RED}FAIL: single-file or symlink match listing is incorrect.${NC}"
   exit 1
 fi
+# A file name with an escape and a newline is printed quoted on one line.
+sm_ctrl_name=$'evil\e[2Jname\n    forged'
+printf 'c\n' > "$sm_dir/$sm_ctrl_name"
+touch -d '10 days ago' "$sm_dir/$sm_ctrl_name"
+cat > "$TEST_ENV_DIR/show_matches.conf" <<EOF
+safe|Directory|\$HOME/.cache/show matches|Files and symlinks|7||
+EOF
+if ! run_test_case "Show Matches Quotes Control Characters" 0 "show_matches_ctrl.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches \
+   || grep -q $'\e' "$TEST_ENV_DIR/show_matches_ctrl.log" \
+   || grep -qxF '    forged' "$TEST_ENV_DIR/show_matches_ctrl.log" \
+   || ! grep -qF "    $(printf '%q' "$sm_dir/$sm_ctrl_name")" "$TEST_ENV_DIR/show_matches_ctrl.log"; then
+  echo -e "${RED}FAIL: --show-matches printed a raw control character or a forged line.${NC}"
+  exit 1
+fi
+rm -f -- "$sm_dir/$sm_ctrl_name"
+
 # An unreadable subdirectory must not end the preview of later targets.
 mkdir -p "$sm_dir/locked" "$MOCK_HOME/.cache/after"
 printf 'z\n' > "$sm_dir/locked/z"
