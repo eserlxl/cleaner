@@ -11035,7 +11035,8 @@ done
 echo -e "${GREEN}PASS: --hold-session and --release-session refuse unsafe session names.${NC}"
 
 for hold_combo in "--hold-session latest --release-session latest" "--release-session latest --dry-run" \
-  "--hold-session latest --json" "--hold-session latest --purge-sessions all --force" "--hold-session latest --restore latest"; do
+  "--hold-session latest --json" "--hold-session latest --purge-sessions all --force" "--hold-session latest --restore latest" \
+  "--hold-session latest --clean" "--release-session latest --interactive"; do
   # shellcheck disable=SC2086  # each combo is intentionally word-split into flags and values
   if ! run_test_case "Hold Combination ${hold_combo}" 1 "hold_combo.log" $hold_combo \
      || ! grep -qE -- '--(hold|release)-session cannot be combined with' "$TEST_ENV_DIR/hold_combo.log" \

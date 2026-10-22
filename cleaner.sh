@@ -698,8 +698,8 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
         || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
-        || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$DRY_RUN_EXPLICIT" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --dry-run, or --json.${NC}" >&2
+        || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
