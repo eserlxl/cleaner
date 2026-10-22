@@ -4602,6 +4602,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
     [[ -n "$TRASH_KEEP_DAYS" ]] && next_args+=(--trash-keep-days "$TRASH_KEEP_DAYS")
     [[ "$FAIL_FAST" == true ]] && next_args+=(--fail-fast)
+    [[ -n "$ACTION_TIMEOUT" && "$ACTION_TIMEOUT" != 0 ]] && next_args+=(--action-timeout "$ACTION_TIMEOUT")
     if [[ ${#next_args[@]} -eq 2 ]]; then
       status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
     else
