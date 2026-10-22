@@ -665,6 +665,52 @@ else
   exit 1
 fi
 
+# Targets above the risk ceiling are named without contributing reclaimable bytes.
+mkdir -p "$MOCK_HOME/.cache"
+truncate -s 32 "$MOCK_HOME/.cache/risk-safe.bin"
+truncate -s 64 "$MOCK_HOME/.cache/risk-medium.bin"
+truncate -s 128 "$MOCK_HOME/.cache/risk-danger.bin"
+cat > "$TEST_ENV_DIR/hidden_risk.conf" <<'EOF'
+safe|Visible Cache|$HOME/.cache/risk-safe.bin|safe cache|0||
+medium|Hidden Cache|$HOME/.cache/risk-medium.bin|medium cache|0||
+danger|Danger Cache|$HOME/.cache/risk-danger.bin|danger cache|0||
+EOF
+# case#args#expected Above line#expected Hidden line (empty Above = neither line)
+while IFS='#' read -r hidden_risk_case hidden_risk_arg hidden_risk_above hidden_risk_names; do
+  hidden_risk_args=()
+  case "$hidden_risk_arg" in
+    risk-medium) hidden_risk_args=(--risk medium) ;;
+    no-danger) hidden_risk_args=(--exclude-target 'Danger Cache') ;;
+    only-safe) hidden_risk_args=(--only-target 'Visible Cache') ;;
+    risk-danger) hidden_risk_args=(--risk danger) ;;
+  esac
+  if ! run_test_case "Hidden Risk ($hidden_risk_case)" 0 "hidden_risk.log" \
+       --config "$TEST_ENV_DIR/hidden_risk.conf" --dry-run "${hidden_risk_args[@]}"; then
+    echo -e "${RED}FAIL: hidden risk dry run ($hidden_risk_case) failed.${NC}"
+    exit 1
+  fi
+  if [[ -n "$hidden_risk_above" ]]; then
+    if ! grep -qFx "Above --risk $hidden_risk_above" "$TEST_ENV_DIR/hidden_risk.log" \
+       || ! grep -qFx "Hidden by risk: $hidden_risk_names" "$TEST_ENV_DIR/hidden_risk.log" \
+       || ! grep -q '^Reclaimable by risk: .* danger=0 B$' "$TEST_ENV_DIR/hidden_risk.log" \
+       || { [[ "$hidden_risk_above" == safe* ]] && ! grep -q ' medium=0 B danger' "$TEST_ENV_DIR/hidden_risk.log"; }; then
+      echo -e "${RED}FAIL: hidden risk lines wrong ($hidden_risk_case).${NC}"
+      cat "$TEST_ENV_DIR/hidden_risk.log"
+      exit 1
+    fi
+  elif grep -qE '^(Above --risk |Hidden by risk:)' "$TEST_ENV_DIR/hidden_risk.log"; then
+    echo -e "${RED}FAIL: hidden risk lines appeared with nothing above the ceiling ($hidden_risk_case).${NC}"
+    exit 1
+  fi
+done <<'HIDDEN_RISK_CASES'
+default##safe (not analysed): medium=1 danger=1; preview with --risk medium|danger#Hidden Cache, Danger Cache
+medium#risk-medium#medium (not analysed): medium=0 danger=1; preview with --risk danger#Danger Cache
+no-danger#no-danger#safe (not analysed): medium=1 danger=0; preview with --risk medium#Hidden Cache
+only-safe#only-safe##
+danger#risk-danger##
+HIDDEN_RISK_CASES
+echo -e "${GREEN}PASS: the plan names targets above the risk ceiling without sizing them.${NC}"
+
 # Blocked targets report an in-use size without adding it to the savings total.
 mkdir -p "$MOCK_HOME/.cache"
 truncate -s 2M "$MOCK_HOME/.cache/in-use-held.bin"
@@ -794,7 +840,7 @@ echo -e "${GREEN}PASS: plan-blocked in-use size is in the result report and save
 
 # 2. Test Case: Risk Levels Filter
 # Default --risk safe: Medium Risk Target should NOT be in dry_run.log as FOUND or WARNING
-if grep -q "Medium Risk Target" "$TEST_ENV_DIR/dry_run.log"; then
+if grep -v '^Hidden by risk:' "$TEST_ENV_DIR/dry_run.log" | grep -q "Medium Risk Target"; then
   echo -e "${RED}FAIL: Medium Risk Target was included in default risk run.${NC}"
   exit 1
 else
@@ -803,7 +849,8 @@ fi
 
 # Dry run with --risk medium
 if run_test_case "Dry Run with Risk Medium" 0 "dry_run_medium.log" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --risk medium --dry-run; then
-  if grep -q "Medium Risk Target" "$TEST_ENV_DIR/dry_run_medium.log" && ! grep -q "Danger Risk Target" "$TEST_ENV_DIR/dry_run_medium.log"; then
+  if grep -q "Medium Risk Target" "$TEST_ENV_DIR/dry_run_medium.log" \
+     && ! grep -v '^Hidden by risk:' "$TEST_ENV_DIR/dry_run_medium.log" | grep -q "Danger Risk Target"; then
     echo -e "${GREEN}PASS: Medium risk target was included, danger risk target was excluded.${NC}"
   else
     echo -e "${RED}FAIL: Risk level filtering logic failed for medium/danger.${NC}"
@@ -2722,7 +2769,7 @@ LINUX_CLEANER_RISK=medium PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
   "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_risk.log" 2>&1 || true
 if grep -q "Medium Risk Target" "$TEST_ENV_DIR/env_risk.log" \
-   && ! grep -q "Danger Risk Target" "$TEST_ENV_DIR/env_risk.log"; then
+   && ! grep -v '^Hidden by risk:' "$TEST_ENV_DIR/env_risk.log" | grep -q "Danger Risk Target"; then
   echo -e "${GREEN}PASS: LINUX_CLEANER_RISK=medium includes medium targets only.${NC}"
 else
   echo -e "${RED}FAIL: LINUX_CLEANER_RISK did not set the risk ceiling.${NC}"
@@ -2733,7 +2780,7 @@ LINUX_CLEANER_RISK=medium PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
   "$CLEANER_SH" --debug --config "$TEST_ENV_DIR/test_cleaner.conf" --risk safe --dry-run \
   < /dev/null > "$TEST_ENV_DIR/env_risk_cli.log" 2>&1 || true
 if grep -q "NPM Cache" "$TEST_ENV_DIR/env_risk_cli.log" \
-   && ! grep -q "Medium Risk Target" "$TEST_ENV_DIR/env_risk_cli.log"; then
+   && ! grep -v '^Hidden by risk:' "$TEST_ENV_DIR/env_risk_cli.log" | grep -q "Medium Risk Target"; then
   echo -e "${GREEN}PASS: --risk overrides LINUX_CLEANER_RISK.${NC}"
 else
   echo -e "${RED}FAIL: CLI --risk did not override LINUX_CLEANER_RISK.${NC}"

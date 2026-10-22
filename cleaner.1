@@ -17,6 +17,12 @@ After the savings total,
 .B cleaner
 prints a plan report: run mode, risk ceiling, config path, counts per status,
 reclaimable bytes by risk, the largest targets, and skipped targets.
+When selected targets exceed the risk ceiling, the risk totals are followed by
+\(lqAbove \-\-risk LEVEL (not analysed): medium=N danger=M; preview with \-\-risk LEVEL\(rq
+and one \(lqHidden by risk: name, ...\(rq line.
+These targets are counted and named after name/path filters, without size analysis;
+they do not contribute to reclaimable bytes. Both lines are omitted when none are hidden.
+JSON and metrics are unchanged.
 .B \-\-quiet
 suppresses the plan report. After cleanup, a result report lists cleaned,
 skipped, and failed counts, bytes quarantined versus permanently reclaimed,

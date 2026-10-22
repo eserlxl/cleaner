@@ -2915,6 +2915,13 @@ print_plan_report() {
   done
   printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} protected=${protected_n} unsafe/symlink=${unsafe_symlink} root=${root_n}"
   printf '%s\n' "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
+  if [[ $((hidden_medium + hidden_danger)) -gt 0 ]]; then
+    local risk_hint="medium|danger"
+    [[ "$hidden_danger" -eq 0 ]] && risk_hint=medium
+    [[ "$hidden_medium" -eq 0 ]] && risk_hint=danger
+    printf '%s\n' "Above --risk ${MAX_RISK} (not analysed): medium=${hidden_medium} danger=${hidden_danger}; preview with --risk ${risk_hint}"
+    printf '%s\n' "Hidden by risk: ${hidden_risk_names}"
+  fi
   if [[ "$total_in_use_bytes" -gt 0 ]]; then
     printf '%s\n' "In use: blocked=${blocked} would_reclaim=$(format_bytes "$total_in_use_bytes")"
   fi
@@ -3810,6 +3817,9 @@ json_ages=()
 
 total_reclaimable_bytes=0
 total_in_use_bytes=0
+hidden_medium=0
+hidden_danger=0
+hidden_risk_names=""
 # Targets whose process starts after planning, blocked again in the cleanup loop.
 runtime_blocked_count=0
 runtime_blocked_bytes=0
@@ -3880,7 +3890,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: ") || exit 1
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
-    # Skip target quietly or verbosely
+    case "$target_risk_int" in
+      2) hidden_medium=$((hidden_medium + 1)) ;;
+      3) hidden_danger=$((hidden_danger + 1)) ;;
+    esac
+    hidden_risk_names+="${hidden_risk_names:+, }$name"
     continue
   fi
   
