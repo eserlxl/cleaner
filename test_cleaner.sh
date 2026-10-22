@@ -11223,6 +11223,105 @@ PY
 done
 echo -e "${GREEN}PASS: --min-age raises a filter:cxx_build row's idle threshold.${NC}"
 
+# --show-matches previews exactly the eligible paths, without mutating targets.
+setup_mock_env
+sm_dir="$MOCK_HOME/.cache/show matches"
+mkdir -p "$sm_dir"
+printf 'old\n' > "$sm_dir/old file.txt"
+printf 'new\n' > "$sm_dir/new file.txt"
+printf 'excluded\n' > "$sm_dir/excluded.txt"
+touch -d '10 days ago' "$sm_dir/old file.txt" "$sm_dir/excluded.txt"
+cat > "$TEST_ENV_DIR/show_matches.conf" <<EOF
+safe|Match Target|\$HOME/.cache/show matches|Match preview|7||
+EOF
+if ! run_test_case "Show Matches Lists Only Eligible Files" 0 "show_matches.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches --dry-run --exclude excluded.txt \
+   || [[ $(grep '^    /' "$TEST_ENV_DIR/show_matches.log") != "    $sm_dir/old file.txt" ]] \
+   || ! grep -A1 -F '[FOUND] Match Target' "$TEST_ENV_DIR/show_matches.log" | grep -qxF "    $sm_dir/old file.txt" \
+   || ! run_test_case "No Match Listing Without Flag" 0 "no_show_matches.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --debug --dry-run --exclude excluded.txt \
+   || grep -qF "$sm_dir/old file.txt" "$TEST_ENV_DIR/no_show_matches.log" \
+   || ! run_test_case "Quiet Suppresses Match Listing" 0 "quiet_show_matches.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches --quiet --dry-run \
+   || grep -q '^    /' "$TEST_ENV_DIR/quiet_show_matches.log"; then
+  echo -e "${RED}FAIL: match listing did not respect age, exclusions, target grouping, or output flags.${NC}"
+  exit 1
+fi
+
+for sm_mode in --clean --force -f --interactive -i --json --restore --purge-sessions \
+    --list-sessions --list-targets --check-config --report --init-config --doctor; do
+  sm_args=("$sm_mode")
+  case "$sm_mode" in
+    --restore) sm_args+=(latest) ;;
+    --purge-sessions) sm_args+=(all) ;;
+  esac
+  if ! run_test_case "Show Matches Rejects $sm_mode" 1 "show_matches_conflict.log" \
+         --config "$TEST_ENV_DIR/show_matches.conf" --show-matches "${sm_args[@]}" \
+     || ! grep -q 'cannot be combined' "$TEST_ENV_DIR/show_matches_conflict.log" \
+     || ! run_test_case "Show Matches Rejects $sm_mode Before Dry Run" 1 "show_matches_conflict.log" \
+         --config "$TEST_ENV_DIR/show_matches.conf" "${sm_args[@]}" --dry-run --show-matches \
+     || ! grep -q 'cannot be combined' "$TEST_ENV_DIR/show_matches_conflict.log" \
+     || [[ ! -f "$sm_dir/old file.txt" || ! -f "$sm_dir/new file.txt" || ! -f "$sm_dir/excluded.txt" ]]; then
+    echo -e "${RED}FAIL: --show-matches accepted $sm_mode or changed a target.${NC}"
+    exit 1
+  fi
+done
+
+cat > "$TEST_ENV_DIR/show_matches.conf" <<EOF
+safe|Match Target|\$HOME/.cache/show matches|Match preview|0||
+EOF
+if ! run_test_case "Unfiltered Match Shows Only Target" 0 "show_matches_whole.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches \
+   || [[ $(grep '^    /' "$TEST_ENV_DIR/show_matches_whole.log") != "    $sm_dir" ]] \
+   || ! run_test_case "Exclusion Only Match Listing" 0 "show_matches_exclude.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches --exclude excluded.txt \
+   || ! grep -qxF "    $sm_dir/old file.txt" "$TEST_ENV_DIR/show_matches_exclude.log" \
+   || ! grep -qxF "    $sm_dir/new file.txt" "$TEST_ENV_DIR/show_matches_exclude.log" \
+   || grep -qF "$sm_dir/excluded.txt" "$TEST_ENV_DIR/show_matches_exclude.log"; then
+  echo -e "${RED}FAIL: unfiltered or exclusion-only match listing is incorrect.${NC}"
+  exit 1
+fi
+
+ln -s 'old file.txt' "$sm_dir/old link"
+touch -h -d '10 days ago' "$sm_dir/old link"
+cat > "$TEST_ENV_DIR/show_matches.conf" <<EOF
+safe|Old File|\$HOME/.cache/show matches/old file.txt|Old single file|7||
+safe|New File|\$HOME/.cache/show matches/new file.txt|New single file|7||
+safe|Excluded File|\$HOME/.cache/show matches/excluded.txt|Excluded single file|7||
+safe|Directory|\$HOME/.cache/show matches|Files and symlinks|7||
+EOF
+if ! run_test_case "Single File And Symlink Matches" 0 "show_matches_files.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches --exclude excluded.txt \
+   || [[ $(grep -cxF "    $sm_dir/old file.txt" "$TEST_ENV_DIR/show_matches_files.log") != 2 ]] \
+   || ! grep -qxF "    $sm_dir/old link" "$TEST_ENV_DIR/show_matches_files.log" \
+   || grep -qF "$sm_dir/new file.txt" "$TEST_ENV_DIR/show_matches_files.log" \
+   || grep -qF "$sm_dir/excluded.txt" "$TEST_ENV_DIR/show_matches_files.log"; then
+  echo -e "${RED}FAIL: single-file or symlink match listing is incorrect.${NC}"
+  exit 1
+fi
+# An unreadable subdirectory must not end the preview of later targets.
+mkdir -p "$sm_dir/locked" "$MOCK_HOME/.cache/after"
+printf 'z\n' > "$sm_dir/locked/z"
+printf 'a\n' > "$MOCK_HOME/.cache/after/a"
+chmod 000 "$sm_dir/locked"
+cat > "$TEST_ENV_DIR/show_matches.conf" <<EOF
+safe|Directory|\$HOME/.cache/show matches|Files and symlinks|7||
+safe|After|\$HOME/.cache/after|Later target|0||
+EOF
+sm_locked_ok=true
+if ! run_test_case "Show Matches Survives Unreadable Subdirectory" 0 "show_matches_locked.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches \
+   || ! grep -qxF "    $MOCK_HOME/.cache/after" "$TEST_ENV_DIR/show_matches_locked.log"; then
+  sm_locked_ok=false
+fi
+chmod 755 "$sm_dir/locked"
+if [[ "$sm_locked_ok" != true ]]; then
+  echo -e "${RED}FAIL: --show-matches stopped at an unreadable subdirectory.${NC}"
+  cat "$TEST_ENV_DIR/show_matches_locked.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --show-matches lists eligible paths only and refuses incompatible modes without deletion.${NC}"
+
 # Bash completion drift and functional test: completions/cleaner.bash must
 # pass bash -n, include every --long option from --help, and complete options
 # and value grammars in plain bash without bash-completion helpers.

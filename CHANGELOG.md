@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- `--show-matches` lists eligible paths below each ordinary target in a text dry run, respecting age and exclusion filters; unfiltered targets show only their own path. The CLI-only flag rejects cleanup, JSON, and non-cleanup modes.
+
 ### Fixed
 
 - Reject target paths combining `*` or `?` with `[` or `]` before analysis or deletion, preventing bracket classes from selecting a different directory; literal bracketed paths remain valid and tests pin their exact targets. A wildcard row whose `$HOME`, `$USER`, or `$XDG_*` expansion contains a bracket, which previously matched nothing silently, is now skipped with a warning.

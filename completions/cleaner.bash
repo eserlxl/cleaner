@@ -115,6 +115,7 @@ _cleaner() {
     --log
     -q --quiet
     --debug
+    --show-matches
     --notify
     --json
     -h --help

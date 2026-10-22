@@ -38,6 +38,7 @@ _cleaner() {
     '--log[Append an operation log (opt-in, off by default; kept under your HOME)]::file:_files' \
     '(-q --quiet)'{-q,--quiet}'[Suppress per-target status lines; keep errors, totals, and final summary]' \
     '--debug[Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)]' \
+    '--show-matches[List eligible paths under each ordinary target in a text dry run (overridden by --quiet)]' \
     '--notify[With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)]' \
     '--json[Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary)]' \
     '(- *)'{-h,--help}'[Display this help message and exit]' \

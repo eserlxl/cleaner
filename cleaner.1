@@ -98,6 +98,29 @@ savings, and the final summary still print.
 Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by
 .BR \-\-quiet ).
 .TP
+.B \-\-show\-matches
+In a text dry run, show per-target status lines and indent eligible paths below
+each found ordinary target. Directory listings use the same age and exclusion
+predicates as cleanup; single files apply their age limit. Without age or
+exclusions, print only the target's own path. Skips action:* targets;
+.B \-\-quiet
+suppresses the listing. CLI-only (no environment mirror). Cannot be combined with
+.BR \-\-clean ,
+.BR \-\-force ,
+.BR \-\-interactive
+(even with a later
+.BR \-\-dry\-run ),
+.BR \-\-json ,
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
 .B \-\-notify
 With cleanup: send one desktop notification via
 .BR notify\-send (1)

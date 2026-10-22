@@ -75,6 +75,7 @@ Options:
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
   --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
+  --show-matches             List eligible paths under each ordinary target in a text dry run (overridden by --quiet).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary).
   -h, --help                 Display this help message and exit.
@@ -85,11 +86,13 @@ EOF
 # Default flags
 DRY_RUN=true
 DRY_RUN_EXPLICIT=false
+CLEAN_EXPLICIT=false
 INTERACTIVE=false
 FORCE=false
 YES_DANGER=false
 QUIET=false
 DEBUG=false
+SHOW_MATCHES=false
 NOTIFY=false
 # Only the flag is refused outside cleanup; an inherited mirror is ignored there.
 NOTIFY_CLI=false
@@ -263,6 +266,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --clean)
+      CLEAN_EXPLICIT=true
       DRY_RUN=false
       DRY_RUN_EXPLICIT=false
       shift
@@ -284,6 +288,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --debug)
+      DEBUG=true
+      shift
+      ;;
+    --show-matches)
+      SHOW_MATCHES=true
       DEBUG=true
       shift
       ;;
@@ -603,6 +612,12 @@ if [[ -n "$TRASH_KEEP_DAYS" ]]; then
     echo -e "${RED}Error: --trash-keep-days expects a non-negative integer day count, got '${TRASH_KEEP_DAYS}'.${NC}" >&2
     exit 1
   fi
+fi
+
+# Match listings are only meaningful for a text cleanup preview.
+if [[ "$SHOW_MATCHES" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --show-matches cannot be combined with --clean, --force, --interactive, --json, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor.${NC}" >&2
+  exit 1
 fi
 
 # Restore and purge are mutating modes that bypass the cleanup dry-run exit.
@@ -2680,6 +2695,28 @@ has_matching_files() {
   return 1
 }
 
+# List the same eligible files/symlinks as has_matching_files; whole targets stay compact.
+print_matching_paths() {
+  local target_path="$1" age_days="$2" use_sudo="$3" match_path
+  local -a mtime_args=()
+  if has_positive_age "$age_days"; then
+    mtime_args=(-mtime "+$age_days")
+  fi
+  {
+    if path_is_real_dir "$use_sudo" "$target_path" && { has_positive_age "$age_days" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; then
+      # An unreadable subdirectory makes find exit non-zero; under pipefail that
+      # would end the whole preview, so list what is readable and carry on.
+      with_sudo "$use_sudo" find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${mtime_args[@]}" -print0 2>/dev/null || true
+    elif has_positive_age "$age_days"; then
+      with_sudo "$use_sudo" find "$target_path" -mtime +"$age_days" -print0 2>/dev/null || true
+    else
+      printf '%s\0' "$target_path"
+    fi
+  } | while IFS= read -r -d '' match_path; do
+    printf '%s\n' "    $match_path"
+  done
+}
+
 # True when PATH itself is still older than AGE days. A whole-target rm or
 # quarantine move does not pass -mtime, so the cleanup loop asks again.
 path_still_older_than() {
@@ -3979,6 +4016,9 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
                   debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc (Files > $effective_age days)$outside_home_suffix"
                 else
                   debug_echo "  [${GREEN}FOUND${NC}] $name ($readable_size): $desc$outside_home_suffix"
+                fi
+                if [[ "$SHOW_MATCHES" == true && "$QUIET" != true && "$custom_clean_cmd" != action:* ]]; then
+                  print_matching_paths "$path" "$effective_age" "$use_sudo"
                 fi
               else
                 target_status=clean
