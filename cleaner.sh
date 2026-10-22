@@ -3316,6 +3316,7 @@ _cmdline_match() {
     [[ -r "/proc/$pid/cmdline" ]] || continue
     [[ "$ancestry" == *" $pid "* ]] && continue
     _is_own_descendant "$pid" && continue
+    printf '%s\n' "$pid"
     return 0
   done <<< "$pids"
   return 1
@@ -3334,7 +3335,7 @@ _is_own_descendant() {
   return 1
 }
 
-# Return 0 for active, 1 for idle, and 2 when inspection cannot establish either.
+# Print the token and optional PID on separate lines; return 0 active, 1 idle, 2 unknown.
 is_process_running() {
   local procs="$1"
   if [[ -z "$procs" ]]; then
@@ -3344,7 +3345,7 @@ is_process_running() {
   # Split with read, not an unquoted expansion: word splitting would also
   # pathname-expand each token against the current directory, so a pattern such
   # as "app*" could turn into a stray file name and silently miss the process.
-  local proc query_status
+  local proc pid query_status
   local -a proc_list
   IFS=',' read -r -a proc_list <<< "$procs"
   for proc in "${proc_list[@]}"; do
@@ -3360,7 +3361,7 @@ is_process_running() {
       # Whitespace after the colon is not part of the pattern: "cmdline: /path"
       # and "cmdline:/path" name the same command line. A blank remainder is
       # already rejected by validate_config_file.
-      _cmdline_match "$(trim "${proc#cmdline:}")" || query_status=$?
+      pid=$(_cmdline_match "$(trim "${proc#cmdline:}")") || query_status=$?
     else
       # The kernel keeps only the first 15 characters of a process name, and
       # pgrep -x refuses a longer plain name outright, so compare such a name on
@@ -3368,10 +3369,10 @@ is_process_running() {
       # tokens are the user's own and pass unchanged.
       local comm="$proc"
       [[ ${#comm} -gt 15 && "$comm" =~ ^[A-Za-z0-9._-]+$ ]] && comm="${comm:0:15}"
-      pgrep -x "$comm" >/dev/null 2>&1 || query_status=$?
+      pid=$(pgrep -x "$comm" 2>/dev/null) || query_status=$?
     fi
     case "$query_status" in
-      0) printf '%s\n' "$proc"; return 0 ;;
+      0) printf '%s\n' "$proc" "${pid%%$'\n'*}"; return 0 ;;
       1) ;;
       *) printf '%s\n' "$proc"; return 2 ;;
     esac
@@ -3922,6 +3923,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       # Check if running processes block this target
       process_status=0
       running_proc=$(is_process_running "$check_procs") || process_status=$?
+      running_pid=""
+      if [[ "$running_proc" == *$'\n'* ]]; then
+        running_pid="${running_proc#*$'\n'}"
+        running_proc="${running_proc%%$'\n'*}"
+      fi
       if [[ "$process_status" -eq 2 ]]; then
         target_status=skipped
         target_reason="process check failed for '$running_proc'"
@@ -3935,7 +3941,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         if [[ "$in_use_bytes" -gt 0 ]]; then
           in_use_note="; $(format_bytes "$in_use_bytes") would be reclaimable otherwise"
         fi
-        status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active${in_use_note}."
+        status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active${in_use_note}.${running_pid:+ (pid $running_pid)}"
       else
         # Determine if sudo is needed. A dry-run only probes with sudo -n and
         # never prompts. A real run skips the target when privileges are unavailable.
@@ -4288,6 +4294,11 @@ for i in "${!parsed_names[@]}"; do
   if [[ -n "$check_procs" ]]; then
     process_status=0
     running_proc=$(is_process_running "$check_procs") || process_status=$?
+    running_pid=""
+    if [[ "$running_proc" == *$'\n'* ]]; then
+      running_pid="${running_proc#*$'\n'}"
+      running_proc="${running_proc%%$'\n'*}"
+    fi
     if [[ "$process_status" -eq 2 ]]; then
       status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: process check failed for '$running_proc'."
       result_skipped=$((result_skipped + 1))
@@ -4299,7 +4310,7 @@ for i in "${!parsed_names[@]}"; do
       if [[ "$size" -gt 0 ]]; then
         runtime_note="; $(format_bytes "$size") would be reclaimable otherwise"
       fi
-      status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active${runtime_note}."
+      status_echo "  [${YELLOW}BLOCKED${NC}] $name: Skip cleanup because process '$running_proc' is active${runtime_note}.${running_pid:+ (pid $running_pid)}"
       result_skipped=$((result_skipped + 1))
       continue
     fi

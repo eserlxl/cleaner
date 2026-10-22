@@ -7343,10 +7343,11 @@ sleep 60 &
 mock_cmdline_pid=$!
 echo "$mock_cmdline_pid" > "$TEST_ENV_DIR/mock_cmdline_pid"
 
-if run_test_case "Cmdline Guard Blocks" 0 "cmdline_block.log" \
-     --config "$TEST_ENV_DIR/cmdline_guard.conf"; then
-  if grep -q "BLOCKED.*Cmdline Guarded.*cmdline:mock_cmdline_proc" "$TEST_ENV_DIR/cmdline_block.log"; then
-    echo -e "${GREEN}PASS: a cmdline: token blocked the target and named itself in the status line.${NC}"
+if run_test_case "Blocked Process Pid" 0 "cmdline_block.log" \
+     --config "$TEST_ENV_DIR/cmdline_guard.conf" --dry-run; then
+  if grep -q "BLOCKED.*Cmdline Guarded.*'cmdline:mock_cmdline_proc'.* (pid $mock_cmdline_pid)$" "$TEST_ENV_DIR/cmdline_block.log" \
+     && [[ -f "$MOCK_HOME/guarded/data.txt" ]]; then
+    echo -e "${GREEN}PASS: a cmdline: token blocked the target and named its PID in the status line.${NC}"
   else
     echo -e "${RED}FAIL: the cmdline: token did not block the target.${NC}"
     cat "$TEST_ENV_DIR/cmdline_block.log"
@@ -7354,6 +7355,20 @@ if run_test_case "Cmdline Guard Blocks" 0 "cmdline_block.log" \
     exit 1
   fi
 else
+  kill "$mock_cmdline_pid" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Blocked Process Pid JSON" 0 "cmdline_block_json.log" \
+     --config "$TEST_ENV_DIR/cmdline_guard.conf" --dry-run --json \
+   || ! python3 - "$TEST_ENV_DIR/cmdline_block_json.log" <<'PY'
+import json, sys
+target, = json.load(open(sys.argv[1]))["targets"]
+assert target["status"] == "blocked", target
+assert target["reason"] == "process 'cmdline:mock_cmdline_proc' is active", target
+PY
+then
+  echo -e "${RED}FAIL: the blocked target's JSON reason changed.${NC}"
   kill "$mock_cmdline_pid" 2>/dev/null || true
   exit 1
 fi
@@ -7402,8 +7417,10 @@ safe|Bare Token|$HOME/guarded|Exact comm match only|0|mock_running_proc|
 CMDBARE
 if run_test_case "Bare Token Still Matches Comm" 0 "cmdline_bare.log" \
      --config "$TEST_ENV_DIR/cmdline_bare.conf"; then
-  if grep -q "BLOCKED.*Bare Token.*'mock_running_proc'" "$TEST_ENV_DIR/cmdline_bare.log"; then
-    echo -e "${GREEN}PASS: a bare token still matches the process name exactly.${NC}"
+  if grep -q "BLOCKED.*Bare Token.*'mock_running_proc'" "$TEST_ENV_DIR/cmdline_bare.log" \
+     && ! grep -q ' (pid ' "$TEST_ENV_DIR/cmdline_bare.log" \
+     && [[ -f "$MOCK_HOME/guarded/data.txt" ]]; then
+    echo -e "${GREEN}PASS: a successful pgrep with no output still blocks without a PID suffix.${NC}"
   else
     echo -e "${RED}FAIL: bare-token behaviour changed.${NC}"
     cat "$TEST_ENV_DIR/cmdline_bare.log"
@@ -9246,6 +9263,7 @@ printf '%s\n' "$count" > "$count_file"
 if [[ "$count" -eq 1 ]]; then
   exit 1
 fi
+printf '%s\n' 12345 67890
 exit 0
 EOF
 chmod +x "$TEST_ENV_DIR/bin/pgrep"
@@ -9254,7 +9272,7 @@ if run_test_case "Process Started After Analysis Blocks Cleanup" 0 "late_proc.lo
   late_block=$(grep -n 'BLOCKED' "$TEST_ENV_DIR/late_proc.log" | head -1 | cut -d: -f1) || true
   late_start=$(grep -n 'Starting cleanup' "$TEST_ENV_DIR/late_proc.log" | head -1 | cut -d: -f1) || true
   if [[ -n "$late_block" && -n "$late_start" && "$late_start" -lt "$late_block" ]] \
-     && grep -q "BLOCKED.*Late Process: Skip cleanup because process 'late_proc' is active." "$TEST_ENV_DIR/late_proc.log" \
+     && grep -q "BLOCKED.*Late Process: Skip cleanup because process 'late_proc' is active.* (pid 12345)$" "$TEST_ENV_DIR/late_proc.log" \
      && grep -q '^Result: cleaned=0 skipped=1 failed=0 ' "$TEST_ENV_DIR/late_proc.log" \
      && [[ -f "$MOCK_HOME/.cache/late-proc/cache.txt" ]]; then
     echo -e "${GREEN}PASS: a process that starts after analysis blocks cleanup and leaves the cache in place.${NC}"

@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `[BLOCKED]` status lines include the matching process PID when available; JSON reasons remain unchanged.
 - `--show-matches` lists eligible paths below each ordinary target in a text dry run, respecting age and exclusion filters; unfiltered targets show only their own path. File names holding control characters are shown shell-quoted on one line. The CLI-only flag rejects cleanup, JSON, and non-cleanup modes.
 
 ### Fixed
