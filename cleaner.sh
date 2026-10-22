@@ -3658,7 +3658,7 @@ run_doctor() {
   fi
   printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
 
-  local state_dir report_file report_line saved="" result="" last_level=INFO report_mtime now
+  local state_dir report_file report_line saved="" result="" last_level=INFO report_mtime now retention_note=""
   state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
@@ -3671,6 +3671,7 @@ run_doctor() {
         "Saved: "*) saved="${report_line#Saved: }" ;;
         "Result: "*) result="${report_line#Result: }" ;;
         Interrupted:*) last_level=WARN ;;
+        "Retention failed: true") last_level=WARN; retention_note="; retention failed" ;;
       esac
     done < "$report_file"
     if [[ "$result" =~ (^|[[:space:]])failed=0*[1-9][0-9]*($|[[:space:]]) ]]; then
@@ -3682,7 +3683,7 @@ run_doctor() {
        && (( now - report_mtime > 2 * 24 * 60 * 60 )); then
       last_level=WARN
     fi
-    printf '%s: last cleanup: %s %s\n' "$last_level" "$saved" "$result"
+    printf '%s: last cleanup: %s %s%s\n' "$last_level" "$saved" "$result" "$retention_note"
   fi
 
   # The clean unit reads this env file; trash mode there needs a retention bound.

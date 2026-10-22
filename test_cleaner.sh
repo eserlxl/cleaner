@@ -12998,6 +12998,8 @@ printf 'Saved: %s\nResult: cleaned=0 skipped=0 failed=2 elapsed=1s\n' "$doc_save
 doc_last_case failed "WARN: last cleanup: $doc_saved cleaned=0 skipped=0 failed=2 elapsed=1s"
 printf 'Saved: %s\nResult: %s\nInterrupted: TERM before all targets finished\n' "$doc_saved" "$doc_result" > "$doc_report"
 doc_last_case interrupted "WARN: last cleanup: $doc_saved $doc_result"
+printf 'Saved: %s\nResult: %s\nRetention failed: true\n' "$doc_saved" "$doc_result" > "$doc_report"
+doc_last_case retention "WARN: last cleanup: $doc_saved $doc_result; retention failed"
 printf 'Saved: %s\nResult: %s\n' "$doc_saved" "$doc_result" > "$doc_report"
 touch -d '3 days ago' "$doc_report"
 doc_last_case stale "WARN: last cleanup: $doc_saved $doc_result"
