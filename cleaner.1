@@ -384,7 +384,9 @@ or
 .B "INFO: last cleanup: none recorded"
 when absent. Symlinked reports or linux-cleaner state directories are not followed.
 Uses WARN instead of INFO when the result has failed>0, an Interrupted line is
-present, or the clean timer is enabled and the report's modification time is
+present, a Retention failed: true line is present (appending
+.BR "; retention failed" ),
+or the clean timer is enabled and the report's modification time is
 more than two days old. An unreadable report prints
 .BR "WARN: last cleanup: report not readable" .
 These warnings do not change the exit status.
