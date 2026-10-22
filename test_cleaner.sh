@@ -5372,6 +5372,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-restore-preview-", dir="/tmp") 
     expected = {name: status for name, status in zip(names, ("conflict", "would restore", "already restored", "missing"))}
     for name, status in (("aged-ready", "would restore"), ("aged-conflict", "conflict"),
                          ("aged-symlink", "conflict"), ("aged-parent-symlink", "conflict"),
+                         ("aged-file-root", "conflict"), ("aged-file-parent", "conflict"),
                          ("aged-complete", "already restored")):
         staging = session / name
         staging.mkdir()
@@ -5387,6 +5388,11 @@ with tempfile.TemporaryDirectory(prefix="cleaner-restore-preview-", dir="/tmp") 
         elif name == "aged-parent-symlink":
             original.mkdir()
             (original / "nested").symlink_to(home / "absent", target_is_directory=True)
+        elif name == "aged-file-root":
+            original.write_text("a file where the target directory was\n")
+        elif name == "aged-file-parent":
+            original.mkdir()
+            (original / "nested").write_text("a file where a parent directory is needed\n")
         record_type = "aged-restored" if name == "aged-complete" else "aged"
         records.append([record_type, name, str(original), "true", str(os.getuid()), str(os.getgid())])
         expected[name] = status

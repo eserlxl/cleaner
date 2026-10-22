@@ -2350,7 +2350,7 @@ restore_quarantine() {
           preview_status="conflict"
         fi
       elif [[ "$type" == aged ]]; then
-        if [[ -L "$original_path" ]]; then
+        if [[ -L "$original_path" || ( -e "$original_path" && ! -d "$original_path" ) ]]; then
           preview_status="conflict"
         else
           while IFS= read -r -d '' preview_file; do
@@ -2360,7 +2360,7 @@ restore_quarantine() {
             fi
             preview_parent="${preview_dest%/*}"
             while [[ "$preview_parent" != "$original_path" && "$preview_parent" != / ]]; do
-              if [[ -L "$preview_parent" ]]; then
+              if [[ -L "$preview_parent" || ( -e "$preview_parent" && ! -d "$preview_parent" ) ]]; then
                 preview_status="conflict"
               fi
               preview_parent="${preview_parent%/*}"
