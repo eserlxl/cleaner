@@ -7809,7 +7809,7 @@ fi
 # particular, build?* must never emit the unmatched sibling named just build.
 for transport_mode in delete trash; do
   setup_mock_env
-  transport_names=($'build\nunrelated' 'build|field' 'build ' "build\$USER")
+  transport_names=($'build\nunrelated' 'build|field' 'build ' "build\$USER" $'build-escape\e[2J' 'build-back\slash')
   mkdir -p "$MOCK_HOME/transport/build" "$MOCK_HOME/transport/build-normal output"
   printf 'preserve\n' > "$MOCK_HOME/transport/build/keep"
   printf 'generated\n' > "$MOCK_HOME/transport/build-normal output/discard"
@@ -7819,14 +7819,35 @@ for transport_mode in delete trash; do
   done
   cat > "$TEST_ENV_DIR/transport.conf" <<'TRANSPORT'
 safe|Transport Target|$HOME/transport/build?*|Preserve directory identity|0||
+safe|Escape Only|$HOME/transport/build-escape*|Unsafe match only|0||
+safe|Backslash Only|$HOME/transport/build-back*|Unsafe match only|0||
 TRANSPORT
   if ! run_test_case "Wildcard Path Identity Inventory ($transport_mode)" 0 "transport_list.log" \
        --config "$TEST_ENV_DIR/transport.conf" --list-targets \
      || [[ "$(grep -c '^Transport Target[[:space:]]' "$TEST_ENV_DIR/transport_list.log")" -ne 1 ]] \
+     || grep -qE '^(Escape Only|Backslash Only)[[:space:]]' "$TEST_ENV_DIR/transport_list.log" \
+     || grep -q $'\e' "$TEST_ENV_DIR/transport_list.log" \
      || ! grep -q 'build-normal output' "$TEST_ENV_DIR/transport_list.log" \
-     || ! grep -q 'skipping wildcard match that cannot be represented safely' "$TEST_ENV_DIR/transport_list.log"; then
+     || [[ "$(grep -cE 'transport.conf:[23]: skipping wildcard match that cannot be represented safely' "$TEST_ENV_DIR/transport_list.log")" -ne 2 ]]; then
     echo -e "${RED}FAIL: wildcard inventory changed a discovered directory name.${NC}"
     cat "$TEST_ENV_DIR/transport_list.log"
+    exit 1
+  fi
+  if ! run_test_case "Wildcard Path Identity JSON ($transport_mode)" 0 "transport_json.log" \
+       --config "$TEST_ENV_DIR/transport.conf" --dry-run --json \
+     || grep -q $'\e' "$TEST_ENV_DIR/transport_json.log" \
+     || [[ "$(grep -cE 'transport.conf:[23]: skipping wildcard match that cannot be represented safely' "$TEST_ENV_DIR/transport_json.log")" -ne 2 ]] \
+     || ! python3 - "$TEST_ENV_DIR/transport_json.log" "$MOCK_HOME" <<'TRANSPORT_JSON'
+import json, sys
+with open(sys.argv[1]) as log:
+    data = json.loads("".join(line for line in log if not line.startswith("Warning: ")))
+assert [target["path"] for target in data["targets"]] == [
+    sys.argv[2] + "/transport/build-normal output"
+], data["targets"]
+TRANSPORT_JSON
+  then
+    echo -e "${RED}FAIL: wildcard JSON included an unrepresentable path or emitted a control character.${NC}"
+    cat "$TEST_ENV_DIR/transport_json.log"
     exit 1
   fi
   transport_args=()

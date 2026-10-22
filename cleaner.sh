@@ -1372,7 +1372,7 @@ expand_config_globs() {
       # Config records are line/pipe-delimited and consumers trim and expand the
       # path again. Refuse a match whose identity would change in that transport.
       if ! expanded=$(expand_path_safe "$match") \
-         || [[ "$match" == *'|'* || "$match" != "$(trim "$match")" || "$match" != "$expanded" ]]; then
+         || [[ "$match" == *'|'* || "$match" == *[[:cntrl:]]* || "$match" == *\\* || "$match" != "$(trim "$match")" || "$match" != "$expanded" ]]; then
         printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
           "$CONFIG_FILE" "$lineno" "$match" >&2
         continue
