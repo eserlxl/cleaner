@@ -727,6 +727,9 @@ the remaining targets and retention, so the run exits 1.
 .B 0
 or unset keeps actions unbounded. A positive limit in a cleanup run requires
 .BR timeout (1).
+On a terminal the action runs in the foreground so Ctrl-C still reaches it; a
+timeout then signals only the action's own process (sudo passes it on), so a
+helper process the action started itself may outlive the limit.
 Exits 1 on a malformed
 .IR SECONDS .
 Cannot be combined with

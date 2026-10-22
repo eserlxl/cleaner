@@ -3752,13 +3752,16 @@ run_action() {
     "$@"
     return
   fi
-  local rc=0 started=$SECONDS
+  local rc=0 started=${EPOCHREALTIME//[!0-9]/} elapsed_us
   local -a timeout_mode=()
   # On a terminal, stay in its process group so Ctrl-C still reaches the action.
   [[ -t 0 ]] && timeout_mode=(--foreground)
   timeout "${timeout_mode[@]}" --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
   # 124/137 also come from an action's own status or an unrelated SIGKILL (OOM).
-  if [[ ( "$rc" -eq 124 || "$rc" -eq 137 ) ]] && (( SECONDS - started >= ACTION_TIMEOUT )); then
+  # Microseconds (digits only: the radix is a comma under tr_TR); whole SECONDS
+  # ticks would call a 0.6 s exit a 1 s timeout.
+  elapsed_us=$(( ${EPOCHREALTIME//[!0-9]/} - started ))
+  if [[ ( "$rc" -eq 124 || "$rc" -eq 137 ) ]] && (( elapsed_us >= ACTION_TIMEOUT * 1000000 )); then
     ACTION_TIMED_OUT=true
   fi
   return "$rc"
