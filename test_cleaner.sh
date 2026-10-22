@@ -13060,6 +13060,17 @@ printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/no_such_timer.conf" > "$doc_pl
 doc_plan_case missing_config "WARN: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/no_such_timer.conf ($doc_plan_env); config not readable"
 printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/test_cleaner.conf" > "$doc_plan_env"
 doc_plan_case readable_config "INFO: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/test_cleaner.conf ($doc_plan_env)"
+printf 'LINUX_CLEANER_RISK= DaNgErOuS \n' > "$doc_plan_env"
+doc_plan_case risk_alias_spaces "INFO: daily timer plan: risk=DaNgErOuS deletion=permanent keep-days=none ($doc_plan_env)"
+printf 'LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=weekly\n' > "$doc_plan_env"
+doc_plan_case invalid_keep_days "WARN: daily timer plan: risk=safe deletion=quarantine keep-days=weekly ($doc_plan_env); invalid keep-days"
+# The service starts in HOME: a relative config resolves there, not in the caller's directory.
+cp "$TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/timer-relative.conf"
+printf 'LINUX_CLEANER_CONFIG=timer-relative.conf\n' > "$doc_plan_env"
+(cd "$TEST_ENV_DIR" && doc_plan_case relative_config "WARN: daily timer plan: risk=safe deletion=permanent keep-days=none config=timer-relative.conf ($doc_plan_env); config not readable")
+printf 'safe|Broken\n' > "$TEST_ENV_DIR/timer-broken.conf"
+printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/timer-broken.conf" > "$doc_plan_env"
+doc_plan_case invalid_config "WARN: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/timer-broken.conf ($doc_plan_env); config invalid"
 if [[ "$EUID" -ne 0 ]]; then
   chmod 000 "$doc_plan_env"
   doc_plan_case unreadable "WARN: daily timer plan: env file not readable ($doc_plan_env)"

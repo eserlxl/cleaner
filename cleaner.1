@@ -400,7 +400,13 @@ The line uses WARN and appends
 .B "; invalid risk"
 or
 .B "; config not readable"
-when the env risk is not safe, medium or danger, or that config is not a readable file.
+when the env risk is not safe, medium, danger or dangerous (in any case), or that config is not a readable file;
+.B "; invalid keep-days"
+when LINUX_CLEANER_TRASH_KEEP_DAYS is not a non-negative integer; and
+.B "; config invalid"
+when that config fails the schema check.
+A relative LINUX_CLEANER_CONFIG is checked under HOME, where the user service starts.
+Values are trimmed of surrounding whitespace, as systemd does.
 An env file that exists but cannot be read prints
 .B "WARN: daily timer plan: env file not readable (path)"
 because systemd then fails every timer run.

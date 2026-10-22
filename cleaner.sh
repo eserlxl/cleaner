@@ -3708,6 +3708,11 @@ run_doctor() {
     env_config="${env_config//[\"\']/}"
     env_trash="${env_trash//[\"\']/}"
     env_keep="${env_keep//[\"\']/}"
+    # systemd strips whitespace around EnvironmentFile values.
+    env_risk=$(trim "$env_risk")
+    env_config=$(trim "$env_config")
+    env_trash=$(trim "$env_trash")
+    env_keep=$(trim "$env_keep")
     case "$env_trash" in
       1|true|TRUE|yes|YES)
         timer_deletion=quarantine
@@ -3726,11 +3731,21 @@ run_doctor() {
       ""|safe|medium|danger|dangerous) ;;
       *) plan_level=WARN; plan_problems+="; invalid risk" ;;
     esac
+    if [[ -n "$env_keep" && "$env_keep" == *[![:digit:]]* ]]; then
+      plan_level=WARN
+      plan_problems+="; invalid keep-days"
+    fi
     if [[ -n "$env_config" ]]; then
       plan_config=" config=$env_config"
-      if [[ ! -f "$env_config" || ! -r "$env_config" ]]; then
+      # The user service starts in HOME, so a relative path resolves there.
+      local plan_config_path="$env_config"
+      [[ "$plan_config_path" == /* ]] || plan_config_path="$HOME/$plan_config_path"
+      if [[ ! -f "$plan_config_path" || ! -r "$plan_config_path" ]]; then
         plan_level=WARN
         plan_problems+="; config not readable"
+      elif ! (CONFIG_FILE="$plan_config_path" validate_config_file >/dev/null 2>&1); then
+        plan_level=WARN
+        plan_problems+="; config invalid"
       fi
     fi
     printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_config" "$timer_env_source" "$plan_problems"
