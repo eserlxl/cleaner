@@ -2608,7 +2608,8 @@ check_path_safety() {
 # Count tracked files without exposing filenames or querying Git with privileges.
 # The scanned repository is untrusted: its .git/config can name a core.fsmonitor
 # command that ls-files would run, so fsmonitor is forced off on every call.
-# Returns 1 when a work tree's tracked files cannot be listed, so the caller fails closed.
+# Returns 1 when a work tree's tracked files cannot be listed, or when git
+# refuses the repository, so the caller fails closed.
 count_git_tracked() {
   local target_path="$1" git_dir="$1" pathspec=. count=0 inside_work_tree
   if [[ "$EUID" -ne 0 ]] && command -v git >/dev/null 2>&1; then
@@ -2616,10 +2617,16 @@ count_git_tracked() {
       git_dir=$(dirname "$target_path")
       pathspec=${target_path##*/}
     fi
-    if inside_work_tree=$(git -c core.fsmonitor=false -C "$git_dir" rev-parse --is-inside-work-tree 2>/dev/null) \
-       && [[ "$inside_work_tree" == true ]]; then
-      count=$(git -c core.fsmonitor=false --literal-pathspecs -C "$git_dir" ls-files -z -- "$pathspec" 2>/dev/null \
-        | tr -cd '\000' | wc -c) || return 1
+    # rev-parse exits non-zero both for a refused repository and for a path
+    # that is not a repository. Fail closed only when the same probe succeeds
+    # with safe.directory='*' (git refused a real repository).
+    if inside_work_tree=$(git -c core.fsmonitor=false -C "$git_dir" rev-parse --is-inside-work-tree 2>/dev/null); then
+      if [[ "$inside_work_tree" == true ]]; then
+        count=$(git -c core.fsmonitor=false --literal-pathspecs -C "$git_dir" ls-files -z -- "$pathspec" 2>/dev/null \
+          | tr -cd '\000' | wc -c) || return 1
+      fi
+    elif git -c core.fsmonitor=false -c safe.directory='*' -C "$git_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      return 1
     fi
   fi
   echo "$count"

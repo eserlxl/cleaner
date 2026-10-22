@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Fixed
+
+- Fail closed (`[SKIP]`, `git-tracked check failed`) when git refuses a repository (dubious ownership) during the git-tracked target guard, instead of treating the refusal as zero tracked files and cleaning the target. A path outside any repository is still treated as having no tracked files.
+
 ## [1.7.1] - 2026-10-22
 
 ### Changed

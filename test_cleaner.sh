@@ -344,6 +344,60 @@ if ! run_test_case "Git-Tracked Target Guard Corrupt Index" 0 "git_guard_corrupt
 fi
 echo -e "${GREEN}PASS: Corrupt git index fails closed with [SKIP] and preserves work-tree targets.${NC}"
 
+# A repository git refuses (dubious ownership) fails closed and skips the target.
+setup_mock_env
+mkdir -p "$MOCK_HOME/proj/build" "$MOCK_HOME/plain-build"
+printf 'cache\n' > "$MOCK_HOME/proj/build/CMakeCache.txt"
+printf 'source\n' > "$MOCK_HOME/proj/build/tracked.c"
+printf 'output\n' > "$MOCK_HOME/plain-build/output.bin"
+HOME="$MOCK_HOME" git init -q "$MOCK_HOME/proj"
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" config user.name 'Cleaner Test'
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" config user.email 'cleaner-test@example.invalid'
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" add -- build/tracked.c
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+  commit -qm 'Track source in build tree'
+cat > "$TEST_ENV_DIR/git_guard_dubious.conf" <<'GIT_GUARD_DUBIOUS'
+safe|Dubious Repo Build|$HOME/proj/build|Build tree in repo git refuses|0||filter:cxx_build
+safe|Dubious Repo File|$HOME/proj/build/tracked.c|Single file in repo git refuses|0||
+safe|Plain Build|$HOME/plain-build|Outside any repository|0||
+GIT_GUARD_DUBIOUS
+# Stop repository discovery at the test directory: the suite may run inside a
+# checkout, and the refused-owner switch would otherwise refuse that outer repo too.
+export GIT_TEST_ASSUME_DIFFERENT_OWNER=1 GIT_CEILING_DIRECTORIES="$TEST_ENV_DIR"
+if ! run_test_case "Git-Tracked Target Guard Dubious Ownership JSON" 0 "git_guard_dubious_json.log" \
+     --config "$TEST_ENV_DIR/git_guard_dubious.conf" --json --dry-run \
+   || ! python3 - "$TEST_ENV_DIR/git_guard_dubious_json.log" "$MOCK_HOME" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+home = sys.argv[2]
+targets = {target["path"]: target for target in data["targets"]}
+for path in (home + "/proj/build", home + "/proj/build/tracked.c"):
+    assert targets[path]["status"] == "skipped", targets[path]
+    assert targets[path]["reason"] == "git-tracked check failed", targets[path]
+    assert targets[path]["bytes"] == 0, targets[path]
+assert targets[home + "/plain-build"]["status"] == "found", targets[home + "/plain-build"]
+PY
+then
+  unset GIT_TEST_ASSUME_DIFFERENT_OWNER GIT_CEILING_DIRECTORIES
+  echo -e "${RED}FAIL: Dubious-ownership targets were not skipped with 'git-tracked check failed' in JSON dry-run.${NC}"
+  cat "$TEST_ENV_DIR/git_guard_dubious_json.log"
+  exit 1
+fi
+if ! run_test_case "Git-Tracked Target Guard Dubious Ownership" 0 "git_guard_dubious.log" \
+     --config "$TEST_ENV_DIR/git_guard_dubious.conf" --dry-run \
+   || ! grep -qF "[SKIP] Dubious Repo Build: skipped: git-tracked check failed." "$TEST_ENV_DIR/git_guard_dubious.log" \
+   || ! grep -qF "[SKIP] Dubious Repo File: skipped: git-tracked check failed." "$TEST_ENV_DIR/git_guard_dubious.log" \
+   || ! grep -qF "Targets: found=1 " "$TEST_ENV_DIR/git_guard_dubious.log" \
+   || [[ ! -f "$MOCK_HOME/proj/build/tracked.c" || ! -f "$MOCK_HOME/proj/build/CMakeCache.txt" \
+      || ! -e "$MOCK_HOME/plain-build" ]]; then
+  unset GIT_TEST_ASSUME_DIFFERENT_OWNER GIT_CEILING_DIRECTORIES
+  echo -e "${RED}FAIL: Dubious-ownership dry-run did not skip the refused repository or skipped the non-repo target.${NC}"
+  cat "$TEST_ENV_DIR/git_guard_dubious.log"
+  exit 1
+fi
+unset GIT_TEST_ASSUME_DIFFERENT_OWNER GIT_CEILING_DIRECTORIES
+echo -e "${GREEN}PASS: Dubious ownership fails closed with [SKIP]; a non-repo target stays found.${NC}"
+
 # A readable outside-HOME target under an unwritable parent still runs the unprivileged git-tracked guard.
 setup_mock_env
 mkdir -p "$OUTSIDE_DIR/proj/sub/build"
