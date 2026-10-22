@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Skip targets whose resolved path contains `|` (for example through a symlinked parent) before deletion or quarantine, with a reason in text and JSON. Such a path was written unescaped to `quarantine.meta`, and `--restore` moved the data to a truncated path while reporting success.
 - Fail closed (`[SKIP]`, `git-tracked check failed`) when git refuses a repository (dubious ownership) during the git-tracked target guard, instead of treating the refusal as zero tracked files and cleaning the target. A path outside any repository is still treated as having no tracked files.
 
 ## [1.7.1] - 2026-10-22

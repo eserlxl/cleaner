@@ -1871,6 +1871,55 @@ else
   exit 1
 fi
 
+# A resolved '|' must never enter deletion or quarantine metadata (a resolved
+# newline aborts the run instead; see the canonical-path cases).
+setup_mock_env
+python3 - "$CLEANER_SH" "$MOCK_HOME" "$TEST_ENV_DIR" <<'RESOLVED_DELIMITERS_PY'
+import json, os, pathlib, subprocess, sys
+cleaner, home, root = sys.argv[1], pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
+env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+env.update(HOME=str(home), XDG_STATE_HOME=str(root / "xdg-state"), NO_COLOR="1",
+           PATH=str(root / "bin") + ":" + env["PATH"])
+reason = "resolved path contains '|'"
+config = root / "resolved-delimiters.conf"
+config.write_text("safe|PipeTest|$HOME/link/cache|test|0||\n"
+                  "safe|Ordinary|$HOME/ordinary|control|0||\n")
+for delimiter in ("|",):
+    physical = home / ("foo" + delimiter + "bar") / "cache"
+    physical.mkdir(parents=True)
+    payload = physical / "data.txt"
+    payload.write_text("keep payload\n")
+    link = home / "link"
+    link.symlink_to(physical.parent, target_is_directory=True)
+    cases = [("JSON", ["--dry-run", "--json"]), ("dry run", ["--dry-run"]),
+             ("clean", ["--clean", "--force"]), ("trash", ["--clean", "--force", "--trash"])]
+    if delimiter == "|":
+        cases.append(("scoped JSON", ["--dry-run", "--json", "--only-path", str(home)]))
+    for label, args in cases:
+        ordinary = home / "ordinary"
+        ordinary.mkdir(exist_ok=True)
+        (ordinary / "data.txt").write_text("ordinary payload\n")
+        result = subprocess.run([cleaner, "--config", str(config)] + args, env=env,
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0, (delimiter, label, result)
+        if "--json" in args:
+            targets = {t["name"]: t for t in json.loads(result.stdout)["targets"]}
+            assert targets["PipeTest"]["status"] == "skipped", targets
+            assert targets["PipeTest"]["reason"] == reason, targets
+            assert targets["PipeTest"]["bytes"] == 0, targets
+            assert targets["Ordinary"]["status"] == "found", targets
+        else:
+            assert "[SKIP] PipeTest: skipped: " + reason in result.stdout, result
+            assert "skipped=1" in result.stdout, result
+        assert payload.read_text() == "keep payload\n", (delimiter, label)
+        assert not (home / "foo").exists(), (delimiter, label)
+        assert ordinary.exists() == ("--clean" not in args), (delimiter, label, result)
+        for meta in (home / ".cache/linux-cleaner/quarantine").glob("*/quarantine.meta"):
+            assert b"/foo" not in meta.read_bytes(), (delimiter, label, meta)
+        print("PASS: Resolved delimiter " + repr(delimiter) + " " + label, flush=True)
+    link.unlink()
+RESOLVED_DELIMITERS_PY
+
 # 18. Test Case: Protected system directory classified UNSAFE
 setup_mock_env
 cat << 'EOF' > "$TEST_ENV_DIR/system_dir.conf"

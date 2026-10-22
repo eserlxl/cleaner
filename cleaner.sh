@@ -3804,8 +3804,14 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     fi
   fi
 
+  # Quarantine records split on '|', so a resolved path holding one would restore
+  # to a truncated path. (A resolved newline already aborts in canonicalize_physical.)
+  if [[ "$path" == *'|'* ]]; then
+    safety_status=4
+  fi
+
   # Keep a failed-resolution symlink refused even if the leaf changes afterward.
-  if [[ "$safety_status" -ne 3 ]]; then
+  if [[ "$safety_status" -eq 0 ]]; then
     if [[ -L "$stripped_path" ]]; then
       safety_status=3
     else
@@ -3828,6 +3834,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     target_status=symlink
     status_echo "  [${RED}SYMLINK${NC}] $name: Refusing to delete symlink target '$path'. Skipping."
     safety_status=1 # Treat as completely unsafe to skip deletion later
+  elif [[ $safety_status -eq 4 ]]; then
+    target_status=skipped
+    target_reason="resolved path contains '|'"
+    status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: $target_reason."
+    safety_status=1
   elif is_path_protected "$path"; then
     target_status=protected
     target_reason="protected by config"
