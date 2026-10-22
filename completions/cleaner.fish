@@ -37,6 +37,7 @@ complete -c cleaner -l lock-wait -x -d 'With mutating runs: wait up to 0..214748
 complete -c cleaner -l min-reclaim -x -d 'With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G)'
 complete -c cleaner -l min-free -x -d 'With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)'
 complete -c cleaner -l min-age -x -d "With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)"
+complete -c cleaner -l action-timeout -x -d 'With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT)'
 complete -c cleaner -l trash-keep-days -x -d 'With cleanup: purge quarantine sessions older than DAYS days after cleaning'
 complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size: keep-latest: (__cleaner_sessions)' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible'
 complete -c cleaner -l allow-outside-home -d 'Deprecated no-op; targets outside HOME are always allowed'

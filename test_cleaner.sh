@@ -1853,6 +1853,30 @@ else
 fi
 
 setup_mock_env
+if run_test_case "Refuse Option Value (--force --action-timeout --dry-run)" 1 "opt_val_action_timeout.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --action-timeout --dry-run \
+   && grep -qF "Error: --action-timeout requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_action_timeout.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --action-timeout --dry-run exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --action-timeout --dry-run did not exit 1 with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_action_timeout.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+if run_test_case "Refuse Dry-Run Short Flag Value (--force --action-timeout -d)" 1 "opt_val_action_timeout_short.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --force --action-timeout -d \
+   && grep -qF "Error: --action-timeout requires a value, got option '-d'." "$TEST_ENV_DIR/opt_val_action_timeout_short.log" \
+   && [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${GREEN}PASS: --force --action-timeout -d exited 1 with the expected message and left the target intact.${NC}"
+else
+  echo -e "${RED}FAIL: --force --action-timeout -d was not refused with the expected message or deleted the target.${NC}"
+  cat "$TEST_ENV_DIR/opt_val_action_timeout_short.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
 if run_test_case "Refuse Option Value (--force --trash-keep-days --dry-run)" 1 "opt_val_trash_keep_days.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --force --trash-keep-days --dry-run \
    && grep -qF "Error: --trash-keep-days requires a value, got option '--dry-run'." "$TEST_ENV_DIR/opt_val_trash_keep_days.log" \
@@ -3059,7 +3083,7 @@ echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
 vt_expected=$(printf '%s\n' \
   --config --risk --exclude --restore --only --only-exact --only-target \
   --exclude-target --only-path --exclude-path --lock-wait --min-reclaim \
-  --min-free --min-age --trash-keep-days --purge-sessions | sort)
+  --min-free --min-age --action-timeout --trash-keep-days --purge-sessions | sort)
 vt_parser=$(awk '
   function emit(    n, i, p) {
     if (lab == "") return
@@ -6460,6 +6484,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-monitor-profile-", dir="/tmp") 
         ("invalid risk", {"LINUX_CLEANER_RISK": "invalid"}, "Unknown risk"),
         ("invalid scope", {"LINUX_CLEANER_ONLY_PATH": "relative"}, "literal absolute path"),
         ("invalid min age", {"LINUX_CLEANER_MIN_AGE": "bad"}, "non-negative integer"),
+        ("invalid action timeout", {"LINUX_CLEANER_ACTION_TIMEOUT": "bad"}, "non-negative integer"),
         ("invalid retention", {"LINUX_CLEANER_TRASH_KEEP_DAYS": "bad"}, "non-negative integer"),
         ("scope retention conflict", shared | {"LINUX_CLEANER_TRASH_KEEP_DAYS": "7"}, "--only-path applies only"),
     ]:
@@ -7155,7 +7180,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
-  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify)
+  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -7165,11 +7190,12 @@ mx_args() {
     --min-reclaim) echo "--min-reclaim 1G" ;;
     --min-free) echo "--min-free 1G" ;;
     --min-age) echo "--min-age 30" ;;
+    --action-timeout) echo "--action-timeout 60" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --trash-keep-days --notify --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --list-targets
   --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -7270,6 +7296,7 @@ for check_spec in \
   "Min Reclaim With Check Config Rejected|min_reclaim_check_config.log|--min-reclaim|1G" \
   "Min Free With Check Config Rejected|min_free_check_config.log|--min-free|1G" \
   "Min Age With Check Config Rejected|min_age_check_config.log|--min-age|7" \
+  "Action Timeout With Check Config Rejected|action_timeout_check_config.log|--action-timeout|60" \
   "Trash Keep Days With Check Config Rejected|trash_keep_check_config.log|--trash-keep-days|7" \
   "Notify With Check Config Rejected|notify_check_config.log|--notify|"
 do
@@ -11638,6 +11665,109 @@ PY
 done
 echo -e "${GREEN}PASS: --min-age raises a filter:cxx_build row's idle threshold.${NC}"
 
+# --action-timeout SECONDS / LINUX_CLEANER_ACTION_TIMEOUT: a hung action:* command
+# is stopped and counted as a failed target while later targets and retention still
+# run; with no positive limit the action runs without timeout(1).
+echo -e "\n${BOLD}Test Case: Action Timeout${NC}"
+setup_mock_env
+at_real_timeout=$(command -v timeout)
+at_later="$MOCK_HOME/.cache/action_timeout_later"
+at_old_sess="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-01-01_00-00-00"
+at_action_trace="$TEST_ENV_DIR/action_timeout_uv.trace"
+at_timeout_trace="$TEST_ENV_DIR/action_timeout_wrap.trace"
+cat > "$TEST_ENV_DIR/action_timeout.conf" <<EOF
+safe|Hung Action|\$HOME/.cache/uv|Hung action fixture|0||action:uv_cache_prune
+safe|Later Target|\$HOME/.cache/action_timeout_later|Later ordinary target|0||
+EOF
+cat > "$TEST_ENV_DIR/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf 'started\n' >> "$at_action_trace"
+sleep "\${MOCK_ACTION_SLEEP:-5}"
+printf 'finished\n' >> "$at_action_trace"
+EOF
+cat > "$TEST_ENV_DIR/bin/timeout" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$at_timeout_trace"
+exec "$at_real_timeout" "\$@"
+EOF
+chmod +x "$TEST_ENV_DIR/bin/uv" "$TEST_ENV_DIR/bin/timeout"
+at_reset() {
+  rm -f "$at_action_trace" "$at_timeout_trace"
+  mkdir -p "$MOCK_HOME/.cache/uv" "$at_later" "$at_old_sess/0_Old_Target"
+  printf 'later\n' > "$at_later/later.txt"
+  printf 'old-quarantined\n' > "$at_old_sess/0_Old_Target/old.txt"
+  printf 'full|0_Old_Target|%s/.cache/old_target|false|%s|%s\n' \
+    "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$at_old_sess/quarantine.meta"
+  touch -d "10 days ago" "$at_old_sess"
+}
+
+at_reset
+if ! run_test_case "Action Timeout Stops Hung Action" 1 "action_timeout_hung.log" \
+       --config "$TEST_ENV_DIR/action_timeout.conf" --clean --force --action-timeout 1 --trash-keep-days 7 \
+   || ! grep -qF "Error: Action 'action:uv_cache_prune' for 'Hung Action' timed out after 1 seconds." "$TEST_ENV_DIR/action_timeout_hung.log" \
+   || ! grep -qF "Failed targets: Hung Action" "$TEST_ENV_DIR/action_timeout_hung.log" \
+   || ! grep -qF "Purged 2020-01-01_00-00-00" "$TEST_ENV_DIR/action_timeout_hung.log" \
+   || [[ -e "$at_later/later.txt" || -d "$at_old_sess" ]] \
+   || [[ "$(cat "$at_action_trace")" != started ]] \
+   || [[ "$(cat "$at_timeout_trace")" != "--kill-after=10 1 uv cache prune --cache-dir $(realpath "$MOCK_HOME/.cache/uv")" ]]; then
+  echo -e "${RED}FAIL: --action-timeout 1 did not stop the hung action, count it failed, and still clean the later target and run retention.${NC}"
+  cat "$TEST_ENV_DIR/action_timeout_hung.log" "$at_action_trace" "$at_timeout_trace" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --action-timeout 1 stops a hung action, counts it failed, cleans the later target, runs retention, and exits 1.${NC}"
+
+for at_case in "unset|" "zero|0"; do
+  at_reset
+  if ! LINUX_CLEANER_ACTION_TIMEOUT="${at_case#*|}" MOCK_ACTION_SLEEP=0 \
+       run_test_case "Action Timeout ${at_case%%|*} Runs Unwrapped" 0 "action_timeout_${at_case%%|*}.log" \
+         --config "$TEST_ENV_DIR/action_timeout.conf" --clean --force \
+     || [[ -e "$at_timeout_trace" ]] \
+     || [[ "$(cat "$at_action_trace")" != $'started\nfinished' ]]; then
+    echo -e "${RED}FAIL: an ${at_case%%|*} action timeout wrapped the action in timeout(1) or did not run it.${NC}"
+    cat "$TEST_ENV_DIR/action_timeout_${at_case%%|*}.log" "$at_timeout_trace" 2>/dev/null || true
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: an unset or zero action timeout runs the action without timeout(1).${NC}"
+
+at_reset
+if ! LINUX_CLEANER_ACTION_TIMEOUT=0030 MOCK_ACTION_SLEEP=0 \
+     run_test_case "Action Timeout Env Wraps Action" 0 "action_timeout_env.log" \
+       --config "$TEST_ENV_DIR/action_timeout.conf" --clean --force \
+   || [[ "$(cat "$at_timeout_trace")" != "--kill-after=10 30 uv cache prune --cache-dir $(realpath "$MOCK_HOME/.cache/uv")" ]] \
+   || [[ "$(cat "$at_action_trace")" != $'started\nfinished' ]]; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_ACTION_TIMEOUT=0030 did not wrap a finishing action with a 30 second limit.${NC}"
+  cat "$TEST_ENV_DIR/action_timeout_env.log" "$at_timeout_trace" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: LINUX_CLEANER_ACTION_TIMEOUT wraps the action with the normalized limit and a finished action succeeds.${NC}"
+
+at_env_bad_ec=0
+LINUX_CLEANER_ACTION_TIMEOUT=-1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --config "$TEST_ENV_DIR/action_timeout.conf" --dry-run \
+  < /dev/null > "$TEST_ENV_DIR/action_timeout_env_bad.log" 2>&1 || at_env_bad_ec=$?
+if [[ "$at_env_bad_ec" -ne 1 ]] \
+   || ! grep -q -- "--action-timeout expects a non-negative integer" "$TEST_ENV_DIR/action_timeout_env_bad.log" \
+   || ! run_test_case "Action Timeout Invalid Value" 1 "action_timeout_bad.log" \
+       --config "$TEST_ENV_DIR/action_timeout.conf" --action-timeout 1.5 --dry-run \
+   || ! grep -q -- "--action-timeout expects a non-negative integer" "$TEST_ENV_DIR/action_timeout_bad.log" \
+   || ! run_test_case "Action Timeout Missing Value" 1 "action_timeout_noarg.log" \
+       --config "$TEST_ENV_DIR/action_timeout.conf" --action-timeout \
+   || ! grep -q -- "--action-timeout requires a seconds argument" "$TEST_ENV_DIR/action_timeout_noarg.log" \
+   || ! run_test_case "Action Timeout With Report Rejected" 1 "action_timeout_report.log" \
+       --action-timeout 5 --report \
+   || ! grep -q -- "--action-timeout applies only to cleanup" "$TEST_ENV_DIR/action_timeout_report.log" \
+   || ! LINUX_CLEANER_ACTION_TIMEOUT=5 run_test_case "Action Timeout Env With List Sessions Rejected" 1 "action_timeout_list.log" \
+       --list-sessions \
+   || ! grep -q -- "--action-timeout applies only to cleanup" "$TEST_ENV_DIR/action_timeout_list.log"; then
+  echo -e "${RED}FAIL: --action-timeout validation or mode exclusion failed (env ec=$at_env_bad_ec).${NC}"
+  cat "$TEST_ENV_DIR/action_timeout_env_bad.log" "$TEST_ENV_DIR/action_timeout_bad.log" "$TEST_ENV_DIR/action_timeout_noarg.log" \
+    "$TEST_ENV_DIR/action_timeout_report.log" "$TEST_ENV_DIR/action_timeout_list.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/bin/uv" "$TEST_ENV_DIR/bin/timeout"
+echo -e "${GREEN}PASS: --action-timeout rejects invalid values and read-only modes from the CLI and the environment.${NC}"
+
 # --show-matches previews exactly the eligible paths, without mutating targets.
 setup_mock_env
 sm_dir="$MOCK_HOME/.cache/show matches"
@@ -11890,6 +12020,11 @@ if ! (
   HOME="$MOCK_HOME" _cleaner
   [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
 
+  COMP_WORDS=(cleaner --action-timeout "")
+  COMP_CWORD=2
+  HOME="$MOCK_HOME" _cleaner
+  [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+
   # File-valued options must ask readline to treat replies as filenames, so a
   # directory gets a trailing slash and special characters are quoted.
   # shellcheck disable=SC2329  # invoked indirectly by _cleaner
@@ -12009,7 +12144,7 @@ if command -v fish > /dev/null 2>&1; then
   echo -e "${GREEN}PASS: fish completes only immediate quarantine directories and preserves selectors with no quarantine directory.${NC}"
   fish_comp_failed=""
   for fcase in --exclude --only --only-exact --only-target --exclude-target --lock-wait \
-               --min-reclaim --min-free --min-age --trash-keep-days; do
+               --min-reclaim --min-free --min-age --action-timeout --trash-keep-days; do
     if [[ -n "$(cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
                  fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $fcase '" 2>&1)" ]]; then
       fish_comp_failed+=" $fcase"

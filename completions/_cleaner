@@ -32,6 +32,7 @@ _cleaner() {
     '--min-reclaim[With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G)]:size:' \
     '--min-free[With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G)]:size:' \
     '--min-age[With cleanup: raise every ordinary target'\''s age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)]:days:' \
+    '--action-timeout[With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT)]:seconds:' \
     '--trash-keep-days[With cleanup: purge quarantine sessions older than DAYS days after cleaning]:days:' \
     '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible]:session:{compadd -- latest all "${sessions[@]}"; compadd -S "" -- older-than\: max-size\: keep-latest\:}' \
     '--allow-outside-home[Deprecated no-op; targets outside HOME are always allowed]' \

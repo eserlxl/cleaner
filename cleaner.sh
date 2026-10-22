@@ -69,6 +69,7 @@ Options:
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --min-free SIZE            With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G).
   --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
+  --action-timeout SECONDS   With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
@@ -115,6 +116,7 @@ MIN_RECLAIM_BYTES=0
 MIN_FREE=""
 MIN_FREE_BYTES=0
 MIN_AGE_OVERRIDE=""
+ACTION_TIMEOUT=""
 TRASH_KEEP_DAYS=""
 LOCK_WAIT="${LINUX_CLEANER_LOCK_WAIT:-0}"
 PURGE_TARGET=""
@@ -187,6 +189,9 @@ if [[ -n "${LINUX_CLEANER_MIN_FREE:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_MIN_AGE:-}" ]]; then
   MIN_AGE_OVERRIDE="$LINUX_CLEANER_MIN_AGE"
+fi
+if [[ -n "${LINUX_CLEANER_ACTION_TIMEOUT:-}" ]]; then
+  ACTION_TIMEOUT="$LINUX_CLEANER_ACTION_TIMEOUT"
 fi
 if [[ -n "${LINUX_CLEANER_TRASH_KEEP_DAYS:-}" ]]; then
   TRASH_KEEP_DAYS="$LINUX_CLEANER_TRASH_KEEP_DAYS"
@@ -464,6 +469,15 @@ while [[ $# -gt 0 ]]; do
       MIN_AGE_OVERRIDE="$2"
       shift 2
       ;;
+    --action-timeout)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --action-timeout requires a seconds argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      ACTION_TIMEOUT="$2"
+      shift 2
+      ;;
     --trash-keep-days)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --trash-keep-days requires a day count argument.${NC}" >&2
@@ -633,6 +647,15 @@ if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
   MIN_AGE_OVERRIDE=${MIN_AGE_OVERRIDE:-0}
 fi
 
+if [[ -n "$ACTION_TIMEOUT" ]]; then
+  if [[ ! "$ACTION_TIMEOUT" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: --action-timeout expects a non-negative integer second count, got '${ACTION_TIMEOUT}'.${NC}" >&2
+    exit 1
+  fi
+  ACTION_TIMEOUT=${ACTION_TIMEOUT#"${ACTION_TIMEOUT%%[!0]*}"}
+  ACTION_TIMEOUT=${ACTION_TIMEOUT:-0}
+fi
+
 if [[ -n "$TRASH_KEEP_DAYS" ]]; then
   if [[ ! "$TRASH_KEEP_DAYS" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: --trash-keep-days expects a non-negative integer day count, got '${TRASH_KEEP_DAYS}'.${NC}" >&2
@@ -691,6 +714,11 @@ fi
 
 if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$ACTION_TIMEOUT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --action-timeout applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -3571,6 +3599,24 @@ action_is_user_level() {
   esac
 }
 
+# Run one predefined action command, bounded by --action-timeout when it is set.
+# sudo stays inside the wrapped command. ACTION_TIMED_OUT reports timeout(1)'s
+# 124 (stopped by TERM) or 137 (killed after the grace period).
+ACTION_TIMED_OUT=false
+run_action() {
+  ACTION_TIMED_OUT=false
+  if [[ -z "$ACTION_TIMEOUT" || "$ACTION_TIMEOUT" == 0 ]]; then
+    "$@"
+    return
+  fi
+  local rc=0
+  timeout --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
+  if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
+    ACTION_TIMED_OUT=true
+  fi
+  return "$rc"
+}
+
 action_display_command() {
   case "${1:-}" in
     action:uv_cache_prune) echo "uv cache prune" ;;
@@ -3882,6 +3928,12 @@ fi
 if [[ "$CHECK_CONFIG" == true ]]; then
   validate_config_file
   exit 0
+fi
+
+# Only a cleanup run with a positive limit wraps actions in timeout(1).
+if [[ "$DRY_RUN" != true && -n "$ACTION_TIMEOUT" && "$ACTION_TIMEOUT" != 0 ]] && ! command -v timeout >/dev/null 2>&1; then
+  echo "Error: --action-timeout requires timeout(1) for cleanup runs." >&2
+  exit 1
 fi
 
 # Serialize mutating runs (non-preview restore, purge, and cleanup) with an
@@ -4641,62 +4693,62 @@ for i in "${!parsed_names[@]}"; do
     action_success=false
     case "$custom_clean_cmd" in
       action:paccache_keep1)
-        if sudo paccache -rk1; then
+        if run_action sudo paccache -rk1; then
           action_success=true
         fi
         ;;
       action:paccache_keep2)
-        if sudo paccache -rk2; then
+        if run_action sudo paccache -rk2; then
           action_success=true
         fi
         ;;
       action:paccache_keep3)
-        if sudo paccache -rk3; then
+        if run_action sudo paccache -rk3; then
           action_success=true
         fi
         ;;
       action:pacman_clean)
-        if sudo pacman -Sc --noconfirm; then
+        if run_action sudo pacman -Sc --noconfirm; then
           action_success=true
         fi
         ;;
       action:apt_clean)
-        if sudo apt-get clean; then
+        if run_action sudo apt-get clean; then
           action_success=true
         fi
         ;;
       action:dnf_clean)
-        if sudo dnf clean all; then
+        if run_action sudo dnf clean all; then
           action_success=true
         fi
         ;;
       action:zypper_clean)
-        if sudo zypper clean -a; then
+        if run_action sudo zypper clean -a; then
           action_success=true
         fi
         ;;
       action:apk_clean)
-        if sudo apk cache clean; then
+        if run_action sudo apk cache clean; then
           action_success=true
         fi
         ;;
       action:uv_cache_prune)
-        if uv cache prune --cache-dir "$path"; then
+        if run_action uv cache prune --cache-dir "$path"; then
           action_success=true
         fi
         ;;
       action:pnpm_store_prune)
-        if pnpm store prune --store-dir "$path"; then
+        if run_action pnpm store prune --store-dir "$path"; then
           action_success=true
         fi
         ;;
       action:hf_cache_prune)
-        if hf cache prune --yes --cache-dir "$path"; then
+        if run_action hf cache prune --yes --cache-dir "$path"; then
           action_success=true
         fi
         ;;
       action:nix_store_gc)
-        if nix-store --gc; then
+        if run_action nix-store --gc; then
           action_success=true
         fi
         ;;
@@ -4715,7 +4767,11 @@ for i in "${!parsed_names[@]}"; do
       result_cleaned=$((result_cleaned + 1))
       log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=action risk=${risk_level} target='${name}' path='${path}' action=${custom_clean_cmd} outcome=success"
     else
-      echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
+      if [[ "$ACTION_TIMED_OUT" == true ]]; then
+        echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' timed out after ${ACTION_TIMEOUT} seconds.${NC}" >&2
+      else
+        echo -e "  ${RED}Error: Action '$custom_clean_cmd' for '$name' failed.${NC}" >&2
+      fi
       OPERATION_FAILED=true
       result_failed=$((result_failed + 1))
       result_failed_names+="${result_failed_names:+, }${name}"

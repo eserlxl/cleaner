@@ -352,6 +352,7 @@ combined with
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-age ,
+.BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
 or
@@ -434,6 +435,7 @@ the checklist. Cannot be combined with
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-age ,
+.BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
 or
@@ -652,6 +654,31 @@ rows. Cannot be combined with
 or
 .BR \-\-doctor .
 .TP
+.B \-\-action\-timeout \fISECONDS\fR
+Used with cleanup: stop each
+.B action:*
+command that is still running after
+.I SECONDS
+seconds (a non-negative decimal integer) with
+.BR "timeout \-\-kill\-after=10" ,
+print that the action timed out, count its target as failed, and continue with
+the remaining targets and retention, so the run exits 1.
+.B 0
+or unset keeps actions unbounded. A positive limit in a cleanup run requires
+.BR timeout (1).
+Exits 1 on a malformed
+.IR SECONDS .
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
 .B \-\-trash\-keep\-days \fIDAYS\fR
 Used with cleanup: purge quarantine sessions older than
 .IR DAYS
@@ -766,7 +793,8 @@ Value-taking options
 .BR \-\-restore ", " \-\-only ", " \-\-only\-exact ,
 .BR \-\-only\-target ", " \-\-exclude\-target ", " \-\-only\-path ,
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
-.BR \-\-min\-free ", " \-\-min\-age ", " \-\-trash\-keep\-days ,
+.BR \-\-min\-free ", " \-\-min\-age ", " \-\-action\-timeout ,
+.BR \-\-trash\-keep\-days ,
 and
 .BR \-\-purge\-sessions )
 refuse a following long option
@@ -896,6 +924,11 @@ CLI flags override this variable.
 .B LINUX_CLEANER_MIN_AGE
 When set to a non-empty non-negative integer day count, enables
 .BR \-\-min\-age .
+CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_ACTION_TIMEOUT
+When set to a non-empty non-negative integer second count, enables
+.BR \-\-action\-timeout .
 CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_TRASH_KEEP_DAYS
