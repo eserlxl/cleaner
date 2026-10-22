@@ -885,7 +885,13 @@ and may also contain
 .B *
 or
 .B ?
-wildcards. A wildcard line expands to one independent target per matching
+wildcards. Paths containing either wildcard cannot contain
+.B [
+or
+.BR ] ;
+this also applies after placeholder expansion, when such a row is skipped with a
+warning. Brackets remain literal in paths without wildcards.
+A wildcard line expands to one independent target per matching
 directory, each passing the same safety checks as a literal path. Matching is
 performed by
 .BR find (1)

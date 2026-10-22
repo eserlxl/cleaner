@@ -7728,6 +7728,41 @@ for bracket_mode in --check-config --dry-run; do
     exit 1
   fi
 done
+for bracket_mode in --list-targets --dry-run; do
+  if ! run_test_case "Literal Bracket Path ($bracket_mode --json)" 0 "bracket_literal.log" \
+       --config "$TEST_ENV_DIR/bracket_literal.conf" "$bracket_mode" --json \
+     || ! python3 - "$TEST_ENV_DIR/bracket_literal.log" "$MOCK_HOME" <<'BRACKET_PATH_PY'
+import json, sys
+targets = json.load(open(sys.argv[1]))["targets"]
+paths = [target["path"].replace("$HOME", sys.argv[2]) for target in targets]
+assert paths == [sys.argv[2] + "/src/app/file[1]"], paths
+BRACKET_PATH_PY
+  then
+    echo -e "${RED}FAIL: $bracket_mode selected a character-class sibling instead of the literal bracketed path.${NC}"
+    cat "$TEST_ENV_DIR/bracket_literal.log"
+    exit 1
+  fi
+done
+
+mkdir -p "$MOCK_HOME/expanded/app[1]/cache" "$MOCK_HOME/expanded/app1/secrets"
+printf 'preserve\n' > "$MOCK_HOME/expanded/app[1]/cache/sentinel"
+printf 'preserve\n' > "$MOCK_HOME/expanded/app1/secrets/sentinel"
+# shellcheck disable=SC2016  # literal $XDG_CACHE_HOME is expanded by the cleaner
+printf '# header\nsafe|Bracket Expansion|$XDG_CACHE_HOME/*|d|0||\n' > "$TEST_ENV_DIR/bracket_expanded.conf"
+for bracket_mode in --list-targets --dry-run --force; do
+  if ! XDG_CACHE_HOME="$MOCK_HOME/expanded/app[1]" \
+       run_test_case "Bracket Wildcard Validation (expanded $bracket_mode)" 0 "bracket_expanded.log" \
+       --config "$TEST_ENV_DIR/bracket_expanded.conf" "$bracket_mode" \
+     || ! grep -qF 'bracket_expanded.conf:2: skipping wildcard with bracket characters in expanded path' \
+       "$TEST_ENV_DIR/bracket_expanded.log" \
+     || grep -qF "$MOCK_HOME/expanded/app1/secrets" "$TEST_ENV_DIR/bracket_expanded.log" \
+     || ! grep -qx preserve "$MOCK_HOME/expanded/app[1]/cache/sentinel" \
+     || ! grep -qx preserve "$MOCK_HOME/expanded/app1/secrets/sentinel"; then
+    echo -e "${RED}FAIL: $bracket_mode accepted an expanded bracketed wildcard or touched its sibling.${NC}"
+    cat "$TEST_ENV_DIR/bracket_expanded.log"
+    exit 1
+  fi
+done
 echo -e "${GREEN}PASS: wildcard brackets are refused and literal bracketed paths remain valid.${NC}"
 
 # --check-config validates definitions, never their current expansion or contents.

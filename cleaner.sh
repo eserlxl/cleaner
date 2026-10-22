@@ -1286,6 +1286,10 @@ expand_config_globs() {
       printf 'Warning: %s:%s: skipping wildcard with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
       continue
     fi
+    if [[ "$raw_path" == *'['* || "$raw_path" == *']'* ]]; then
+      printf 'Warning: %s:%s: skipping wildcard with bracket characters in expanded path\n' "$CONFIG_FILE" "$lineno" >&2
+      continue
+    fi
     # Collapse redundant slashes and strip trailing slashes to match the literal-path
     # pipeline, so a trailing or doubled slash cannot silently drop the line.
     while [[ "$raw_path" == *//* ]]; do
