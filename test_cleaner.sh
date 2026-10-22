@@ -12320,17 +12320,21 @@ for preview_collision in absent existing; do
     exit 1
   fi
 done
-# A second spelling of the same existing cleanup file is the same collision.
-cp "$preview_dir/sentinel" "$preview_file"
-if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$(dirname -- "$preview_file")//$(basename -- "$preview_file")" \
-     LINUX_CLEANER_METRICS_FILE="$preview_file" \
-     run_test_case "Prometheus Preview Collision alias" 0 "preview_collision.log" \
-       --config "$TEST_ENV_DIR/preview.conf" --dry-run \
-   || ! grep -q 'Warning:.*equals LINUX_CLEANER_METRICS_FILE' "$TEST_ENV_DIR/preview_collision.log" \
-   || ! cmp -s "$preview_file" "$preview_dir/sentinel"; then
-  echo -e "${RED}FAIL: an aliased preview path overwrote the cleanup metrics file.${NC}"
-  exit 1
-fi
+# A second spelling of the same cleanup file is the same collision, existing or not.
+for preview_alias in existing absent; do
+  rm -f "$preview_file"
+  [[ "$preview_alias" == existing ]] && cp "$preview_dir/sentinel" "$preview_file"
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$(dirname -- "$preview_file")//$(basename -- "$preview_file")" \
+       LINUX_CLEANER_METRICS_FILE="$preview_file" \
+       run_test_case "Prometheus Preview Collision alias $preview_alias" 0 "preview_collision.log" \
+         --config "$TEST_ENV_DIR/preview.conf" --dry-run \
+     || ! grep -q 'Warning:.*equals LINUX_CLEANER_METRICS_FILE' "$TEST_ENV_DIR/preview_collision.log" \
+     || { [[ "$preview_alias" == existing ]] && ! cmp -s "$preview_file" "$preview_dir/sentinel"; } \
+     || { [[ "$preview_alias" == absent ]] && [[ -e "$preview_file" ]]; }; then
+    echo -e "${RED}FAIL: an aliased preview path ($preview_alias) overwrote the cleanup metrics file.${NC}"
+    exit 1
+  fi
+done
 rm -f "$preview_file"
 unset LINUX_CLEANER_PREVIEW_METRICS_FILE
 if ! run_test_case "Prometheus Preview Unset" 0 "preview_unset.log" --config "$TEST_ENV_DIR/preview.conf" --dry-run \

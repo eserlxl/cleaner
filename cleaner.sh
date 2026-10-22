@@ -3239,8 +3239,11 @@ write_preview_metrics() {
   local metrics_file="${LINUX_CLEANER_PREVIEW_METRICS_FILE:-}" now would_skip=0
   [[ -n "$metrics_file" ]] || return 0
   # -ef also catches a second spelling (//, ./) of an existing cleanup metrics file.
+  # A matching parent directory and name catches the same path before the file exists.
   if [[ "$metrics_file" == "${LINUX_CLEANER_METRICS_FILE:-}" \
-        || ( -n "${LINUX_CLEANER_METRICS_FILE:-}" && "$metrics_file" -ef "$LINUX_CLEANER_METRICS_FILE" ) ]]; then
+        || ( -n "${LINUX_CLEANER_METRICS_FILE:-}" && "$metrics_file" -ef "$LINUX_CLEANER_METRICS_FILE" ) \
+        || ( -n "${LINUX_CLEANER_METRICS_FILE:-}" && "${metrics_file##*/}" == "${LINUX_CLEANER_METRICS_FILE##*/}" \
+             && "${metrics_file%/*}/" -ef "${LINUX_CLEANER_METRICS_FILE%/*}/" ) ]]; then
     echo "Warning: LINUX_CLEANER_PREVIEW_METRICS_FILE equals LINUX_CLEANER_METRICS_FILE; skipping preview metrics export." >&2
     return 0
   fi
