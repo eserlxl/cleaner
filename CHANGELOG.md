@@ -17,7 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
-- Reject target paths combining `*` or `?` with `[` or `]` before analysis or deletion, including brackets introduced by `$HOME`, `$USER`, or `$XDG_*` expansion (skip with a warning), preventing bracket classes from selecting a different directory; literal bracketed paths remain valid and tests pin their exact targets.
+- Reject target paths combining `*` or `?` with `[` or `]` before analysis or deletion, preventing bracket classes from selecting a different directory; literal bracketed paths remain valid and tests pin their exact targets. A wildcard row whose `$HOME`, `$USER`, or `$XDG_*` expansion contains a bracket, which previously matched nothing silently, is now skipped with a warning.
 - Compare a plain `CHECK_PROCESSES` name that contains `.` (such as `python3.13-debug`) on its first 15 characters, and ignore whitespace after `cmdline:`, so both forms match a running process instead of cleaning its cache.
 - Exclude CMake and Meson source roots and symlink-only markers from `filter:cxx_build`, while retaining real build markers up to two levels deep, so broad build patterns cannot delete these source trees.
 - Skip targets whose resolved path contains `|` (for example through a symlinked parent) before deletion or quarantine, with a reason in text and JSON. Such a path was written unescaped to `quarantine.meta`, and `--restore` moved the data to a truncated path while reporting success.
