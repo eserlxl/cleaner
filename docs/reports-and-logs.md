@@ -35,7 +35,23 @@ The file emits `# HELP` and `# TYPE` lines for four gauge families derived from 
 - `linux_cleaner_targets{result="cleaned|skipped|failed"}`: target counts from the result report.
 - `linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"}`: accounted bytes quarantined and permanently reclaimed.
 
-A relative path, a path containing a line feed, a symlinked target or parent directory, or a write error prints a warning on stderr without failing the cleanup. Unset or empty `LINUX_CLEANER_METRICS_FILE`, dry-runs, and read-only modes write nothing.
+A relative path, a path containing a line feed, a symlinked target or parent directory, or a write error prints a warning on stderr without failing the cleanup. Unset or empty `LINUX_CLEANER_METRICS_FILE`, dry-runs, and read-only modes do not write this cleanup metrics file.
+
+## Preview textfile metrics (`LINUX_CLEANER_PREVIEW_METRICS_FILE`)
+
+Set this env-only variable (no CLI flag) to export a cleanup dry run's plan, in text or JSON mode, to a separate Prometheus textfile. For example, add it to a systemd monitor service's environment to feed the textfile collector from scheduled previews:
+
+```sh
+LINUX_CLEANER_PREVIEW_METRICS_FILE=/var/lib/node_exporter/textfile_collector/linux_cleaner_preview.prom cleaner --quiet --dry-run --json
+```
+
+The file contains HELP/TYPE lines and three gauges:
+
+- `linux_cleaner_preview_timestamp_seconds`: Unix timestamp of the preview.
+- `linux_cleaner_preview_reclaimable_bytes`: the planned total, matching JSON `total_reclaimable_bytes`, even when a threshold would skip cleanup.
+- `linux_cleaner_preview_would_skip`: `1` when `--min-reclaim`, `--min-free`, or nothing to clean would skip cleanup; `0` otherwise, matching whether JSON `would_skip` is non-null.
+
+The path must be literal and absolute without line feeds, with an existing writable directory. The same path checks and atomic replacement as cleanup metrics apply; symlinked targets or parent directories are refused. Invalid paths and write errors warn on stderr without failing the dry run. A path equal to `LINUX_CLEANER_METRICS_FILE` warns and skips preview export, preserving cleanup metrics. Unset/empty writes nothing. Mutating cleanup, restore, purge, list, report, check-config, init-config, and doctor modes ignore the variable. Dry runs still leave cleanup reports and cleanup metrics untouched.
 
 ## Operation log (`--log` / `LINUX_CLEANER_LOG`)
 

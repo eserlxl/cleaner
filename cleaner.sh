@@ -1033,19 +1033,12 @@ json_escape() {
 }
 
 emit_dry_run_json() {
-  local i first=true size_human would_skip=null
-  if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
-    would_skip='"skipped_below_min_reclaim"'
-  elif [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
-    would_skip='"skipped_at_or_above_min_free"'
-  elif [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; then
-    would_skip='"nothing_to_clean"'
-  fi
+  local i first=true size_human
   printf '{'
   printf '"config":"%s",' "$(json_escape "$CONFIG_FILE")"
   printf '"total_reclaimable_bytes":%s,' "$total_reclaimable_bytes"
   printf '"total_reclaimable_human":"%s",' "$(json_escape "$(format_bytes "$total_reclaimable_bytes")")"
-  printf '"would_skip":%s,' "$would_skip"
+  printf '"would_skip":%s,' "$preview_would_skip"
   printf '"targets":['
   for i in "${!json_names[@]}"; do
     if [[ "$first" == true ]]; then
@@ -3137,28 +3130,53 @@ suggest_daily_timer() {
   fi
 }
 
-# Write an opt-in Prometheus node_exporter textfile when LINUX_CLEANER_METRICS_FILE
-# is set. Non-fatal: a bad path or write error warns and never changes exit status.
+# Share path validation and atomic replacement between cleanup and preview metrics.
+write_metrics_textfile() {
+  local metrics_file="$1" env_name="$2" kind="$3" metrics_dir tmp
+  shift 3
+  if [[ "$metrics_file" != /* || "$metrics_file" == *$'\n'* || "$metrics_file" == / ]]; then
+    echo "Warning: $env_name must be a literal absolute file path without line feeds; skipping metrics export." >&2
+    return 1
+  fi
+  if [[ -L "$metrics_file" || -d "$metrics_file" ]]; then
+    echo "Warning: refusing to write $kind metrics; '$metrics_file' is a symlink or directory." >&2
+    return 1
+  fi
+  metrics_dir=$(dirname -- "$metrics_file") || {
+    echo "Warning: could not resolve $kind metrics directory for '$metrics_file'." >&2
+    return 1
+  }
+  if [[ -L "$metrics_dir" || ! -d "$metrics_dir" ]]; then
+    echo "Warning: could not write $kind metrics; directory '$metrics_dir' does not exist or is a symlink." >&2
+    return 1
+  fi
+  tmp=$(mktemp "${metrics_dir}/.linux-cleaner-metrics.XXXXXX" 2>/dev/null) || {
+    echo "Warning: could not create temporary $kind metrics file in '$metrics_dir'." >&2
+    return 1
+  }
+  chmod 0644 -- "$tmp" 2>/dev/null || true
+  if ! printf '%s\n' "$@" > "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo "Warning: could not write $kind metrics to '$metrics_file'." >&2
+    return 1
+  fi
+  if [[ -L "$metrics_dir" || -L "$metrics_file" || -d "$metrics_file" ]]; then
+    rm -f -- "$tmp" || true
+    echo "Warning: refusing to write $kind metrics; '$metrics_file' is a symlink or directory." >&2
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$metrics_file"; then
+    rm -f -- "$tmp" || true
+    echo "Warning: could not save $kind metrics to '$metrics_file'." >&2
+    return 1
+  fi
+}
+
+# Non-fatal: a bad path or write error warns and never changes exit status.
 write_cleanup_metrics() {
   local metrics_file="${LINUX_CLEANER_METRICS_FILE:-}"
   [[ -n "$metrics_file" ]] || return 0
-  if [[ "$metrics_file" != /* || "$metrics_file" == *$'\n'* || "$metrics_file" == / ]]; then
-    echo "Warning: LINUX_CLEANER_METRICS_FILE must be a literal absolute file path without line feeds; skipping metrics export." >&2
-    return 0
-  fi
-  if [[ -L "$metrics_file" || -d "$metrics_file" ]]; then
-    echo "Warning: refusing to write cleanup metrics; '$metrics_file' is a symlink or directory." >&2
-    return 0
-  fi
-  local metrics_dir tmp line cleaned=0 skipped=0 failed=0 quarantined_bytes=0 permanent_bytes=0 interrupted="" success=1 now
-  metrics_dir=$(dirname -- "$metrics_file") || {
-    echo "Warning: could not resolve cleanup metrics directory for '$metrics_file'." >&2
-    return 0
-  }
-  if [[ -L "$metrics_dir" || ! -d "$metrics_dir" ]]; then
-    echo "Warning: could not write cleanup metrics; directory '$metrics_dir' does not exist or is a symlink." >&2
-    return 0
-  fi
+  local line cleaned=0 skipped=0 failed=0 quarantined_bytes=0 permanent_bytes=0 interrupted="" success=1 now
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
       "Result: cleaned="*)
@@ -3183,12 +3201,7 @@ write_cleanup_metrics() {
     success=0
   fi
   now=$(date +%s 2>/dev/null) || now=0
-  tmp=$(mktemp "${metrics_dir}/.linux-cleaner-metrics.XXXXXX" 2>/dev/null) || {
-    echo "Warning: could not create temporary cleanup metrics file in '$metrics_dir'." >&2
-    return 0
-  }
-  chmod 0644 -- "$tmp" 2>/dev/null || true
-  if ! printf '%s\n' \
+  if write_metrics_textfile "$metrics_file" LINUX_CLEANER_METRICS_FILE cleanup \
     "# HELP linux_cleaner_last_run_timestamp_seconds Unix timestamp of the last cleanup run." \
     "# TYPE linux_cleaner_last_run_timestamp_seconds gauge" \
     "linux_cleaner_last_run_timestamp_seconds ${now}" \
@@ -3203,22 +3216,31 @@ write_cleanup_metrics() {
     "# HELP linux_cleaner_reclaimed_bytes Accounted bytes reclaimed in the last cleanup run by kind." \
     "# TYPE linux_cleaner_reclaimed_bytes gauge" \
     "linux_cleaner_reclaimed_bytes{kind=\"quarantined\"} ${quarantined_bytes}" \
-    "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}" > "$tmp"; then
-    rm -f -- "$tmp" || true
-    echo "Warning: could not write cleanup metrics to '$metrics_file'." >&2
+    "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}"; then
+    CLEANUP_METRICS_WRITTEN=true
+  fi
+  return 0
+}
+
+write_preview_metrics() {
+  local metrics_file="${LINUX_CLEANER_PREVIEW_METRICS_FILE:-}" now would_skip=0
+  [[ -n "$metrics_file" ]] || return 0
+  if [[ "$metrics_file" == "${LINUX_CLEANER_METRICS_FILE:-}" ]]; then
+    echo "Warning: LINUX_CLEANER_PREVIEW_METRICS_FILE equals LINUX_CLEANER_METRICS_FILE; skipping preview metrics export." >&2
     return 0
   fi
-  if [[ -L "$metrics_dir" || -L "$metrics_file" || -d "$metrics_file" ]]; then
-    rm -f -- "$tmp" || true
-    echo "Warning: refusing to write cleanup metrics; '$metrics_file' is a symlink or directory." >&2
-    return 0
-  fi
-  if ! mv -f -- "$tmp" "$metrics_file"; then
-    rm -f -- "$tmp" || true
-    echo "Warning: could not save cleanup metrics to '$metrics_file'." >&2
-    return 0
-  fi
-  CLEANUP_METRICS_WRITTEN=true
+  [[ "$preview_would_skip" != null ]] && would_skip=1
+  now=$(date +%s 2>/dev/null) || now=0
+  write_metrics_textfile "$metrics_file" LINUX_CLEANER_PREVIEW_METRICS_FILE preview \
+    "# HELP linux_cleaner_preview_timestamp_seconds Unix timestamp of the cleanup preview." \
+    "# TYPE linux_cleaner_preview_timestamp_seconds gauge" \
+    "linux_cleaner_preview_timestamp_seconds ${now}" \
+    "# HELP linux_cleaner_preview_reclaimable_bytes Planned reclaimable bytes in the cleanup preview." \
+    "# TYPE linux_cleaner_preview_reclaimable_bytes gauge" \
+    "linux_cleaner_preview_reclaimable_bytes ${total_reclaimable_bytes}" \
+    "# HELP linux_cleaner_preview_would_skip Whether cleanup would skip (1) or proceed (0)." \
+    "# TYPE linux_cleaner_preview_would_skip gauge" \
+    "linux_cleaner_preview_would_skip ${would_skip}" || true
 }
 
 # Save the plan plus the result. Non-fatal: a bad state path or a write error
@@ -4117,6 +4139,18 @@ if [[ "$MIN_FREE_BYTES" -gt 0 ]]; then
     echo -e "${YELLOW}Warning: cannot read free space on the filesystem holding HOME; --min-free ${MIN_FREE} is ignored this run.${NC}" >&2
     home_free_bytes=0
   fi
+fi
+
+preview_would_skip=null
+if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
+  preview_would_skip='"skipped_below_min_reclaim"'
+elif [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
+  preview_would_skip='"skipped_at_or_above_min_free"'
+elif [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; then
+  preview_would_skip='"nothing_to_clean"'
+fi
+if [[ "$DRY_RUN" == true ]]; then
+  write_preview_metrics
 fi
 
 if [[ "$JSON_OUTPUT" == true ]]; then

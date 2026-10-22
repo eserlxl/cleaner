@@ -12119,6 +12119,134 @@ else
 fi
 rm -rf "$tip_xdg"
 
+# Preview metrics are opt-in, dry-run only, and keep last-cleanup metrics separate.
+echo -e "\n${BOLD}Test Case: Prometheus Preview Metrics Dry Run${NC}"
+setup_mock_env
+preview_dir="$TEST_ENV_DIR/preview-metrics"
+preview_file="$preview_dir/preview.prom"
+mkdir -p "$preview_dir" "$MOCK_HOME/.cache/preview_target"
+truncate -s 2049 "$MOCK_HOME/.cache/preview_target/file.txt"
+printf 'safe|Preview Target|%s/.cache/preview_target/file.txt|Preview metrics test|0||\n' "$MOCK_HOME" > "$TEST_ENV_DIR/preview.conf"
+
+for preview_format in text json; do
+  preview_args=(--dry-run)
+  [[ "$preview_format" == json ]] && preview_args+=(--json)
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_file" \
+       LINUX_CLEANER_METRICS_FILE="$preview_dir/cleanup.prom" \
+       run_test_case "Prometheus Preview Metrics $preview_format" 0 "preview_$preview_format.log" \
+         --config "$TEST_ENV_DIR/preview.conf" "${preview_args[@]}" \
+     || ! python3 - "$preview_file" "$TEST_ENV_DIR/preview_$preview_format.log" "$preview_format" <<'PREVIEW_PY'
+import json, pathlib, re, sys, time
+path = pathlib.Path(sys.argv[1])
+assert path.is_file() and not path.is_symlink()
+lines = path.read_text(encoding="utf-8").splitlines()
+gauges = dict(line.split() for line in lines if not line.startswith("#"))
+expected = {"linux_cleaner_preview_timestamp_seconds", "linux_cleaner_preview_reclaimable_bytes",
+            "linux_cleaner_preview_would_skip"}
+assert set(gauges) == expected, gauges
+for name in expected:
+    assert f"# TYPE {name} gauge" in lines, lines
+    assert any(line.startswith(f"# HELP {name} ") for line in lines), lines
+assert re.fullmatch(r"[1-9][0-9]*", gauges["linux_cleaner_preview_timestamp_seconds"])
+assert abs(time.time() - int(gauges["linux_cleaner_preview_timestamp_seconds"])) < 60
+assert gauges["linux_cleaner_preview_reclaimable_bytes"] == "2049", gauges
+assert gauges["linux_cleaner_preview_would_skip"] == "0", gauges
+if sys.argv[3] == "json":
+    report = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+    assert report["total_reclaimable_bytes"] == int(gauges["linux_cleaner_preview_reclaimable_bytes"])
+    assert report["would_skip"] is None, report
+assert not list(path.parent.glob(".linux-cleaner-metrics.*"))
+assert not (path.parent / "cleanup.prom").exists()
+PREVIEW_PY
+  then
+    echo -e "${RED}FAIL: $preview_format preview metrics did not match the dry run.${NC}"
+    exit 1
+  fi
+done
+
+# Threshold and nothing-to-clean verdicts must match the JSON preview.
+for preview_gate in reclaim free empty; do
+  preview_args=(--config "$TEST_ENV_DIR/preview.conf" --dry-run --json)
+  preview_bytes=2049
+  case "$preview_gate" in
+    reclaim) preview_args+=(--min-reclaim 1G) ;;
+    free) preview_args+=(--min-free 1) ;;
+    empty)
+      printf '# No targets\n' > "$TEST_ENV_DIR/preview_empty.conf"
+      preview_args=(--config "$TEST_ENV_DIR/preview_empty.conf" --dry-run --json)
+      preview_bytes=0
+      ;;
+  esac
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_file" \
+       run_test_case "Prometheus Preview Skip $preview_gate" 0 "preview_skip.log" "${preview_args[@]}" \
+     || ! grep -qx "linux_cleaner_preview_reclaimable_bytes $preview_bytes" "$preview_file" \
+     || ! grep -qx 'linux_cleaner_preview_would_skip 1' "$preview_file" \
+     || ! python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["would_skip"] is not None' "$TEST_ENV_DIR/preview_skip.log"; then
+    echo -e "${RED}FAIL: preview skip metrics did not match $preview_gate verdict.${NC}"
+    exit 1
+  fi
+done
+rm -f "$preview_file"
+
+for preview_bad_path in "relative-preview.prom" "$preview_dir/line"$'\n'"feed.prom" "$preview_dir/missing/preview.prom" "$preview_dir"; do
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_bad_path" \
+       run_test_case "Prometheus Preview Invalid Path" 0 "preview_invalid.log" \
+         --config "$TEST_ENV_DIR/preview.conf" --dry-run \
+     || ! grep -q 'Warning:' "$TEST_ENV_DIR/preview_invalid.log" \
+     || [[ -e "$preview_file" ]] \
+     || { [[ "$preview_bad_path" != "$preview_dir" ]] && [[ -e "$preview_bad_path" ]]; }; then
+    echo -e "${RED}FAIL: invalid preview metrics path was not refused.${NC}"
+    exit 1
+  fi
+done
+
+printf 'keep target intact\n' > "$preview_dir/sentinel"
+ln -s "$preview_dir/sentinel" "$preview_file"
+ln -s "$preview_dir" "$TEST_ENV_DIR/preview-link"
+for preview_bad_path in "$preview_file" "$TEST_ENV_DIR/preview-link/parent.prom"; do
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_bad_path" \
+       run_test_case "Prometheus Preview Symlink Refused" 0 "preview_symlink.log" \
+         --config "$TEST_ENV_DIR/preview.conf" --dry-run \
+     || ! grep -q 'Warning:.*symlink' "$TEST_ENV_DIR/preview_symlink.log" \
+     || [[ ! -L "$preview_file" || -e "$preview_dir/parent.prom" ]] \
+     || [[ "$(cat "$preview_dir/sentinel")" != 'keep target intact' ]]; then
+    echo -e "${RED}FAIL: symlinked preview path was not refused safely.${NC}"
+    exit 1
+  fi
+done
+rm -f "$preview_file"
+for preview_collision in absent existing; do
+  [[ "$preview_collision" == existing ]] && cp "$preview_dir/sentinel" "$preview_file"
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_file" LINUX_CLEANER_METRICS_FILE="$preview_file" \
+       run_test_case "Prometheus Preview Collision $preview_collision" 0 "preview_collision.log" \
+         --config "$TEST_ENV_DIR/preview.conf" --dry-run \
+     || ! grep -q 'Warning:.*equals LINUX_CLEANER_METRICS_FILE' "$TEST_ENV_DIR/preview_collision.log" \
+     || { [[ "$preview_collision" == absent ]] && [[ -e "$preview_file" ]]; } \
+     || { [[ "$preview_collision" == existing ]] && ! cmp -s "$preview_file" "$preview_dir/sentinel"; }; then
+    echo -e "${RED}FAIL: colliding preview path was not refused safely.${NC}"
+    exit 1
+  fi
+done
+rm -f "$preview_file"
+unset LINUX_CLEANER_PREVIEW_METRICS_FILE
+if ! run_test_case "Prometheus Preview Unset" 0 "preview_unset.log" --config "$TEST_ENV_DIR/preview.conf" --dry-run \
+   || ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_file" \
+     run_test_case "Prometheus Preview Force Ignored" 0 "preview_force.log" --config "$TEST_ENV_DIR/preview.conf" --force \
+   || [[ -e "$preview_file" ]]; then
+  echo -e "${RED}FAIL: unset preview variable or mutating cleanup wrote preview metrics.${NC}"
+  exit 1
+fi
+for preview_mode in --list-targets --list-sessions --report --check-config; do
+  if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$preview_file" \
+       run_test_case "Prometheus Preview Ignored $preview_mode" 0 "preview_mode.log" \
+         --config "$TEST_ENV_DIR/preview.conf" "$preview_mode" \
+     || [[ -e "$preview_file" ]]; then
+    echo -e "${RED}FAIL: $preview_mode wrote preview metrics.${NC}"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: preview metrics are dry-run only, match the plan, and reject unsafe or colliding paths.${NC}"
+
 # LINUX_CLEANER_METRICS_FILE: write an atomic Prometheus node_exporter textfile
 # at every cleanup exit matching last-report.txt, refuse relative/LF/symlinked
 # paths with a warning without failing the run, and write nothing on dry-run,

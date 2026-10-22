@@ -866,6 +866,23 @@ Environment-only (no CLI flag). A relative path, line feed, symlinked target or
 parent directory, or write error prints a warning on stderr without failing the
 run. Dry-run and read-only modes never write the file.
 .TP
+.B LINUX_CLEANER_PREVIEW_METRICS_FILE
+Environment-only (no CLI flag). When set, a cleanup dry run (text or JSON)
+atomically writes a Prometheus textfile with HELP and TYPE lines for three gauges:
+.BR linux_cleaner_preview_timestamp_seconds
+(Unix timestamp of the preview),
+.BR linux_cleaner_preview_reclaimable_bytes
+(the planned reclaimable total), and
+.BR linux_cleaner_preview_would_skip
+(1 for a minimum-reclaim/free skip or nothing to clean, otherwise 0).
+Requires a literal absolute file path without line feeds and an existing writable
+directory. Symlinked targets or parent directories are refused. Invalid paths,
+write errors, or a path equal to
+.B LINUX_CLEANER_METRICS_FILE
+warn on stderr without failing the run. Unset or empty writes nothing.
+Mutating cleanup, restore, purge, list, report, check-config, init-config, and
+doctor modes ignore it.
+.TP
 .B LINUX_CLEANER_ALLOW_OUTSIDE_HOME
 Deprecated no-op. When set to
 .BR 1 ", " true ", or " yes ,
