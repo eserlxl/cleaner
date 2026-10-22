@@ -65,7 +65,8 @@ Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does n
 
 Preview first with `cleaner --restore latest --dry-run`, optionally adding `--only`
 or `--only-exact`. Each selected record prints `would restore`, `conflict`,
-`already restored`, or `missing`, followed by two spaces and its original path.
+`already restored`, `missing`, or `unknown type` (a record the real restore skips as
+failed), followed by two spaces and its original path.
 An aged record reports `conflict` if any destination file or symlinked parent
 conflicts; other files in that record may still be recoverable in a real restore.
 The preview ends with `Dry-run: nothing restored.` and exits `0` even when records

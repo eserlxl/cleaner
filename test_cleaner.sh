@@ -5396,6 +5396,10 @@ with tempfile.TemporaryDirectory(prefix="cleaner-restore-preview-", dir="/tmp") 
         record_type = "aged-restored" if name == "aged-complete" else "aged"
         records.append([record_type, name, str(original), "true", str(os.getuid()), str(os.getgid())])
         expected[name] = status
+    (home / "bogus").mkdir()
+    (session / "bogus").mkdir()
+    records.append(["bogus", "bogus", str(home / "bogus"), "true", str(os.getuid()), str(os.getgid())])
+    expected["bogus"] = "unknown type"
     meta.write_text("\n".join("|".join(record) for record in records) + "\n")
     os.utime(session, (1577836800, 1577836800))
     lock = home / ".cache/linux-cleaner/cleaner.lock"
@@ -5431,7 +5435,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-restore-preview-", dir="/tmp") 
                                 env=env, capture_output=True, text=True, timeout=20)
         assert result.returncode == status, (label, result)
         lines = result.stdout.splitlines()
-        outcomes = [line for line in lines if line.startswith(("would restore  ", "conflict  ", "already restored  ", "missing  "))]
+        outcomes = [line for line in lines if line.startswith(("would restore  ", "conflict  ", "already restored  ", "missing  ", "unknown type  "))]
         assert sorted(outcomes) == sorted(f"{value}  {home / name}" for name, value in selected.items()), (label, result)
         if status == 0:
             assert lines[-1] == "Dry-run: nothing restored.", (label, result)

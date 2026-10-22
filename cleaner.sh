@@ -2339,6 +2339,9 @@ restore_quarantine() {
       local preview_status="would restore" preview_file preview_dest preview_parent
       if [[ "$type" == aged-restored ]]; then
         preview_status="already restored"
+      elif [[ "$type" != full && "$type" != aged ]]; then
+        # The real restore skips this record as failed.
+        preview_status="unknown type"
       elif [[ ! -e "$src_path" ]]; then
         if [[ "$type" == full ]] && path_present false "$original_path"; then
           preview_status="already restored"
