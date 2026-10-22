@@ -12351,5 +12351,93 @@ if [[ "$nc_ec" -ne 1 ]] || ! grep -qF "Configuration file not found at '$nc_dir/
 fi
 echo -e "${GREEN}PASS: a config discovery miss lists every searched location and the --doctor hint; an explicit path does not.${NC}"
 
+# A file or build tree can be rewritten after analysis and before deletion.
+# The pre-delete process check is the seam: its second pgrep touches the
+# target, which must then be skipped instead of removed. A still-old control
+# is cleaned. Removing the freshness re-check deletes the touched path.
+echo -e "\n${BOLD}Test Case: Freshness Recheck Before Whole-Target Cleanup${NC}"
+freshness_recheck_case() {
+  local kind="$1" mode="$2"
+  local fresh control conf log control_bytes skip_line
+  setup_mock_env
+  conf="$TEST_ENV_DIR/freshness.conf"
+  log="freshness_${kind}_${mode}.log"
+  rm -f "$TEST_ENV_DIR/freshness_pgrep_count"
+  if [[ "$kind" == "file" ]]; then
+    fresh="$MOCK_HOME/stale_file.txt"
+    control="$MOCK_HOME/still_old.txt"
+    printf 'stale\n' > "$fresh"
+    printf 'old\n' > "$control"
+    touch -d '40 days ago' "$fresh" "$control"
+    printf '%s\n' "$fresh" > "$TEST_ENV_DIR/freshness_touch_path"
+    cat > "$conf" <<'EOF'
+safe|Stale File|$HOME/stale_file.txt|single file past min age|14|fresh_probe|
+safe|Still Old|$HOME/still_old.txt|control file past min age|14||
+EOF
+    skip_line="[SKIP] Stale File: skipped: no longer older than 14 days."
+  else
+    fresh="$MOCK_HOME/proj/stale/build"
+    control="$MOCK_HOME/proj/idle/build"
+    mkdir -p "$fresh/CMakeFiles" "$control/CMakeFiles"
+    printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$fresh/CMakeCache.txt"
+    printf 'stale-obj\n' > "$fresh/CMakeFiles/old.o"
+    printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$control/CMakeCache.txt"
+    printf 'idle-obj\n' > "$control/CMakeFiles/old.o"
+    touch -d '40 days ago' "$fresh/CMakeCache.txt" "$fresh/CMakeFiles/old.o" \
+      "$fresh/CMakeFiles" "$fresh" \
+      "$control/CMakeCache.txt" "$control/CMakeFiles/old.o" \
+      "$control/CMakeFiles" "$control"
+    printf '%s\n' "$fresh/CMakeFiles/old.o" > "$TEST_ENV_DIR/freshness_touch_path"
+    cat > "$conf" <<'EOF'
+safe|Stale Build|$HOME/proj/stale/build|idle cxx build|14|fresh_probe|filter:cxx_build
+safe|Still Idle|$HOME/proj/idle/build|control idle cxx build|14||filter:cxx_build
+EOF
+    skip_line="[SKIP] Stale Build: skipped: active within 14 days."
+  fi
+  cat > "$TEST_ENV_DIR/bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+count_file="${TEST_ENV_DIR}/freshness_pgrep_count"
+n=0
+[[ -f "$count_file" ]] && n=$(cat "$count_file")
+n=$((n + 1))
+printf '%s\n' "$n" > "$count_file"
+if [[ "$n" -eq 2 ]]; then
+  touch -- "$(cat "${TEST_ENV_DIR}/freshness_touch_path")"
+fi
+exit 1
+EOF
+  chmod +x "$TEST_ENV_DIR/bin/pgrep"
+  control_bytes=$(du -sb "$control" | awk '{print $1}')
+  local -a flags=(--config "$conf" --clean --force)
+  [[ "$mode" == "trash" ]] && flags+=(--trash)
+  if ! run_test_case "Freshness $kind $mode" 0 "$log" "${flags[@]}"; then
+    return 1
+  fi
+  local survived=false accounted="Accounted bytes: quarantined=0 permanent=${control_bytes}"
+  if [[ "$kind" == "file" ]]; then
+    [[ -f "$fresh" ]] && grep -qxF 'stale' "$fresh" && survived=true
+  else
+    [[ -f "$fresh/CMakeFiles/old.o" ]] && grep -qxF 'stale-obj' "$fresh/CMakeFiles/old.o" && survived=true
+  fi
+  [[ "$mode" == "trash" ]] && accounted="Accounted bytes: quarantined=${control_bytes} permanent=0"
+  if [[ "$survived" != true ]] \
+     || [[ -e "$control" ]] \
+     || ! grep -qF "$skip_line" "$TEST_ENV_DIR/$log" \
+     || ! grep -q '^Result: cleaned=1 skipped=1 failed=0 elapsed=' "$TEST_ENV_DIR/$log" \
+     || ! grep -qF "$accounted" "$TEST_ENV_DIR/$log" \
+     || [[ "$(cat "$TEST_ENV_DIR/freshness_pgrep_count")" != "2" ]]; then
+    echo -e "${RED}FAIL: freshness re-check ($kind, $mode) did not skip the rewritten target and clean only the still-old control.${NC}"
+    cat "$TEST_ENV_DIR/$log" 2>/dev/null || true
+    return 1
+  fi
+  return 0
+}
+for freshness_kind in file build; do
+  for freshness_mode in clean trash; do
+    freshness_recheck_case "$freshness_kind" "$freshness_mode" || exit 1
+  done
+done
+echo -e "${GREEN}PASS: a single file or cxx_build tree rewritten after analysis is skipped for --clean and --trash; a still-old control is cleaned.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

@@ -2668,6 +2668,13 @@ has_matching_files() {
   return 1
 }
 
+# True when PATH itself is still older than AGE days. A whole-target rm or
+# quarantine move does not pass -mtime, so the cleanup loop asks again.
+path_still_older_than() {
+  local use_sudo="$1" target_path="$2" age_days="$3"
+  [[ -n $(with_sudo "$use_sudo" find "$target_path" -maxdepth 0 -mtime +"$age_days" -print -quit 2>/dev/null) ]]
+}
+
 # Calculate size in bytes using du (takes into account min_age and exclusions if set)
 get_size_bytes() {
   local target_path="$1"
@@ -4239,6 +4246,24 @@ for i in "${!parsed_names[@]}"; do
   # Handle Cleanup
   custom_clean_cmd="${parsed_cmds[$i]:-}"
   set_target_exclusions "$custom_clean_cmd"
+
+  # A single file or an idle build tree can be rewritten after analysis, while
+  # the user confirms or earlier targets are cleaned. Whole-target rm and
+  # quarantine do not reapply -mtime. Leave it in place and count the skip.
+  # Directories with a positive age already delete through find -mtime.
+  idle_limit="${parsed_idle[$i]:-0}"
+  if [[ "$custom_clean_cmd" == "filter:cxx_build" ]] && has_positive_age "$idle_limit" \
+     && [[ -n $(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_limit" -print -quit 2>/dev/null) ]]; then
+    status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: active within $idle_limit days."
+    result_skipped=$((result_skipped + 1))
+    continue
+  fi
+  if has_positive_age "$age" && ! path_is_real_dir "$use_sudo" "$path" \
+     && ! path_still_older_than "$use_sudo" "$path" "$age"; then
+    status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: no longer older than $age days."
+    result_skipped=$((result_skipped + 1))
+    continue
+  fi
 
   if [[ "$custom_clean_cmd" == action:* ]]; then
     # Safe degradation: skip an action whose actual binary is absent, before any
