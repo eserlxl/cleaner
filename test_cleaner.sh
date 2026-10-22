@@ -12233,6 +12233,8 @@ done
 
 # Threshold and nothing-to-clean verdicts must match the JSON preview.
 for preview_gate in reclaim free empty; do
+  # Each verdict must write its own file, never pass on the previous case's.
+  rm -f "$preview_file"
   preview_args=(--config "$TEST_ENV_DIR/preview.conf" --dry-run --json)
   preview_bytes=2049
   case "$preview_gate" in
@@ -12294,6 +12296,17 @@ for preview_collision in absent existing; do
     exit 1
   fi
 done
+# A second spelling of the same existing cleanup file is the same collision.
+cp "$preview_dir/sentinel" "$preview_file"
+if ! LINUX_CLEANER_PREVIEW_METRICS_FILE="$(dirname -- "$preview_file")//$(basename -- "$preview_file")" \
+     LINUX_CLEANER_METRICS_FILE="$preview_file" \
+     run_test_case "Prometheus Preview Collision alias" 0 "preview_collision.log" \
+       --config "$TEST_ENV_DIR/preview.conf" --dry-run \
+   || ! grep -q 'Warning:.*equals LINUX_CLEANER_METRICS_FILE' "$TEST_ENV_DIR/preview_collision.log" \
+   || ! cmp -s "$preview_file" "$preview_dir/sentinel"; then
+  echo -e "${RED}FAIL: an aliased preview path overwrote the cleanup metrics file.${NC}"
+  exit 1
+fi
 rm -f "$preview_file"
 unset LINUX_CLEANER_PREVIEW_METRICS_FILE
 if ! run_test_case "Prometheus Preview Unset" 0 "preview_unset.log" --config "$TEST_ENV_DIR/preview.conf" --dry-run \
