@@ -703,7 +703,7 @@ while IFS='#' read -r hidden_risk_case hidden_risk_arg hidden_risk_above hidden_
     exit 1
   fi
 done <<'HIDDEN_RISK_CASES'
-default##safe (not analysed): medium=1 danger=1; preview with --risk medium|danger#Hidden Cache, Danger Cache
+default##safe (not analysed): medium=1 danger=1; preview with --risk danger#Hidden Cache, Danger Cache
 medium#risk-medium#medium (not analysed): medium=0 danger=1; preview with --risk danger#Danger Cache
 no-danger#no-danger#safe (not analysed): medium=1 danger=0; preview with --risk medium#Hidden Cache
 only-safe#only-safe##

@@ -2959,9 +2959,9 @@ print_plan_report() {
   printf '%s\n' "Targets: found=${found} clean/missing=${clean_missing} skipped=${skipped} blocked=${blocked} protected=${protected_n} unsafe/symlink=${unsafe_symlink} root=${root_n}"
   printf '%s\n' "Reclaimable by risk: safe=$(format_bytes "$safe_b") medium=$(format_bytes "$med_b") danger=$(format_bytes "$dang_b")"
   if [[ $((hidden_medium + hidden_danger)) -gt 0 ]]; then
-    local risk_hint="medium|danger"
-    [[ "$hidden_danger" -eq 0 ]] && risk_hint=medium
-    [[ "$hidden_medium" -eq 0 ]] && risk_hint=danger
+    # danger also covers medium, so one valid --risk value previews every hidden target.
+    local risk_hint=medium
+    [[ "$hidden_danger" -gt 0 ]] && risk_hint=danger
     printf '%s\n' "Above --risk ${MAX_RISK} (not analysed): medium=${hidden_medium} danger=${hidden_danger}; preview with --risk ${risk_hint}"
     printf '%s\n' "Hidden by risk: ${hidden_risk_names}"
   fi
