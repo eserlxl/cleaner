@@ -1601,6 +1601,15 @@ list_config_targets() {
 # Validate every active config line with the same structural checks as the
 # cleanup parser (field count, required fields, CHECK_PROCESSES, MIN_AGE_DAYS,
 # known actions, known risks) without path expansion or disk analysis.
+# Run a command, then print an empty NUL record and its exit status. Callers
+# read that status from the stream: `wait "$!"` on a process substitution can
+# miss an already-reaped child under load and report a false failure.
+print0_with_status() {
+  local rc=0
+  "$@" || rc=$?
+  printf '\0%s\0' "$rc"
+}
+
 validate_config_file() {
   local config_line config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
@@ -1728,7 +1737,12 @@ quarantine_unrecorded_entry_count() {
     [[ -z "$mtype" || "$mtype" == \#* ]] && continue
     references+=("$(trim "$rel")")
   done <<< "$records"
+  local stream_rc=""
   while IFS= read -r -d '' entry; do
+    if [[ -z "$entry" ]]; then
+      IFS= read -r -d '' stream_rc
+      break
+    fi
     accounted=false
     for rel in "${references[@]}"; do
       if [[ "$rel" == "$entry" || "$rel" == "$entry/"* ]]; then
@@ -1737,8 +1751,8 @@ quarantine_unrecorded_entry_count() {
       fi
     done
     [[ "$accounted" == true ]] || count=$((count + 1))
-  done < <(find "$session" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -printf '%f\0' 2>/dev/null)
-  if ! wait "$!"; then
+  done < <(print0_with_status find "$session" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -printf '%f\0' 2>/dev/null)
+  if [[ "$stream_rc" != 0 ]]; then
     echo "Error: Failed to enumerate quarantine entries in '$session'." >&2
     return 1
   fi
@@ -1796,10 +1810,12 @@ emit_list_sessions_json() {
   local sess_first=true tgt_first
 
   if [[ -d "$quarantine_base" ]]; then
+    local enum_rc=0 enum_list
+    enum_list=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort) || enum_rc=$?
     while IFS= read -r s; do
       [[ -n "$s" ]] && sessions+=("$s")
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
-    if ! wait "$!"; then
+    done <<< "$enum_list"
+    if [[ "$enum_rc" -ne 0 ]]; then
       echo "Error: Failed to enumerate quarantine sessions." >&2
       return 1
     fi
@@ -1871,10 +1887,12 @@ list_quarantine_sessions() {
   local -a sessions=()
   if [[ -d "$quarantine_base" ]]; then
     local s
+    local enum_rc=0 enum_list
+    enum_list=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort) || enum_rc=$?
     while IFS= read -r s; do
       [[ -n "$s" ]] && sessions+=("$s")
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
-    if ! wait "$!"; then
+    done <<< "$enum_list"
+    if [[ "$enum_rc" -ne 0 ]]; then
       echo "Error: Failed to enumerate quarantine sessions." >&2
       return 1
     fi
@@ -1958,10 +1976,12 @@ purge_quarantine_sessions() {
   local -a targets=()
   if [[ "$target" == "all" ]]; then
     local s
+    local enum_rc=0 enum_list
+    enum_list=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort) || enum_rc=$?
     while IFS= read -r s; do
       [[ -n "$s" ]] && targets+=("$s")
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
-    if ! wait "$!"; then
+    done <<< "$enum_list"
+    if [[ "$enum_rc" -ne 0 ]]; then
       echo "Error: Failed to enumerate quarantine sessions." >&2
       return 1
     fi
@@ -1982,10 +2002,12 @@ purge_quarantine_sessions() {
     targets+=("$latest")
   elif [[ "$target" == older-than:* ]]; then
     local s
+    local enum_rc=0 enum_list
+    enum_list=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -mtime +"$days" 2>/dev/null | sort) || enum_rc=$?
     while IFS= read -r s; do
       [[ -n "$s" ]] && targets+=("$s")
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -mtime +"$days" 2>/dev/null | sort)
-    if ! wait "$!"; then
+    done <<< "$enum_list"
+    if [[ "$enum_rc" -ne 0 ]]; then
       echo "Error: Failed to enumerate quarantine sessions." >&2
       return 1
     fi
@@ -1997,10 +2019,12 @@ purge_quarantine_sessions() {
   elif [[ "$target" == max-size:* ]]; then
     local s sess_bytes running_bytes=0
     local -a all_sessions=() over_budget=()
+    local enum_rc=0 enum_list
+    enum_list=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r) || enum_rc=$?
     while IFS= read -r s; do
       [[ -n "$s" ]] && all_sessions+=("$s")
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
-    if ! wait "$!"; then
+    done <<< "$enum_list"
+    if [[ "$enum_rc" -ne 0 ]]; then
       echo "Error: Failed to enumerate quarantine sessions." >&2
       return 1
     fi
@@ -2022,10 +2046,12 @@ purge_quarantine_sessions() {
   elif [[ "$target" == keep-latest:* ]]; then
     local s
     local -a all_sessions=() over_count=()
+    local enum_rc=0 enum_list
+    enum_list=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r) || enum_rc=$?
     while IFS= read -r s; do
       [[ -n "$s" ]] && all_sessions+=("$s")
-    done < <(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
-    if ! wait "$!"; then
+    done <<< "$enum_list"
+    if [[ "$enum_rc" -ne 0 ]]; then
       echo "Error: Failed to enumerate quarantine sessions." >&2
       return 1
     fi
@@ -2249,7 +2275,7 @@ reset_session_mtime() {
 
 # Restore files and folders from a quarantine session
 restore_quarantine() {
-  local target="$1"
+  local target="$1" stream_rc=""
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   refuse_symlinked_quarantine "$quarantine_base" || exit 1
 
@@ -2356,7 +2382,12 @@ restore_quarantine() {
         if [[ -L "$original_path" || ( -e "$original_path" && ! -d "$original_path" ) ]]; then
           preview_status="conflict"
         else
+          stream_rc=""
           while IFS= read -r -d '' preview_file; do
+            if [[ -z "$preview_file" ]]; then
+              IFS= read -r -d '' stream_rc
+              break
+            fi
             preview_dest="$original_path/${preview_file#"$src_path"/}"
             if path_present false "$preview_dest"; then
               preview_status="conflict"
@@ -2368,8 +2399,8 @@ restore_quarantine() {
               fi
               preview_parent="${preview_parent%/*}"
             done
-          done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-          wait "$!" || preview_status="missing"
+          done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+          [[ "$stream_rc" == 0 ]] || preview_status="missing"
         fi
       fi
       printf '%s  %s\n' "$preview_status" "$original_path"
@@ -2452,7 +2483,12 @@ restore_quarantine() {
           echo -e "${RED}Error: Not enough free space to restore '$original_path' (needs $(format_bytes "$MOVE_NEED_BYTES"), $(format_bytes "$MOVE_AVAIL_BYTES") free); kept in quarantine.${NC}" >&2
           success=false
         else
+          stream_rc=""
           while IFS= read -r -d '' file; do
+            if [[ -z "$file" ]]; then
+              IFS= read -r -d '' stream_rc
+              break
+            fi
             local file_rel="${file#"$src_path"/}"
             local dest_file="$original_path/$file_rel"
             local dest_parent check_dir="$original_path" rel_dir part symlink_conflict=false
@@ -2492,8 +2528,8 @@ restore_quarantine() {
             else
               success=false
             fi
-          done < <(find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-          wait "$!" || success=false
+          done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
+          [[ "$stream_rc" == 0 ]] || success=false
         fi
       fi
     else
@@ -4734,7 +4770,12 @@ for i in "${!parsed_names[@]}"; do
         
         aged_moved=false
         with_sudo "$use_sudo" mkdir -p "$q_target" || success=false
+        stream_rc=""
         while IFS= read -r -d '' file; do
+          if [[ -z "$file" ]]; then
+            IFS= read -r -d '' stream_rc
+            break
+          fi
           rel_path="${file#"$path"/}"
           dest_file="$q_target/$rel_path"
           if ! with_sudo "$use_sudo" mkdir -p "$(dirname "$dest_file")"; then
@@ -4750,8 +4791,8 @@ for i in "${!parsed_names[@]}"; do
           else
             success=false
           fi
-        done < <(with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
-        wait "$!" || success=false
+        done < <(print0_with_status with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -print0)
+        [[ "$stream_rc" == 0 ]] || success=false
         with_sudo "$use_sudo" find "$q_target" -depth -type d -empty -delete 2>/dev/null || true
         if [[ "$aged_moved" = true && "$use_sudo" = true ]]; then
           sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
