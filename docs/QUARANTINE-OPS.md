@@ -23,7 +23,7 @@ this is not a power-loss durability guarantee. An interrupted rewrite can leave 
 
 ## Disk growth primer
 
-Each `--trash` clean creates a new session. Bound growth: `estimated_disk = sessions × average_session_size`. Pair daily trash with `older-than` retention (see [RUNBOOK.md](../RUNBOOK.md)).
+A `--trash` run creates a session only when a target is actually quarantined. An action-only or nothing-to-clean run creates none, so `--restore latest` can select an older session; check `--list-sessions` first. Bound growth: `estimated_disk = sessions × average_session_size`. Pair daily trash with `older-than` retention (see [RUNBOOK.md](../RUNBOOK.md)).
 
 ## Test contract cross-reference
 
@@ -93,7 +93,7 @@ There is no environment mirror for `--only-exact`.
 
 ### Conflict and partial failure
 
-If destination exists, restore skips (`Restore with Conflict`). If the original path (full or aged) or any existing intermediate directory component up to the destination file's parent (aged) is a symlink, restore treats it as a conflict without following the link (`Restore Aged Subdir Symlink Conflict`, `Restore Aged Original Path Symlink Conflict`, `Restore Full Original Path Symlink Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry. A retry after an interrupted restore finishes the job: a whole-target record whose payload is gone while its original path is back is treated as already restored and dropped (`Restore Retry After Interrupted Restore`); a payload missing with the original also absent still fails (`Restore Missing Source Still Fails`). A cleanup killed during an aged quarantine already wrote that target's record, so its moved files restore normally (`Trash Aged Interrupted Keeps Metadata`).
+A full record skips when the destination exists (`Restore with Conflict`). An aged record merges into an existing directory, skipping conflicting files. If the original path (full or aged) or any existing intermediate directory component up to the destination file's parent (aged) is a symlink, restore treats it as a conflict without following the link (`Restore Aged Subdir Symlink Conflict`, `Restore Aged Original Path Symlink Conflict`, `Restore Full Original Path Symlink Conflict`). Partial failures preserve session (`Restore with Partial Failure`). Re-run `--list-sessions` before retry. A retry after an interrupted restore finishes the job: a whole-target record whose payload is gone while its original path is back is treated as already restored and dropped (`Restore Retry After Interrupted Restore`); a payload missing with the original also absent still fails (`Restore Missing Source Still Fails`). A cleanup killed during an aged quarantine already wrote that target's record, so its moved files restore normally (`Trash Aged Interrupted Keeps Metadata`).
 
 If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; inventory lists recorded targets and reports `unrecorded_entry_count` (a positive count also produces a human warning).
 
