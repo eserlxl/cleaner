@@ -1181,13 +1181,16 @@ GLOB_RECURSION_MAX_DEPTH=10
 
 # True when a directory looks like a C or C++ build tree. Checked by contents, not
 # by name: a directory called "builder" or "buildMatchFn" holds source, and one
-# called "build" may hold documentation, so only a build-system marker settles it.
+# called "build" may hold documentation. Refuse source roots even for in-source
+# builds, then require a real file or directory build-system marker.
 # maxdepth 2 covers the marker sitting in the directory itself and one level below,
 # which is where a qmake per-kit layout (build/Desktop-Debug) keeps it.
 is_cxx_build_dir() {
   local dir="$1"
   [[ -d "$dir" ]] || return 1
+  [[ ! -e "$dir/CMakeLists.txt" && ! -e "$dir/meson.build" ]] || return 1
   [[ -n $(find "$dir" -mindepth 1 -maxdepth 2 \
+            \( -type f -o -type d \) \
             \( -name CMakeCache.txt -o -name CMakeFiles -o -name build.ninja \
                -o -name meson-info -o -name compile_commands.json \
                -o -name .qmake.stash \) \

@@ -7179,6 +7179,56 @@ else
   exit 1
 fi
 
+# Source roots and linked markers must not turn a source tree into build output.
+python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'CXX_FILTER_PY'
+import json, os, pathlib, subprocess, sys, tempfile
+cleaner, test_dir = sys.argv[1:]
+for wildcard in (True, False):
+    with tempfile.TemporaryDirectory(prefix="cxx-build-filter-", dir=test_dir) as directory:
+        root = pathlib.Path(directory)
+        home = root / "home"
+        projects = home / "projects"
+        files = (
+            "buildtools/CMakeLists.txt", "buildtools/src/main.c", "buildtools/build/CMakeCache.txt",
+            "build-insource/CMakeLists.txt", "build-insource/CMakeCache.txt",
+            "build-meson/meson.build", "build-meson/build.ninja",
+            "build-linked/keep.c", "build-real/CMakeCache.txt", "build-multi/Release/CMakeCache.txt",
+        )
+        for name in files:
+            path = projects / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture payload\n")
+        commands = root / "compile_commands.json"
+        commands.write_text("[]\n")
+        link = projects / "build-linked/compile_commands.json"
+        link.symlink_to(commands)
+        config = root / "filter.conf"
+        paths = ["$HOME/projects/build*"] if wildcard else [
+            "$HOME/projects/" + name for name in
+            ("buildtools", "build-insource", "build-meson", "build-linked", "build-real", "build-multi")
+        ]
+        config.write_text("".join(
+            f"safe|Build Filter|{path}|Generated output only|0||filter:cxx_build\n" for path in paths
+        ))
+        env = dict(os.environ, HOME=str(home), XDG_STATE_HOME=str(root / "state"))
+        args = [cleaner, "--config", str(config)]
+        result = subprocess.run(args + ["--json", "--dry-run"], env=env, capture_output=True, text=True)
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        targets = json.loads(result.stdout)["targets"]
+        expected = {str(projects / name) for name in ("build-real", "build-multi")}
+        assert {target["path"] for target in targets} == expected, (wildcard, targets)
+        assert all(target["status"] == "found" for target in targets), targets
+        result = subprocess.run(args + ["--clean", "--force"], env=env, capture_output=True, text=True)
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        for name in files:
+            if name.startswith(("build-real/", "build-multi/")):
+                continue
+            assert (projects / name).is_file(), (wildcard, name, result.stdout)
+        assert link.is_symlink() and commands.is_file(), result.stdout
+        assert all(not pathlib.Path(path).exists() for path in expected), result.stdout
+print("PASS: C++ build filter preserves source roots and linked markers for wildcard and literal rows; real and multi-config builds are cleaned.")
+CXX_FILTER_PY
+
 # filter:cxx_build selects expanded matches by contents rather than by name, so a
 # source directory whose name merely starts with "build" is excluded while a real
 # build tree -- including a qmake layout whose marker sits one level down -- is kept.
