@@ -2988,7 +2988,7 @@ print_plan_report() {
       root) root_n=$((root_n + 1)) ;;
     esac
     if [[ "$status" == found || "$status" == root ]]; then
-      case "${parsed_risks[$i],,}" in
+      case "$(risk_lower "${parsed_risks[$i]}")" in
         safe) safe_b=$((safe_b + bytes)) ;;
         medium) med_b=$((med_b + bytes)) ;;
         danger|dangerous) dang_b=$((dang_b + bytes)) ;;
@@ -3523,8 +3523,14 @@ is_process_running() {
 }
 
 # Map risk level string to integer weight
+# Lowercase a risk name in ASCII: under tr_TR, ${x,,} turns I into a dotless ı.
+risk_lower() {
+  local LC_ALL=C
+  printf '%s' "${1,,}"
+}
+
 risk_to_int() {
-  case "${1,,}" in
+  case "$(risk_lower "$1")" in
     safe) echo 1 ;;
     medium) echo 2 ;;
     danger|dangerous) echo 3 ;;
@@ -3763,7 +3769,7 @@ run_doctor() {
     printf 'WARN: daily timer plan: env file not readable (%s)\n' "$timer_env"
   elif [[ "$clean_timer" == enabled ]]; then
     local plan_level=INFO plan_config="" plan_problems=""
-    case "${env_risk,,}" in
+    case "$(risk_lower "$env_risk")" in
       ""|safe|medium|danger|dangerous) ;;
       *) plan_level=WARN; plan_problems+="; invalid risk" ;;
     esac
@@ -4526,7 +4532,7 @@ for i in "${!parsed_names[@]}"; do
 
   # Dangerous Confirmation Guard
   danger_prompted=false
-  if [[ "${risk_level,,}" =~ ^danger(ous)?$ && "$YES_DANGER" != true ]]; then
+  if [[ "$(risk_lower "$risk_level")" =~ ^danger(ous)?$ && "$YES_DANGER" != true ]]; then
     echo -n -e "${RED}Danger target '$name' ($path) requires explicit confirmation. Clean anyway? [y/N]: ${NC}"
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then

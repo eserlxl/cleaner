@@ -30,6 +30,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Risk names match in any case under every locale: under `tr_TR`, `--risk MEDIUM`, `LINUX_CLEANER_RISK=MEDIUM` and `MEDIUM` config rows were rejected because bash lowercased `I` to a dotless `ı`.
 - Quarantine enumeration reads `find`'s exit status from the stream instead of `wait` on a process substitution, which could lose an already-reaped child under heavy load and fail listing, purge, restore or aged quarantine with a false enumeration error.
 - Skip wildcard matches whose paths contain control characters or backslashes, warning with shell-quoted paths before they can reach terminal output or cleanup; literal config paths are unchanged.
 - Reject target paths combining `*` or `?` with `[` or `]` before analysis or deletion, preventing bracket classes from selecting a different directory; literal bracketed paths remain valid and tests pin their exact targets. A wildcard row whose `$HOME`, `$USER`, or `$XDG_*` expansion contains a bracket, which previously matched nothing silently, is now skipped with a warning.

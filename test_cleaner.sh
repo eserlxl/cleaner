@@ -13062,6 +13062,16 @@ printf 'LINUX_CLEANER_CONFIG=%s\n' "$TEST_ENV_DIR/test_cleaner.conf" > "$doc_pla
 doc_plan_case readable_config "INFO: daily timer plan: risk=safe deletion=permanent keep-days=none config=$TEST_ENV_DIR/test_cleaner.conf ($doc_plan_env)"
 printf 'LINUX_CLEANER_RISK= DaNgErOuS \n' > "$doc_plan_env"
 doc_plan_case risk_alias_spaces "INFO: daily timer plan: risk=DaNgErOuS deletion=permanent keep-days=none ($doc_plan_env)"
+if locale -a 2>/dev/null | grep -qix 'tr_TR.utf8'; then
+  # Under tr_TR, bash lowercases I to a dotless i; risk names must still match.
+  printf 'LINUX_CLEANER_RISK=MEDIUM\n' > "$doc_plan_env"
+  (export LC_ALL=tr_TR.UTF-8; doc_plan_case turkish_risk "INFO: daily timer plan: risk=MEDIUM deletion=permanent keep-days=none ($doc_plan_env)")
+  if ! LC_ALL=tr_TR.UTF-8 run_test_case "Turkish Locale Risk MEDIUM" 0 "turkish_risk.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --risk MEDIUM --dry-run; then
+    echo -e "${RED}FAIL: --risk MEDIUM was rejected under the Turkish locale.${NC}"
+    exit 1
+  fi
+fi
 printf 'LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=weekly\n' > "$doc_plan_env"
 doc_plan_case invalid_keep_days "WARN: daily timer plan: risk=safe deletion=quarantine keep-days=weekly ($doc_plan_env); invalid keep-days"
 # The service starts in HOME: a relative config resolves there, not in the caller's directory.
