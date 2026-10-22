@@ -27,6 +27,10 @@ JSON and metrics are unchanged.
 suppresses the plan report. After cleanup, a result report lists cleaned,
 skipped, and failed counts, bytes quarantined versus permanently reclaimed,
 the quarantine session path when one was created, and elapsed time.
+A trash cleanup that quarantined something then prints
+\(lqUndo: cleaner \-\-restore SESSION\(rq (not under
+.BR \-\-quiet ,
+and not in the saved report).
 .B \-\-json
 includes neither report.
 A non-dry-run cleanup also saves both reports, with a timestamp and

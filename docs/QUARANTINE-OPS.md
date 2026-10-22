@@ -63,6 +63,8 @@ Message on no match includes: `No quarantine sessions older than`
 
 Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does not use `--force` for overwrite; conflicts skip.
 
+A `--trash` cleanup that quarantined something ends with `Undo: cleaner --restore <session>`, naming its own session (`Trash Prints Undo Command`). The line is suppressed by `--quiet` and omitted from `--report` and notifications.
+
 Before a cross-filesystem restore, the destination must have enough free space
 for the full payload or, for an aged record, the entire staging directory before
 any files move. Otherwise restore prints `Error: Not enough free space to restore

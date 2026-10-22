@@ -4708,6 +4708,10 @@ if [[ "$TRASH_MODE" = true ]]; then
   else
     echo -e "${BOLD}${GREEN}Cleanup finished! Total space quarantined: $(format_bytes "$total_deleted_bytes")${NC}"
   fi
+  # A session without metadata (e.g. an aged target with nothing old) has nothing to restore.
+  if [[ -n "$QUARANTINE_DIR" && -s "$QUARANTINE_DIR/quarantine.meta" ]]; then
+    status_echo "Undo: cleaner --restore ${QUARANTINE_DIR##*/}"
+  fi
 else
   echo -e "${BOLD}${GREEN}Cleanup finished! Total space permanently reclaimed: $(format_bytes "$total_deleted_bytes")${NC}"
 fi

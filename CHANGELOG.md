@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- A `--trash` cleanup that quarantined something prints `Undo: cleaner --restore <session>` after its summary; `--quiet`, `--report`, and notifications are unchanged.
 - Plan reports count and name selected targets above the `--risk` ceiling as not analysed, with a hint to preview medium or danger targets; JSON and metrics are unchanged.
 - Failed cleanups emit one journal error-priority summary when stderr matches `JOURNAL_STREAM`, including interrupted and early non-zero cleanup exits, failed or early-exiting `--purge-sessions` runs, failed dry runs, and retention failures, so `journalctl --user -t linux-cleaner -p err` finds failed scheduled runs.
 - Env-only `LINUX_CLEANER_PREVIEW_METRICS_FILE` atomically exports cleanup dry-run timestamp, planned reclaimable bytes, and would-skip gauges to a separate Prometheus textfile, including text and JSON previews.

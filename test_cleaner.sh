@@ -2348,6 +2348,95 @@ else
   exit 1
 fi
 
+# Trash cleanup prints one runnable Undo command naming its own session; a
+# delete run, a --quiet run and a trash run that quarantined nothing print none.
+write_undo_configs() {
+  cat > "$TEST_ENV_DIR/undo.conf" << 'EOF'
+safe|Undo Target|$HOME/.cache/yarn|Undo target|0||
+EOF
+  cat > "$TEST_ENV_DIR/undo_aged.conf" << 'EOF'
+safe|Undo Aged|$HOME/.gemini/tmp|Nothing old enough|30||
+EOF
+}
+setup_mock_env
+write_undo_configs
+undo_file="$MOCK_HOME/.cache/yarn/yarn-cache.json"
+if ! run_test_case "Trash Prints Undo Command" 0 "undo_trash.log" \
+     --config "$TEST_ENV_DIR/undo.conf" --trash --force; then
+  exit 1
+fi
+undo_lines=$(grep -c '^Undo: ' "$TEST_ENV_DIR/undo_trash.log" || true)
+undo_line=$(grep '^Undo: ' "$TEST_ENV_DIR/undo_trash.log" || true)
+read -ra undo_cmd <<< "${undo_line#Undo: }"
+undo_session="${undo_cmd[2]:-}"
+if [[ "$undo_lines" != 1 || "${undo_cmd[0]:-}" != cleaner || "${undo_cmd[1]:-}" != --restore \
+      || ${#undo_cmd[@]} -ne 3 || -z "$undo_session" || -e "$undo_file" ]]; then
+  echo -e "${RED}FAIL: trash cleanup did not print exactly one 'Undo: cleaner --restore SESSION' line.${NC}"
+  cat "$TEST_ENV_DIR/undo_trash.log"
+  exit 1
+fi
+if ! run_test_case "Undo Session Listed" 0 "undo_list.log" --list-sessions \
+   || ! grep -qF "$undo_session" "$TEST_ENV_DIR/undo_list.log"; then
+  echo -e "${RED}FAIL: --list-sessions did not show the Undo session '$undo_session'.${NC}"
+  cat "$TEST_ENV_DIR/undo_list.log"
+  exit 1
+fi
+# Run the printed command itself, with "cleaner" mapped to the script under test.
+if ! run_test_case "Undo Command Restores" 0 "undo_restore.log" "${undo_cmd[@]:1}" \
+   || [[ "$(cat "$undo_file" 2>/dev/null)" != "dummy yarn cache" ]]; then
+  echo -e "${RED}FAIL: the printed Undo command did not restore '$undo_file'.${NC}"
+  cat "$TEST_ENV_DIR/undo_restore.log"
+  exit 1
+fi
+if ! run_test_case "Delete Run Prints No Undo" 0 "undo_delete.log" \
+     --config "$TEST_ENV_DIR/undo.conf" --force \
+   || [[ -e "$undo_file" ]] || grep -q '^Undo: ' "$TEST_ENV_DIR/undo_delete.log"; then
+  echo -e "${RED}FAIL: a delete run did not clean the target or printed an Undo line.${NC}"
+  cat "$TEST_ENV_DIR/undo_delete.log"
+  exit 1
+fi
+setup_mock_env
+write_undo_configs
+if ! run_test_case "Quiet Trash Prints No Undo" 0 "undo_quiet.log" \
+     --config "$TEST_ENV_DIR/undo.conf" --trash --force --quiet; then
+  exit 1
+fi
+if ! run_test_case "Empty Trash Prints No Undo" 0 "undo_empty.log" \
+     --config "$TEST_ENV_DIR/undo_aged.conf" --trash --force; then
+  exit 1
+fi
+if [[ -e "$undo_file" || ! -e "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] \
+   || grep -q '^Undo: ' "$TEST_ENV_DIR/undo_quiet.log" "$TEST_ENV_DIR/undo_empty.log"; then
+  echo -e "${RED}FAIL: a --quiet or nothing-quarantined run printed an Undo line (or did not run as set up).${NC}"
+  cat "$TEST_ENV_DIR/undo_quiet.log" "$TEST_ENV_DIR/undo_empty.log"
+  exit 1
+fi
+# An aged target whose moves all fail leaves a session without metadata: nothing to undo.
+setup_mock_env
+cat > "$TEST_ENV_DIR/undo_aged_fail.conf" << 'EOF'
+safe|Undo Aged Fail|$HOME/.gemini/tmp|Old files only|5||
+EOF
+cat > "$TEST_ENV_DIR/bin/mv" << 'UNDO_MV'
+#!/usr/bin/env bash
+[[ "$*" == *'/.gemini/tmp/'* ]] && exit 1
+real_mv=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v mv)
+exec "$real_mv" "$@"
+UNDO_MV
+chmod +x "$TEST_ENV_DIR/bin/mv"
+undo_aged_fail_rc=0
+run_test_case "Failed Aged Trash Prints No Undo" 1 "undo_aged_fail.log" \
+  --config "$TEST_ENV_DIR/undo_aged_fail.conf" --trash --force || undo_aged_fail_rc=1
+rm -f "$TEST_ENV_DIR/bin/mv"
+[[ "$undo_aged_fail_rc" -eq 0 ]] || exit 1
+if [[ ! -e "$MOCK_HOME/.gemini/tmp/old_file.tmp" ]] \
+   || ! compgen -G "$MOCK_HOME/.cache/linux-cleaner/quarantine/*" > /dev/null \
+   || grep -q '^Undo: ' "$TEST_ENV_DIR/undo_aged_fail.log"; then
+  echo -e "${RED}FAIL: a trash run that quarantined nothing printed an Undo line (or no session was created).${NC}"
+  cat "$TEST_ENV_DIR/undo_aged_fail.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: trash cleanup prints one runnable Undo command; delete, --quiet and empty runs print none.${NC}"
+
 # 30. Test Case: --list-sessions lists a session (read-only) and reports empty state
 setup_mock_env
 if run_test_case "Quarantine for Listing" 0 "list_setup.log" --config "$TEST_ENV_DIR/test_cleaner.conf" --trash --force; then
