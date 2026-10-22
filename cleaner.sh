@@ -3644,24 +3644,35 @@ run_doctor() {
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
-  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_trash="" env_keep="" mon_only="" mon_keep=""
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_risk="" env_trash="" env_keep="" mon_only="" mon_keep=""
+  local timer_env_source="no env file" timer_deletion=permanent
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
+    timer_env_source="$timer_env"
     while IFS= read -r env_line || [[ -n "$env_line" ]]; do
       env_line=$(trim "$env_line")
       case "$env_line" in
+        LINUX_CLEANER_RISK=*) env_risk="${env_line#*=}" ;;
         LINUX_CLEANER_TRASH=*) env_trash="${env_line#*=}" ;;
         LINUX_CLEANER_TRASH_KEEP_DAYS=*) env_keep="${env_line#*=}" ;;
       esac
     done < "$timer_env"
+    env_risk="${env_risk//[\"\']/}"
     env_trash="${env_trash//[\"\']/}"
     env_keep="${env_keep//[\"\']/}"
     case "$env_trash" in
       1|true|TRUE|yes|YES)
+        timer_deletion=quarantine
         if [[ -z "$env_keep" && "$retention_timer" != enabled ]]; then
           printf 'WARN: quarantine retention: %s enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine\n' "$timer_env"
         fi
         ;;
     esac
+  fi
+  if [[ "$clean_timer" == enabled && -e "$timer_env" && "$timer_env_source" == "no env file" ]]; then
+    timer_env_source="unreadable env file $timer_env"
+  fi
+  if [[ "$clean_timer" == enabled ]]; then
+    printf 'INFO: daily timer plan: risk=%s deletion=%s keep-days=%s (%s)\n' "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$timer_env_source"
   fi
   if [[ -f "$monitor_env" && -r "$monitor_env" ]]; then
     while IFS= read -r env_line || [[ -n "$env_line" ]]; do

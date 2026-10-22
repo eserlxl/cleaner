@@ -12827,6 +12827,37 @@ doc_last_case symlink_directory 'INFO: last cleanup: none recorded'
 rm -rf "$doc_state"
 echo -e "${GREEN}PASS: --doctor reports missing, successful, failed, interrupted and stale cleanups, refuses report symlinks, and preserves exit codes.${NC}"
 
+# Daily timer plans come from the clean unit's env file and preserve doctor status.
+echo -e "\n${BOLD}Test Case: Doctor Daily Timer Plan${NC}"
+doc_plan_env="$MOCK_HOME/.config/linux-cleaner/env"
+mkdir -p "$MOCK_HOME/.config/linux-cleaner"
+doc_plan_case() {
+  local label="$1" expected="$2" timer_state="${3:-enabled}" expected_ec ec cfg
+  for expected_ec in 0 1; do
+    cfg="$TEST_ENV_DIR/test_cleaner.conf"
+    [[ "$expected_ec" -eq 1 ]] && cfg="$TEST_ENV_DIR/no_such_doctor.conf"
+    ec=0
+    PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+      DOCTOR_CLEAN_TIMER_STATE="$timer_state" \
+      "$CLEANER_SH" --doctor --config "$cfg" \
+      < /dev/null > "$TEST_ENV_DIR/doctor_plan.log" 2>&1 || ec=$?
+    if [[ "$ec" -ne "$expected_ec" ]] \
+       || [[ "$(grep '^INFO: daily timer plan:' "$TEST_ENV_DIR/doctor_plan.log" || true)" != "$expected" ]]; then
+      echo -e "${RED}FAIL: --doctor daily timer plan ($label), expected '$expected' and exit $expected_ec (ec=$ec).${NC}"
+      cat "$TEST_ENV_DIR/doctor_plan.log"
+      exit 1
+    fi
+  done
+}
+doc_plan_case no_env 'INFO: daily timer plan: risk=safe deletion=permanent keep-days=none (no env file)'
+printf 'LINUX_CLEANER_RISK=medium\nLINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=14\n' > "$doc_plan_env"
+doc_plan_case configured "INFO: daily timer plan: risk=medium deletion=quarantine keep-days=14 ($doc_plan_env)"
+printf 'LINUX_CLEANER_RISK="medium"\nLINUX_CLEANER_TRASH="1"\nLINUX_CLEANER_TRASH_KEEP_DAYS="14"\n' > "$doc_plan_env"
+doc_plan_case quoted "INFO: daily timer plan: risk=medium deletion=quarantine keep-days=14 ($doc_plan_env)"
+doc_plan_case disabled '' disabled
+rm -f "$doc_plan_env"
+echo -e "${GREEN}PASS: --doctor shows configured and default daily timer plans only when enabled and preserves exit codes.${NC}"
+
 # The clean unit's env file enabling trash mode needs a retention bound; --doctor
 # warns only when the clean timer is enabled and neither bound is configured.
 echo -e "\n${BOLD}Test Case: Doctor Quarantine Retention Warning${NC}"

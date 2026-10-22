@@ -361,6 +361,13 @@ present, or the clean timer is enabled and the report's modification time is
 more than two days old. An unreadable report prints
 .BR "WARN: last cleanup: report not readable" .
 These warnings do not change the exit status.
+When the clean timer is enabled, also prints
+.B "INFO: daily timer plan: risk=<value|safe> deletion=<quarantine|permanent> keep-days=<N|none> (<env path|no env file>)"
+from
+.IR ~/.config/linux\-cleaner/env .
+Without an env file, the plan is risk=safe, deletion=permanent, keep-days=none.
+No plan line is printed when the clean timer is disabled.
+The retention warning and exit status are unchanged.
 A readable file is schema-checked; an invalid file prints
 .B "WARN: config: path (source, error)"
 and the rest of the checklist still prints.
