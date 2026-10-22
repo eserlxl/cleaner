@@ -4295,7 +4295,8 @@ if [[ "$DRY_RUN" = true ]]; then
     # Repeat the options that shaped this preview, so the apply run plans the same targets.
     next_args=(cleaner --clean)
     [[ "$CONFIG_EXPLICIT" == true ]] && next_args+=(--config "$CONFIG_FILE")
-    [[ "$MAX_RISK" != safe ]] && next_args+=(--risk "$MAX_RISK")
+    # A CLI --risk safe that overrides LINUX_CLEANER_RISK must be repeated too.
+    [[ "$MAX_RISK" != safe || -n "${LINUX_CLEANER_RISK:-}" ]] && next_args+=(--risk "$MAX_RISK")
     [[ "$TRASH_MODE" == true ]] && next_args+=(--trash)
     [[ -n "$EXCLUDE_PATTERNS" ]] && next_args+=(--exclude "$EXCLUDE_PATTERNS")
     [[ -n "$ONLY_TARGET" ]] && next_args+=(--only-target "$ONLY_TARGET")

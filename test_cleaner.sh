@@ -4895,6 +4895,8 @@ if [[ "$next_carry_ok" == true ]] \
    && LINUX_CLEANER_TRASH=1 XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Env Trash" 0 "next_env_trash.log" --dry-run \
    && grep -qxF "Next: run 'cleaner --clean' to apply this plan, repeating this preview's options:" "$TEST_ENV_DIR/next_env_trash.log" \
    && grep -qxF "  cleaner --clean --trash" "$TEST_ENV_DIR/next_env_trash.log" \
+   && LINUX_CLEANER_RISK=medium XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Explicit Safe Risk" 0 "next_safe_risk.log" --risk safe --dry-run \
+   && grep -qxF "  cleaner --clean --risk safe" "$TEST_ENV_DIR/next_safe_risk.log" \
    && run_test_case "Dry Run Next Carries Filters JSON" 0 "next_carry_json.log" \
      --config "$TEST_ENV_DIR/next carry.conf" --risk medium --json --dry-run \
    && ! grep -qF "Next:" "$TEST_ENV_DIR/next_carry_json.log"; then
