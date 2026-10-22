@@ -5406,6 +5406,9 @@ with tempfile.TemporaryDirectory(prefix="cleaner-restore-preview-", dir="/tmp") 
     (session / "bogus").mkdir()
     records.append(["bogus", "bogus", str(home / "bogus"), "true", str(os.getuid()), str(os.getgid())])
     expected["bogus"] = "unknown type"
+    # A missing payload is reported before an unknown type, as the real restore does.
+    records.append(["bogus", "bogus-gone", str(home / "bogus-gone"), "true", str(os.getuid()), str(os.getgid())])
+    expected["bogus-gone"] = "missing"
     meta.write_text("\n".join("|".join(record) for record in records) + "\n")
     os.utime(session, (1577836800, 1577836800))
     lock = home / ".cache/linux-cleaner/cleaner.lock"
