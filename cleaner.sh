@@ -4309,6 +4309,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$ONLY_PATH" ]] && next_args+=(--only-path "$ONLY_PATH")
     [[ -n "$EXCLUDE_PATH" ]] && next_args+=(--exclude-path "$EXCLUDE_PATH")
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
+    [[ -n "$TRASH_KEEP_DAYS" ]] && next_args+=(--trash-keep-days "$TRASH_KEEP_DAYS")
     if [[ ${#next_args[@]} -eq 2 ]]; then
       status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
     else
