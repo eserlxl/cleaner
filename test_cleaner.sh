@@ -670,9 +670,11 @@ mkdir -p "$MOCK_HOME/.cache"
 truncate -s 32 "$MOCK_HOME/.cache/risk-safe.bin"
 truncate -s 64 "$MOCK_HOME/.cache/risk-medium.bin"
 truncate -s 128 "$MOCK_HOME/.cache/risk-danger.bin"
+mkdir -p "$MOCK_HOME/.cache/risk-wild-a" "$MOCK_HOME/.cache/risk-wild-b"
 cat > "$TEST_ENV_DIR/hidden_risk.conf" <<'EOF'
 safe|Visible Cache|$HOME/.cache/risk-safe.bin|safe cache|0||
 medium|Hidden Cache|$HOME/.cache/risk-medium.bin|medium cache|0||
+medium|Wild Cache|$HOME/.cache/risk-wild-*|wildcard row named once|0||
 danger|Danger Cache|$HOME/.cache/risk-danger.bin|danger cache|0||
 EOF
 # case#args#expected Above line#expected Hidden line (empty Above = neither line)
@@ -703,9 +705,9 @@ while IFS='#' read -r hidden_risk_case hidden_risk_arg hidden_risk_above hidden_
     exit 1
   fi
 done <<'HIDDEN_RISK_CASES'
-default##safe (not analysed): medium=1 danger=1; preview with --risk danger#Hidden Cache, Danger Cache
+default##safe (not analysed): medium=3 danger=1; preview with --risk danger#Hidden Cache, Wild Cache, Danger Cache
 medium#risk-medium#medium (not analysed): medium=0 danger=1; preview with --risk danger#Danger Cache
-no-danger#no-danger#safe (not analysed): medium=1 danger=0; preview with --risk medium#Hidden Cache
+no-danger#no-danger#safe (not analysed): medium=3 danger=0; preview with --risk medium#Hidden Cache, Wild Cache
 only-safe#only-safe##
 danger#risk-danger##
 HIDDEN_RISK_CASES

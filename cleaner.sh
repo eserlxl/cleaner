@@ -3979,7 +3979,8 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       2) hidden_medium=$((hidden_medium + 1)) ;;
       3) hidden_danger=$((hidden_danger + 1)) ;;
     esac
-    hidden_risk_names+="${hidden_risk_names:+, }$name"
+    # A wildcard row expands to one record per match; name it once.
+    [[ ", $hidden_risk_names, " == *", $name, "* ]] || hidden_risk_names+="${hidden_risk_names:+, }$name"
     continue
   fi
   
