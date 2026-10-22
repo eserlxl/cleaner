@@ -4928,6 +4928,8 @@ if [[ "$next_carry_ok" == true ]] \
    && grep -qxF "  cleaner --clean --trash --trash-keep-days 14" "$TEST_ENV_DIR/next_keep_days.log" \
    && XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Action Timeout" 0 "next_action_timeout.log" --action-timeout 600 --dry-run \
    && grep -qxF "  cleaner --clean --action-timeout 600" "$TEST_ENV_DIR/next_action_timeout.log" \
+   && LINUX_CLEANER_ACTION_TIMEOUT=30 XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Explicit Zero Timeout" 0 "next_zero_timeout.log" --action-timeout 0 --dry-run \
+   && grep -qxF "  cleaner --clean --action-timeout 0" "$TEST_ENV_DIR/next_zero_timeout.log" \
    && LINUX_CLEANER_RISK=medium XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Explicit Safe Risk" 0 "next_safe_risk.log" --risk safe --dry-run \
    && grep -qxF "  cleaner --clean --risk safe" "$TEST_ENV_DIR/next_safe_risk.log" \
    && run_test_case "Dry Run Next Carries Filters JSON" 0 "next_carry_json.log" \
