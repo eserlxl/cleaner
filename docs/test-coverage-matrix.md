@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No unreleased rows yet.
+| ID | Feature | Test case |
+|----|---------|-----------|
+| U-136 | `--hold-session SESSION` writes a private `.hold` marker without changing the session mtime; `--list-sessions` shows `held` (text) and `"held": true` (JSON) with no unrecorded entry; every bulk purge selector (`all`, `older-than:30`, `max-size:1`, `keep-latest:1`) and `--trash-keep-days` retention skip the held session even with `--force`; a named or `latest` purge of a held session exits 1 without touching other sessions; any `.hold` entry fails closed; unsafe names and combinations with other modes, `--dry-run`, or `--json` are refused; `--release-session` restores normal expiry on the original mtime; a complete restore retires a held session; bash, zsh and fish complete session names for both options | Session Hold (Hold Session / Hold Session Again / Hold Listed / Hold Listed JSON / Held Session Survives Purge all, older-than:30, max-size:1, keep-latest:1 / Held Named Purge Refused / Hold Latest / Held Latest Purge Refused / Release Latest / Held Session Survives Inline Retention / Hold Directory Marker Fails Closed / Unsafe Hold Name / Hold Combination / Release Session / Release Session Again / Released Session Expires / Hold Before Restore / Complete Restore Of Held Session) / Mode Flag Exclusion Docs Parity / Value-taking Options Doc Parity / Bash Completion Drift and Functional Check / Zsh Quarantine Session Completion / Fish Quarantine Session Completion |
 
 ## 1.6.0 shipped feature inventory
 

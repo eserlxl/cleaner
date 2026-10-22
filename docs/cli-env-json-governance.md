@@ -33,30 +33,36 @@ only immediate entries absent from literal recorded-root accounting, not metadat
 integrity or recoverability. All session sizes and counts are checked before JSON
 output; failed metadata reads or enumeration return nonzero with empty JSON.
 
+Session JSON adds boolean `held` (MINOR, additive): `true` when the session holds a
+`.hold` entry written by `--hold-session`, otherwise `false`. The marker is never
+counted in `unrecorded_entry_count`.
+
 ## 4. Mutex flags
 
 Documented mutual exclusions (enforced in code):
 
-- `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--only-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--trash-keep-days` (including its environment mirror)
-- `--exclude-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--min-free` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--min-age` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-path`
-- `--notify` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--only-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--trash-keep-days` (including its environment mirror)
+- `--exclude-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--min-reclaim` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--min-free` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--min-age` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--trash-keep-days` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-path`
+- `--notify` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
 - `--json` is valid with `--dry-run` (cleanup summary), `--list-targets`, `--list-sessions`, or `--report` (saved report summary; not `--init-config` or `--doctor`)
 - `--only` and CLI-only `--only-exact` require `--restore`, cannot be mixed in either order, and use last-occurrence precedence when the same selector repeats. Exact matching uses the literal inventory path without expansion or normalization; no environment mirror or JSON fields are added.
 - `--only-target` and `--exclude-target` vs `--check-config` and `--doctor`
-- `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--report`, `--init-config`, `--doctor`
-- `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--init-config`, `--doctor`
-- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
-- `--doctor` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
-- `--restore` vs `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--purge-sessions` vs `--restore`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--list-sessions` vs `--restore`, `--purge-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--list-targets` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--check-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--report`, `--init-config`, `--doctor`
+- `--report` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--init-config`, `--doctor`
+- `--init-config` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
+- `--doctor` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--trash-keep-days`, `--notify`, `--json`
+- `--restore` vs `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--purge-sessions` vs `--restore`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--list-sessions` vs `--restore`, `--purge-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
+- `--hold-session` vs `--release-session`, `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--action-timeout`, `--trash-keep-days`, `--notify`, `--show-matches`, `--dry-run`, `--json`
+- `--release-session` vs `--hold-session`, `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--action-timeout`, `--trash-keep-days`, `--notify`, `--show-matches`, `--dry-run`, `--json`
 
 See `test_cleaner.sh` mutex rejection cases.
 

@@ -22,6 +22,8 @@ _cleaner() {
     '--init-config[Copy the active config to your user config path (never overwrites)]' \
     '--doctor[Check the runtime environment a cleanup depends on (read-only) and exit]' \
     '--restore[Restore files from quarantine session (latest or timestamp)]:session:{compadd -- latest "${sessions[@]}"}' \
+    '--hold-session[Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention]:session:{compadd -- latest "${sessions[@]}"}' \
+    '--release-session[Remove a session hold so normal purge and retention apply again]:session:{compadd -- latest "${sessions[@]}"}' \
     '--only[With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined]:pattern:' \
     '--only-exact[With --restore: match a literal original path from session inventory; excludes --only]:path:' \
     '--only-target[With cleanup or --list-targets: select config targets whose NAME contains PATTERN]:pattern:' \

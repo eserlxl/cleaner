@@ -27,6 +27,8 @@ complete -c cleaner -l check-config -d 'Validate the configuration file and exit
 complete -c cleaner -l init-config -d 'Copy the active config to your user config path (never overwrites)'
 complete -c cleaner -l doctor -d 'Check the runtime environment a cleanup depends on (read-only) and exit'
 complete -c cleaner -l restore -x -a 'latest (__cleaner_sessions)' -d 'Restore files from quarantine session (latest or timestamp)'
+complete -c cleaner -l hold-session -x -a 'latest (__cleaner_sessions)' -d 'Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention'
+complete -c cleaner -l release-session -x -a 'latest (__cleaner_sessions)' -d 'Remove a session hold so normal purge and retention apply again'
 complete -c cleaner -l only -x -d 'With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined'
 complete -c cleaner -l only-exact -x -d 'With --restore: match a literal original path from session inventory; excludes --only'
 complete -c cleaner -l only-target -x -d 'With cleanup or --list-targets: select config targets whose NAME contains PATTERN'

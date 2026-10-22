@@ -37,6 +37,18 @@ A `--trash` run creates a session only when a target is actually quarantined. An
 
 Session age uses the quarantine session directory mtime (`find -mtime +DAYS`), not per-file ages inside the session. A partial or failed restore that keeps the session preserves its original directory mtime, so the remaining quarantined targets still expire on schedule.
 
+### Holding a session during an incident
+
+Because a kept session keeps its original age, the daily `--trash-keep-days` retention can delete the remaining recovery data while you are still resolving restore conflicts. Protect that one session instead of disabling retention:
+
+```
+cleaner --hold-session 2026-01-02_03-04-05     # or: cleaner --hold-session latest
+cleaner --list-sessions                        # the held session's line ends with "held"
+cleaner --release-session 2026-01-02_03-04-05  # normal expiry resumes on the original mtime
+```
+
+A hold writes a private `.hold` marker into the session under the mutation lock and leaves the session mtime unchanged. Every bulk purge selector (`all`, `older-than:DAYS`, `max-size:SIZE`, `keep-latest:N`) and inline `--trash-keep-days` retention skip a held session with a `Skipping held session <name>` note, even with `--force`; a held session still counts toward the `max-size` budget and the `keep-latest` count, so a hold only ever makes a purge delete less. Purging a held session by name or as `latest` exits 1 instead of picking another session. A complete `--restore` removes the marker together with the session; a partial restore keeps both (tests: `Session Hold`).
+
 ### Exit-code automation matrix
 
 | Scenario | Exit |
@@ -151,7 +163,7 @@ Interactive: run without `--force` to see `This cannot be undone`; declining pri
 
 Automated checklist: cron retention uses `--force` + `older-than:DAYS`, `max-size:SIZE`, or `keep-latest:N` only (or `--trash-keep-days` on the cleanup run); never schedule `purge-sessions all --force`.
 
-Troubleshooting: missing timestamp exits 1 (`Purge Missing Session`); distinguish from retention no-match success.
+Troubleshooting: missing timestamp exits 1 (`Purge Missing Session`); distinguish from retention no-match success. A held session is skipped by every selector and refused by name or `latest`; release it with `--release-session` first (`Session Hold`).
 
 ## Incident decision / triage
 
@@ -161,6 +173,7 @@ quarantine disk full? → older-than retention, purge-sessions max-size:SIZE bud
 cross-filesystem target refused? → free space in HOME, or clean it without --trash
 wrong target cleaned? → selective restore --only
 retention too aggressive? → increase DAYS; restore from remaining sessions if any
+still resolving a partial restore? → hold-session SESSION; release-session SESSION when done
 ```
 
 ## Test contract appendix

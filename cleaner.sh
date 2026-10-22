@@ -59,6 +59,8 @@ Options:
   --init-config              Copy the active config to your user config path (never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
+  --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention.
+  --release-session SESSION  Remove a session hold so normal purge and retention apply again.
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-exact PATH          With --restore: match a literal original path from session inventory; excludes --only.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
@@ -105,6 +107,8 @@ EXCLUDE_PATTERNS=""
 RESTORE_TARGET=""
 RESTORE_ONLY=""
 RESTORE_ONLY_MODE="--only"
+HOLD_TARGET=""
+RELEASE_TARGET=""
 ONLY_TARGET=""
 EXCLUDE_TARGET=""
 ONLY_PATH=""
@@ -240,7 +244,7 @@ notify_failed_exit() {
     journal_error_line "Quarantine purge ${PURGE_TARGET} failed with exit status ${status}."
     return "$status"
   fi
-  if [[ -n "${RESTORE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${DOCTOR:-false}" == true ]]; then
+  if [[ -n "${RESTORE_TARGET:-}" || -n "${HOLD_TARGET:-}" || -n "${RELEASE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${DOCTOR:-false}" == true ]]; then
     return "$status"
   fi
   # Scheduled previews (the monitor unit) and argument errors stop before any cleanup.
@@ -369,6 +373,19 @@ while [[ $# -gt 0 ]]; do
       fi
       require_non_option_value "$1" "$2"
       RESTORE_TARGET="$2"
+      shift 2
+      ;;
+    --hold-session|--release-session)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: $1 requires a session argument (latest or timestamp).${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      if [[ "$1" == --hold-session ]]; then
+        HOLD_TARGET="$2"
+      else
+        RELEASE_TARGET="$2"
+      fi
       shift 2
       ;;
     --only|--only-exact)
@@ -663,6 +680,19 @@ if [[ -n "$TRASH_KEEP_DAYS" ]]; then
   fi
 fi
 
+# A hold only flips one session's marker: refuse every other mode, filter, preview,
+# or JSON request so nobody believes it also cleaned, restored, or narrowed something.
+if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
+  hold_flag=--hold-session hold_other=--release-session
+  [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
+  if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
+        || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
+        || "$NOTIFY_CLI" == true || "$SHOW_MATCHES" == true || "$DRY_RUN_EXPLICIT" == true || "$JSON_OUTPUT" == true ]]; then
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --show-matches, --dry-run, or --json.${NC}" >&2
+    exit 1
+  fi
+fi
+
 # Match listings are only meaningful for a text cleanup preview.
 if [[ "$SHOW_MATCHES" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --show-matches cannot be combined with --clean, --force, --interactive, --json, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor.${NC}" >&2
@@ -888,7 +918,7 @@ if [[ "$INIT_CONFIG" == true ]]; then
 fi
 
 # Check if config file exists (only if not restoring, purging, or listing sessions)
-if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
+if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given.
   CONFIG_CANDIDATES=()
   [[ -n "$CONFIG_FILE" ]] && CONFIG_EXPLICIT=true
@@ -1749,6 +1779,11 @@ validate_quarantine_session_name() {
   fi
 }
 
+# Any entry named .hold holds the session, whatever its type: purge fails closed.
+session_is_held() {
+  [[ -e "$1/.hold" || -L "$1/.hold" ]]
+}
+
 # Count immediate entries not referenced by active metadata; no integrity claim.
 quarantine_unrecorded_entry_count() {
   local session="$1" meta="$1/quarantine.meta" records="" entry mtype rel accounted count=0
@@ -1779,7 +1814,7 @@ quarantine_unrecorded_entry_count() {
       fi
     done
     [[ "$accounted" == true ]] || count=$((count + 1))
-  done < <(print0_with_status find "$session" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -printf '%f\0' 2>/dev/null)
+  done < <(print0_with_status find "$session" -mindepth 1 -maxdepth 1 ! -name quarantine.meta ! -name .hold -printf '%f\0' 2>/dev/null)
   if [[ "$stream_rc" != 0 ]]; then
     echo "Error: Failed to enumerate quarantine entries in '$session'." >&2
     return 1
@@ -1834,7 +1869,7 @@ quarantine_size_bytes() {
 emit_list_sessions_json() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   local -a sessions=() session_sizes=() session_unrecorded=()
-  local s session idx ts size_bytes size_human mdate meta mtype morig unrecorded
+  local s session idx ts size_bytes size_human mdate meta mtype morig unrecorded held
   local sess_first=true tgt_first
 
   if [[ -d "$quarantine_base" ]]; then
@@ -1869,8 +1904,10 @@ emit_list_sessions_json() {
     ts=$(basename "$session")
     size_human=$(format_bytes "$size_bytes")
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
-    printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","unrecorded_entry_count":%s,"targets":[' \
-      "$(json_escape "$ts")" "$size_bytes" "$(json_escape "$size_human")" "$(json_escape "${mdate:-}")" "${session_unrecorded[idx]}"
+    held=false
+    session_is_held "$session" && held=true
+    printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","unrecorded_entry_count":%s,"held":%s,"targets":[' \
+      "$(json_escape "$ts")" "$size_bytes" "$(json_escape "$size_human")" "$(json_escape "${mdate:-}")" "${session_unrecorded[idx]}" "$held"
     tgt_first=true
     meta="$session/quarantine.meta"
     if [[ -f "$meta" ]]; then
@@ -1931,12 +1968,14 @@ list_quarantine_sessions() {
     return 0
   fi
   echo -e "${BOLD}${BLUE}=== Quarantine Sessions ===${NC}"
-  local session ts size mdate
+  local session ts size mdate held
   for session in "${sessions[@]}"; do
     ts=$(basename "$session")
     size=$({ du -sh "$session" 2>/dev/null || true; } | awk '{print $1}')
     mdate=$(stat -c '%y' "$session" 2>/dev/null | cut -d'.' -f1)
-    echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}"
+    held=""
+    session_is_held "$session" && held="  held"
+    echo -e "  ${ts}  size=${size:-?}  date=${mdate:-?}${held}"
     print_session_contents "$session" || return 1
   done
 }
@@ -2110,11 +2149,37 @@ purge_quarantine_sessions() {
     targets+=("$dir")
   fi
 
+  # A hold only ever shrinks the purge set, even under --force: bulk selectors and
+  # inline retention skip held sessions (they still count toward max-size and
+  # keep-latest), and a held latest or named session is refused, never replaced.
+  local d
+  local -a unheld=()
+  for d in "${targets[@]}"; do
+    if ! session_is_held "$d"; then
+      unheld+=("$d")
+      continue
+    fi
+    case "$target" in
+      all|older-than:*|max-size:*|keep-latest:*)
+        echo -e "${YELLOW}Skipping held session $(basename "$d") (release it with --release-session $(basename "$d")).${NC}"
+        ;;
+      *)
+        echo -e "${RED}Error: Quarantine session '$(basename "$d")' is held; run --release-session $(basename "$d") before purging it.${NC}" >&2
+        exit 1
+        ;;
+    esac
+  done
+  if [[ ${#unheld[@]} -eq 0 ]]; then
+    echo -e "${YELLOW}No quarantine sessions to purge; every selected session is held.${NC}"
+    return 0
+  fi
+  targets=("${unheld[@]}")
+
   # Show what will be freed -- and exactly which targets are about to be destroyed
   # -- before touching anything. This is the last thing a user sees before the
   # data is gone, so it names every item, not just the session size.
   echo -e "${BOLD}${BLUE}=== Purge Quarantine Sessions ===${NC}"
-  local d ts size
+  local ts size
   for d in "${targets[@]}"; do
     ts=$(basename "$d")
     size=$({ du -sh "$d" 2>/dev/null || true; } | awk '{print $1}')
@@ -2299,6 +2364,68 @@ retire_aged_staging() {
 reset_session_mtime() {
   [[ -n "$2" ]] || return 0
   touch -m -d "@$2" -- "$1" 2>/dev/null || true
+}
+
+# --hold-session / --release-session (ACTION is hold or release): create or remove
+# the private .hold marker that purge and --trash-keep-days retention honor. The
+# session's mtime is put back, so a hold never changes its retention age.
+set_session_hold() {
+  local action="$1" target="$2" dir session_mtime
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
+  refuse_symlinked_quarantine "$quarantine_base" || exit 1
+  if [[ ! -d "$quarantine_base" ]]; then
+    echo -e "${RED}Error: No quarantine directory exists at '$quarantine_base'.${NC}" >&2
+    exit 1
+  fi
+  if [[ "$target" == "latest" ]]; then
+    if ! dir=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1); then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      exit 1
+    fi
+    if [[ -z "$dir" ]]; then
+      echo -e "${RED}Error: No quarantined sessions found in '$quarantine_base'.${NC}" >&2
+      exit 1
+    fi
+  else
+    validate_quarantine_session_name "$target"
+    dir="$quarantine_base/$target"
+    if [[ -L "$dir" || ! -d "$dir" ]]; then
+      echo -e "${RED}Error: Quarantine session directory '$dir' does not exist.${NC}" >&2
+      exit 1
+    fi
+  fi
+  local name marker="$dir/.hold"
+  name=$(basename "$dir")
+  if ! session_mtime=$(stat -c %Y "$dir" 2>/dev/null); then
+    echo -e "${RED}Error: Failed to read the age of quarantine session '$dir'.${NC}" >&2
+    exit 1
+  fi
+
+  if [[ "$action" == hold ]]; then
+    if session_is_held "$dir"; then
+      echo "Session $name is already held."
+      return 0
+    fi
+    # noclobber opens with O_EXCL, so a racing symlink is never followed.
+    if ! (umask 077; set -C; : > "$marker") 2>/dev/null; then
+      echo -e "${RED}Error: Failed to create hold marker '$marker'.${NC}" >&2
+      exit 1
+    fi
+    reset_session_mtime "$dir" "$session_mtime"
+    echo -e "${GREEN}Held session $name; purges and --trash-keep-days retention skip it until --release-session $name.${NC}"
+    return 0
+  fi
+
+  if [[ ! -e "$marker" && ! -L "$marker" ]]; then
+    echo "Session $name is not held."
+    return 0
+  fi
+  if [[ -d "$marker" && ! -L "$marker" ]] || ! rm -f -- "$marker"; then
+    echo -e "${RED}Error: Failed to remove hold marker '$marker'; the session is still held.${NC}" >&2
+    exit 1
+  fi
+  reset_session_mtime "$dir" "$session_mtime"
+  echo -e "${GREEN}Released session $name; normal purge and retention apply again.${NC}"
 }
 
 # Restore files and folders from a quarantine session
@@ -2646,7 +2773,7 @@ restore_quarantine() {
   # failed, including hidden entries and empty top-level target directories.
   if [[ -z "${RESTORE_ONLY:-}" || ${#retained[@]} -eq 0 ]]; then
     local remaining_path=""
-    if ! remaining_path=$(find "$restore_dir" -mindepth 1 -maxdepth 1 ! -name quarantine.meta -print -quit 2>/dev/null); then
+    if ! remaining_path=$(find "$restore_dir" -mindepth 1 -maxdepth 1 ! -name quarantine.meta ! \( -name .hold -type f \) -print -quit 2>/dev/null); then
       reset_session_mtime "$restore_dir" "$session_mtime"
       echo -e "${RED}Error: Unable to verify quarantine session contents. The session and metadata have been kept for recovery at '$restore_dir'.${NC}" >&2
       exit 1
@@ -3900,7 +4027,7 @@ fi
 
 # Validate physical records before an unmatched wildcard or a filter can remove
 # one from the stream. Session operations intentionally do not require a config.
-if [[ -z "$RESTORE_TARGET" && -z "$PURGE_TARGET" && "$CHECK_CONFIG" != true ]]; then
+if [[ -z "$RESTORE_TARGET" && -z "$PURGE_TARGET" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$CHECK_CONFIG" != true ]]; then
   validate_config_file >/dev/null
 fi
 
@@ -3936,11 +4063,11 @@ if [[ "$DRY_RUN" != true && -n "$ACTION_TIMEOUT" && "$ACTION_TIMEOUT" != 0 ]] &&
   exit 1
 fi
 
-# Serialize mutating runs (non-preview restore, purge, and cleanup) with an
-# exclusive flock so overlapping timer and manual invocations cannot race on
+# Serialize mutating runs (non-preview restore, purge, hold/release, and cleanup)
+# with an exclusive flock so overlapping timer and manual invocations cannot race on
 # the same files or quarantine sessions. Zero waits fail fast and permit missing
 # flock; positive waits require flock. Nonlocking modes ignore valid wait values.
-if [[ ( -n "${RESTORE_TARGET:-}" && "$DRY_RUN_EXPLICIT" != true ) || -n "${PURGE_TARGET:-}" || "$DRY_RUN" != true ]]; then
+if [[ ( -n "${RESTORE_TARGET:-}" && "$DRY_RUN_EXPLICIT" != true ) || -n "${PURGE_TARGET:-}" || -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" || "$DRY_RUN" != true ]]; then
   if command -v flock >/dev/null 2>&1; then
     lock_dir="$HOME/.cache/linux-cleaner"
     lock_file="$lock_dir/cleaner.lock"
@@ -3974,6 +4101,15 @@ if [[ ( -n "${RESTORE_TARGET:-}" && "$DRY_RUN_EXPLICIT" != true ) || -n "${PURGE
     echo "Error: --lock-wait requires flock for mutating runs." >&2
     exit 1
   fi
+fi
+
+if [[ -n "$HOLD_TARGET" ]]; then
+  set_session_hold hold "$HOLD_TARGET"
+  exit 0
+fi
+if [[ -n "$RELEASE_TARGET" ]]; then
+  set_session_hold release "$RELEASE_TARGET"
+  exit 0
 fi
 
 # Check if restore mode is active

@@ -22,7 +22,7 @@ _cleaner() {
   fi
 
   local -a sessions=()
-  if [[ "$prev" == --restore || "$prev" == --purge-sessions ]]; then
+  if [[ "$prev" == --restore || "$prev" == --purge-sessions || "$prev" == --hold-session || "$prev" == --release-session ]]; then
     local session
     while IFS= read -r session; do
       [[ -d "$session" && ! -L "$session" ]] || continue
@@ -37,7 +37,7 @@ _cleaner() {
       mapfile -t COMPREPLY < <(compgen -W "safe medium danger" -- "$cur")
       return 0
       ;;
-    --restore)
+    --restore|--hold-session|--release-session)
       mapfile -t COMPREPLY < <(compgen -W "latest" -- "$cur")
       COMPREPLY+=("${sessions[@]}")
       return 0
@@ -99,6 +99,8 @@ _cleaner() {
     --init-config
     --doctor
     --restore
+    --hold-session
+    --release-session
     --only
     --only-exact
     --only-target

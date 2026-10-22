@@ -151,6 +151,8 @@ suppresses the listing. CLI-only (no environment mirror). Cannot be combined wit
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -180,6 +182,8 @@ notifier never changes the exit status. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -218,7 +222,7 @@ With
 emit a JSON inventory of quarantine sessions
 .RB ( sessions
 array of
-.BR timestamp / size_bytes / size_human / date / unrecorded_entry_count / targets ).
+.BR timestamp / size_bytes / size_human / date / unrecorded_entry_count / held / targets ).
 With
 .BR \-\-report ,
 emit a JSON summary of the saved last cleanup report
@@ -258,6 +262,8 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-init\-config ,
@@ -278,15 +284,24 @@ emit a machine-readable inventory instead of human-formatted output.
 Every session includes integer
 .B unrecorded_entry_count
 in JSON; human output warns when it is positive. It counts immediate entries
-(excluding quarantine.meta) not equal to a trimmed recorded relative path or its
+(excluding quarantine.meta and the .hold marker) not equal to a trimmed recorded relative path or its
 literal first component, including hidden entries and symlinks without following
 them. Missing metadata accounts for no entries. Referenced-root descendants and
 aliases are not inspected. Zero does not certify metadata integrity, recovery or
 safe purge. Positive counts do not change confirmation or force policy. Failed
 metadata reads or entry enumeration stop inventory and purge before confirmation
-or deletion, including forced purge and inline retention. Cannot be combined with
+or deletion, including forced purge and inline retention.
+A session protected by
+.B \-\-hold\-session
+ends its human line with
+.B held
+and has
+.B held
+set to true in JSON (false otherwise). Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -310,6 +325,8 @@ all risk levels. Read-only; requires a configuration file. Cannot be combined wi
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
@@ -325,6 +342,8 @@ on success. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
@@ -341,6 +360,8 @@ combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -424,6 +445,8 @@ the checklist. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -487,6 +510,8 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
@@ -509,6 +534,8 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
@@ -534,6 +561,8 @@ without analysis. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
@@ -556,6 +585,8 @@ existing path, or removes every remaining target. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
@@ -592,6 +623,8 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -619,6 +652,8 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -647,6 +682,8 @@ rows. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -672,6 +709,8 @@ Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -693,6 +732,8 @@ or if any session purge fails. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -725,6 +766,8 @@ path separators and
 are rejected. Cannot be combined with
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
@@ -773,12 +816,98 @@ is given. An explicit
 is rejected. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
+.TP
+.B \-\-hold\-session \fISESSION\fR
+Protect a quarantine session
+.RI ( latest
+or a timestamp, validated like
+.BR \-\-restore )
+from deletion by writing a private
+.B .hold
+marker into it, under the same lock as other mutating runs. The session's
+modification time is left unchanged, so its retention age is not reset.
+Bulk purge selectors
+.RI ( all ", " older\-than:DAYS ", " max\-size:SIZE ", " keep\-latest:N )
+and
+.B \-\-trash\-keep\-days
+retention skip a held session with a
+.B Skipping held session
+note, even with
+.BR \-\-force ;
+a held session still counts toward the
+.I max\-size
+budget and the
+.I keep\-latest
+count. A purge of a held
+.I latest
+or named session exits 1 instead of picking another session.
+Any entry named
+.B .hold
+counts as a hold. A complete
+.B \-\-restore
+removes the marker with the session; a partial restore keeps both.
+Holding a held session is a no-op. Cannot be combined with
+.BR \-\-release\-session ,
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+.BR \-\-doctor ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+.BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
+.BR \-\-min\-reclaim ,
+.BR \-\-min\-free ,
+.BR \-\-min\-age ,
+.BR \-\-action\-timeout ,
+.BR \-\-trash\-keep\-days ,
+.BR \-\-notify ,
+.BR \-\-show\-matches ,
+.BR \-\-dry\-run ,
+or
+.BR \-\-json .
+.TP
+.B \-\-release\-session \fISESSION\fR
+Remove the hold marker from a quarantine session
+.RI ( latest
+or a timestamp), so normal purge selectors and retention apply again based on
+the session's original modification time. Releasing an unheld session is a no-op.
+Cannot be combined with
+.BR \-\-hold\-session ,
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+.BR \-\-doctor ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+.BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
+.BR \-\-min\-reclaim ,
+.BR \-\-min\-free ,
+.BR \-\-min\-age ,
+.BR \-\-action\-timeout ,
+.BR \-\-trash\-keep\-days ,
+.BR \-\-notify ,
+.BR \-\-show\-matches ,
+.BR \-\-dry\-run ,
+or
+.BR \-\-json .
 .TP
 .BR \-V ", " \-\-version
 Print the tool version and exit.
@@ -790,7 +919,8 @@ Value-taking options
 .RB ( \-c / \-\-config ,
 .BR \-r / \-\-risk ,
 .BR \-e / \-\-exclude ,
-.BR \-\-restore ", " \-\-only ", " \-\-only\-exact ,
+.BR \-\-restore ", " \-\-hold\-session ", " \-\-release\-session ,
+.BR \-\-only ", " \-\-only\-exact ,
 .BR \-\-only\-target ", " \-\-exclude\-target ", " \-\-only\-path ,
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
 .BR \-\-min\-free ", " \-\-min\-age ", " \-\-action\-timeout ,

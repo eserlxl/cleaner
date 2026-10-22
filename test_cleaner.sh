@@ -3083,7 +3083,8 @@ echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
 vt_expected=$(printf '%s\n' \
   --config --risk --exclude --restore --only --only-exact --only-target \
   --exclude-target --only-path --exclude-path --lock-wait --min-reclaim \
-  --min-free --min-age --action-timeout --trash-keep-days --purge-sessions | sort)
+  --min-free --min-age --action-timeout --trash-keep-days --purge-sessions \
+  --hold-session --release-session | sort)
 vt_parser=$(awk '
   function emit(    n, i, p) {
     if (lab == "") return
@@ -3125,7 +3126,7 @@ fi
 if [[ -z "$vt_fail" ]]; then
   echo -e "${GREEN}PASS: require_non_option_value, cleaner.1, and docs/cli-reference.md name the same value-taking options.${NC}"
 else
-  echo -e "${RED}FAIL: value-taking options differ from the 16-flag contract:$vt_fail${NC}"
+  echo -e "${RED}FAIL: value-taking options differ from the 18-flag contract:$vt_fail${NC}"
   exit 1
 fi
 
@@ -6821,7 +6822,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
         # Inject a failing stdout helper only around the actual consumers, keeping
         # failure propagation observable without changing the executable under test.
         failure = '_xdg_dir() { printf "%s" "$HOME/partial\\n"; return 23; }\n'
-        discovery_start = source.index('if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then')
+        discovery_start = source.index('if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then')
         discovery = source[discovery_start:source.index("\n# Trim whitespace", discovery_start)]
         for label, code, status in (("init helper failure", body("init_user_config") + "\ninit_user_config", 1),
                                     ("reader helper failure", body("show_last_report") + "\nshow_last_report", 1),
@@ -6829,7 +6830,7 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
                                     ("discovery helper failure", body("set_default_config_candidates") + "\n" + discovery, 1),
                                     ("explicit config skips discovery helper", body("set_default_config_candidates") + '\nCONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
             probe = root / "helper-failure.sh"
-            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\nDOCTOR=false\n' + failure + code + "\n")
+            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nHOLD_TARGET=""\nRELEASE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\nDOCTOR=false\n' + failure + code + "\n")
             before = snapshot()
             print("Test Case: XDG Storage " + label, flush=True)
             result = subprocess.run(["bash", str(probe)], env=env | {"EXPLICIT": str(explicit)}, capture_output=True, text=True, timeout=20)
@@ -7179,11 +7180,12 @@ fi
 # shortcut: --json is left out of the pair matrix (its gate depends on the mode, not on
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
-mx_flags=(--restore --purge-sessions --list-sessions --list-targets --check-config --report
+mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report
   --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
+    --hold-session|--release-session) echo "$1 20200101_000000" ;;
     --purge-sessions) echo "--purge-sessions all" ;;
     --only-target|--exclude-target) echo "$1 NPM" ;;
     --only-path|--exclude-path) echo "$1 $MOCK_HOME" ;;
@@ -7196,7 +7198,7 @@ mx_args() {
   esac
 }
 mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --list-targets
-  --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions)
+  --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions --hold-session --release-session)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
   mx_refused=""
@@ -7225,7 +7227,7 @@ readme_text = open(readme).read()
 man_lines = open(man).read().splitlines()
 # A mode flag's own list must name every refused mode; it may also name the cleanup
 # filters (each filter documents its own restriction), but never a partner that works.
-modes = {'--restore', '--purge-sessions', '--list-sessions', '--list-targets',
+modes = {'--restore', '--purge-sessions', '--list-sessions', '--hold-session', '--release-session', '--list-targets',
          '--check-config', '--report', '--init-config', '--doctor'}
 def ok(subj, got, want):
     if got is None:
@@ -10908,6 +10910,161 @@ if ! run_test_case "Trash Keep Days Nothing To Clean" 0 "tkd_idle.log" \
 fi
 echo -e "${GREEN}PASS: --trash-keep-days also runs when there is nothing to clean.${NC}"
 
+# --hold-session / --release-session: a held session survives every purge selector and
+# inline retention (even with --force), keeps its original mtime, and still retires
+# through a complete restore.
+echo -e "\n${BOLD}Test Case: Session Hold${NC}"
+setup_mock_env
+hold_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+hold_a="$hold_qbase/2020-01-01_00-00-00"
+hold_make_session() {
+  local sess="$hold_qbase/$1"
+  mkdir -p "$sess"
+  printf 'payload\n' > "$sess/0_payload"
+  printf 'full|0_payload|%s/.cache/hold_dest_%s|false|%s|%s\n' \
+    "$MOCK_HOME" "$1" "$(id -u)" "$(id -g)" > "$sess/quarantine.meta"
+  touch -d '40 days ago' "$sess"
+}
+hold_fail() {
+  echo -e "${RED}FAIL: $1${NC}"
+  shift
+  cat "$@" 2>/dev/null || true
+  exit 1
+}
+hold_make_session 2020-01-01_00-00-00
+hold_make_session 2020-01-02_00-00-00
+hold_make_session 2020-01-03_00-00-00
+hold_mtime=$(stat -c %Y "$hold_a")
+if ! run_test_case "Hold Session" 0 "hold_set.log" --hold-session 2020-01-01_00-00-00 \
+   || ! grep -qF "Held session 2020-01-01_00-00-00" "$TEST_ENV_DIR/hold_set.log" \
+   || [[ ! -f "$hold_a/.hold" || -L "$hold_a/.hold" ]] \
+   || [[ "$(stat -c %a "$hold_a/.hold")" != 600 ]] \
+   || [[ "$(stat -c %Y "$hold_a")" != "$hold_mtime" ]]; then
+  hold_fail "--hold-session did not create a private marker without changing the session mtime." "$TEST_ENV_DIR/hold_set.log"
+fi
+if ! run_test_case "Hold Session Again" 0 "hold_again.log" --hold-session 2020-01-01_00-00-00 \
+   || ! grep -qF "Session 2020-01-01_00-00-00 is already held." "$TEST_ENV_DIR/hold_again.log"; then
+  hold_fail "a repeated --hold-session did not report the existing hold." "$TEST_ENV_DIR/hold_again.log"
+fi
+echo -e "${GREEN}PASS: --hold-session writes a private marker and keeps the session mtime.${NC}"
+
+if ! run_test_case "Hold Listed" 0 "hold_list.log" --list-sessions \
+   || ! grep -qE '^  2020-01-01_00-00-00  size=.*  held$' "$TEST_ENV_DIR/hold_list.log" \
+   || grep -qE '^  2020-01-02_00-00-00  .*held' "$TEST_ENV_DIR/hold_list.log" \
+   || grep -q 'Unrecorded entries' "$TEST_ENV_DIR/hold_list.log" \
+   || ! run_test_case "Hold Listed JSON" 0 "hold_list.json" --list-sessions --json \
+   || ! python3 - "$TEST_ENV_DIR/hold_list.json" <<'HOLD_JSON'
+import json, sys
+sessions = {s["timestamp"]: s for s in json.load(open(sys.argv[1]))["sessions"]}
+assert sessions["2020-01-01_00-00-00"]["held"] is True, sessions
+assert sessions["2020-01-02_00-00-00"]["held"] is False, sessions
+assert all(s["unrecorded_entry_count"] == 0 for s in sessions.values()), sessions
+HOLD_JSON
+then
+  hold_fail "--list-sessions did not show the hold or counted the marker as unrecorded." "$TEST_ENV_DIR/hold_list.log" "$TEST_ENV_DIR/hold_list.json"
+fi
+echo -e "${GREEN}PASS: --list-sessions shows the hold in text and JSON without an unrecorded entry.${NC}"
+
+for hold_selector in all older-than:30 max-size:1 keep-latest:1; do
+  hold_make_session 2020-01-02_00-00-00
+  hold_make_session 2020-01-03_00-00-00
+  hold_log="hold_purge_${hold_selector%%:*}.log"
+  if ! run_test_case "Held Session Survives Purge ${hold_selector}" 0 "$hold_log" \
+         --purge-sessions "$hold_selector" --force \
+     || [[ ! -f "$hold_a/0_payload" || ! -f "$hold_a/.hold" ]] \
+     || [[ -d "$hold_qbase/2020-01-02_00-00-00" ]] \
+     || ! grep -qF "Skipping held session 2020-01-01_00-00-00" "$TEST_ENV_DIR/$hold_log" \
+     || grep -qF "Purged 2020-01-01_00-00-00" "$TEST_ENV_DIR/$hold_log"; then
+    hold_fail "--purge-sessions $hold_selector --force deleted the held session or purged nothing else." "$TEST_ENV_DIR/$hold_log"
+  fi
+done
+echo -e "${GREEN}PASS: every bulk purge selector skips a held session even with --force.${NC}"
+
+if ! run_test_case "Held Named Purge Refused" 1 "hold_purge_named.log" \
+       --purge-sessions 2020-01-01_00-00-00 --force \
+   || ! grep -qF "Quarantine session '2020-01-01_00-00-00' is held" "$TEST_ENV_DIR/hold_purge_named.log" \
+   || [[ ! -f "$hold_a/0_payload" ]]; then
+  hold_fail "a named purge of a held session was not refused." "$TEST_ENV_DIR/hold_purge_named.log"
+fi
+hold_make_session 2020-01-02_00-00-00
+hold_make_session 2020-01-03_00-00-00
+if ! run_test_case "Hold Latest" 0 "hold_latest.log" --hold-session latest \
+   || [[ ! -f "$hold_qbase/2020-01-03_00-00-00/.hold" ]] \
+   || ! run_test_case "Held Latest Purge Refused" 1 "hold_purge_latest.log" --purge-sessions latest --force \
+   || ! grep -qF "Quarantine session '2020-01-03_00-00-00' is held" "$TEST_ENV_DIR/hold_purge_latest.log" \
+   || [[ ! -d "$hold_qbase/2020-01-02_00-00-00" || ! -d "$hold_qbase/2020-01-03_00-00-00" ]] \
+   || ! run_test_case "Release Latest" 0 "hold_release_latest.log" --release-session latest \
+   || [[ -e "$hold_qbase/2020-01-03_00-00-00/.hold" ]]; then
+  hold_fail "a latest purge of a held session was not refused, or picked another session." \
+    "$TEST_ENV_DIR/hold_latest.log" "$TEST_ENV_DIR/hold_purge_latest.log" "$TEST_ENV_DIR/hold_release_latest.log"
+fi
+echo -e "${GREEN}PASS: named and latest purges of a held session are refused without touching other sessions.${NC}"
+
+# Inline retention skips the hold and still retires the unheld aged sessions.
+if ! run_test_case "Held Session Survives Inline Retention" 0 "hold_inline.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --trash --force --trash-keep-days 7 \
+   || [[ ! -f "$hold_a/0_payload" ]] \
+   || [[ -d "$hold_qbase/2020-01-02_00-00-00" ]] \
+   || ! grep -qF "Skipping held session 2020-01-01_00-00-00" "$TEST_ENV_DIR/hold_inline.log"; then
+  hold_fail "--trash-keep-days retention deleted the held session or skipped unheld ones." "$TEST_ENV_DIR/hold_inline.log"
+fi
+echo -e "${GREEN}PASS: --trash-keep-days retention skips a held session.${NC}"
+
+# Any entry named .hold counts as a hold: a hold only ever makes purge delete less.
+hold_make_session 2020-01-04_00-00-00
+mkdir "$hold_qbase/2020-01-04_00-00-00/.hold"
+touch -d '40 days ago' "$hold_qbase/2020-01-04_00-00-00"
+if ! run_test_case "Hold Directory Marker Fails Closed" 0 "hold_dir_marker.log" --purge-sessions older-than:30 --force \
+   || [[ ! -f "$hold_qbase/2020-01-04_00-00-00/0_payload" ]] \
+   || ! grep -qF "Skipping held session 2020-01-04_00-00-00" "$TEST_ENV_DIR/hold_dir_marker.log"; then
+  hold_fail "a non-file .hold entry did not keep its session." "$TEST_ENV_DIR/hold_dir_marker.log"
+fi
+echo -e "${GREEN}PASS: a non-file .hold entry still protects its session.${NC}"
+
+for hold_bad in ../x a/b . ..; do
+  for hold_flag in --hold-session --release-session; do
+    if ! run_test_case "Unsafe Hold Name ${hold_flag} ${hold_bad}" 1 "hold_bad.log" "$hold_flag" "$hold_bad" \
+       || ! grep -qF "Invalid session name '$hold_bad'" "$TEST_ENV_DIR/hold_bad.log"; then
+      hold_fail "$hold_flag '$hold_bad' was not refused as an invalid session name." "$TEST_ENV_DIR/hold_bad.log"
+    fi
+  done
+done
+echo -e "${GREEN}PASS: --hold-session and --release-session refuse unsafe session names.${NC}"
+
+for hold_combo in "--hold-session latest --release-session latest" "--release-session latest --dry-run" \
+  "--hold-session latest --json" "--hold-session latest --purge-sessions all --force" "--hold-session latest --restore latest"; do
+  # shellcheck disable=SC2086  # each combo is intentionally word-split into flags and values
+  if ! run_test_case "Hold Combination ${hold_combo}" 1 "hold_combo.log" $hold_combo \
+     || ! grep -qE -- '--(hold|release)-session cannot be combined with' "$TEST_ENV_DIR/hold_combo.log" \
+     || [[ ! -f "$hold_a/.hold" || ! -f "$hold_a/0_payload" ]]; then
+    hold_fail "'$hold_combo' was not refused before touching any session." "$TEST_ENV_DIR/hold_combo.log"
+  fi
+done
+echo -e "${GREEN}PASS: hold modes refuse every other mode, --dry-run, and --json.${NC}"
+
+if ! run_test_case "Release Session" 0 "hold_release.log" --release-session 2020-01-01_00-00-00 \
+   || [[ -e "$hold_a/.hold" || -L "$hold_a/.hold" ]] \
+   || [[ "$(stat -c %Y "$hold_a")" != "$hold_mtime" ]] \
+   || ! run_test_case "Release Session Again" 0 "hold_release_again.log" --release-session 2020-01-01_00-00-00 \
+   || ! grep -qF "Session 2020-01-01_00-00-00 is not held." "$TEST_ENV_DIR/hold_release_again.log" \
+   || ! run_test_case "Released Session Expires" 0 "hold_release_purge.log" --purge-sessions older-than:30 --force \
+   || [[ -d "$hold_a" ]]; then
+  hold_fail "--release-session did not restore normal expiry with the original mtime." \
+    "$TEST_ENV_DIR/hold_release.log" "$TEST_ENV_DIR/hold_release_again.log" "$TEST_ENV_DIR/hold_release_purge.log"
+fi
+echo -e "${GREEN}PASS: --release-session removes the hold and the session expires on its original age.${NC}"
+
+setup_mock_env
+hold_make_session 2020-01-05_00-00-00
+if ! run_test_case "Hold Before Restore" 0 "hold_restore_set.log" --hold-session 2020-01-05_00-00-00 \
+   || ! run_test_case "Complete Restore Of Held Session" 0 "hold_restore.log" --restore 2020-01-05_00-00-00 \
+   || [[ -d "$hold_qbase/2020-01-05_00-00-00" ]] \
+   || [[ "$(cat "$MOCK_HOME/.cache/hold_dest_2020-01-05_00-00-00" 2>/dev/null)" != payload ]]; then
+  hold_fail "a complete restore of a held session did not retire it." "$TEST_ENV_DIR/hold_restore_set.log" "$TEST_ENV_DIR/hold_restore.log"
+fi
+echo -e "${GREEN}PASS: a complete restore removes the hold marker and retires the session.${NC}"
+unset -f hold_make_session hold_fail
+
 # --report --json: emit machine-readable JSON for the saved cleanup report
 # (completed, nothing_to_clean, skipped_below_min_reclaim, and interrupted runs),
 # or exit 1 when no report exists yet.
@@ -11962,10 +12119,10 @@ if ! (
   echo -e "\n${BOLD}Test Case: Bash Quarantine Session Completion${NC}"
   mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
   touch "$MOCK_HOME/.cache/linux-cleaner/quarantine/not-a-session"
-  for session_option in --restore --purge-sessions; do
+  for session_option in --restore --purge-sessions --hold-session --release-session; do
     COMP_WORDS=(cleaner "$session_option" "")
     HOME="$MOCK_HOME" _cleaner
-    if [[ "$session_option" == --restore ]]; then
+    if [[ "$session_option" != --purge-sessions ]]; then
       [[ "${COMPREPLY[*]}" == "latest 2026-10-18_12-34-56" ]] || exit 1
     else
       [[ "${COMPREPLY[*]}" == "latest all older-than: max-size: keep-latest: 2026-10-18_12-34-56" ]] || exit 1
@@ -12092,7 +12249,7 @@ ZSH_PROBE
   echo -e "\n${BOLD}Test Case: Zsh Quarantine Session Completion${NC}"
   mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-10-18_12-34-56/nested"
   touch "$MOCK_HOME/.cache/linux-cleaner/quarantine/not-a-session"
-  for session_option in --restore --purge-sessions; do
+  for session_option in --restore --purge-sessions --hold-session --release-session; do
     rm -f "$TEST_ENV_DIR/zsh_comp.out"
     if ! HOME="$MOCK_HOME" timeout 20 zsh -f "$TEST_ENV_DIR/zsh_comp_probe.zsh" "$TEST_ENV_DIR/comp_fn" "$TEST_ENV_DIR/zsh_comp.out" \
            "cleaner $session_option 2026-" > /dev/null 2>&1 \
@@ -12101,7 +12258,7 @@ ZSH_PROBE
       exit 1
     fi
   done
-  echo -e "${GREEN}PASS: zsh completes quarantine session names for --restore and --purge-sessions.${NC}"
+  echo -e "${GREEN}PASS: zsh completes quarantine session names for --restore, --purge-sessions, --hold-session, and --release-session.${NC}"
 else
   echo -e "${GREEN}PASS (skipped): zsh is not installed; cannot run the zsh completion check.${NC}"
 fi
@@ -12118,7 +12275,7 @@ if command -v fish > /dev/null 2>&1; then
     if ! HOME="$MOCK_HOME" XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
          fish --no-config -c '
       source "$argv[1]"
-      for option in --restore --purge-sessions
+      for option in --restore --purge-sessions --hold-session --release-session
         set expected latest
         if test "$option" = --purge-sessions
           set -a expected all older-than: max-size: keep-latest:
