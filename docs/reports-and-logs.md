@@ -16,7 +16,7 @@ New reports retain an `Accounted bytes: quarantined=N permanent=N` record. The a
 
 ## Journal error priority under systemd
 
-A failed cleanup emits one `<3>linux-cleaner:` summary on stderr, naming the failed target count and targets. Interrupted cleanups name the signal; early non-zero cleanup exits name the exit status. This is independent of `--notify` and leaves exit statuses unchanged. The line is emitted only when `JOURNAL_STREAM` exactly matches stderr's device and inode; an unset or mismatched value, a failed or unavailable `stat`, or a successful run emits no priority line. Terminal and redirected output normally receive no such line.
+A failed cleanup emits one `<3>linux-cleaner:` summary on stderr, naming the failed target count and targets. Interrupted cleanups name the signal; early non-zero cleanup exits name the exit status. A failed `--purge-sessions` run (the retention unit) names its selector, and a failed `--trash-keep-days` purge after a skipped cleanup says so. This is independent of `--notify` and leaves exit statuses unchanged. The line is emitted only when `JOURNAL_STREAM` exactly matches stderr's device and inode; an unset or mismatched value, a failed or unavailable `stat`, or a successful run emits no priority line. Terminal and redirected output normally receive no such line.
 
 With systemd's default `SyslogLevelPrefix=yes`, the prefix gives the line error priority, making failed scheduled cleanups visible with `journalctl --user -t linux-cleaner -p err`.
 

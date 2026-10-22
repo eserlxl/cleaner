@@ -3745,8 +3745,10 @@ fi
 
 # Check if purge mode is active
 if [[ -n "${PURGE_TARGET:-}" ]]; then
-  purge_quarantine_sessions "$PURGE_TARGET"
+  # Errexit would skip the journal line on a failed purge.
+  purge_quarantine_sessions "$PURGE_TARGET" || OPERATION_FAILED=true
   if [[ "$OPERATION_FAILED" = true ]]; then
+    journal_error_line "Quarantine purge failed: ${PURGE_TARGET}."
     exit 1
   fi
   exit 0
@@ -4201,7 +4203,10 @@ if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]
   save_last_cleanup_report
   apply_trash_keep_days
   notify_cleanup_result
-  [[ "$OPERATION_FAILED" = true ]] && exit 1
+  if [[ "$OPERATION_FAILED" = true ]]; then
+    journal_error_line "Retention purge failed after the cleanup was skipped."
+    exit 1
+  fi
   exit 0
 fi
 
@@ -4212,7 +4217,10 @@ if [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; th
   save_last_cleanup_report
   apply_trash_keep_days
   notify_cleanup_result
-  [[ "$OPERATION_FAILED" = true ]] && exit 1
+  if [[ "$OPERATION_FAILED" = true ]]; then
+    journal_error_line "Retention purge failed after the cleanup was skipped."
+    exit 1
+  fi
   exit 0
 fi
 
@@ -4225,7 +4233,10 @@ if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; th
   save_last_cleanup_report
   apply_trash_keep_days
   notify_cleanup_result
-  [[ "$OPERATION_FAILED" = true ]] && exit 1
+  if [[ "$OPERATION_FAILED" = true ]]; then
+    journal_error_line "Retention purge failed after the cleanup was skipped."
+    exit 1
+  fi
   exit 0
 fi
 

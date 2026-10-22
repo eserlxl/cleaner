@@ -10921,6 +10921,30 @@ if ! run_test_case "Retention Standalone Purge Failure" 1 "retention_standalone.
   echo -e "${RED}FAIL: standalone purge failure lost payload, changed status, or wrote a cleanup report.${NC}"
   exit 1
 fi
+# Under systemd, failed retention purges name themselves at error priority.
+for retention_journal in standalone min-reclaim; do
+  setup_retention_report "$retention_journal"
+  retention_journal_err="$TEST_ENV_DIR/retention_journal.err"
+  : > "$retention_journal_err"
+  if [[ "$retention_journal" == standalone ]]; then
+    retention_journal_args=(--purge-sessions older-than:7 --force)
+    retention_journal_text='Quarantine purge failed: older-than:7.'
+  else
+    retention_journal_args=(--config "$TEST_ENV_DIR/retention_report.conf" --clean --trash-keep-days 7 --force --min-reclaim 1G)
+    retention_journal_text='Retention purge failed after the cleanup was skipped.'
+  fi
+  retention_journal_exit=0
+  retention_journal_stream=$(stat -L -c '%d:%i' "$retention_journal_err")
+  JOURNAL_STREAM="$retention_journal_stream" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" "${retention_journal_args[@]}" < /dev/null > /dev/null 2> "$retention_journal_err" || retention_journal_exit=$?
+  if [[ "$retention_journal_exit" -ne 1 ]] \
+     || [[ "$(grep -c '^<3>linux-cleaner:' "$retention_journal_err" || true)" -ne 1 ]] \
+     || ! grep -Fqx "<3>linux-cleaner: $retention_journal_text" "$retention_journal_err"; then
+    echo -e "${RED}FAIL: retention journal line ($retention_journal, exit=$retention_journal_exit).${NC}"
+    cat "$retention_journal_err"
+    exit 1
+  fi
+done
 unset MOCK_RETENTION_MODE MOCK_RETENTION_OLD MOCK_RETENTION_TARGET
 echo -e "${GREEN}PASS: retention outcomes survive cleanup exits without changing target counters or historical reports.${NC}"
 
