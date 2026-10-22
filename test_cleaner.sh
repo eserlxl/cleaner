@@ -11842,6 +11842,7 @@ cat > "$TEST_ENV_DIR/bin/uv" <<EOF
 printf 'started\n' >> "$at_action_trace"
 sleep "\${MOCK_ACTION_SLEEP:-5}"
 printf 'finished\n' >> "$at_action_trace"
+exit "\${MOCK_ACTION_EXIT:-0}"
 EOF
 cat > "$TEST_ENV_DIR/bin/timeout" <<EOF
 #!/usr/bin/env bash
@@ -11899,6 +11900,19 @@ if ! LINUX_CLEANER_ACTION_TIMEOUT=0030 MOCK_ACTION_SLEEP=0 \
   exit 1
 fi
 echo -e "${GREEN}PASS: LINUX_CLEANER_ACTION_TIMEOUT wraps the action with the normalized limit and a finished action succeeds.${NC}"
+
+# An action killed before the limit (OOM, kill -9) exits 137 too: report a failure, not a timeout.
+at_reset
+if ! MOCK_ACTION_SLEEP=0 MOCK_ACTION_EXIT=137 \
+     run_test_case "Action Timeout Early Kill Is Not A Timeout" 1 "action_timeout_early_kill.log" \
+       --config "$TEST_ENV_DIR/action_timeout.conf" --clean --force --action-timeout 30 \
+   || ! grep -qF "Error: Action 'action:uv_cache_prune' for 'Hung Action' failed." "$TEST_ENV_DIR/action_timeout_early_kill.log" \
+   || grep -q 'timed out after' "$TEST_ENV_DIR/action_timeout_early_kill.log"; then
+  echo -e "${RED}FAIL: an action that exited 137 before the limit was reported as a timeout.${NC}"
+  cat "$TEST_ENV_DIR/action_timeout_early_kill.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: an early exit 137 is reported as a failed action, not a timeout.${NC}"
 
 at_env_bad_ec=0
 LINUX_CLEANER_ACTION_TIMEOUT=-1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \

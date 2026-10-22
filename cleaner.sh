@@ -3752,9 +3752,13 @@ run_action() {
     "$@"
     return
   fi
-  local rc=0
-  timeout --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
-  if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
+  local rc=0 started=$SECONDS
+  local -a timeout_mode=()
+  # On a terminal, stay in its process group so Ctrl-C still reaches the action.
+  [[ -t 0 ]] && timeout_mode=(--foreground)
+  timeout "${timeout_mode[@]}" --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
+  # 124/137 also come from an action's own status or an unrelated SIGKILL (OOM).
+  if [[ ( "$rc" -eq 124 || "$rc" -eq 137 ) ]] && (( SECONDS - started >= ACTION_TIMEOUT )); then
     ACTION_TIMED_OUT=true
   fi
   return "$rc"
