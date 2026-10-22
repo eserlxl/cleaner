@@ -47,6 +47,29 @@ Use a custom configuration file instead of the resolved default.
 .TP
 .BR \-d ", " \-\-dry\-run
 Calculate and display potential space savings without deleting anything (default).
+A text preview that found something to clean ends with a
+.B Next:
+line. A bare preview names
+.BR "cleaner \-\-clean" .
+When the preview used an explicit config, a risk above safe,
+.BR \-\-trash ,
+.BR \-\-exclude ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+.BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
+or
+.B \-\-min\-age
+(from the command line or their environment variables), the next line
+prints the full apply command with those options, each value quoted with
+.BR "printf %q" ,
+so it applies the same plan.
+.B \-\-quiet
+and
+.B \-\-json
+print no
+.B Next:
+line.
 .TP
 .B \-\-clean
 Perform cleanup with a summary confirmation prompt. When

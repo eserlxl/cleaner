@@ -4846,6 +4846,66 @@ else
   exit 1
 fi
 
+# The Next: command repeats the preview's config, risk, filters and age, so re-running it
+# as a dry run plans exactly the previewed targets. Each option changes this plan when
+# dropped. The spaced paths and the backslash in the exclude glob (still matching *.log)
+# prove the printf %q quoting round-trips through the printed line.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/space dir" "$MOCK_HOME/.cache/skip dir"
+printf 'spaced\n' > "$MOCK_HOME/.cache/space dir/old.txt"
+printf 'log\n' > "$MOCK_HOME/.cache/space dir/old.log"
+touch -d '10 days ago' "$MOCK_HOME/.cache/space dir/old.txt" "$MOCK_HOME/.cache/space dir/old.log"
+printf 'skip\n' > "$MOCK_HOME/.cache/skip dir/file.txt"
+cat > "$TEST_ENV_DIR/next carry.conf" <<'NEXTCARRY'
+safe|NPM Cache|$HOME/.npm/_cacache|Outside --only-path|0||
+safe|Aurman Cache|$HOME/.cache/aurman|Too new for --min-age|0||
+safe|Skip Spaced|$HOME/.cache/skip dir|Under --exclude-path|0||
+medium|Medium Risk Target|$HOME/.cache/medium_test|Dropped by --exclude-target|0||
+medium|Spaced Medium|$HOME/.cache/space dir|Needs --risk medium|0||
+NEXTCARRY
+next_carry_ok=false
+if run_test_case "Dry Run Next Carries Filters" 0 "next_carry.log" \
+     --config "$TEST_ENV_DIR/next carry.conf" --risk medium --exclude-target 'Medium Risk Target' \
+     --only-path "$MOCK_HOME/.cache" --exclude-path "$MOCK_HOME/.cache/skip dir" \
+     --exclude '*.lo\g' --min-age 1 --dry-run \
+   && grep -qF "Next: run 'cleaner --clean' to apply this plan, repeating this preview's options (add --trash to quarantine instead of deleting):" "$TEST_ENV_DIR/next_carry.log"; then
+  next_carry_line=$(grep -A1 -F "Next: run" "$TEST_ENV_DIR/next_carry.log" | tail -n 1)
+  next_carry_argv=()
+  eval "next_carry_argv=($next_carry_line)"
+  if [[ "${next_carry_argv[0]:-}" == cleaner && "${next_carry_argv[1]:-}" == --clean ]] \
+     && printf '%s\n' "${next_carry_argv[@]}" | grep -qxF '*.lo\g' \
+     && printf '%s\n' "${next_carry_argv[@]}" | grep -qxF "$TEST_ENV_DIR/next carry.conf" \
+     && run_test_case "Dry Run Next Carries Filters Replay" 0 "next_carry_replay.log" \
+       "${next_carry_argv[@]:1}" --dry-run \
+     && sed -n '/^Plan: /,/^$/p' "$TEST_ENV_DIR/next_carry.log" > "$TEST_ENV_DIR/next_carry.plan" \
+     && sed -n '/^Plan: /,/^$/p' "$TEST_ENV_DIR/next_carry_replay.log" > "$TEST_ENV_DIR/next_carry_replay.plan" \
+     && grep -qF "Targets: found=1 clean/missing=1 " "$TEST_ENV_DIR/next_carry.plan" \
+     && grep -qF "  7 B medium Spaced Medium $MOCK_HOME/.cache/space dir (files > 1 days)" "$TEST_ENV_DIR/next_carry.plan" \
+     && cmp -s "$TEST_ENV_DIR/next_carry.plan" "$TEST_ENV_DIR/next_carry_replay.plan"; then
+    next_carry_ok=true
+  fi
+fi
+# A bare preview keeps the plain hint; an env-enabled --trash is repeated and drops the note.
+mkdir -p "$TEST_ENV_DIR/next-xdg/linux-cleaner"
+cp "$TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/next-xdg/linux-cleaner/cleaner.conf"
+if [[ "$next_carry_ok" == true ]] \
+   && XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Bare" 0 "next_bare.log" --dry-run \
+   && grep -qxF "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting." "$TEST_ENV_DIR/next_bare.log" \
+   && ! grep -qF "repeating this preview's options" "$TEST_ENV_DIR/next_bare.log" \
+   && LINUX_CLEANER_TRASH=1 XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Env Trash" 0 "next_env_trash.log" --dry-run \
+   && grep -qxF "Next: run 'cleaner --clean' to apply this plan, repeating this preview's options:" "$TEST_ENV_DIR/next_env_trash.log" \
+   && grep -qxF "  cleaner --clean --trash" "$TEST_ENV_DIR/next_env_trash.log" \
+   && run_test_case "Dry Run Next Carries Filters JSON" 0 "next_carry_json.log" \
+     --config "$TEST_ENV_DIR/next carry.conf" --risk medium --json --dry-run \
+   && ! grep -qF "Next:" "$TEST_ENV_DIR/next_carry_json.log"; then
+  echo -e "${GREEN}PASS: the dry-run Next: command repeats the preview's options and replays the same plan.${NC}"
+else
+  echo -e "${RED}FAIL: the dry-run Next: command did not reproduce the previewed plan.${NC}"
+  cat "$TEST_ENV_DIR/next_carry.log" "$TEST_ENV_DIR/next_carry_replay.log" "$TEST_ENV_DIR/next_bare.log" \
+    "$TEST_ENV_DIR/next_env_trash.log" "$TEST_ENV_DIR/next_carry_json.log" 2>/dev/null || true
+  exit 1
+fi
+
 setup_mock_env
 if run_test_case "Min Reclaim Dry Run Note" 0 "min_reclaim_dry.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run --min-reclaim 1T \

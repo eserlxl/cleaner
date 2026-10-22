@@ -124,6 +124,7 @@ CHECK_CONFIG=false
 INIT_CONFIG=false
 DOCTOR=false
 CONFIG_DISCOVERED=false
+CONFIG_EXPLICIT=false
 REPORT=false
 PLAN_REPORT_TEXT=""
 RESULT_REPORT_TEXT=""
@@ -864,6 +865,7 @@ fi
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given.
   CONFIG_CANDIDATES=()
+  [[ -n "$CONFIG_FILE" ]] && CONFIG_EXPLICIT=true
   if [[ -z "$CONFIG_FILE" ]]; then
     set_default_config_candidates || exit 1
     for candidate in "${CONFIG_CANDIDATES[@]}"; do
@@ -4249,7 +4251,28 @@ if [[ "$DRY_RUN" = true ]]; then
   elif [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; then
     status_echo "Free space $(format_bytes "$home_free_bytes") is at or above --min-free ${MIN_FREE}: a cleanup run would skip."
   elif [[ "$total_reclaimable_bytes" -gt 0 || "$has_cleanable_target" == true ]]; then
-    status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
+    # Repeat the options that shaped this preview, so the apply run plans the same targets.
+    next_args=(cleaner --clean)
+    [[ "$CONFIG_EXPLICIT" == true ]] && next_args+=(--config "$CONFIG_FILE")
+    [[ "$MAX_RISK" != safe ]] && next_args+=(--risk "$MAX_RISK")
+    [[ "$TRASH_MODE" == true ]] && next_args+=(--trash)
+    [[ -n "$EXCLUDE_PATTERNS" ]] && next_args+=(--exclude "$EXCLUDE_PATTERNS")
+    [[ -n "$ONLY_TARGET" ]] && next_args+=(--only-target "$ONLY_TARGET")
+    [[ -n "$EXCLUDE_TARGET" ]] && next_args+=(--exclude-target "$EXCLUDE_TARGET")
+    [[ -n "$ONLY_PATH" ]] && next_args+=(--only-path "$ONLY_PATH")
+    [[ -n "$EXCLUDE_PATH" ]] && next_args+=(--exclude-path "$EXCLUDE_PATH")
+    [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
+    if [[ ${#next_args[@]} -eq 2 ]]; then
+      status_echo "Next: run 'cleaner --clean' to apply this plan, or 'cleaner --clean --trash' to quarantine instead of deleting."
+    else
+      next_trash_note=""
+      [[ "$TRASH_MODE" != true ]] && next_trash_note=" (add --trash to quarantine instead of deleting)"
+      next_cmd=$(printf '%q ' "${next_args[@]}")
+      next_cmd=${next_cmd% }
+      status_echo "Next: run 'cleaner --clean' to apply this plan, repeating this preview's options${next_trash_note}:"
+      # status_echo uses echo -e: double backslashes so the %q quoting prints unchanged.
+      status_echo "  ${next_cmd//\\/\\\\}"
+    fi
   fi
   if [[ "$CONFIG_DISCOVERED" == true ]]; then
     user_config_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || exit 1
