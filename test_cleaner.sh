@@ -612,9 +612,9 @@ for row_token in 'exclude:' 'exclude:a,,b' 'exclude:a,' 'exclude: ,b' 'exclude:a
 done
 
 # An action row runs its own command over the whole cache, so a file age it cannot honor is refused.
-for action_age in 0 00 7; do
-  action_age_exit=0
-  [[ "$action_age" == 7 ]] && action_age_exit=1
+for action_age in 0 00 7 18446744073709551616; do
+  action_age_exit=1
+  [[ "$action_age" == 0 || "$action_age" == 00 ]] && action_age_exit=0
   printf "safe|UV Cache|\$HOME/.cache/uv|validation|%s|uv|action:uv_cache_prune\n" "$action_age" > "$TEST_ENV_DIR/action_age.conf"
   if ! run_test_case "Action Row Age Validation ($action_age)" "$action_age_exit" "action_age.log" \
        --config "$TEST_ENV_DIR/action_age.conf" --check-config \

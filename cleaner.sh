@@ -1844,7 +1844,7 @@ validate_config_file() {
     elif [[ ! "$min_age" =~ ^[[:digit:]]+$ ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'${NC}" >&2
       exit 1
-    elif [[ "$custom_clean_cmd" == action:* ]] && (( 10#$min_age > 0 )); then
+    elif [[ "$custom_clean_cmd" == action:* ]] && has_positive_age "$min_age"; then
       # The action runs its own command over the whole cache; an age would only narrow the plan's estimate.
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: MIN_AGE_DAYS must be 0 for ${custom_clean_cmd} (the action ignores file age)${NC}" >&2
       exit 1
