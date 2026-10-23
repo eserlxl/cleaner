@@ -54,7 +54,7 @@ setup_mock_env() {
 # -x matches the whole process name as a regular expression, like the real pgrep.
 # The mocked binary is "mock_running_proc", but the kernel stores only its first 15
 # characters, and real pgrep refuses a plain -x pattern longer than that.
-if [[ "$1" == "-x" && ${#2} -gt 15 && "$2" =~ ^[A-Za-z0-9._-]+$ ]]; then
+if [[ "$1" == "-x" && ${#2} -gt 15 && "$2" =~ ^[[:alnum:]._-]+$ ]]; then
   echo "pgrep: pattern that searches for process name longer than 15 characters will result in zero matches" >&2
   exit 1
 fi
@@ -14023,6 +14023,21 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 rm -f "$doc_plan_env"
 echo -e "${GREEN}PASS: --doctor shows configured and default daily timer plans only when enabled and preserves exit codes.${NC}"
+
+# Under tr_TR a bash regex A-Z range skips i: option names and long process names must still match.
+if locale -a 2>/dev/null | grep -qix 'tr_TR.utf8'; then
+  setup_mock_env
+  if ! LC_ALL=tr_TR.UTF-8 run_test_case "Turkish Locale Option As Value" 1 "turkish_option_value.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --exclude --interactive \
+     || ! grep -qF -- "Error: --exclude requires a value, got option '--interactive'." "$TEST_ENV_DIR/turkish_option_value.log" \
+     || ! LC_ALL=tr_TR.UTF-8 run_test_case "Turkish Locale Long Process Name" 0 "turkish_process.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+     || ! grep -q "BLOCKED.*Yarn Cache: Skip cleanup because process 'mock_running_proc' is active." "$TEST_ENV_DIR/turkish_process.log"; then
+    echo -e "${RED}FAIL: an option value or a long process name with i was misread under the Turkish locale.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: option names and long process names match under the Turkish locale.${NC}"
+fi
 
 # The clean unit's env file enabling trash mode needs a retention bound; --doctor
 # warns only when the clean timer is enabled and neither bound is configured.

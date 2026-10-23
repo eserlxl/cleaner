@@ -293,7 +293,7 @@ trap notify_failed_exit EXIT
 # stay valid (target NAMEs such as "-n" or "-e" are supported); only -d is refused.
 require_non_option_value() {
   local flag="$1" val="$2"
-  if [[ "$val" =~ ^--[A-Za-z] || "$val" == -d ]]; then
+  if [[ "$val" =~ ^--[[:alpha:]] || "$val" == -d ]]; then
     echo -e "${RED}Error: $flag requires a value, got option '$val'.${NC}" >&2
     exit 1
   fi
@@ -1298,7 +1298,8 @@ _expand_var_token() {
     before="${rest%%"$token"*}"
     after="${rest#*"$token"}"
     nextc="${after:0:1}"
-    if [[ -z "$nextc" || "$nextc" != [A-Za-z0-9_] ]]; then
+    # Spelled out: before bash 5.2 (globasciiranges off), an A-Z range under tr_TR skips i and I.
+    if [[ -z "$nextc" || "$nextc" != [abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_] ]]; then
       out+="$before$value"
     else
       out+="$before$token"
@@ -3796,7 +3797,7 @@ is_process_running() {
       # its first 15. A plain name may contain '.' (python3.13-debug). Regex-bearing
       # tokens are the user's own and pass unchanged.
       local comm="$proc"
-      [[ ${#comm} -gt 15 && "$comm" =~ ^[A-Za-z0-9._-]+$ ]] && comm="${comm:0:15}"
+      [[ ${#comm} -gt 15 && "$comm" =~ ^[[:alnum:]._-]+$ ]] && comm="${comm:0:15}"
       pid=$(pgrep -x "$comm" 2>/dev/null) || query_status=$?
     fi
     case "$query_status" in
