@@ -13981,6 +13981,20 @@ if locale -a 2>/dev/null | grep -qix 'tr_TR.utf8'; then
     echo -e "${RED}FAIL: --risk MEDIUM was rejected under the Turkish locale.${NC}"
     exit 1
   fi
+  # Under tr_TR, a bash [0-9] range also matches non-ASCII digits such as U+0661.
+  for tr_digit_case in "--lock-wait|--lock-wait must be an integer" "--min-age|--min-age expects" \
+      "--action-timeout|--action-timeout expects" "--trash-keep-days|--trash-keep-days expects" \
+      "--check-health|--check-health expects"; do
+    tr_digit_flag=${tr_digit_case%%|*}
+    tr_digit_args=("$tr_digit_flag" $'\xd9\xa1' --dry-run)
+    [[ "$tr_digit_flag" == --check-health ]] && tr_digit_args=(--report "$tr_digit_flag" $'\xd9\xa1')
+    if ! LC_ALL=tr_TR.UTF-8 run_test_case "Turkish Locale Non-ASCII Digit $tr_digit_flag" 1 "turkish_digit.log" \
+         --config "$TEST_ENV_DIR/test_cleaner.conf" "${tr_digit_args[@]}" \
+       || ! grep -qF -- "Error: ${tr_digit_case#*|}" "$TEST_ENV_DIR/turkish_digit.log"; then
+      echo -e "${RED}FAIL: $tr_digit_flag accepted a non-ASCII digit under the Turkish locale.${NC}"
+      exit 1
+    fi
+  done
 fi
 printf 'LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=weekly\n' > "$doc_plan_env"
 doc_plan_case invalid_keep_days "WARN: daily timer plan: risk=safe deletion=quarantine keep-days=weekly ($doc_plan_env); invalid keep-days"

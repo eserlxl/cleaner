@@ -59,11 +59,11 @@ extract() {
 roll() {
   local version="$1" date="${2:-$(date +%F)}" base tmp
 
-  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ ! "$version" =~ ^[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+$ ]]; then
     echo "Error: version '$version' is not X.Y.Z." >&2
     exit 1
   fi
-  if [[ ! "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [[ "$(date -d "$date" +%F 2>/dev/null)" != "$date" ]]; then
+  if [[ ! "$date" =~ ^[[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}$ ]] || [[ "$(date -d "$date" +%F 2>/dev/null)" != "$date" ]]; then
     echo "Error: date '$date' is not YYYY-MM-DD." >&2
     exit 1
   fi

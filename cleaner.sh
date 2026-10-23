@@ -618,7 +618,7 @@ if [[ -n "$CHECK_HEALTH" ]]; then
     echo "Error: --check-health requires --report." >&2
     exit 1
   fi
-  if [[ ! "$CHECK_HEALTH" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$CHECK_HEALTH" =~ ^[[:digit:]]+$ ]]; then
     echo "Error: --check-health expects an integer from 0 to 9223372036854775807 seconds." >&2
     exit 1
   fi
@@ -643,7 +643,7 @@ if [[ -n "$EXCLUDE_PATH" && ( "$EXCLUDE_PATH" != /* || "$EXCLUDE_PATH" == *$'\n'
 fi
 
 # Validate only the effective value, so CLI can replace malformed inherited input.
-if [[ ! "$LOCK_WAIT" =~ ^[0-9]+$ ]]; then
+if [[ ! "$LOCK_WAIT" =~ ^[[:digit:]]+$ ]]; then
   echo "Error: --lock-wait must be an integer from 0 to 2147483647 seconds." >&2
   exit 1
 fi
@@ -673,7 +673,7 @@ USER="${USER:-$(id -un 2>/dev/null || true)}"
 # into a byte count on stdout. Returns 1 on bad syntax, 2 on 64-bit overflow.
 parse_size_bytes() {
   local raw="$1" num unit mult
-  if [[ ! "$raw" =~ ^([0-9]+)([KMGTkmgt]?)$ ]]; then
+  if [[ ! "$raw" =~ ^([[:digit:]]+)([KMGTkmgt]?)$ ]]; then
     return 1
   fi
   num="${BASH_REMATCH[1]}"
@@ -729,7 +729,7 @@ if [[ -n "$MIN_FREE_PATH" ]]; then
 fi
 
 if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
-  if [[ ! "$MIN_AGE_OVERRIDE" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$MIN_AGE_OVERRIDE" =~ ^[[:digit:]]+$ ]]; then
     echo -e "${RED}Error: --min-age expects a non-negative integer day count, got '${MIN_AGE_OVERRIDE}'.${NC}" >&2
     exit 1
   fi
@@ -738,7 +738,7 @@ if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
 fi
 
 if [[ -n "$ACTION_TIMEOUT" ]]; then
-  if [[ ! "$ACTION_TIMEOUT" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$ACTION_TIMEOUT" =~ ^[[:digit:]]+$ ]]; then
     echo -e "${RED}Error: --action-timeout expects a non-negative integer second count, got '${ACTION_TIMEOUT}'.${NC}" >&2
     exit 1
   fi
@@ -747,7 +747,7 @@ if [[ -n "$ACTION_TIMEOUT" ]]; then
 fi
 
 if [[ -n "$TRASH_KEEP_DAYS" ]]; then
-  if [[ ! "$TRASH_KEEP_DAYS" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$TRASH_KEEP_DAYS" =~ ^[[:digit:]]+$ ]]; then
     echo -e "${RED}Error: --trash-keep-days expects a non-negative integer day count, got '${TRASH_KEEP_DAYS}'.${NC}" >&2
     exit 1
   fi
@@ -1844,7 +1844,7 @@ validate_config_file() {
     risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: " >/dev/null || exit 1
     if [[ -z "$min_age" ]]; then
       :
-    elif [[ ! "$min_age" =~ ^[0-9]+$ ]]; then
+    elif [[ ! "$min_age" =~ ^[[:digit:]]+$ ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'${NC}" >&2
       exit 1
     fi
@@ -1939,7 +1939,7 @@ quarantine_size_bytes() {
   local output size
   if output=$(du -sb -- "$1" 2>/dev/null); then
     size=${output%%[[:space:]]*}
-    if [[ "$size" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    if [[ "$size" =~ ^(0|[123456789][[:digit:]]*)$ ]]; then
       printf '%s\n' "$size"
       return 0
     fi
@@ -2085,7 +2085,7 @@ purge_quarantine_sessions() {
     # cron '--trash --force' accumulates one session per run forever, so the tool
     # would hold the very space it claims to reclaim.
     days="${target#older-than:}"
-    if [[ ! "$days" =~ ^[0-9]+$ ]]; then
+    if [[ ! "$days" =~ ^[[:digit:]]+$ ]]; then
       echo -e "${RED}Error: Invalid day count in '$target'. Use older-than:<days>, e.g. older-than:30.${NC}" >&2
       exit 1
     fi
@@ -2110,7 +2110,7 @@ purge_quarantine_sessions() {
   elif [[ "$target" == keep-latest:* ]]; then
     keep_count="${target#keep-latest:}"
     local keep_n_norm="${keep_count#"${keep_count%%[!0]*}"}"
-    if [[ ! "$keep_count" =~ ^[0-9]+$ || -z "$keep_n_norm" ]]; then
+    if [[ ! "$keep_count" =~ ^[[:digit:]]+$ || -z "$keep_n_norm" ]]; then
       echo -e "${RED}Error: Invalid count in '$target'. Use keep-latest:<count> with a count of at least 1, e.g. keep-latest:5.${NC}" >&2
       exit 1
     fi
@@ -2385,7 +2385,7 @@ move_has_room() {
   fi
   MOVE_NEED_BYTES=$bytes
   avail=$(with_sudo "$dest_sudo" df -B1 --output=avail "$dest" 2>/dev/null | awk 'NR == 2 { print $1 }') || return 0
-  [[ "$avail" =~ ^[0-9]+$ ]] || return 0
+  [[ "$avail" =~ ^[[:digit:]]+$ ]] || return 0
   MOVE_AVAIL_BYTES=$avail
   [[ "$bytes" -le "$avail" ]]
 }
@@ -3005,7 +3005,7 @@ count_git_tracked() {
 # leading zero as octal and can overflow on long values; only zero/nonzero is
 # needed to choose the age-filter path.
 has_positive_age() {
-  [[ "$1" =~ [1-9] ]]
+  [[ "$1" =~ [123456789] ]]
 }
 
 # Check if there are files that match the age filter criteria
@@ -3361,7 +3361,7 @@ show_last_report() {
           ;;
         "Result: cleaned="*)
           result="completed"
-          if [[ "$line" =~ ^Result:\ cleaned=([0-9]+)\ skipped=([0-9]+)\ failed=([0-9]+)\ elapsed=([0-9]+)s$ ]]; then
+          if [[ "$line" =~ ^Result:\ cleaned=([[:digit:]]+)\ skipped=([[:digit:]]+)\ failed=([[:digit:]]+)\ elapsed=([[:digit:]]+)s$ ]]; then
             cleaned="${BASH_REMATCH[1]}"
             skipped="${BASH_REMATCH[2]}"
             failed="${BASH_REMATCH[3]}"
@@ -3398,7 +3398,7 @@ show_last_report() {
         "Accounted bytes:"*)
           quarantined_bytes=null
           permanent_bytes=null
-          if [[ "$line" =~ ^Accounted\ bytes:\ quarantined=(0|[1-9][0-9]*)\ permanent=(0|[1-9][0-9]*)$ ]]; then
+          if [[ "$line" =~ ^Accounted\ bytes:\ quarantined=(0|[123456789][[:digit:]]*)\ permanent=(0|[123456789][[:digit:]]*)$ ]]; then
             quarantined_bytes="${BASH_REMATCH[1]}"
             permanent_bytes="${BASH_REMATCH[2]}"
           fi
@@ -3445,7 +3445,7 @@ show_last_report() {
     local mtime now reason=""
     if ! mtime=$(stat -c '%Y' -- "$report_file" 2>/dev/null) \
        || ! now=$(date +%s 2>/dev/null) \
-       || [[ ! "$mtime" =~ ^[0-9]+$ || ! "$now" =~ ^[0-9]+$ ]]; then
+       || [[ ! "$mtime" =~ ^[[:digit:]]+$ || ! "$now" =~ ^[[:digit:]]+$ ]]; then
       reason="cannot read cleanup report age"
     elif (( mtime > now )); then
       # A future mtime (clock skew) would otherwise read as fresh for the whole skew.
@@ -3581,14 +3581,14 @@ write_cleanup_metrics() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
       "Result: cleaned="*)
-        if [[ "$line" =~ ^Result:\ cleaned=([0-9]+)\ skipped=([0-9]+)\ failed=([0-9]+)\ elapsed=([0-9]+)s$ ]]; then
+        if [[ "$line" =~ ^Result:\ cleaned=([[:digit:]]+)\ skipped=([[:digit:]]+)\ failed=([[:digit:]]+)\ elapsed=([[:digit:]]+)s$ ]]; then
           cleaned="${BASH_REMATCH[1]}"
           skipped="${BASH_REMATCH[2]}"
           failed="${BASH_REMATCH[3]}"
         fi
         ;;
       "Accounted bytes:"*)
-        if [[ "$line" =~ ^Accounted\ bytes:\ quarantined=(0|[1-9][0-9]*)\ permanent=(0|[1-9][0-9]*)$ ]]; then
+        if [[ "$line" =~ ^Accounted\ bytes:\ quarantined=(0|[123456789][[:digit:]]*)\ permanent=(0|[123456789][[:digit:]]*)$ ]]; then
           quarantined_bytes="${BASH_REMATCH[1]}"
           permanent_bytes="${BASH_REMATCH[2]}"
         fi
@@ -4039,7 +4039,7 @@ run_doctor() {
         "Retention failed: true") last_level=WARN; retention_note="; retention failed" ;;
       esac
     done < "$report_file"
-    if [[ "$result" =~ (^|[[:space:]])failed=0*[1-9][0-9]*($|[[:space:]]) ]]; then
+    if [[ "$result" =~ (^|[[:space:]])failed=0*[123456789][[:digit:]]*($|[[:space:]]) ]]; then
       last_level=WARN
     fi
     if [[ "$clean_timer" == enabled ]] \
