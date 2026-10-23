@@ -3863,7 +3863,9 @@ fi
 echo -e "${GREEN}PASS: install.sh shipped all eight assets under DESTDIR with a 0755 binary and 0644 environment template and shell completions.${NC}"
 
 # A renamed command (BINNAME) gets completions registered under its own name by both installers.
-for rename_installer in install.sh make; do
+rename_installers=(install.sh)
+command -v make >/dev/null 2>&1 && rename_installers+=(make)
+for rename_installer in "${rename_installers[@]}"; do
   rename_root="$TEST_ENV_DIR/rename_$rename_installer"
   rm -rf "$rename_root"
   if [[ "$rename_installer" == install.sh ]]; then
