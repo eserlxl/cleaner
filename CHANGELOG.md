@@ -37,6 +37,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- The dry-run `Next:` command repeats `--min-reclaim`, so applying it still skips when the plan has fallen below the threshold.
 - `make install` with a renamed `BINNAME` fails when one of its completion or service rewrite steps fails, instead of reporting success.
 - Session listings, purge confirmations and purge previews print recorded original paths literally; a backslash sequence such as `\c` no longer cuts the path short.
 - With a renamed `BINNAME`, both installers point the clean, retention and monitor services at the installed command; they still ran `cleaner`, so the timers failed or ran a different installation.

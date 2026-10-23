@@ -4734,6 +4734,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$EXCLUDE_TARGET" ]] && next_args+=(--exclude-target "$EXCLUDE_TARGET")
     [[ -n "$ONLY_PATH" ]] && next_args+=(--only-path "$ONLY_PATH")
     [[ -n "$EXCLUDE_PATH" ]] && next_args+=(--exclude-path "$EXCLUDE_PATH")
+    [[ -n "$MIN_RECLAIM" ]] && next_args+=(--min-reclaim "$MIN_RECLAIM")
     [[ -n "$MIN_FREE" ]] && next_args+=(--min-free "$MIN_FREE")
     [[ -n "$MIN_FREE_PATH" ]] && next_args+=(--min-free-path "$MIN_FREE_PATH")
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")

@@ -5015,6 +5015,8 @@ if [[ "$next_carry_ok" == true ]] \
    && grep -qxF "  cleaner --clean --action-timeout 0" "$TEST_ENV_DIR/next_zero_timeout.log" \
    && LINUX_CLEANER_RISK=medium XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Explicit Safe Risk" 0 "next_safe_risk.log" --risk safe --dry-run \
    && grep -qxF "  cleaner --clean --risk safe" "$TEST_ENV_DIR/next_safe_risk.log" \
+   && XDG_CONFIG_HOME="$TEST_ENV_DIR/next-xdg" run_test_case "Dry Run Next Min Reclaim" 0 "next_min_reclaim.log" --min-reclaim 1 --dry-run \
+   && grep -qxF "  cleaner --clean --min-reclaim 1" "$TEST_ENV_DIR/next_min_reclaim.log" \
    && run_test_case "Dry Run Next Carries Filters JSON" 0 "next_carry_json.log" \
      --config "$TEST_ENV_DIR/next carry.conf" --risk medium --json --dry-run \
    && ! grep -qF "Next:" "$TEST_ENV_DIR/next_carry_json.log"; then
