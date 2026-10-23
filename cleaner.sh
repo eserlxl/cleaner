@@ -75,7 +75,7 @@ Options:
   --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
   --action-timeout SECONDS   With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
-  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible.
+  --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
@@ -775,12 +775,6 @@ fi
 # Match listings are only meaningful for a text cleanup preview.
 if [[ "$SHOW_MATCHES" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --show-matches cannot be combined with --clean, --force, --interactive, --json, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor.${NC}" >&2
-  exit 1
-fi
-
-# Purge has no preview; the default DRY_RUN=true still permits ordinary purges.
-if [[ "$DRY_RUN_EXPLICIT" == true && -n "$PURGE_TARGET" ]]; then
-  echo -e "${RED}Error: --dry-run cannot be combined with --purge-sessions.${NC}" >&2
   exit 1
 fi
 
@@ -2236,6 +2230,10 @@ purge_quarantine_sessions() {
     targets+=("$dir")
   fi
 
+  if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
+    echo -e "${BOLD}${BLUE}=== Would purge Quarantine Sessions ===${NC}"
+  fi
+
   # A hold only ever shrinks the purge set, even under --force: bulk selectors and
   # inline retention skip held sessions (they still count toward max-size and
   # keep-latest), and a held latest or named session is refused, never replaced.
@@ -2265,7 +2263,9 @@ purge_quarantine_sessions() {
   # Show what will be freed -- and exactly which targets are about to be destroyed
   # -- before touching anything. This is the last thing a user sees before the
   # data is gone, so it names every item, not just the session size.
-  echo -e "${BOLD}${BLUE}=== Purge Quarantine Sessions ===${NC}"
+  if [[ "$DRY_RUN_EXPLICIT" != true ]]; then
+    echo -e "${BOLD}${BLUE}=== Purge Quarantine Sessions ===${NC}"
+  fi
   local ts size
   for d in "${targets[@]}"; do
     ts=$(basename "$d")
@@ -2273,6 +2273,8 @@ purge_quarantine_sessions() {
     echo -e "  ${ts}  size=${size:-?}"
     print_session_contents "$d" || return 1
   done
+
+  [[ "$DRY_RUN_EXPLICIT" != true ]] || return 0
 
   # Confirm unless forced -- purge is irreversible.
   if [[ "$FORCE" != true ]]; then
@@ -4211,11 +4213,11 @@ if [[ "$DRY_RUN" != true && -n "$ACTION_TIMEOUT" && "$ACTION_TIMEOUT" != 0 ]] &&
   exit 1
 fi
 
-# Serialize mutating runs (non-preview restore, purge, hold/release, and cleanup)
+# Serialize mutating runs (non-preview restore/purge, hold/release, and cleanup)
 # with an exclusive flock so overlapping timer and manual invocations cannot race on
 # the same files or quarantine sessions. Zero waits fail fast and permit missing
 # flock; positive waits require flock. Nonlocking modes ignore valid wait values.
-if [[ ( -n "${RESTORE_TARGET:-}" && "$DRY_RUN_EXPLICIT" != true ) || -n "${PURGE_TARGET:-}" || -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" || "$DRY_RUN" != true ]]; then
+if [[ ( ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" ) && "$DRY_RUN_EXPLICIT" != true ) || -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" || "$DRY_RUN" != true ]]; then
   if command -v flock >/dev/null 2>&1; then
     lock_dir="$HOME/.cache/linux-cleaner"
     lock_file="$lock_dir/cleaner.lock"

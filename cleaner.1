@@ -48,8 +48,10 @@ Use a custom configuration file instead of the resolved default.
 .BR \-d ", " \-\-dry\-run
 Calculate and display potential space savings without deleting anything (default).
 With
-.BR \-\-restore ,
-preview recovery instead (see below).
+.BR \-\-restore
+or
+.BR \-\-purge\-sessions ,
+preview recovery or session deletion instead (see below).
 A text preview that found something to clean ends with a
 .B Next:
 line. A bare preview names
@@ -963,7 +965,18 @@ skipped only when
 .B \-\-force
 is given. An explicit
 .B \-\-dry\-run
-is rejected. Cannot be combined with
+prints selected session names and sizes under a \(lqWould purge\(rq heading,
+including notes for held sessions skipped by bulk selectors, and exits 0 without
+confirmation, deletion, a lock, or log/report writes, even with inherited
+.BR LINUX_CLEANER_FORCE .
+Held sessions still count toward size/count limits; a held named or latest
+session is refused as in a real purge. A later
+.BR \-\-clean ,
+.BR \-\-force ,
+or
+.B \-\-interactive
+cancels the preview, so \-\-dry\-run \-\-force purges.
+JSON is not supported, including for previews. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-list\-sessions ,
 .BR \-\-hold\-session ,

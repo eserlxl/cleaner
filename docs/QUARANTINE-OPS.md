@@ -140,7 +140,7 @@ purge before confirmation/deletion, including inline retention.
 | `--restore SESSION --only-target PATTERN` | 1 | Only Target With Restore Rejected |
 | `--only PATTERN` without `--restore` | 1 | Only Without Restore Rejected |
 | `--restore SESSION --dry-run` | 0 | Dry Run With Restore Preview |
-| `--purge-sessions SESSION --dry-run` | 1 | Dry Run With Purge Rejected |
+| `--purge-sessions SESSION --dry-run` | 0 | Dry Run With Purge Preview |
 | `--restore SESSION --json` | 1 | JSON With Restore Rejected |
 | `--restore SESSION` with default `--lock-wait 0` while another cleanup, restore or purge holds `~/.cache/linux-cleaner/cleaner.lock` | 1 | Concurrent Run Lock Restore |
 
@@ -149,15 +149,17 @@ Mutating restore and purge share the cleanup lock. `--lock-wait SECONDS` or
 decimal seconds, leading zeros allowed; last CLI overrides; unset/empty env is
 zero). Zero keeps fail-fast behavior and optional `flock`; a positive wait requires
 `flock` and exits `1` on acquisition failure before session/report/log effects.
-Restore previews and read-only inventory never lock or wait. Lock-file opening can precede timeout.
+Restore/purge previews and read-only inventory never lock or wait. Lock-file opening can precede timeout.
 
-Purge, `--hold-session` and `--release-session` reject an active explicit `--dry-run` before mutation (`Dry Run With Purge Rejected`); only restore supports a `--dry-run` preview. Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore.
+Restore and purge support an active explicit `--dry-run` preview; `--hold-session` and `--release-session` still reject it. Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore and purge (`Force Overrides Earlier Dry Run for Purge`).
 
 ## Purge reference
 
 > **WARNING:** Supported predefined `action:*` handlers (for example, `action:apt_clean`) bypass quarantine and delete in place. There is no generic `action:custom`; unknown actions are rejected. Review `cleaner.conf` before any automated `--force` run.
 
 Selectors: `latest`, `all`, timestamp, `older-than:DAYS`, `max-size:SIZE` (keep the newest sessions within SIZE; `Purge Sessions Max Size Keeps Newest`), `keep-latest:N` (keep the newest `N` sessions, N >= 1 (use all to purge everything); `Purge Sessions Keep Latest Keeps Newest`). A named timestamp must be an immediate child directory name — no `/`, `.`, or `..` (`Purge Invalid Session`).
+
+Before scheduling retention, run, for example, `cleaner --purge-sessions max-size:5G --dry-run` or `cleaner --purge-sessions keep-latest:5 --dry-run`. The text preview lists exactly the selected unheld sessions with names and sizes under `Would purge`, plus notes for held sessions it skipped. It exits `0` without confirmation, deletion, locking, or log/report writes, even with inherited `LINUX_CLEANER_FORCE`. Held sessions still count toward size/count limits; a held named or `latest` session remains an error rather than selecting another session. JSON is not accepted for this preview (`Purge Preview`).
 
 Interactive: run without `--force` to see `This cannot be undone`; declining prints `No sessions were purged` (`Purge Preview Names Targets`, `Purge Declined Keeps Sessions`).
 

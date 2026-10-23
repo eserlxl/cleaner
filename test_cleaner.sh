@@ -5578,13 +5578,15 @@ else
   exit 1
 fi
 
-if run_test_case "Dry Run With Purge Rejected" 1 "dry_run_purge.log" \
+if run_test_case "Dry Run With Purge Preview" 0 "dry_run_purge.log" \
      --purge-sessions 2020-01-01_00-00-00 --force --dry-run; then
-  if grep -q "dry-run cannot be combined" "$TEST_ENV_DIR/dry_run_purge.log" \
-     && [[ -d "$json_qsession" ]]; then
-    echo -e "${GREEN}PASS: explicit --dry-run blocked purge before deleting the session.${NC}"
+  if grep -Fxq "=== Would purge Quarantine Sessions ===" "$TEST_ENV_DIR/dry_run_purge.log" \
+     && grep -qE '^  2020-01-01_00-00-00  size=.' "$TEST_ENV_DIR/dry_run_purge.log" \
+     && ! grep -q 'Permanently delete\|Purged ' "$TEST_ENV_DIR/dry_run_purge.log" \
+     && [[ -f "$json_qsession/payload" ]]; then
+    echo -e "${GREEN}PASS: explicit --dry-run previews purge without deleting the session.${NC}"
   else
-    echo -e "${RED}FAIL: explicit --dry-run with purge mutated data or returned the wrong error.${NC}"
+    echo -e "${RED}FAIL: explicit --dry-run with purge mutated data or returned the wrong preview.${NC}"
     cat "$TEST_ENV_DIR/dry_run_purge.log"
     exit 1
   fi
@@ -5594,12 +5596,15 @@ fi
 
 if run_test_case "Dry Run Before Restore Preview" 0 "dry_run_before_restore.log" \
      --dry-run --restore 2020-01-01_00-00-00 \
-   && run_test_case "Dry Run Before Purge Rejected" 1 "dry_run_before_purge.log" \
+   && run_test_case "Dry Run Before Purge Preview" 0 "dry_run_before_purge.log" \
      --force --dry-run --purge-sessions 2020-01-01_00-00-00; then
   if grep -Fxq "would restore  $json_restore_dest" "$TEST_ENV_DIR/dry_run_before_restore.log" \
      && grep -Fxq "Dry-run: nothing restored." "$TEST_ENV_DIR/dry_run_before_restore.log" \
+     && grep -Fxq "=== Would purge Quarantine Sessions ===" "$TEST_ENV_DIR/dry_run_before_purge.log" \
+     && grep -qE '^  2020-01-01_00-00-00  size=.' "$TEST_ENV_DIR/dry_run_before_purge.log" \
+     && ! grep -q 'Permanently delete\|Purged ' "$TEST_ENV_DIR/dry_run_before_purge.log" \
      && [[ -f "$json_qsession/payload" && ! -e "$json_restore_dest" ]]; then
-    echo -e "${GREEN}PASS: explicit --dry-run previews restore and blocks purge in either mode-argument position.${NC}"
+    echo -e "${GREEN}PASS: explicit --dry-run previews restore and purge in either mode-argument position.${NC}"
   else
     echo -e "${RED}FAIL: reverse-position --dry-run restore/purge mutated quarantined data.${NC}"
     exit 1
@@ -5790,6 +5795,111 @@ if run_test_case "Force Overrides Earlier Dry Run for Purge" 0 "dry_run_force_pu
 else
   exit 1
 fi
+
+# Purge previews use the real selector/hold rules without opening the mutation path.
+python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'PURGE_PREVIEW_PY'
+import fcntl, hashlib, os, pathlib, re, subprocess, sys, tempfile, time
+
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory(prefix="purge-preview-", dir=sys.argv[2]) as directory:
+    root = pathlib.Path(directory)
+    bindir = root / "bin"
+    bindir.mkdir()
+    trace = root / "forbidden-calls"
+    for command in ("sudo", "rm", "mkdir", "rmdir", "mv", "cp", "touch", "mktemp", "flock"):
+        stub = bindir / command
+        stub.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$PURGE_PREVIEW_TRACE"\nexit 99\n')
+        stub.chmod(0o755)
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    names = [f"2020-01-0{i}_00-00-00" for i in range(1, 5)]
+    cases = [("older-than:30", [0, 2], [1]), ("max-size:budget", [0], [1]),
+             ("keep-latest:2", [0], [1]), ("latest", [3], []),
+             ("all", [0, 2, 3], [1]), (names[2], [2], []),
+             ("older-than:99999", [], []), ("max-size:1G", [], []),
+             ("keep-latest:4", [], []), ("all-held", [], [0, 1, 2, 3])]
+
+    def snapshot(home):
+        result = {}
+        for path in [home, *home.rglob("*")]:
+            stat = path.lstat()
+            result[str(path.relative_to(home))] = (
+                stat.st_mode, stat.st_size, stat.st_mtime_ns, stat.st_ino,
+                hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None)
+        return result
+
+    for index, (selector, selected, skipped) in enumerate(cases):
+        home = root / str(index)
+        quarantine = home / ".cache/linux-cleaner/quarantine"
+        sessions = [quarantine / name for name in names]
+        for i, session in enumerate(sessions):
+            session.mkdir(parents=True)
+            (session / "payload").write_bytes(b"x" * (64 * (i + 1)))
+            (session / "quarantine.meta").write_text(f"full|payload|{home}/dest-{i}|false|0|0\n")
+        (sessions[1] / ".hold").write_text("held\n")
+        if selector == "all-held":
+            selector = "all"
+            for session in sessions:
+                (session / ".hold").write_text("held\n")
+        for session in sessions[:3]:
+            os.utime(session, (time.time() - 40 * 86400,) * 2)
+        if selector == "max-size:budget":
+            budget = sum(int(subprocess.check_output(["du", "-sb", str(s)]).split()[0]) for s in sessions[2:])
+            selector = f"max-size:{budget}"
+        expected_rows = [f"  {names[i]}  size=" + subprocess.check_output(
+            ["du", "-sh", str(sessions[i])], text=True).split()[0] for i in selected]
+        log = home / "operations.log"
+        log.write_text("existing log\n")
+        report = home / "state/linux-cleaner/last-report.txt"
+        report.parent.mkdir(parents=True)
+        report.write_text("existing report\n")
+        env = base_env | {"HOME": str(home), "XDG_STATE_HOME": str(home / "state"),
+                          "XDG_CONFIG_HOME": str(home / "config"), "NO_COLOR": "1",
+                          "LINUX_CLEANER_FORCE": "1", "LINUX_CLEANER_LOG": str(log),
+                          "LINUX_CLEANER_PREVIEW_METRICS_FILE": str(home / "preview.prom"),
+                          "LINUX_CLEANER_METRICS_FILE": str(home / "cleanup.prom")}
+        preview_env = env | {"PATH": str(bindir) + ":" + env["PATH"], "PURGE_PREVIEW_TRACE": str(trace)}
+
+        def preview(args, status=0):
+            before = snapshot(home)
+            result = subprocess.run([cleaner, *args], env=preview_env, stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True, timeout=20)
+            assert result.returncode == status, (selector, args, result)
+            if status == 0:
+                rows = [line for line in result.stdout.splitlines() if re.match(r"^  \S+  size=", line)]
+                assert rows == expected_rows, (selector, rows, expected_rows, result)
+                assert "Permanently delete" not in result.stdout and "Purged " not in result.stdout, result
+                held = re.findall(r"^Skipping held session (\S+) ", result.stdout, re.M)
+                assert held == [names[i] for i in skipped], (selector, held, skipped, result)
+                if selected or skipped:
+                    assert "=== Would purge Quarantine Sessions ===" in result.stdout, result
+            assert snapshot(home) == before and not trace.exists(), (selector, "preview mutated state")
+            return result
+
+        args = ["--purge-sessions", selector, "--dry-run", "--log", str(home / "new.log")]
+        preview(args)  # No lock exists yet, even with inherited FORCE and logging enabled.
+        lock = home / ".cache/linux-cleaner/cleaner.lock"
+        lock.write_text("keep lock contents\n")
+        with lock.open("r+") as locked:
+            fcntl.flock(locked, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            preview(["--dry-run", "--purge-sessions", selector, "--lock-wait", "1"])
+            preview(["--force", *args])
+            result = preview([*args, "--json"], 1)
+            assert "json is valid only" in result.stderr, result
+            if selector == "latest":
+                (sessions[3] / ".hold").write_text("held latest\n")
+                for held_selector in ("latest", names[3]):
+                    result = preview(["--purge-sessions", held_selector, "--dry-run"], 1)
+                    assert "is held" in result.stderr, result
+                (sessions[3] / ".hold").unlink()
+        result = subprocess.run([cleaner, "--purge-sessions", selector, "--force"], env=env,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0, result
+        deleted = [i for i, session in enumerate(sessions) if not session.exists()]
+        assert deleted == selected, (selector, deleted, selected, result)
+        assert re.findall(r"^Purged (\S+)$", result.stdout, re.M) == [names[i] for i in selected], result
+        print("PASS: Purge Preview " + selector + " matches real purge without state changes", flush=True)
+PURGE_PREVIEW_PY
+setup_mock_env
 
 echo -e "\n${BOLD}Test Case: Check Config Valid${NC}"
 if run_test_case "Check Config Valid" 0 "check_config_ok.log" \
