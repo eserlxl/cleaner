@@ -1925,7 +1925,8 @@ print_session_contents() {
     [[ "$mtype" == aged-restored ]] && mtype=aged
     [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
     morig=$(trim "${morig:-}")
-    echo -e "      ${mtype}  ${morig}"
+    # printf, not echo -e: a recorded path may hold backslashes such as \c.
+    printf '      %s  %s\n' "$mtype" "$morig"
   done < "$meta"
 }
 

@@ -2543,6 +2543,24 @@ else
   exit 1
 fi
 
+# Recorded paths print literally: a backslash sequence such as \c must not act as an escape.
+setup_mock_env
+bs_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2026-01-03_00-00-00"
+mkdir -p "$bs_session"
+printf 'keep payload\n' > "$bs_session/payload"
+printf 'full|payload|%s/foo\\cbar|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$bs_session/quarantine.meta"
+for bs_args in "--list-sessions" "--purge-sessions 2026-01-03_00-00-00 --dry-run"; do
+  read -ra bs_argv <<< "$bs_args"
+  if ! HOME="$MOCK_HOME" "$CLEANER_SH" "${bs_argv[@]}" < /dev/null > "$TEST_ENV_DIR/bs.out" 2>&1 \
+     || ! grep -qF "$MOCK_HOME/foo\\cbar" "$TEST_ENV_DIR/bs.out" \
+     || [[ ! -f "$bs_session/payload" ]]; then
+    echo -e "${RED}FAIL: $bs_args did not print a recorded backslash path literally.${NC}"
+    cat "$TEST_ENV_DIR/bs.out"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: session inventory and purge preview print recorded backslash paths literally.${NC}"
+
 # A failed inventory scan must not publish a successful empty or partial list.
 for inventory_format in human json; do
   for inventory_failure in total partial; do
