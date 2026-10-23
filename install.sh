@@ -82,9 +82,20 @@ do_uninstall() {
   echo "Uninstalled $BINNAME (system config preserved)"
 }
 
+# BINNAME becomes a file name and a completion registration: a plain basename only,
+# so it cannot leave DESTDIR or register extra command names.
+check_binname() {
+  case "$BINNAME" in
+    ''|.|..|-*|*[![:alnum:]._-]*)
+      echo "Error: BINNAME '$BINNAME' must be a plain name of letters, digits, '.', '_' or '-'." >&2
+      exit 1
+      ;;
+  esac
+}
+
 case "${1:-install}" in
-  install) do_install ;;
-  uninstall) do_uninstall ;;
+  install) check_binname; do_install ;;
+  uninstall) check_binname; do_uninstall ;;
   -h|--help|help) usage ;;
   *) usage; exit 1 ;;
 esac

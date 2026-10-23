@@ -3885,6 +3885,26 @@ for rename_installer in "${rename_installers[@]}"; do
 done
 echo -e "${GREEN}PASS: both installers register completions for a renamed BINNAME.${NC}"
 
+# An unsafe BINNAME (space, slash, dot path) is refused before anything is written.
+for unsafe_binname in 'cache cleaner' '../../escape' '..'; do
+  for rename_installer in "${rename_installers[@]}"; do
+    unsafe_root="$TEST_ENV_DIR/unsafe_binname"
+    rm -rf "$unsafe_root"
+    unsafe_rc=0
+    if [[ "$rename_installer" == install.sh ]]; then
+      DESTDIR="$unsafe_root" PREFIX=/usr BINNAME="$unsafe_binname" sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/unsafe_binname.log" 2>&1 || unsafe_rc=$?
+    else
+      make -s -C "$SCRIPT_DIR" install DESTDIR="$unsafe_root" PREFIX=/usr BINNAME="$unsafe_binname" > "$TEST_ENV_DIR/unsafe_binname.log" 2>&1 || unsafe_rc=$?
+    fi
+    if [[ "$unsafe_rc" -eq 0 ]] || [[ -e "$unsafe_root" ]] || ! grep -qF 'must be a plain name' "$TEST_ENV_DIR/unsafe_binname.log"; then
+      echo -e "${RED}FAIL: $rename_installer accepted BINNAME='$unsafe_binname' or wrote before refusing it.${NC}"
+      cat "$TEST_ENV_DIR/unsafe_binname.log"
+      exit 1
+    fi
+  done
+done
+echo -e "${GREEN}PASS: both installers refuse an unsafe BINNAME before writing anything.${NC}"
+
 # Re-installing over an existing config must preserve it and ship .example instead.
 DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
   > "$TEST_ENV_DIR/install_sh2.log" 2>&1
