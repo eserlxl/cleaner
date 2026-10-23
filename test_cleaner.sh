@@ -12647,6 +12647,13 @@ if ! (
     HOME="$MOCK_HOME" _cleaner
     [[ " ${compopt_calls[*]} " != *"filenames"* ]] || exit 1
   done
+  # A seconds value follows --check-health: no option names, even after a dash.
+  for seconds_prefix in "" -; do
+    COMP_WORDS=(cleaner --report --check-health "$seconds_prefix")
+    COMP_CWORD=3
+    HOME="$MOCK_HOME" _cleaner
+    [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+  done
   unset -f compopt
 ); then
   echo -e "${RED}FAIL: completions/cleaner.bash functional completion check failed.${NC}"
