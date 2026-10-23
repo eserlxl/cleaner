@@ -72,7 +72,7 @@ _cleaner() {
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
       ;;
-    --only-path|--exclude-path)
+    --only-path|--exclude-path|--min-free-path)
       compopt -o filenames 2>/dev/null || true
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       return 0
@@ -110,6 +110,7 @@ _cleaner() {
     --lock-wait
     --min-reclaim
     --min-free
+    --min-free-path
     --min-age
     --action-timeout
     --trash-keep-days

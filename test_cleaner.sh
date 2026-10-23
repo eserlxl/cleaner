@@ -3083,7 +3083,7 @@ echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
 vt_expected=$(printf '%s\n' \
   --config --risk --exclude --restore --only --only-exact --only-target \
   --exclude-target --only-path --exclude-path --lock-wait --min-reclaim \
-  --min-free --min-age --action-timeout --trash-keep-days --purge-sessions \
+  --min-free --min-free-path --min-age --action-timeout --trash-keep-days --purge-sessions \
   --hold-session --release-session | sort)
 vt_parser=$(awk '
   function emit(    n, i, p) {
@@ -5210,6 +5210,149 @@ else
 fi
 rm -f "$TEST_ENV_DIR/bin/df"
 
+# Opposite pressure on HOME and the selected filesystem pins the probe argument.
+write_min_free_path_df_stub() {
+  cat > "$TEST_ENV_DIR/bin/df" <<MOCK_DF
+#!/usr/bin/env bash
+case "\${@: -1}" in
+  "\$HOME") printf 'Avail\n%s\n' "$2" ;;
+  "\$TEST_ENV_DIR/min free path")
+    [[ "$1" != unreadable ]] || exit 1
+    printf 'Avail\n%s\n' "$1"
+    ;;
+  *) printf 'Avail\n5368709120\n' ;;
+esac
+MOCK_DF
+  chmod +x "$TEST_ENV_DIR/bin/df"
+}
+
+for min_free_direction in selected_low selected_high; do
+  setup_mock_env
+  min_free_path="$TEST_ENV_DIR/min free path"
+  mkdir -p "$min_free_path"
+  min_free_expected_exit=2
+  min_free_home_exit=0
+  min_free_expected_skip=null
+  min_free_home_skip=skipped_at_or_above_min_free
+  if [[ "$min_free_direction" == selected_low ]]; then
+    write_min_free_path_df_stub 104857600 5368709120
+  else
+    write_min_free_path_df_stub 5368709120 104857600
+    min_free_expected_exit=0
+    min_free_home_exit=2
+    min_free_expected_skip=skipped_at_or_above_min_free
+    min_free_home_skip=null
+  fi
+  if ! run_test_case "Min Free Path $min_free_direction JSON Exit" "$min_free_expected_exit" "min_free_path.json" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path" --json --exit-code \
+     || ! run_test_case "Min Free Default HOME $min_free_direction" "$min_free_home_exit" "min_free_home.json" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --json --exit-code \
+     || ! LINUX_CLEANER_MIN_FREE=1G LINUX_CLEANER_MIN_FREE_PATH="$min_free_path" \
+       run_test_case "Min Free Path Env $min_free_direction" "$min_free_expected_exit" "min_free_path_env.json" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --json --exit-code \
+     || ! LINUX_CLEANER_MIN_FREE=10G LINUX_CLEANER_MIN_FREE_PATH="$MOCK_HOME" \
+       run_test_case "Min Free Path CLI Overrides Env $min_free_direction" "$min_free_expected_exit" "min_free_path_override.json" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path" --json --exit-code \
+     || ! python3 - "$TEST_ENV_DIR" "$min_free_expected_skip" "$min_free_home_skip" <<'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+for name, expected in [("min_free_path.json", sys.argv[2]),
+                       ("min_free_path_env.json", sys.argv[2]),
+                       ("min_free_path_override.json", sys.argv[2]),
+                       ("min_free_home.json", sys.argv[3])]:
+    data = json.loads((root / name).read_text())
+    assert data["would_skip"] == (None if expected == "null" else expected), data
+PY
+  then
+    echo -e "${RED}FAIL: selected filesystem, HOME default, env override, JSON or exit code disagreed.${NC}"
+    exit 1
+  fi
+  if ! run_test_case "Min Free Path Text $min_free_direction" "$min_free_expected_exit" "min_free_path_text.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path" --exit-code; then
+    exit 1
+  fi
+  if [[ "$min_free_direction" == selected_low ]]; then
+    printf -v min_free_next '%q ' cleaner --clean --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path"
+    if ! grep -qxF "  ${min_free_next% }" "$TEST_ENV_DIR/min_free_path_text.log"; then
+      echo -e "${RED}FAIL: Next: omitted or misquoted the selected filesystem or threshold.${NC}"
+      exit 1
+    fi
+  elif ! grep -qF 'a cleanup run would skip.' "$TEST_ENV_DIR/min_free_path_text.log" \
+       || grep -qF 'Next:' "$TEST_ENV_DIR/min_free_path_text.log"; then
+    echo -e "${RED}FAIL: text preview did not skip on the selected filesystem.${NC}"
+    exit 1
+  fi
+  if [[ ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+     || ! run_test_case "Min Free Path Cleanup $min_free_direction" 0 "min_free_path_clean.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path" --clean --force; then
+    exit 1
+  fi
+  if [[ "$min_free_direction" == selected_low && -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]] \
+     || [[ "$min_free_direction" == selected_high && ! -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+    echo -e "${RED}FAIL: cleanup followed HOME pressure instead of --min-free-path.${NC}"
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: --min-free-path gates both directions, defaults to HOME, and agrees with env, JSON and --exit-code.${NC}"
+
+setup_mock_env
+min_free_path="$TEST_ENV_DIR/min free path"
+mkdir -p "$min_free_path"
+write_min_free_path_df_stub unreadable 5368709120
+if ! run_test_case "Min Free Path Unreadable Preview" 2 "min_free_path_unreadable.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path" --exit-code \
+   || ! run_test_case "Min Free Path Unreadable Cleans" 0 "min_free_path_unreadable_clean.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 1G --min-free-path "$min_free_path" --clean --force \
+   || ! grep -qF "cannot read free space on the filesystem holding $min_free_path; --min-free 1G is ignored this run." "$TEST_ENV_DIR/min_free_path_unreadable_clean.log" \
+   || [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${RED}FAIL: an unreadable explicit filesystem did not warn and proceed.${NC}"
+  exit 1
+fi
+
+setup_mock_env
+min_free_path="$TEST_ENV_DIR/min free path"
+mkdir -p "$min_free_path"
+touch "$min_free_path/file"
+write_min_free_path_df_stub 5368709120 5368709120
+if ! run_test_case "Min Free Path File Zero Disables" 0 "min_free_path_zero.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --min-free 0 --min-free-path "$min_free_path/file" --clean --force \
+   || [[ -f "$MOCK_HOME/.npm/_cacache/cache1.txt" ]]; then
+  echo -e "${RED}FAIL: --min-free-path rejected an existing file or --min-free 0 failed to disable the gate.${NC}"
+  exit 1
+fi
+for min_free_bad_path in relative/path "$TEST_ENV_DIR/missing"; do
+  if ! run_test_case "Min Free Path Invalid $min_free_bad_path" 1 "min_free_path_bad.log" \
+       --min-free 1G --min-free-path "$min_free_bad_path" \
+     || ! grep -qF -- '--min-free-path requires an absolute existing path' "$TEST_ENV_DIR/min_free_path_bad.log" \
+     || ! LINUX_CLEANER_MIN_FREE=1G LINUX_CLEANER_MIN_FREE_PATH="$min_free_bad_path" \
+       run_test_case "Min Free Path Invalid Env $min_free_bad_path" 1 "min_free_path_bad_env.log" \
+     || ! grep -qF -- '--min-free-path requires an absolute existing path' "$TEST_ENV_DIR/min_free_path_bad_env.log"; then
+    echo -e "${RED}FAIL: CLI or env accepted an invalid min-free path.${NC}"
+    exit 1
+  fi
+done
+if ! run_test_case "Min Free Path Requires Threshold" 1 "min_free_path_requires.log" --min-free-path "$min_free_path" \
+   || ! grep -qF -- '--min-free-path requires --min-free.' "$TEST_ENV_DIR/min_free_path_requires.log" \
+   || ! LINUX_CLEANER_MIN_FREE_PATH="$min_free_path" \
+     run_test_case "Min Free Path Env Requires Threshold" 1 "min_free_path_env_requires.log" \
+   || ! grep -qF -- '--min-free-path requires --min-free.' "$TEST_ENV_DIR/min_free_path_env_requires.log" \
+   || ! run_test_case "Min Free Path Missing Argument" 1 "min_free_path_missing.log" --min-free 1G --min-free-path \
+   || ! grep -qF -- '--min-free-path requires a path argument.' "$TEST_ENV_DIR/min_free_path_missing.log"; then
+  echo -e "${RED}FAIL: --min-free-path did not require a threshold and path argument.${NC}"
+  exit 1
+fi
+for min_free_option_value in --dry-run -d; do
+  if ! run_test_case "Min Free Path Refuses Option $min_free_option_value" 1 "min_free_path_option.log" \
+       --force --min-free 1G --min-free-path "$min_free_option_value" \
+     || ! grep -qF "Error: --min-free-path requires a value, got option '$min_free_option_value'." "$TEST_ENV_DIR/min_free_path_option.log"; then
+    echo -e "${RED}FAIL: --min-free-path consumed a dry-run option as its path.${NC}"
+    exit 1
+  fi
+done
+rm -f "$TEST_ENV_DIR/bin/df"
+# The cleanup cases above emptied the mock caches; later cases expect them populated.
+setup_mock_env
+
 # --quiet: minimal output for unattended cron runs.
 echo -e "\n${BOLD}Test Case: Quiet Dry Run Output${NC}"
 if run_test_case "Quiet Dry Run" 0 "quiet_dry.log" \
@@ -7289,7 +7432,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report
-  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
+  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -7299,13 +7442,14 @@ mx_args() {
     --only-path|--exclude-path) echo "$1 $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
     --min-free) echo "--min-free 1G" ;;
+    --min-free-path) echo "--min-free-path $MOCK_HOME --min-free 1G" ;;
     --min-age) echo "--min-age 30" ;;
     --action-timeout) echo "--action-timeout 60" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
+mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
   --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -7405,6 +7549,7 @@ done
 for check_spec in \
   "Min Reclaim With Check Config Rejected|min_reclaim_check_config.log|--min-reclaim|1G" \
   "Min Free With Check Config Rejected|min_free_check_config.log|--min-free|1G" \
+  "Min Free Path With Check Config Rejected|min_free_path_check_config.log|--min-free-path|$MOCK_HOME" \
   "Min Age With Check Config Rejected|min_age_check_config.log|--min-age|7" \
   "Action Timeout With Check Config Rejected|action_timeout_check_config.log|--action-timeout|60" \
   "Trash Keep Days With Check Config Rejected|trash_keep_check_config.log|--trash-keep-days|7" \
@@ -7417,6 +7562,7 @@ do
   else
     check_args=("$check_flag" --check-config)
   fi
+  [[ "$check_flag" == --min-free-path ]] && check_args+=(--min-free 1G)
   if run_test_case "$check_name" 1 "$check_log" "${check_args[@]}"; then
     if grep -qF "applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
       echo -e "${GREEN}PASS: $check_flag with --check-config names the eight-mode list.${NC}"
@@ -12356,7 +12502,7 @@ if ! (
   # directory gets a trailing slash and special characters are quoted.
   # shellcheck disable=SC2329  # invoked indirectly by _cleaner
   compopt() { compopt_calls+=("$*"); }
-  for file_option in -c --config --log --only-path --exclude-path; do
+  for file_option in -c --config --log --only-path --exclude-path --min-free-path; do
     compopt_calls=()
     COMP_WORDS=(cleaner "$file_option" "$comp_file")
     COMP_CWORD=2
@@ -12483,7 +12629,7 @@ if command -v fish > /dev/null 2>&1; then
       | grep -q 'comp_file.txt'; then
     fish_comp_failed+=" bare-argument(file offered)"
   fi
-  for file_option in --config --log; do
+  for file_option in --config --log --min-free-path; do
     if ! (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
             fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $file_option '") \
           | grep -qx 'comp_file.txt'; then

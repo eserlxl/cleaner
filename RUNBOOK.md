@@ -51,11 +51,13 @@ Permanent deletion of safe targets. Quarantine is opt-in and must be paired with
 0 3 * * * LINUX_CLEANER_FORCE=1 cleaner --clean --trash --force --trash-keep-days 30
 ```
 
-To clean only under disk pressure, schedule an hourly run with `--min-free SIZE` (or `LINUX_CLEANER_MIN_FREE`); free space is measured on the filesystem holding `HOME`, and runs at or above `SIZE` free skip with exit `0`:
+To clean only under disk pressure, schedule an hourly run with `--min-free SIZE` (or `LINUX_CLEANER_MIN_FREE`); free space is measured on the filesystem holding `HOME` by default, and runs at or above `SIZE` free skip with exit `0`:
 
 ```cron
 0 * * * * LINUX_CLEANER_FORCE=1 cleaner --clean --force --min-free 10G
 ```
+
+For build caches on another filesystem, add `--min-free-path /absolute/build-cache` (or `LINUX_CLEANER_MIN_FREE_PATH`). It accepts an absolute existing file or directory, requires `--min-free` or its environment mirror, and only selects the pressure probe; target selection stays unchanged. Relative or missing paths exit `1`; a failed free-space probe warns and cleanup proceeds. Both options refuse read-only and session modes (including `--hold-session`/`--release-session`) and are repeated in a dry-run `Next:` command when cleanup would run.
 
 ## Cron: retention purge
 
@@ -171,11 +173,13 @@ cleaner --clean --trash --force
 
 ## Env recipe: clean under disk pressure
 
-To keep caches until space runs short, let the cleanup timer run hourly and skip while the filesystem holding `HOME` still has enough free space. Add the threshold to `~/.config/linux-cleaner/env`:
+To keep caches until space runs short, let the cleanup timer run hourly and skip while the selected filesystem (default: `HOME`) still has enough free space. Add the threshold to `~/.config/linux-cleaner/env`:
 
 ```ini
 LINUX_CLEANER_MIN_FREE=10G
 ```
+
+For a separate build-cache filesystem, also set `LINUX_CLEANER_MIN_FREE_PATH=/absolute/build-cache` to an existing path on that filesystem. CLI `--min-free-path` overrides this value; unset or empty keeps `HOME` as the default.
 
 Then override the timer schedule with `systemctl --user edit linux-cleaner-clean.timer` (the empty `OnCalendar=` clears the shipped 03:00 slot):
 
@@ -186,6 +190,7 @@ OnCalendar=hourly
 ```
 
 Preview which way a run would go with `cleaner --dry-run --min-free 10G`.
+Add `--min-free-path /absolute/build-cache` to preview another filesystem; JSON `would_skip` and `--exit-code` follow the same probe.
 Revert to the daily schedule with `systemctl --user revert linux-cleaner-clean.timer`.
 
 ## Env recipe: JSON monitoring

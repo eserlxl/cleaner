@@ -69,7 +69,8 @@ Options:
   --exclude-path PATH        With cleanup or --list-targets: skip targets at, below, or containing an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
-  --min-free SIZE            With cleanup: skip the run when the home filesystem already has at least SIZE free (e.g. 10G).
+  --min-free SIZE            With cleanup: skip the run when the selected filesystem (default: HOME) has at least SIZE free (e.g. 10G).
+  --min-free-path PATH       Measure PATH's filesystem for --min-free; requires an absolute existing path and --min-free.
   --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
   --action-timeout SECONDS   With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
@@ -124,6 +125,7 @@ MIN_RECLAIM=""
 MIN_RECLAIM_BYTES=0
 MIN_FREE=""
 MIN_FREE_BYTES=0
+MIN_FREE_PATH=""
 MIN_AGE_OVERRIDE=""
 ACTION_TIMEOUT=""
 TRASH_KEEP_DAYS=""
@@ -198,6 +200,9 @@ if [[ -n "${LINUX_CLEANER_MIN_RECLAIM:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_MIN_FREE:-}" ]]; then
   MIN_FREE="$LINUX_CLEANER_MIN_FREE"
+fi
+if [[ -n "${LINUX_CLEANER_MIN_FREE_PATH:-}" ]]; then
+  MIN_FREE_PATH="$LINUX_CLEANER_MIN_FREE_PATH"
 fi
 if [[ -n "${LINUX_CLEANER_MIN_AGE:-}" ]]; then
   MIN_AGE_OVERRIDE="$LINUX_CLEANER_MIN_AGE"
@@ -495,6 +500,15 @@ while [[ $# -gt 0 ]]; do
       MIN_FREE="$2"
       shift 2
       ;;
+    --min-free-path)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --min-free-path requires a path argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      MIN_FREE_PATH="$2"
+      shift 2
+      ;;
     --min-age)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --min-age requires a day count argument.${NC}" >&2
@@ -673,6 +687,17 @@ if [[ -n "$MIN_FREE" ]]; then
   fi
 fi
 
+if [[ -n "$MIN_FREE_PATH" ]]; then
+  if [[ -z "$MIN_FREE" ]]; then
+    echo -e "${RED}Error: --min-free-path requires --min-free.${NC}" >&2
+    exit 1
+  fi
+  if [[ "$MIN_FREE_PATH" != /* || ! -e "$MIN_FREE_PATH" ]]; then
+    echo -e "${RED}Error: --min-free-path requires an absolute existing path, got '${MIN_FREE_PATH}'.${NC}" >&2
+    exit 1
+  fi
+fi
+
 if [[ -n "$MIN_AGE_OVERRIDE" ]]; then
   if [[ ! "$MIN_AGE_OVERRIDE" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: --min-age expects a non-negative integer day count, got '${MIN_AGE_OVERRIDE}'.${NC}" >&2
@@ -704,9 +729,9 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
-        || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
+        || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -761,8 +786,10 @@ if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" 
   exit 1
 fi
 
-if [[ -n "$MIN_FREE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --min-free applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
+if [[ ( -n "$MIN_FREE" || -n "$MIN_FREE_PATH" ) && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  min_free_flag=--min-free
+  [[ -n "$MIN_FREE_PATH" ]] && min_free_flag=--min-free-path
+  echo -e "${RED}Error: ${min_free_flag} applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -4581,9 +4608,9 @@ home_free_bytes=0
 # A zero threshold disables the gate, like --min-reclaim 0.
 if [[ "$MIN_FREE_BYTES" -gt 0 ]]; then
   # Unlike get_fs_avail_bytes, an unreadable value stays empty so it is not mistaken for 0 free.
-  home_free_bytes=$({ df -B1 --output=avail -- "$HOME" 2>/dev/null || true; } | awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {print v}')
+  home_free_bytes=$({ df -B1 --output=avail -- "${MIN_FREE_PATH:-$HOME}" 2>/dev/null || true; } | awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {print v}')
   if [[ -z "$home_free_bytes" ]]; then
-    echo -e "${YELLOW}Warning: cannot read free space on the filesystem holding HOME; --min-free ${MIN_FREE} is ignored this run.${NC}" >&2
+    echo -e "${YELLOW}Warning: cannot read free space on the filesystem holding ${MIN_FREE_PATH:-HOME}; --min-free ${MIN_FREE} is ignored this run.${NC}" >&2
     home_free_bytes=0
   fi
 fi
@@ -4628,6 +4655,8 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$EXCLUDE_TARGET" ]] && next_args+=(--exclude-target "$EXCLUDE_TARGET")
     [[ -n "$ONLY_PATH" ]] && next_args+=(--only-path "$ONLY_PATH")
     [[ -n "$EXCLUDE_PATH" ]] && next_args+=(--exclude-path "$EXCLUDE_PATH")
+    [[ -n "$MIN_FREE" ]] && next_args+=(--min-free "$MIN_FREE")
+    [[ -n "$MIN_FREE_PATH" ]] && next_args+=(--min-free-path "$MIN_FREE_PATH")
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
     [[ -n "$TRASH_KEEP_DAYS" ]] && next_args+=(--trash-keep-days "$TRASH_KEEP_DAYS")
     [[ "$FAIL_FAST" == true ]] && next_args+=(--fail-fast)

@@ -61,6 +61,8 @@ When the preview used an explicit config, a risk above safe,
 .BR \-\-exclude\-target ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
 or
 .B \-\-trash\-keep\-days
@@ -423,6 +425,7 @@ combined with
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
@@ -509,6 +512,7 @@ the checklist. Cannot be combined with
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
@@ -686,8 +690,8 @@ or
 .BR \-\-doctor .
 .TP
 .B \-\-min\-free \fISIZE\fR
-Used with cleanup: skip the run when the filesystem holding
-.B HOME
+Used with cleanup: skip the run when the selected filesystem (default:
+.BR HOME )
 already has at least
 .I SIZE
 free (an integer with an optional
@@ -695,12 +699,43 @@ free (an integer with an optional
 1024-based unit, such as
 .BR 10G ;
 .B 0
-disables the check).
+disables the check). Select another filesystem with
+.BR \-\-min\-free\-path .
+An unreadable free-space probe prints a warning and cleanup proceeds.
 In dry-run mode, prints a note when a cleanup run would skip; in a cleanup
 run, prints why nothing was cleaned, saves
 .BI "Result: skipped at or above \-\-min\-free " SIZE
 in the last cleanup report, and exits 0. Exits 1 on a malformed
 .IR SIZE .
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
+.B \-\-min\-free\-path \fIPATH\fR
+Select the filesystem measured by
+.BR \-\-min\-free .
+PATH must be an absolute existing file or directory. Requires
+.B \-\-min\-free
+or
+.BR LINUX_CLEANER_MIN_FREE ;
+a missing threshold, relative path, or nonexistent path exits 1.
+Defaults to HOME when unset; CLI overrides
+.BR LINUX_CLEANER_MIN_FREE_PATH .
+A failed probe warns and cleanup proceeds. This selects the pressure probe,
+not cleanup targets. Dry-run Next: commands carry both options; JSON
+.B would_skip
+and
+.B \-\-exit\-code
+use the same gate.
 Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
@@ -926,6 +961,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
@@ -960,6 +996,7 @@ Cannot be combined with
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
@@ -987,7 +1024,7 @@ Value-taking options
 .BR \-\-only ", " \-\-only\-exact ,
 .BR \-\-only\-target ", " \-\-exclude\-target ", " \-\-only\-path ,
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
-.BR \-\-min\-free ", " \-\-min\-age ", " \-\-action\-timeout ,
+.BR \-\-min\-free ", " \-\-min\-free\-path ", " \-\-min\-age ", " \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 and
 .BR \-\-purge\-sessions )
@@ -1120,9 +1157,18 @@ When set to a non-empty size threshold (such as
 .BR 10G ),
 enables
 .BR \-\-min\-free
-(measured on the filesystem holding
+(measured on the selected filesystem, default:
 .BR HOME ).
 CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_MIN_FREE_PATH
+When set to a non-empty absolute existing path, selects its filesystem for
+.BR \-\-min\-free .
+Requires a CLI or environment min-free threshold. Unset or empty uses HOME.
+Invalid paths exit 1; failed probes warn and cleanup proceeds.
+CLI
+.B \-\-min\-free\-path
+overrides this variable.
 .TP
 .B LINUX_CLEANER_MIN_AGE
 When set to a non-empty non-negative integer day count, enables
