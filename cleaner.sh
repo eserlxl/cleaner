@@ -4761,12 +4761,36 @@ if [[ "$DRY_RUN" = true ]]; then
   exit "$preview_exit_status"
 fi
 
+handle_cleanup_signal() {
+  local sig="$1" code="$2" context="${3:-before all targets finished}"
+  trap - INT TERM
+  # During retention the report was already printed; add only the interruption line.
+  if (( $# < 3 )); then
+    RESULT_REPORT_TEXT=$(print_result_report)
+    printf '%s\n' "$RESULT_REPORT_TEXT"
+  fi
+  RESULT_REPORT_TEXT+=$'\n'"Interrupted: ${sig} ${context}"
+  printf '%s\n' "Interrupted: ${sig} ${context}"
+  journal_error_line "Cleanup interrupted: ${sig} ${context}."
+  save_last_cleanup_report
+  notify_cleanup_result
+  log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=run outcome=interrupted signal=${sig}"
+  exit "$code"
+}
+
+run_retention_trapped() {
+  trap 'handle_cleanup_signal SIGINT 130 "during quarantine retention"' INT
+  trap 'handle_cleanup_signal SIGTERM 143 "during quarantine retention"' TERM
+  apply_trash_keep_days
+  trap - INT TERM
+}
+
 if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then
   echo "Planned reclaim $(format_bytes "$total_reclaimable_bytes") is below --min-reclaim ${MIN_RECLAIM}; nothing was cleaned."
   RESULT_REPORT_TEXT="Result: skipped below --min-reclaim ${MIN_RECLAIM}"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
-  apply_trash_keep_days
+  run_retention_trapped
   notify_cleanup_result
   if [[ "$OPERATION_FAILED" = true ]]; then
     journal_error_line "Retention purge failed after the cleanup was skipped."
@@ -4780,7 +4804,7 @@ if [[ "$MIN_FREE_BYTES" -gt 0 && "$home_free_bytes" -ge "$MIN_FREE_BYTES" ]]; th
   RESULT_REPORT_TEXT="Result: skipped at or above --min-free ${MIN_FREE}"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
-  apply_trash_keep_days
+  run_retention_trapped
   notify_cleanup_result
   if [[ "$OPERATION_FAILED" = true ]]; then
     journal_error_line "Retention purge failed after the cleanup was skipped."
@@ -4796,7 +4820,7 @@ if [[ "$total_reclaimable_bytes" -eq 0 && "$has_cleanable_target" != true ]]; th
   RESULT_REPORT_TEXT="Result: nothing to clean"
   RESULT_REPORT_TEXT+=$'\nAccounted bytes: quarantined=0 permanent=0'
   save_last_cleanup_report
-  apply_trash_keep_days
+  run_retention_trapped
   notify_cleanup_result
   if [[ "$OPERATION_FAILED" = true ]]; then
     journal_error_line "Retention purge failed after the cleanup was skipped."
@@ -4848,22 +4872,6 @@ fail_fast_stopped=""
 
 QUARANTINE_DIR=""
 
-handle_cleanup_signal() {
-  local sig="$1" code="$2" context="${3:-before all targets finished}"
-  trap - INT TERM
-  # During retention the report was already printed; add only the interruption line.
-  if (( $# < 3 )); then
-    RESULT_REPORT_TEXT=$(print_result_report)
-    printf '%s\n' "$RESULT_REPORT_TEXT"
-  fi
-  RESULT_REPORT_TEXT+=$'\n'"Interrupted: ${sig} ${context}"
-  printf '%s\n' "Interrupted: ${sig} ${context}"
-  journal_error_line "Cleanup interrupted: ${sig} ${context}."
-  save_last_cleanup_report
-  notify_cleanup_result
-  log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=run outcome=interrupted signal=${sig}"
-  exit "$code"
-}
 trap 'handle_cleanup_signal SIGINT 130' INT
 trap 'handle_cleanup_signal SIGTERM 143' TERM
 
@@ -5258,10 +5266,7 @@ fi
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
 if [[ -z "$fail_fast_stopped" ]]; then
-  trap 'handle_cleanup_signal SIGINT 130 "during quarantine retention"' INT
-  trap 'handle_cleanup_signal SIGTERM 143 "during quarantine retention"' TERM
-  apply_trash_keep_days
-  trap - INT TERM
+  run_retention_trapped
 fi
 if [[ "$OPERATION_FAILED" == true ]] || (( result_failed > 0 )); then
   journal_error_line "Cleanup failed: failed=${result_failed}; targets: ${result_failed_names:-none}; operation_failed=${OPERATION_FAILED}; retention_failed=${RETENTION_FAILED:-false}."

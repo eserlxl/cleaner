@@ -11842,6 +11842,20 @@ then
 fi
 grep -qx 'old payload' "$retention_old/payload" || exit 1
 
+setup_retention_report interrupted
+if ! run_test_case "Retention Interrupted Keeps Min-Reclaim Skip Report" 143 "retention_skip_interrupted.log" \
+       --config "$TEST_ENV_DIR/retention_report.conf" --clean --force --min-reclaim 1G --trash-keep-days 7 \
+   || ! grep -Fxq 'Result: skipped below --min-reclaim 1G' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+   || ! grep -Fxq 'Interrupted: SIGTERM during quarantine retention' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+   || ! run_test_case "Retention Interrupted Skip Report Health" 1 "retention_skip_interrupted_health.log" --report --check-health 60 \
+   || ! grep -Fq 'cleanup was interrupted' "$TEST_ENV_DIR/retention_skip_interrupted_health.log" \
+   || ! grep -qx 'old payload' "$retention_old/payload" \
+   || ! grep -qx 'target payload' "$retention_target/file"; then
+  echo -e "${RED}FAIL: interruption during retention lost the skip report or changed payloads.${NC}"
+  exit 1
+fi
+setup_mock_env
+
 setup_retention_report standalone
 if ! run_test_case "Retention Standalone Purge Failure" 1 "retention_standalone.log" --purge-sessions older-than:7 --force \
    || ! grep -qx 'old payload' "$retention_old/payload" \
