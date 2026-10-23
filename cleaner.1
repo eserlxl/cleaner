@@ -1550,6 +1550,17 @@ never prompts for a password. User-defined
 .B protect|\fIPATH\fR
 lines in the configuration skip any target that equals, lies under, or contains a
 protected path.
+The cleaner always protects
+.BR $HOME/.cache/linux\-cleaner
+by the same canonical-path checks, even before it exists, without requiring a
+.B protect
+line. Targets equal to, under, or containing it (including
+.B $HOME/.cache
+and wildcard matches) are skipped as
+.B protected
+in text and JSON previews and cleanup, even with
+.BR \-\-force .
+This preserves quarantine sessions, operations.log, and the live cleaner.lock.
 With Git available, targets containing git-tracked files are skipped even with \-\-force, unless the cleaner runs as root or the target is unreadable without sudo.
 .SH FILES
 .TP

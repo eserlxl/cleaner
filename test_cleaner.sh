@@ -9659,6 +9659,78 @@ else
   exit 1
 fi
 
+# Built-in protection keeps the cleaner's undo data, log and live lock safe.
+setup_mock_env
+state_dir="$MOCK_HOME/.cache/linux-cleaner"
+state_session="$state_dir/quarantine/2026-01-01_00-00-00"
+mkdir -p "$MOCK_HOME/.cache/linux-cleaner-other"
+printf 'clean sibling\n' > "$MOCK_HOME/.cache/linux-cleaner-other/payload"
+cat > "$TEST_ENV_DIR/state_protect.conf" <<'EOF'
+safe|All Cache|$HOME/.cache|contains cleaner state|0||
+safe|Cleaner State|$HOME/.cache/linux-cleaner|equals cleaner state|0||
+safe|Cleaner Quarantine|$HOME/.cache/linux-cleaner/quarantine|under cleaner state|0||
+safe|State Sibling|$HOME/.cache/linux-cleaner-other|unprotected sibling|0||
+EOF
+if ! run_test_case "Built-in Protection Missing State" 0 "state_missing.json" \
+       --config "$TEST_ENV_DIR/state_protect.conf" --dry-run --json \
+   || [[ -e "$state_dir" ]] \
+   || ! python3 - "$TEST_ENV_DIR/state_missing.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+targets = data["targets"]
+assert [t["name"] for t in targets] == ["All Cache", "Cleaner State", "Cleaner Quarantine", "State Sibling"], targets
+assert all(t["status"] == "protected" and t["bytes"] == 0 for t in targets[:3]), targets
+assert targets[3]["status"] == "found", targets[3]
+assert data["total_reclaimable_bytes"] == targets[3]["bytes"] > 0, data
+PY
+then
+  echo -e "${RED}FAIL: built-in protection did not cover missing state without creating it.${NC}"
+  cat "$TEST_ENV_DIR/state_missing.json"
+  exit 1
+fi
+mkdir -p "$state_session"
+printf 'keep undo payload\n' > "$state_session/payload"
+printf 'keep operation history\n' > "$state_dir/operations.log"
+touch "$state_dir/cleaner.lock"
+state_lock_identity=$(stat -c '%d:%i' "$state_dir/cleaner.lock")
+cat >> "$TEST_ENV_DIR/state_protect.conf" <<'EOF'
+safe|Wildcard State|$HOME/.cache/linux-cleane?|wildcard matching cleaner state|0||
+EOF
+if ! run_test_case "Built-in Protection Text Preview" 0 "state_preview.log" \
+       --config "$TEST_ENV_DIR/state_protect.conf" --dry-run --debug \
+   || ! grep -q '^Protected (by config): All Cache, Cleaner State, Cleaner Quarantine, Wildcard State$' "$TEST_ENV_DIR/state_preview.log" \
+   || ! grep -q 'protected=4' "$TEST_ENV_DIR/state_preview.log" \
+   || ! run_test_case "Built-in Protection JSON Preview" 0 "state_preview.json" \
+       --config "$TEST_ENV_DIR/state_protect.conf" --dry-run --json \
+   || ! python3 - "$TEST_ENV_DIR/state_preview.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+targets = {t["name"]: t for t in data["targets"]}
+assert set(targets) == {"All Cache", "Cleaner State", "Cleaner Quarantine", "Wildcard State", "State Sibling"}, targets
+for name in ("All Cache", "Cleaner State", "Cleaner Quarantine", "Wildcard State"):
+    assert targets[name]["status"] == "protected" and targets[name]["bytes"] == 0, targets[name]
+assert targets["State Sibling"]["status"] == "found", targets
+assert data["total_reclaimable_bytes"] == targets["State Sibling"]["bytes"] > 0, data
+PY
+then
+  echo -e "${RED}FAIL: built-in protection did not cover equal, under, containing and wildcard preview targets.${NC}"
+  cat "$TEST_ENV_DIR/state_preview.log" "$TEST_ENV_DIR/state_preview.json"
+  exit 1
+fi
+if ! run_test_case "Built-in Protection Clean Force" 0 "state_clean.log" \
+       --config "$TEST_ENV_DIR/state_protect.conf" --clean --force --debug --log \
+   || ! grep -q '^Protected (by config): All Cache, Cleaner State, Cleaner Quarantine, Wildcard State$' "$TEST_ENV_DIR/state_clean.log" \
+   || [[ "$(cat "$state_session/payload")" != 'keep undo payload' ]] \
+   || ! grep -qxF 'keep operation history' "$state_dir/operations.log" \
+   || [[ ! -f "$state_dir/cleaner.lock" ]] \
+   || [[ "$(stat -c '%d:%i' "$state_dir/cleaner.lock")" != "$state_lock_identity" ]] \
+   || [[ -e "$MOCK_HOME/.cache/linux-cleaner-other" ]]; then
+  echo -e "${RED}FAIL: cleanup lost cleaner state or lock identity, or failed to clean its sibling.${NC}"
+  cat "$TEST_ENV_DIR/state_clean.log"
+  exit 1
+fi
+echo -e "${GREEN}PASS: built-in protection preserves undo data, history and the lock while cleaning sibling targets.${NC}"
+
 # User-defined protected paths via protect|PATH config lines: equal, under,
 # contains, and wildcard matches are skipped; whole-component sibling is cleaned;
 # --debug, --dry-run --json, --list-targets, and --check-config validation work.

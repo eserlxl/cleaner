@@ -4328,7 +4328,7 @@ declare -A hidden_risk_seen=()
 runtime_blocked_count=0
 runtime_blocked_bytes=0
 
-# Collect canonical paths from protect|PATH config lines before target analysis.
+# Collect configured and built-in protected paths before target analysis.
 PROTECTED_PATHS=()
 collect_protected_paths() {
   local line f1 f2 expanded stripped canonical
@@ -4347,6 +4347,12 @@ collect_protected_paths() {
     fi
     PROTECTED_PATHS+=("$canonical")
   done < "$CONFIG_FILE"
+  # Keep undo data, operation history and the live lock out of cleanup targets.
+  # An unresolvable HOME needs no entry: the safety check already marks targets
+  # under it unsafe.
+  if canonical=$(canonicalize_physical "$HOME/.cache/linux-cleaner"); then
+    PROTECTED_PATHS+=("$canonical")
+  fi
 }
 
 # True when canonical target path equals, lies under, or contains a protected path
