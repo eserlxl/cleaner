@@ -7029,6 +7029,12 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
   fi
 fi
+# A version is a literal section label: regex metacharacters match no section.
+if CHANGELOG="$rn_roll" "$rn_sh" extract '1.0.[05]' > "$TEST_ENV_DIR/extract_regex.md" 2>&1; then
+  echo -e "${RED}FAIL: release-notes.sh extract treated '1.0.[05]' as a regular expression.${NC}"
+  cat "$TEST_ENV_DIR/extract_regex.md"
+  exit 1
+fi
 echo -e "${GREEN}PASS: release-notes.sh roll rolls [Unreleased] into a dated section that round-trips through extract, and refuses bad input without touching the changelog.${NC}"
 
 # extract without a version argument must fail with a clear error.

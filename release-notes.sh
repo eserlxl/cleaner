@@ -35,8 +35,8 @@ extract() {
 
   local notes
   notes=$(awk -v ver="$version" '
-    BEGIN { gsub(/\./, "\\.", ver) }
-    $0 ~ ("^## \\[" ver "\\]") { inblk = 1; next }
+    # Literal match: a version is a section label, not a regular expression.
+    index($0, "## [" ver "]") == 1 { inblk = 1; next }
     inblk && /^## \[/          { exit }
     inblk && /^\[[^]]+\]: /    { exit }
     inblk                      { print }
