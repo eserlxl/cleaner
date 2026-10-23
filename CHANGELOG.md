@@ -37,6 +37,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `make install` with a renamed `BINNAME` fails when one of its completion or service rewrite steps fails, instead of reporting success.
+- Session listings, purge confirmations and purge previews print recorded original paths literally; a backslash sequence such as `\c` no longer cuts the path short.
 - With a renamed `BINNAME`, both installers point the clean, retention and monitor services at the installed command; they still ran `cleaner`, so the timers failed or ran a different installation.
 - Option names and long process names match in ASCII under every locale: under `tr_TR`, `--exclude --interactive` took `--interactive` as the pattern, and a long plain process name containing `i` was not cut to 15 characters, so its running process no longer blocked the target.
 - Numeric options accept only ASCII digits: under a UTF-8 locale such as `tr_TR`, a value like `١` passed `--lock-wait`, `--min-age`, `--action-timeout`, `--trash-keep-days` and `--check-health` validation.
