@@ -27,7 +27,7 @@ is at most the requested number of seconds old and its recorded result succeeded
 Skipped targets, nothing-to-clean, minimum-reclaim and minimum-free skips succeed.
 The probe does not require a config file or an enabled timer.
 
-A missing, unreadable, symlinked, stale, failed (`failed>0`), interrupted, or
+A missing, unreadable, symlinked, stale, future-dated, failed (`failed>0`), interrupted, or
 retention-failed (`Retention failed: true`) report exits `1` with a one-line reason
 on stderr. Unrecognized results and unavailable age information also fail.
 Readable stale or unsuccessful reports still print normally. Symlinked state

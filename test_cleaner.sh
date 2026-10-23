@@ -9251,6 +9251,7 @@ success = "Result: cleaned=1 skipped=2 failed=0 elapsed=1s"
 cases = [("fresh", success, 59, 0, ""),
          ("boundary", success, 60, 0, ""),
          ("stale", success, 61, 1, "older than 60 seconds"),
+         ("future", success, -1, 1, "dated in the future"),
          ("failed", success.replace("failed=0", "failed=1"), 0, 1, "cleanup failed"),
          ("interrupted", success + "\nInterrupted: SIGTERM before all targets finished", 0, 1, "interrupted"),
          ("retention failed", success + "\nRetention failed: true", 0, 1, "Retention failed: true"),

@@ -333,7 +333,7 @@ Requires
 keep the normal text or JSON output, then exit 0 only for a saved successful result
 whose file modification time is at most SECONDS old. Skipped targets,
 nothing-to-clean, minimum-reclaim and minimum-free skips count as success.
-Missing, unreadable, symlinked, stale, failed (failed>0), interrupted,
+Missing, unreadable, symlinked, stale, future-dated, failed (failed>0), interrupted,
 retention-failed (Retention failed: true), or unrecognized reports exit 1 with
 one reason line on stderr. Unavailable age information also fails. Symlinked
 state directories are refused. Decimal integer 0..9223372036854775807 seconds;

@@ -3447,6 +3447,9 @@ show_last_report() {
        || ! now=$(date +%s 2>/dev/null) \
        || [[ ! "$mtime" =~ ^[0-9]+$ || ! "$now" =~ ^[0-9]+$ ]]; then
       reason="cannot read cleanup report age"
+    elif (( mtime > now )); then
+      # A future mtime (clock skew) would otherwise read as fresh for the whole skew.
+      reason="cleanup report is dated in the future"
     elif (( now - mtime > CHECK_HEALTH )); then
       reason="cleanup report is older than ${CHECK_HEALTH} seconds"
     elif [[ -n "$interrupted" ]]; then
