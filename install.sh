@@ -55,7 +55,9 @@ do_install() {
       > "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
     printf 'complete -c %s -w cleaner\n' "$BINNAME" >> "$DESTDIR$DATADIR/fish/vendor_completions.d/$BINNAME.fish"
     # The shipped services run "cleaner"; point them at the renamed command.
-    sed -i "s|^ExecStart=/usr/bin/env cleaner |ExecStart=/usr/bin/env $BINNAME |" "$DESTDIR$SYSTEMDUSERUNITDIR"/linux-cleaner-*.service
+    for unit in linux-cleaner-clean.service linux-cleaner-retention.service linux-cleaner-monitor.service; do
+      sed -i "s|^ExecStart=/usr/bin/env cleaner |ExecStart=/usr/bin/env $BINNAME |" "$DESTDIR$SYSTEMDUSERUNITDIR/$unit"
+    done
   fi
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
 }

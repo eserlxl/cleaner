@@ -3868,6 +3868,9 @@ command -v make >/dev/null 2>&1 && rename_installers+=(make)
 for rename_installer in "${rename_installers[@]}"; do
   rename_root="$TEST_ENV_DIR/rename_$rename_installer"
   rm -rf "$rename_root"
+  # An administrator's own unit sharing the prefix must not be rewritten.
+  mkdir -p "$rename_root/usr/lib/systemd/user"
+  printf 'ExecStart=/usr/bin/env cleaner --clean --force\n' > "$rename_root/usr/lib/systemd/user/linux-cleaner-custom.service"
   if [[ "$rename_installer" == install.sh ]]; then
     DESTDIR="$rename_root" PREFIX=/usr BINNAME=cache-cleaner sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/rename_install.log" 2>&1
   else
@@ -3877,8 +3880,11 @@ for rename_installer in "${rename_installers[@]}"; do
   if [[ "$(bash -c 'source "$1" && complete -p cache-cleaner' _ "$rename_share/bash-completion/completions/cache-cleaner" 2>/dev/null)" != "complete -F _cleaner cache-cleaner" ]] \
      || [[ "$(head -n 1 "$rename_share/zsh/site-functions/_cache-cleaner")" != "#compdef cache-cleaner cleaner cleaner.sh" ]] \
      || ! grep -qxF 'complete -c cache-cleaner -w cleaner' "$rename_share/fish/vendor_completions.d/cache-cleaner.fish" \
-     || [[ "$(grep -h '^ExecStart=/usr/bin/env cache-cleaner ' "$rename_root/usr/lib/systemd/user"/linux-cleaner-*.service | wc -l)" -ne 3 ]] \
-     || grep -q '^ExecStart=/usr/bin/env cleaner ' "$rename_root/usr/lib/systemd/user"/linux-cleaner-*.service; then
+     || ! grep -q '^ExecStart=/usr/bin/env cache-cleaner ' "$rename_root/usr/lib/systemd/user/linux-cleaner-clean.service" \
+     || ! grep -q '^ExecStart=/usr/bin/env cache-cleaner ' "$rename_root/usr/lib/systemd/user/linux-cleaner-retention.service" \
+     || ! grep -q '^ExecStart=/usr/bin/env cache-cleaner ' "$rename_root/usr/lib/systemd/user/linux-cleaner-monitor.service" \
+     || grep -q '^ExecStart=/usr/bin/env cleaner ' "$rename_root/usr/lib/systemd/user"/linux-cleaner-{clean,retention,monitor}.service \
+     || ! grep -qxF 'ExecStart=/usr/bin/env cleaner --clean --force' "$rename_root/usr/lib/systemd/user/linux-cleaner-custom.service"; then
     echo -e "${RED}FAIL: $rename_installer BINNAME=cache-cleaner did not register completions or point the services at the renamed command.${NC}"
     cat "$TEST_ENV_DIR/rename_install.log"
     exit 1
