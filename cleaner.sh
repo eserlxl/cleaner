@@ -3611,6 +3611,21 @@ write_cleanup_metrics() {
   if [[ "${OPERATION_FAILED:-false}" == true || -n "$interrupted" ]]; then
     success=0
   fi
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" quarantine_bytes=0
+  local -a quarantine_metrics=()
+  if [[ -e "$quarantine_base" || -L "$quarantine_base" ]]; then
+    if [[ ! -d "$quarantine_base" ]] || ! quarantine_bytes=$(quarantine_size_bytes "$quarantine_base" 2>/dev/null); then
+      echo "Warning: could not measure quarantine size at '$quarantine_base'; omitting linux_cleaner_quarantine_bytes." >&2
+      quarantine_bytes=""
+    fi
+  fi
+  if [[ -n "$quarantine_bytes" ]]; then
+    quarantine_metrics=(
+      "# HELP linux_cleaner_quarantine_bytes Current quarantine size in bytes."
+      "# TYPE linux_cleaner_quarantine_bytes gauge"
+      "linux_cleaner_quarantine_bytes ${quarantine_bytes}"
+    )
+  fi
   now=$(date +%s 2>/dev/null) || now=0
   if write_metrics_textfile "$metrics_file" LINUX_CLEANER_METRICS_FILE cleanup \
     "# HELP linux_cleaner_last_run_timestamp_seconds Unix timestamp of the last cleanup run." \
@@ -3627,7 +3642,8 @@ write_cleanup_metrics() {
     "# HELP linux_cleaner_reclaimed_bytes Accounted bytes reclaimed in the last cleanup run by kind." \
     "# TYPE linux_cleaner_reclaimed_bytes gauge" \
     "linux_cleaner_reclaimed_bytes{kind=\"quarantined\"} ${quarantined_bytes}" \
-    "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}"; then
+    "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}" \
+    "${quarantine_metrics[@]}"; then
     CLEANUP_METRICS_WRITTEN=true
   fi
   return 0

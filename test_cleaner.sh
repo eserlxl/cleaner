@@ -13972,18 +13972,24 @@ setup_mock_env
 metrics_dir="$TEST_ENV_DIR/metrics"
 mkdir -p "$metrics_dir" "$MOCK_HOME/.cache/metrics_target"
 metrics_file="$metrics_dir/linux_cleaner.prom"
+metrics_quarantine="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+mkdir -p "$metrics_quarantine/2020-01-01_00-00-00" "$metrics_quarantine/2020-01-02_00-00-00"
+truncate -s 16385 "$metrics_quarantine/2020-01-01_00-00-00/expired.txt"
+truncate -s 8193 "$metrics_quarantine/2020-01-02_00-00-00/retained.txt"
+touch -d '10 days ago' "$metrics_quarantine/2020-01-01_00-00-00"
 truncate -s 2049 "$MOCK_HOME/.cache/metrics_target/file.txt"
 cat > "$TEST_ENV_DIR/metrics.conf" <<EOF
 safe|Metrics Target|$MOCK_HOME/.cache/metrics_target/file.txt|Metrics test target|0||
 EOF
 
-# 1. Completed run writes a valid textfile matching last-report.txt.
+# 1. Completed run matches last-report.txt and measures all quarantine after retention.
 if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
      run_test_case "Prometheus Metrics Completed Run" 0 "metrics_completed.log" \
-       --config "$TEST_ENV_DIR/metrics.conf" --clean --trash --force \
+       --config "$TEST_ENV_DIR/metrics.conf" --clean --trash --force --trash-keep-days 7 \
    || ! run_test_case "Prometheus Metrics Completed Report JSON" 0 "metrics_completed.json" --report --json \
-   || ! python3 - "$metrics_file" "$TEST_ENV_DIR/metrics_completed.json" <<'METRICS_PY'
-import json, pathlib, re, sys
+   || [[ -e "$metrics_quarantine/2020-01-01_00-00-00" || ! -f "$metrics_quarantine/2020-01-02_00-00-00/retained.txt" ]] \
+   || ! python3 - "$metrics_file" "$TEST_ENV_DIR/metrics_completed.json" "$metrics_quarantine" <<'METRICS_PY'
+import json, pathlib, re, subprocess, sys
 text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 report = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 lines = text.splitlines()
@@ -13995,6 +14001,11 @@ assert "# HELP linux_cleaner_targets" in text
 assert "# TYPE linux_cleaner_targets gauge" in lines
 assert "# HELP linux_cleaner_reclaimed_bytes" in text
 assert "# TYPE linux_cleaner_reclaimed_bytes gauge" in lines
+assert "# HELP linux_cleaner_quarantine_bytes" in text
+assert "# TYPE linux_cleaner_quarantine_bytes gauge" in lines
+quarantine_bytes = int(subprocess.check_output(["du", "-sb", "--", sys.argv[3]]).split()[0])
+assert f"linux_cleaner_quarantine_bytes {quarantine_bytes}" in lines, lines
+assert quarantine_bytes > report["quarantined_bytes"], (quarantine_bytes, report)
 assert any(re.match(r"^linux_cleaner_last_run_timestamp_seconds [1-9][0-9]*$", l) for l in lines), lines
 assert "linux_cleaner_last_run_success 1" in lines, lines
 assert f'linux_cleaner_targets{{result="cleaned"}} {report["cleaned"]}' in lines, (lines, report)
@@ -14013,6 +14024,7 @@ fi
 echo -e "${GREEN}PASS: completed cleanup writes Prometheus metrics matching last-report.txt.${NC}"
 
 # 2. Nothing-to-clean exit writes 0 counts/bytes and success 1.
+metrics_quarantine_bytes=$(du -sb -- "$metrics_quarantine" | cut -f1)
 rm -f "$metrics_file"
 if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
      run_test_case "Prometheus Metrics Nothing To Clean" 0 "metrics_nothing.log" \
@@ -14022,7 +14034,8 @@ if ! LINUX_CLEANER_METRICS_FILE="$metrics_file" \
    || ! grep -qx 'linux_cleaner_targets{result="skipped"} 0' "$metrics_file" \
    || ! grep -qx 'linux_cleaner_targets{result="failed"} 0' "$metrics_file" \
    || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="quarantined"} 0' "$metrics_file" \
-   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="permanent"} 0' "$metrics_file"; then
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="permanent"} 0' "$metrics_file" \
+   || ! grep -qx "linux_cleaner_quarantine_bytes $metrics_quarantine_bytes" "$metrics_file"; then
   echo -e "${RED}FAIL: nothing-to-clean exit did not write zeroed Prometheus metrics with success 1.${NC}"
   cat "$metrics_file" "$TEST_ENV_DIR/metrics_nothing.log" 2>/dev/null || true
   exit 1
@@ -14160,6 +14173,64 @@ then
 fi
 rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
 echo -e "${GREEN}PASS: early non-zero cleanup exit records linux_cleaner_last_run_success 0 with a current timestamp.${NC}"
+
+# 8. Absent quarantine is zero; failed measurements omit stale samples and preserve other gauges.
+setup_mock_env
+for metrics_size_case in absent failure partial malformed; do
+  metrics_dir="$TEST_ENV_DIR/metrics"
+  metrics_file="$metrics_dir/linux_cleaner.prom"
+  mkdir -p "$metrics_dir"
+  printf '# No targets\n' > "$TEST_ENV_DIR/metrics.conf"
+  printf 'linux_cleaner_quarantine_bytes 999\n' > "$metrics_file"
+  if [[ "$metrics_size_case" != absent ]]; then
+    mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+    cat > "$TEST_ENV_DIR/bin/du" <<'METRICS_SIZE_DU'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -sb && "${!#}" == "$HOME/.cache/linux-cleaner/quarantine" ]]; then
+  case "$METRICS_DU_FAILURE" in
+    partial) printf '12345\t%s\n' "${!#}" ;;
+    malformed) printf 'not-a-size\t%s\n' "${!#}"; exit 0 ;;
+  esac
+  exit 23
+fi
+real_du=$(PATH="${PATH#"$TEST_ENV_DIR/bin:"}" command -v du)
+exec "$real_du" "$@"
+METRICS_SIZE_DU
+    chmod +x "$TEST_ENV_DIR/bin/du"
+  fi
+  if ! METRICS_DU_FAILURE="$metrics_size_case" LINUX_CLEANER_METRICS_FILE="$metrics_file" \
+       run_test_case "Prometheus Quarantine Size $metrics_size_case" 0 "metrics_size.log" \
+         --config "$TEST_ENV_DIR/metrics.conf" --clean --force \
+     || ! python3 - "$metrics_file" "$TEST_ENV_DIR/metrics_size.log" "$metrics_size_case" <<'METRICS_SIZE_PY'
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+lines = text.splitlines()
+log = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+assert any(re.fullmatch(r"linux_cleaner_last_run_timestamp_seconds [1-9][0-9]*", l) for l in lines), lines
+assert "linux_cleaner_last_run_success 1" in lines, lines
+for result in ("cleaned", "skipped", "failed"):
+    assert f'linux_cleaner_targets{{result="{result}"}} 0' in lines, lines
+for kind in ("quarantined", "permanent"):
+    assert f'linux_cleaner_reclaimed_bytes{{kind="{kind}"}} 0' in lines, lines
+if sys.argv[3] == "absent":
+    assert "# HELP linux_cleaner_quarantine_bytes" in text
+    assert "# TYPE linux_cleaner_quarantine_bytes gauge" in lines
+    assert "linux_cleaner_quarantine_bytes 0" in lines, lines
+    assert "omitting linux_cleaner_quarantine_bytes" not in log, log
+else:
+    assert not any(l.startswith("linux_cleaner_quarantine_bytes ") for l in lines), lines
+    assert "Warning: could not measure quarantine size" in log, log
+    assert "omitting linux_cleaner_quarantine_bytes" in log, log
+assert not list(pathlib.Path(sys.argv[1]).parent.glob(".linux-cleaner-metrics.*"))
+METRICS_SIZE_PY
+  then
+    echo -e "${RED}FAIL: quarantine size $metrics_size_case exported incorrect metrics or changed cleanup status.${NC}"
+    cat "$metrics_file" "$TEST_ENV_DIR/metrics_size.log" 2>/dev/null || true
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: quarantine size $metrics_size_case preserves cleanup status and existing gauges.${NC}"
+  setup_mock_env
+done
 
 # --doctor: read-only environment checklist (config resolution and schema, check_gnu_userland,
 # pgrep, flock, git, sudo -n, notify-send, user timers, quarantine session count).

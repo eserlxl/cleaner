@@ -61,12 +61,13 @@ When `LINUX_CLEANER_METRICS_FILE` is set to a literal absolute file path without
 LINUX_CLEANER_METRICS_FILE=/var/lib/node_exporter/textfile_collector/linux_cleaner.prom cleaner --clean --force
 ```
 
-The file emits `# HELP` and `# TYPE` lines for four gauge families derived from the same `Result:` and `Accounted bytes:` values saved in `last-report.txt` (`0` on nothing-to-clean, `--min-reclaim`, and `--min-free` skips):
+The file emits `# HELP` and `# TYPE` lines for five gauge families. The run counts and reclaimed bytes come from the same `Result:` and `Accounted bytes:` values saved in `last-report.txt` (`0` on nothing-to-clean, `--min-reclaim`, and `--min-free` skips):
 
 - `linux_cleaner_last_run_timestamp_seconds`: Unix timestamp of the cleanup exit.
 - `linux_cleaner_last_run_success`: `1` on a clean run, or `0` when any target or inline retention failed (`OPERATION_FAILED`), the cleanup was interrupted by a signal, or the cleanup exited non-zero before saving its report (with zero target and byte counts). A failure before the cleaner has loaded its configuration (for example a missing config file or an invalid option) exits without touching the file, so the previous values stay; alert on the age of `linux_cleaner_last_run_timestamp_seconds` as well.
 - `linux_cleaner_targets{result="cleaned|skipped|failed"}`: target counts from the result report.
 - `linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"}`: accounted bytes quarantined and permanently reclaimed.
+- `linux_cleaner_quarantine_bytes`: current `du -sb` size of `~/.cache/linux-cleaner/quarantine` after inline retention, including sessions from previous runs. Reports `0` when the directory is absent. If measurement fails, warns on stderr and omits the sample while still exporting the other gauges.
 
 A relative path, a path containing a line feed, a symlinked target or parent directory, or a write error prints a warning on stderr without failing the cleanup. Unset or empty `LINUX_CLEANER_METRICS_FILE`, dry-runs, and read-only modes do not write this cleanup metrics file.
 

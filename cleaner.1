@@ -1310,8 +1310,15 @@ lines for
 .B linux_cleaner_last_run_success
 (0 when any operation failed or the run was interrupted),
 .BR linux_cleaner_targets{result="cleaned|skipped|failed"} ,
+.BR linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"} ,
 and
-.BR linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"} .
+.BR linux_cleaner_quarantine_bytes .
+The quarantine gauge measures the current size of
+.I ~/.cache/linux-cleaner/quarantine
+in bytes using
+.B du -sb
+after inline retention, including sessions from previous runs. It is 0 when the
+directory is absent; a measurement failure warns and omits the sample.
 Environment-only (no CLI flag). A relative path, line feed, symlinked target or
 parent directory, or write error prints a warning on stderr without failing the
 run. Dry-run and read-only modes never write the file.
