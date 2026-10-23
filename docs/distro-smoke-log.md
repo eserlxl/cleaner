@@ -5,8 +5,8 @@ Manual cross-distro validation template. Hermetic CI does not replace these rows
 | Date | Distro + version | Cleaner version/commit | Config excerpt | Command | Exit code | Key log lines | Pass/Fail | Maintainer |
 |------|------------------|------------------------|----------------|---------|-----------|---------------|-----------|------------|
 | | Arch rolling | | `action:paccache_keep3` on `/var/cache/pacman/pkg` | `cleaner --dry-run` | | resolved config path | | |
-| | Debian 12 | | `action:apt_clean` uncommented | `cleaner --dry-run` | | apt action listed | | |
-| | Fedora 40 | | `action:dnf_clean` uncommented | `cleaner --dry-run` | | dnf action listed | | |
+| | Debian 12 | | `action:apt_clean` uncommented | `cleaner --dry-run --risk medium` | | apt action listed | | |
+| | Fedora 40 | | `action:dnf_clean` uncommented | `cleaner --dry-run --risk medium` | | dnf action listed | | |
 | | Ubuntu 24.04 disposable VM (no pacman/dnf) | | safe-tier pacman/apt/dnf actions on existing cache paths | `cleaner --clean --force` | 0 | absent pacman/dnf skipped; installed apt-get executes clean | | |
 | | Alpine (non-GNU) | | default safe targets | `cleaner --force` | 1 | GNU guard refusal | | |
 

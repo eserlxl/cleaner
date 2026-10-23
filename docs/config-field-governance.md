@@ -50,9 +50,9 @@ real build output from a source directory whose name merely begins with "build".
 Surrounding field whitespace is trimmed before applying the filter, for both
 wildcard and literal paths. When paired with a positive `MIN_AGE_DAYS`, the age is an
 idle threshold for the whole directory rather than a per-file filter: if anything under
-the directory was modified within `MIN_AGE_DAYS` days, the target is reported clean
+the directory (other than files a global exclusion matches) was modified within `MIN_AGE_DAYS` days, the target is reported clean
 (`active within N days`) and untouched; otherwise the entire build tree is sized and
-removed as a whole (`(idle > N days)` in the plan report), while JSON dry-run preserves
+removed as a whole, or file by file when a global exclusion applies (`(idle > N days)` in the plan report), while JSON dry-run preserves
 the configured `min_age_days`.
 
 `exclude:notes` protects matching `notes` directories and everything beneath

@@ -8,7 +8,7 @@ The hermetic suite stubs `sudo`, the package managers, and the user-level prune 
 
 1. Install to DESTDIR or VM (`make install DESTDIR=/tmp/stage`).
 2. Place config at `/etc/linux-cleaner/cleaner.conf`.
-3. Run `cleaner --dry-run` without `-c` and confirm resolved path in output.
+3. Run `cleaner --dry-run` without `-c` (for a DESTDIR install, `/tmp/stage/usr/local/bin/cleaner --dry-run`) and confirm resolved path in output.
 4. Remove system config; on checkout installs confirm script-adjacent `cleaner.conf` fallback.
 
 ## Optional real PM / sudo (non-CI)

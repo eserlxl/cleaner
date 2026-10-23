@@ -123,7 +123,7 @@ A full record skips when the destination exists (`Restore with Conflict`). An ag
 
 If restore reports `Unrecorded quarantine payload`, the session contains data not accounted for by its metadata. Inspect the preserved session directly and recover that data manually before purging it; inventory lists recorded targets and reports `unrecorded_entry_count` (a positive count also produces a human warning).
 
-Inventory counts immediate session entries, excluding exactly `quarantine.meta`,
+Inventory counts immediate session entries, excluding exactly `quarantine.meta` and `.hold`,
 that are not equal to a trimmed recorded relative path or its literal first path
 component. Hidden files, empty directories, FIFOs and symlinks count without
 following links. Missing metadata accounts for no entries; `aged-restored` records
@@ -151,7 +151,7 @@ zero). Zero keeps fail-fast behavior and optional `flock`; a positive wait requi
 `flock` and exits `1` on acquisition failure before session/report/log effects.
 Restore previews and read-only inventory never lock or wait. Lock-file opening can precede timeout.
 
-Only purge rejects an active explicit `--dry-run` before mutation (`Dry Run With Purge Rejected`). Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore.
+Purge, `--hold-session` and `--release-session` reject an active explicit `--dry-run` before mutation (`Dry Run With Purge Rejected`); only restore supports a `--dry-run` preview. Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore.
 
 ## Purge reference
 
