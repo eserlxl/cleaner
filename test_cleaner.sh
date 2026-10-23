@@ -3862,6 +3862,27 @@ if [[ "$install_ok" != true ]]; then
 fi
 echo -e "${GREEN}PASS: install.sh shipped all eight assets under DESTDIR with a 0755 binary and 0644 environment template and shell completions.${NC}"
 
+# A renamed command (BINNAME) gets completions registered under its own name by both installers.
+for rename_installer in install.sh make; do
+  rename_root="$TEST_ENV_DIR/rename_$rename_installer"
+  rm -rf "$rename_root"
+  if [[ "$rename_installer" == install.sh ]]; then
+    DESTDIR="$rename_root" PREFIX=/usr BINNAME=cache-cleaner sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/rename_install.log" 2>&1
+  else
+    make -s -C "$SCRIPT_DIR" install DESTDIR="$rename_root" PREFIX=/usr BINNAME=cache-cleaner > "$TEST_ENV_DIR/rename_install.log" 2>&1
+  fi
+  rename_share="$rename_root/usr/share"
+  if [[ "$(bash -c 'source "$1" && complete -p cache-cleaner' _ "$rename_share/bash-completion/completions/cache-cleaner" 2>/dev/null)" != "complete -F _cleaner cache-cleaner" ]] \
+     || [[ "$(head -n 1 "$rename_share/zsh/site-functions/_cache-cleaner")" != "#compdef cache-cleaner cleaner cleaner.sh" ]] \
+     || ! grep -qxF 'complete -c cache-cleaner -w cleaner' "$rename_share/fish/vendor_completions.d/cache-cleaner.fish"; then
+    echo -e "${RED}FAIL: $rename_installer BINNAME=cache-cleaner did not register completions for the renamed command.${NC}"
+    cat "$TEST_ENV_DIR/rename_install.log"
+    exit 1
+  fi
+  rm -rf "$rename_root"
+done
+echo -e "${GREEN}PASS: both installers register completions for a renamed BINNAME.${NC}"
+
 # Re-installing over an existing config must preserve it and ship .example instead.
 DESTDIR="$destroot" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" install \
   > "$TEST_ENV_DIR/install_sh2.log" 2>&1

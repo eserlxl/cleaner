@@ -48,6 +48,13 @@ do_install() {
   install -m 0644 "$SRC_DIR/completions/_cleaner" "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
   install -d "$DESTDIR$DATADIR/fish/vendor_completions.d"
   install -m 0644 "$SRC_DIR/completions/cleaner.fish" "$DESTDIR$DATADIR/fish/vendor_completions.d/$BINNAME.fish"
+  # The shipped completions register cleaner and cleaner.sh; a renamed command needs its own.
+  if [ "$BINNAME" != cleaner ]; then
+    printf 'complete -F _cleaner %s\n' "$BINNAME" >> "$DESTDIR$DATADIR/bash-completion/completions/$BINNAME"
+    { printf '#compdef %s cleaner cleaner.sh\n' "$BINNAME"; tail -n +2 "$SRC_DIR/completions/_cleaner"; } \
+      > "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
+    printf 'complete -c %s -w cleaner\n' "$BINNAME" >> "$DESTDIR$DATADIR/fish/vendor_completions.d/$BINNAME.fish"
+  fi
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
 }
 
