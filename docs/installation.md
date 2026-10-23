@@ -10,7 +10,7 @@ The tool is a single self-contained script. Run it directly from a checkout (`./
 |----------|---------|----------|
 | `PREFIX` | `/usr/local` | base install prefix |
 | `BINDIR` | `$PREFIX/bin` | `cleaner.sh`, installed as the `cleaner` command |
-| `SYSCONFDIR` | `/etc` | system config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
+| `SYSCONFDIR` | `/etc` | system config at `$SYSCONFDIR/$PKGNAME/cleaner.conf`; the runtime's system-wide search location is fixed at `/etc/linux-cleaner/cleaner.conf`, so with another `SYSCONFDIR` or `PKGNAME` pass `--config` or set `LINUX_CLEANER_CONFIG` |
 | `MANDIR` | `$PREFIX/share/man` | the `cleaner(1)` man page (`man1/cleaner.1`) |
 | `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/`; environment template at `$DATADIR/$PKGNAME/linux-cleaner.env.example` (`PKGNAME=linux-cleaner` by default), bash completion at `$DATADIR/bash-completion/completions/cleaner` (`$BINNAME`), zsh completion at `$DATADIR/zsh/site-functions/_cleaner` (`_$BINNAME`), and fish completion at `$DATADIR/fish/vendor_completions.d/cleaner.fish` (`$BINNAME.fish`), all mode `0644` |
 | `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units (`linux-cleaner-clean`, `linux-cleaner-retention`, and `linux-cleaner-monitor` `.service` and `.timer`; mode `0644`, not enabled; with a renamed `BINNAME` the services run `/usr/bin/env $BINNAME`) |

@@ -106,7 +106,7 @@ GNU guard refuses every real cleanup (--clean, --force, --interactive, or LINUX_
 ### Quarantine operator guidance
 
 - Audit with `--list-sessions` before destructive purge.
-- Pair `--trash` with `purge-sessions older-than:DAYS` or `max-size:SIZE` (or `--trash-keep-days`) for bounded disk use.
+- Pair `--trash` with a scheduled `cleaner --purge-sessions older-than:DAYS` (or `max-size:SIZE`), or with `--trash-keep-days DAYS` on the cleanup run itself, for bounded disk use.
 - Irreversible action:* bypasses quarantine — distinct from trash mode.
 
 See also: [QUARANTINE-OPS.md](QUARANTINE-OPS.md) (session inventory, retention sizing) and
