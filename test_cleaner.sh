@@ -8530,10 +8530,23 @@ printf '\n    cleaner --no-such-flag\n' >> "$validator_copy/RUNBOOK.md"
 validator_bad_rc=0
 env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
   > "$TEST_ENV_DIR/validator_bad.log" 2>&1 || validator_bad_rc=$?
-if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 ]] \
-   || ! grep -qF 'missing in help: --no-such-flag' "$TEST_ENV_DIR/validator_bad.log"; then
+# A truncated flag or env name must fail too, even though a longer real name contains it.
+cp "$SCRIPT_DIR/RUNBOOK.md" "$validator_copy/RUNBOOK.md"
+printf '\n    cleaner --action\n' >> "$validator_copy/RUNBOOK.md"
+validator_trunc_rc=0
+env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
+  > "$TEST_ENV_DIR/validator_trunc.log" 2>&1 || validator_trunc_rc=$?
+cp "$SCRIPT_DIR/RUNBOOK.md" "$validator_copy/RUNBOOK.md"
+printf '\n    LINUX_CLEANER_ACTION_TIME=5 cleaner --dry-run\n' >> "$validator_copy/RUNBOOK.md"
+validator_env_rc=0
+env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
+  > "$TEST_ENV_DIR/validator_env.log" 2>&1 || validator_env_rc=$?
+if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 || "$validator_trunc_rc" -eq 0 || "$validator_env_rc" -eq 0 ]] \
+   || ! grep -qF 'missing in help: --no-such-flag' "$TEST_ENV_DIR/validator_bad.log" \
+   || ! grep -qF 'missing in help: --action' "$TEST_ENV_DIR/validator_trunc.log" \
+   || ! grep -qF 'missing in cleaner.1: LINUX_CLEANER_ACTION_TIME' "$TEST_ENV_DIR/validator_env.log"; then
   echo -e "${RED}FAIL: runbook validator needs ripgrep or passed an undocumented flag.${NC}"
-  cat "$TEST_ENV_DIR/validator_ok.log" "$TEST_ENV_DIR/validator_bad.log"
+  cat "$TEST_ENV_DIR/validator_ok.log" "$TEST_ENV_DIR/validator_bad.log" "$TEST_ENV_DIR/validator_trunc.log" "$TEST_ENV_DIR/validator_env.log" 2>/dev/null
   exit 1
 fi
 echo -e "${GREEN}PASS: runbook validator runs without ripgrep and rejects an undocumented flag.${NC}"
