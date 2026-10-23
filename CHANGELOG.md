@@ -36,6 +36,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- An INT/TERM interruption during post-cleanup quarantine retention is saved in the cleanup report, so `--report --check-health` reports that cleanup was interrupted instead of returning healthy.
 - Risk names match in any case under every locale: under `tr_TR`, `--risk MEDIUM`, `LINUX_CLEANER_RISK=MEDIUM` and `MEDIUM` config rows were rejected because bash lowercased `I` to a dotless `ı`.
 - Quarantine enumeration reads `find`'s exit status from the stream instead of `wait` on a process substitution, which could lose an already-reaped child under heavy load and fail listing, purge, restore or aged quarantine with a false enumeration error.
 - Skip wildcard matches whose paths contain control characters or backslashes, warning with shell-quoted paths before they can reach terminal output or cleanup; literal config paths are unchanged.

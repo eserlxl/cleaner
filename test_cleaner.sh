@@ -11822,12 +11822,16 @@ mkdir -p "$XDG_STATE_HOME/linux-cleaner"
 printf 'Saved: 2000-01-01T00:00:00\nResult: nothing to clean\n' > "$XDG_STATE_HOME/linux-cleaner/last-report.txt"
 if ! run_test_case "Retention Interrupted Keeps Current Report" 143 "retention_interrupted.log" \
        --config "$TEST_ENV_DIR/retention_report.conf" --clean --force --trash-keep-days 7 \
+   || ! grep -Fxq 'Interrupted: SIGTERM during quarantine retention' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+   || ! run_test_case "Retention Interrupted Report Health" 1 "retention_interrupted_health.log" --report --check-health 60 \
+   || ! grep -Fq 'cleanup was interrupted' "$TEST_ENV_DIR/retention_interrupted_health.log" \
    || ! run_test_case "Retention Interrupted Report JSON" 0 "retention_interrupted.json" --report --json \
    || ! python3 - "$TEST_ENV_DIR/retention_interrupted.json" "$retention_credited_bytes" <<'RETENTION_INTERRUPTED'
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert d["result"] == "completed" and d["cleaned"] == 1 and d["failed"] == 0, d
 assert d["saved"] != "2000-01-01T00:00:00" and d["retention_failed"] is None, d
+assert d["interrupted"] == "SIGTERM", d
 assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, int(sys.argv[2])), d
 RETENTION_INTERRUPTED
 then

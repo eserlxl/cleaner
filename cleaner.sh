@@ -4848,11 +4848,16 @@ fail_fast_stopped=""
 QUARANTINE_DIR=""
 
 handle_cleanup_signal() {
-  local sig="$1" code="$2"
+  local sig="$1" code="$2" context="${3:-before all targets finished}"
   trap - INT TERM
-  RESULT_REPORT_TEXT="$(print_result_report)"$'\n'"Interrupted: ${sig} before all targets finished"
-  printf '%s\n' "$RESULT_REPORT_TEXT"
-  journal_error_line "Cleanup interrupted: ${sig} before all targets finished."
+  # During retention the report was already printed; add only the interruption line.
+  if (( $# < 3 )); then
+    RESULT_REPORT_TEXT=$(print_result_report)
+    printf '%s\n' "$RESULT_REPORT_TEXT"
+  fi
+  RESULT_REPORT_TEXT+=$'\n'"Interrupted: ${sig} ${context}"
+  printf '%s\n' "Interrupted: ${sig} ${context}"
+  journal_error_line "Cleanup interrupted: ${sig} ${context}."
   save_last_cleanup_report
   notify_cleanup_result
   log_operation "$(date '+%Y-%m-%dT%H:%M:%S') mode=run outcome=interrupted signal=${sig}"
@@ -5252,7 +5257,10 @@ fi
 printf '%s\n' "$RESULT_REPORT_TEXT"
 save_last_cleanup_report
 if [[ -z "$fail_fast_stopped" ]]; then
+  trap 'handle_cleanup_signal SIGINT 130 "during quarantine retention"' INT
+  trap 'handle_cleanup_signal SIGTERM 143 "during quarantine retention"' TERM
   apply_trash_keep_days
+  trap - INT TERM
 fi
 if [[ "$OPERATION_FAILED" == true ]] || (( result_failed > 0 )); then
   journal_error_line "Cleanup failed: failed=${result_failed}; targets: ${result_failed_names:-none}; operation_failed=${OPERATION_FAILED}; retention_failed=${RETENTION_FAILED:-false}."
