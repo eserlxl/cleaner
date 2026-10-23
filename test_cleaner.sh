@@ -5308,8 +5308,51 @@ PY
     exit 1
   fi
   echo -e "${GREEN}PASS: JSON would_skip matches $json_gate_case.${NC}"
+  for exit_format in text json; do
+    for exit_modifier in false true; do
+      exit_args=(--config "$TEST_ENV_DIR/json_gate.conf" "${json_gate_args[@]}")
+      [[ "$exit_format" == json ]] && exit_args+=(--json --dry-run)
+      [[ "$exit_modifier" == true ]] && exit_args+=(--exit-code)
+      exit_expected=0
+      if [[ "$exit_modifier" == true && "$json_gate_expected" == null ]]; then
+        exit_expected=2
+      fi
+      if ! run_test_case "Preview Exit Code $json_gate_case $exit_format $exit_modifier" "$exit_expected" "exit_code.log" "${exit_args[@]}" \
+         || grep -A1 '^Next:' "$TEST_ENV_DIR/exit_code.log" | grep -q -- '--exit-code'; then
+        echo -e "${RED}FAIL: preview exit status or Next command differed for $json_gate_case.${NC}"
+        exit 1
+      fi
+      if [[ "$exit_format" == json ]] && ! python3 - "$TEST_ENV_DIR/exit_code.log" "$json_gate_expected" <<'EXIT_CODE_PY'
+import json, sys
+expected = None if sys.argv[2] == "null" else sys.argv[2]
+assert json.load(open(sys.argv[1]))["would_skip"] == expected
+EXIT_CODE_PY
+      then
+        echo -e "${RED}FAIL: --exit-code changed the JSON preview verdict.${NC}"
+        exit 1
+      fi
+      case "$json_gate_case" in
+        "Nothing To Clean"|"Empty "*) ;;
+        *)
+          if [[ ! -f "$MOCK_HOME/.cache/json_gate/file.txt" ]]; then
+            echo -e "${RED}FAIL: --exit-code preview removed the target.${NC}"
+            exit 1
+          fi
+          ;;
+      esac
+    done
+  done
 done
 rm -f "$TEST_ENV_DIR/bin/df"
+
+printf 'invalid|Exit Code|%s/.cache/json_gate|Invalid risk|0||\n' "$MOCK_HOME" > "$TEST_ENV_DIR/exit_code_invalid.conf"
+for exit_format in text json; do
+  exit_args=(--exit-code --config "$TEST_ENV_DIR/exit_code_invalid.conf")
+  [[ "$exit_format" == json ]] && exit_args+=(--json)
+  if ! run_test_case "Preview Exit Code Invalid Config $exit_format" 1 "exit_code_invalid.log" "${exit_args[@]}"; then
+    exit 1
+  fi
+done
 
 # Target names with quotes, backslashes, and C0 controls must still produce valid JSON.
 echo -e "\n${BOLD}Test Case: JSON Escaping Special Target Names${NC}"
@@ -7246,7 +7289,7 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report
-  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast)
+  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -7263,7 +7306,7 @@ mx_args() {
   esac
 }
 mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
-  --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions --hold-session --release-session)
+  --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
   mx_refused=""
@@ -12069,6 +12112,33 @@ for sm_mode in --clean --force -f --interactive -i --json --restore --purge-sess
   fi
 done
 
+for ec_mode in --clean --force -f --interactive -i --restore --purge-sessions \
+    --hold-session --release-session --list-sessions --list-targets --check-config --report --init-config --doctor; do
+  ec_args=("$ec_mode")
+  case "$ec_mode" in
+    --restore|--hold-session|--release-session) ec_args+=(latest) ;;
+    --purge-sessions) ec_args+=(all) ;;
+  esac
+  if ! run_test_case "Exit Code Rejects $ec_mode" 1 "exit_code_conflict.log" \
+         --config "$TEST_ENV_DIR/show_matches.conf" --exit-code "${ec_args[@]}" \
+     || ! grep -q 'cannot be combined' "$TEST_ENV_DIR/exit_code_conflict.log" \
+     || ! run_test_case "Exit Code Rejects $ec_mode Before Dry Run" 1 "exit_code_conflict.log" \
+         --config "$TEST_ENV_DIR/show_matches.conf" "${ec_args[@]}" --dry-run --exit-code \
+     || ! grep -q 'cannot be combined' "$TEST_ENV_DIR/exit_code_conflict.log" \
+     || [[ ! -f "$sm_dir/old file.txt" || ! -f "$sm_dir/new file.txt" || ! -f "$sm_dir/excluded.txt" ]]; then
+    echo -e "${RED}FAIL: --exit-code accepted $ec_mode or changed a target.${NC}"
+    exit 1
+  fi
+done
+if ! LINUX_CLEANER_FORCE=1 run_test_case "Exit Code Rejects Inherited Force" 1 "exit_code_force.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --dry-run --exit-code \
+   || ! run_test_case "Exit Code With Match Listing" 2 "exit_code_matches.log" \
+       --config "$TEST_ENV_DIR/show_matches.conf" --show-matches --exit-code \
+   || ! grep -qxF "    $sm_dir/old file.txt" "$TEST_ENV_DIR/exit_code_matches.log"; then
+  echo -e "${RED}FAIL: --exit-code ignored inherited force or broke match listings.${NC}"
+  exit 1
+fi
+
 cat > "$TEST_ENV_DIR/show_matches.conf" <<EOF
 safe|Match Target|\$HOME/.cache/show matches|Match preview|0||
 EOF
@@ -12447,7 +12517,8 @@ fi
 exit "${MOCK_JOURNAL_UV_EXIT:-1}"
 JOURNAL_UV
 chmod +x "$TEST_ENV_DIR/bin/uv"
-for journal_case in failed unset mismatched success early interrupted stat_failure; do
+# stat_failure installs a failing stat stub, so it must stay the last case.
+for journal_case in failed unset mismatched success early interrupted preview_due_text preview_due_json preview_skip_text preview_skip_json preview_invalid stat_failure; do
   journal_stderr="$TEST_ENV_DIR/journal_${journal_case}.err"
   : > "$journal_stderr"
   journal_stream=$(stat -L -c '%d:%i' "$journal_stderr")
@@ -12457,11 +12528,27 @@ for journal_case in failed unset mismatched success early interrupted stat_failu
   journal_uv_exit=1
   journal_risk=safe
   journal_interrupt=false
+  journal_args=(--clean --force)
   case "$journal_case" in
     unset) journal_expected_lines=0 ;;
     mismatched) journal_stream=0:0; journal_expected_lines=0 ;;
     success) journal_uv_exit=0; journal_expected_exit=0; journal_expected_lines=0 ;;
     early) journal_risk=bogus; journal_expected_text='Cleanup stopped with exit status 1' ;;
+    preview_due_*|preview_skip_*)
+      journal_args=(--exit-code)
+      [[ "$journal_case" == *_json ]] && journal_args+=(--json)
+      journal_expected_exit=2
+      journal_expected_lines=0
+      if [[ "$journal_case" == preview_skip_* ]]; then
+        journal_args+=(--min-reclaim 1G)
+        journal_expected_exit=0
+      fi
+      ;;
+    preview_invalid)
+      journal_args=(--exit-code)
+      journal_risk=bogus
+      journal_expected_text='Run stopped with exit status 1 before cleaning.'
+      ;;
     interrupted)
       journal_interrupt=true
       journal_expected_exit=143
@@ -12488,7 +12575,7 @@ JOURNAL_STAT
     PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
       LINUX_CLEANER_RISK="$journal_risk" MOCK_JOURNAL_UV_EXIT="$journal_uv_exit" \
       MOCK_JOURNAL_INTERRUPT="$journal_interrupt" \
-      "$CLEANER_SH" --config "$TEST_ENV_DIR/journal.conf" --clean --force
+      "$CLEANER_SH" --config "$TEST_ENV_DIR/journal.conf" "${journal_args[@]}"
   ) < /dev/null > "$TEST_ENV_DIR/journal_${journal_case}.log" 2> "$journal_stderr" || journal_exit=$?
   if [[ "$journal_exit" -ne "$journal_expected_exit" ]] \
      || [[ "$(grep -c '^<3>linux-cleaner:' "$journal_stderr" || true)" -ne "$journal_expected_lines" ]] \

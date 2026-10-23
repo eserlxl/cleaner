@@ -42,6 +42,7 @@ _cleaner() {
     '(-q --quiet)'{-q,--quiet}'[Suppress per-target status lines; keep errors, totals, and final summary]' \
     '--debug[Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)]' \
     '--show-matches[List eligible paths under each ordinary target in a text dry run (overridden by --quiet)]' \
+    '--exit-code[Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1)]' \
     '--notify[With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)]' \
     '--fail-fast[With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST)]' \
     '--json[Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary)]' \

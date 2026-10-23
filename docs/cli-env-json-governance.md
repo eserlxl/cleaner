@@ -41,6 +41,7 @@ counted in `unrecorded_entry_count`.
 
 Documented mutual exclusions (enforced in code):
 
+- CLI-only `--exit-code` vs `--clean`, `--force`, `--interactive` (even with a later `--dry-run`), `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`. No environment mirror. Text/JSON cleanup previews return `2` exactly when `would_skip` is `null`, otherwise `0`; errors remain `1`.
 - `--only-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`
 - `--exclude-target` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`
 - `--only-path` vs `--restore`, `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--trash-keep-days` (including its environment mirror)
@@ -62,8 +63,8 @@ Documented mutual exclusions (enforced in code):
 - `--restore` vs `--purge-sessions`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
 - `--purge-sessions` vs `--restore`, `--list-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
 - `--list-sessions` vs `--restore`, `--purge-sessions`, `--hold-session`, `--release-session`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`
-- `--hold-session` vs `--release-session`, `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--action-timeout`, `--trash-keep-days`, `--notify`, `--fail-fast`, `--show-matches`, `--dry-run`, `--clean`, `--interactive`, `--json`
-- `--release-session` vs `--hold-session`, `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--action-timeout`, `--trash-keep-days`, `--notify`, `--fail-fast`, `--show-matches`, `--dry-run`, `--clean`, `--interactive`, `--json`
+- `--hold-session` vs `--release-session`, `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--action-timeout`, `--trash-keep-days`, `--notify`, `--fail-fast`, `--show-matches`, `--exit-code`, `--dry-run`, `--clean`, `--interactive`, `--json`
+- `--release-session` vs `--hold-session`, `--restore`, `--purge-sessions`, `--list-sessions`, `--list-targets`, `--check-config`, `--report`, `--init-config`, `--doctor`, `--only-target`, `--exclude-target`, `--only-path`, `--exclude-path`, `--min-reclaim`, `--min-free`, `--min-age`, `--action-timeout`, `--trash-keep-days`, `--notify`, `--fail-fast`, `--show-matches`, `--exit-code`, `--dry-run`, `--clean`, `--interactive`, `--json`
 
 See `test_cleaner.sh` mutex rejection cases.
 

@@ -79,6 +79,7 @@ Options:
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
   --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
   --show-matches             List eligible paths under each ordinary target in a text dry run (overridden by --quiet).
+  --exit-code                Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --fail-fast                With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST).
   --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary).
@@ -97,6 +98,7 @@ YES_DANGER=false
 QUIET=false
 DEBUG=false
 SHOW_MATCHES=false
+EXIT_CODE=false
 NOTIFY=false
 # Only the flag is refused outside cleanup; an inherited mirror is ignored there.
 NOTIFY_CLI=false
@@ -245,6 +247,7 @@ journal_error_line() {
 notify_failed_exit() {
   local status=$?
   [[ "$status" -ne 0 ]] || return 0
+  [[ "$status" -eq 2 && "${preview_exit_status:-0}" -eq 2 ]] && return "$status"
   # The retention unit runs purge mode; its early exits (lock timeout, bad selector) count too.
   if [[ -n "${PURGE_TARGET:-}" ]]; then
     journal_error_line "Quarantine purge ${PURGE_TARGET} failed with exit status ${status}."
@@ -335,6 +338,10 @@ while [[ $# -gt 0 ]]; do
     --show-matches)
       SHOW_MATCHES=true
       DEBUG=true
+      shift
+      ;;
+    --exit-code)
+      EXIT_CODE=true
       shift
       ;;
     --notify)
@@ -698,10 +705,16 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
         || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
-        || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+        || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
+fi
+
+# Exit status signaling is only meaningful for a cleanup preview.
+if [[ "$EXIT_CODE" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exit-code cannot be combined with --clean, --force, --interactive, --restore, --purge-sessions, --list-sessions, --hold-session, --release-session, --list-targets, --check-config, --report, --init-config, or --doctor.${NC}" >&2
+  exit 1
 fi
 
 # Match listings are only meaningful for a text cleanup preview.
@@ -4586,10 +4599,14 @@ fi
 if [[ "$DRY_RUN" == true ]]; then
   write_preview_metrics
 fi
+preview_exit_status=0
+if [[ "$EXIT_CODE" == true && "$preview_would_skip" == null ]]; then
+  preview_exit_status=2
+fi
 
 if [[ "$JSON_OUTPUT" == true ]]; then
   emit_dry_run_json
-  exit 0
+  exit "$preview_exit_status"
 fi
 
 # If dry-run is specified, we stop here
@@ -4636,7 +4653,7 @@ if [[ "$DRY_RUN" = true ]]; then
       status_echo "Customize: run 'cleaner --init-config' to copy this config to $user_config and edit it."
     fi
   fi
-  exit 0
+  exit "$preview_exit_status"
 fi
 
 if [[ -n "$MIN_RECLAIM" && "$total_reclaimable_bytes" -lt "$MIN_RECLAIM_BYTES" ]]; then

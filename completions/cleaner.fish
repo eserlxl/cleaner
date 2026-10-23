@@ -47,6 +47,7 @@ complete -c cleaner -l log -r -F -d 'Append an operation log (opt-in, off by def
 complete -c cleaner -s q -l quiet -d 'Suppress per-target status lines; keep errors, totals, and final summary'
 complete -c cleaner -l debug -d 'Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)'
 complete -c cleaner -l show-matches -d 'List eligible paths under each ordinary target in a text dry run (overridden by --quiet)'
+complete -c cleaner -l exit-code -d 'Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1)'
 complete -c cleaner -l notify -d 'With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)'
 complete -c cleaner -l fail-fast -d 'With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST)'
 complete -c cleaner -l json -d 'Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary)'

@@ -160,6 +160,35 @@ suppresses the listing. CLI-only (no environment mirror). Cannot be combined wit
 or
 .BR \-\-doctor .
 .TP
+.B \-\-exit\-code
+In a text or JSON cleanup dry run, exit 2 when cleanup would run (JSON
+.B would_skip
+is null), or 0 when below
+.BR \-\-min\-reclaim ,
+at or above
+.BR \-\-min\-free ,
+or there is nothing to clean. Errors still exit 1. CLI-only (no environment
+mirror). The intentional status 2 emits no journal error priority line and is
+not carried into the
+.B Next:
+command. Cannot be combined with
+.BR \-\-clean ,
+.BR \-\-force ,
+.BR \-\-interactive
+(even with a later
+.BR \-\-dry\-run ),
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
 .B \-\-fail\-fast
 With cleanup: after the first failed target's accounting and log entry, stop
 before the next target and skip inline retention, even if the last target failed.
@@ -903,6 +932,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
+.BR \-\-exit\-code ,
 .BR \-\-dry\-run ,
 .BR \-\-clean ,
 .BR \-\-interactive ,
@@ -936,6 +966,7 @@ Cannot be combined with
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
+.BR \-\-exit\-code ,
 .BR \-\-dry\-run ,
 .BR \-\-clean ,
 .BR \-\-interactive ,
@@ -1484,12 +1515,20 @@ and leaves exit statuses unchanged. The line is emitted only when
 exactly matches stderr's device and inode. An unset or mismatched value, a failed
 or unavailable
 .BR stat (1),
-or a successful run emits no priority line. Terminal and redirected output
+or a successful run (including intentional status 2 from
+.BR \-\-exit\-code )
+emits no priority line. Terminal and redirected output
 normally receive no such line. With systemd's default
 .BR SyslogLevelPrefix=yes ,
 the prefix gives the line error priority, visible with
 .BR "journalctl \-\-user \-t linux\-cleaner \-p err" .
 .SH EXIT STATUS
+With
+.BR \-\-exit\-code ,
+a cleanup dry run returns 2 when cleanup would run, or 0 when a minimum-reclaim
+or minimum-free gate would skip it or there is nothing to clean. Errors still
+return 1. Without this modifier, successful previews return 0.
+.PP
 Returns 0 on success, 130
 .RB ( SIGINT )
 or 143
@@ -1519,8 +1558,8 @@ List and restore quarantined files:
 Reclaim space by purging all quarantine sessions:
 .B cleaner \-\-purge\-sessions all \-\-force
 .TP
-Cron-friendly dry-run preview (quiet output, exit code only matters):
-.B cleaner \-\-quiet \-\-dry\-run
+Cron-friendly dry-run preview (2 when cleanup would run, 0 when it would skip):
+.B cleaner \-\-quiet \-\-dry\-run \-\-exit\-code
 .TP
 Machine-readable dry-run summary for wrapper scripts:
 .B cleaner \-\-json \-\-dry\-run

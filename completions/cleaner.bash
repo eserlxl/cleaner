@@ -119,6 +119,7 @@ _cleaner() {
     -q --quiet
     --debug
     --show-matches
+    --exit-code
     --notify
     --fail-fast
     --json
