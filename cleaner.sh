@@ -1687,15 +1687,17 @@ log_operation() {
   local message="$1"
   local target="${LOG_FILE:-}"
   [[ -z "$target" ]] && target="$HOME/.cache/linux-cleaner/operations.log"
-  local literal_dir resolved_target
+  local literal_dir resolved_target resolved_home
   # Canonicalize the FULL target (not just its parent) so a symlinked leaf that
   # resolves outside $HOME is refused, not silently followed by the append.
-  if ! resolved_target=$(canonicalize_physical "$target") || ! literal_dir=$(dirname -- "$target"); then
+  # HOME is canonicalized too: a symlinked HOME must not disable a log inside it.
+  if ! resolved_target=$(canonicalize_physical "$target") || ! literal_dir=$(dirname -- "$target") \
+     || ! resolved_home=$(canonicalize_physical "$HOME"); then
     echo "Warning: could not resolve log path; logging disabled." >&2
     LOG_ENABLED=false
     return 0
   fi
-  if [[ "$resolved_target" != "$HOME" && "$resolved_target" != "$HOME"/* ]]; then
+  if [[ "$resolved_target" != "$resolved_home" && "$resolved_target" != "$resolved_home"/* ]]; then
     echo -e "  [${YELLOW}LOG${NC}] Refusing to write log outside \$HOME ('$target'); logging disabled." >&2
     LOG_ENABLED=false
     return 0

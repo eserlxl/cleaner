@@ -2799,6 +2799,25 @@ else
   exit 1
 fi
 
+# A symlinked HOME keeps the default log: confinement compares canonical paths on both sides.
+setup_mock_env
+ln -s "$MOCK_HOME" "$TEST_ENV_DIR/home_link"
+mkdir -p "$MOCK_HOME/.cache/symlog_target"
+printf 'old\n' > "$MOCK_HOME/.cache/symlog_target/file.txt"
+# shellcheck disable=SC2016  # $HOME is expanded by the cleaner, not here
+printf 'safe|Symlog Target|$HOME/.cache/symlog_target|log via symlinked HOME|0||\n' > "$TEST_ENV_DIR/symlog.conf"
+symlog_exit=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$TEST_ENV_DIR/home_link" "$CLEANER_SH" --config "$TEST_ENV_DIR/symlog.conf" \
+  --clean --force --log < /dev/null > "$TEST_ENV_DIR/symlog.log" 2>&1 || symlog_exit=$?
+if [[ "$symlog_exit" -ne 0 ]] || grep -qi 'Refusing to write log outside' "$TEST_ENV_DIR/symlog.log" \
+   || ! grep -q "target='Symlog Target'" "$MOCK_HOME/.cache/linux-cleaner/operations.log" 2>/dev/null; then
+  echo -e "${RED}FAIL: a symlinked HOME disabled the default operations log.${NC}"
+  cat "$TEST_ENV_DIR/symlog.log"
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/home_link"
+echo -e "${GREEN}PASS: a symlinked HOME keeps the default operations log.${NC}"
+
 # (d) Out-of-$HOME log path is refused (no file created outside HOME)
 setup_mock_env
 outside_log="$OUTSIDE_DIR/should_not_exist.log"
