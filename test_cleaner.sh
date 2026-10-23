@@ -9893,6 +9893,74 @@ if ! run_test_case "Idle Builds Clean Force" 0 "idle_builds_clean.log" \
 fi
 echo -e "${GREEN}PASS: filter:cxx_build idle threshold preserves active build trees whole, removes idle build trees whole, and keeps per-file age deletion on other rows.${NC}"
 
+# An unreadable subtree must not turn an unknown activity state into idle.
+# Also revoke access after planning to exercise the pre-delete probe.
+if [[ "$EUID" -ne 0 ]]; then
+  for activity_phase in analysis cleanup; do
+    setup_mock_env
+    activity_build="$MOCK_HOME/proj/build"
+    activity_control="$MOCK_HOME/proj/idle-build"
+    mkdir -p "$activity_build/CMakeFiles/unreadable" "$activity_control"
+    printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$activity_build/CMakeCache.txt"
+    printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$activity_control/CMakeCache.txt"
+    printf 'idle-object\n' > "$activity_control/old.o"
+    printf 'keep-object\n' > "$activity_build/CMakeFiles/old.o"
+    printf 'hidden-object\n' > "$activity_build/CMakeFiles/unreadable/hidden.o"
+    touch -d '30 days ago' "$activity_build/CMakeCache.txt" \
+      "$activity_build/CMakeFiles/old.o" "$activity_build/CMakeFiles/unreadable/hidden.o" \
+      "$activity_build/CMakeFiles/unreadable" "$activity_build/CMakeFiles" "$activity_build" \
+      "$activity_control/CMakeCache.txt" "$activity_control/old.o" "$activity_control"
+    cat > "$TEST_ENV_DIR/activity_failure.conf" <<'EOF'
+safe|Unreadable Build|$HOME/proj/build|Build activity inspection failure|14|activity_probe|filter:cxx_build
+safe|Idle Control|$HOME/proj/idle-build|Readable idle build|14||filter:cxx_build
+EOF
+    activity_failed=false
+    if [[ "$activity_phase" == analysis ]]; then
+      chmod 000 "$activity_build/CMakeFiles/unreadable"
+      if ! run_test_case "Build Activity Failure Preview" 0 "activity_preview.log" \
+             --config "$TEST_ENV_DIR/activity_failure.conf" --dry-run \
+         || ! grep -qF '[SKIP] Unreadable Build: skipped: activity check failed.' "$TEST_ENV_DIR/activity_preview.log"; then
+        activity_failed=true
+      fi
+    else
+      cat > "$TEST_ENV_DIR/bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+count_file="${TEST_ENV_DIR}/activity_pgrep_count"
+n=0
+[[ -f "$count_file" ]] && n=$(cat "$count_file")
+n=$((n + 1))
+printf '%s\n' "$n" > "$count_file"
+if [[ "$n" -eq 2 ]]; then
+  chmod 000 "${HOME}/proj/build/CMakeFiles/unreadable"
+fi
+exit 1
+EOF
+      chmod +x "$TEST_ENV_DIR/bin/pgrep"
+    fi
+    if ! run_test_case "Build Activity Failure Clean ($activity_phase)" 0 "activity_clean.log" \
+           --config "$TEST_ENV_DIR/activity_failure.conf" --clean --force; then
+      activity_failed=true
+    fi
+    # Restore access before any assertion can exit and trigger test teardown.
+    chmod 700 "$activity_build/CMakeFiles/unreadable"
+    if [[ "$activity_failed" == true ]] \
+       || ! grep -qF '[SKIP] Unreadable Build: skipped: activity check failed.' "$TEST_ENV_DIR/activity_clean.log" \
+       || ! grep -q '^Result: cleaned=1 skipped=1 failed=0 elapsed=' "$TEST_ENV_DIR/activity_clean.log" \
+       || [[ -e "$activity_control" ]] \
+       || [[ ! -f "$activity_build/CMakeCache.txt" ]] \
+       || ! grep -qxF 'keep-object' "$activity_build/CMakeFiles/old.o" \
+       || ! grep -qxF 'hidden-object' "$activity_build/CMakeFiles/unreadable/hidden.o"; then
+      echo -e "${RED}FAIL: failed build activity probe ($activity_phase) did not skip and preserve the build tree.${NC}"
+      cat "$TEST_ENV_DIR/activity_clean.log"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}PASS: failed build activity probes skip unreadable trees in preview and cleanup, including access revoked after planning.${NC}"
+else
+  echo 'SKIP: unreadable build activity probes require a non-root user.'
+fi
+setup_mock_env
+
 # Symlink target with trailing slashes: strip_trailing_slashes removes all
 # trailing slashes so a symlink target is refused as [SYMLINK] and its referent
 # outside HOME survives --clean --force and --clean --force --trash.

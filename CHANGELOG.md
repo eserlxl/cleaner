@@ -37,6 +37,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Skip `filter:cxx_build` targets with `activity check failed` when an idle probe fails without finding recent activity, both during preview and immediately before cleanup, so unreadable build subdirectories cannot cause partial deletion.
 - Cleanup always protects `$HOME/.cache/linux-cleaner`, including targets equal to, under, or containing it and wildcard matches, so broad cache targets cannot delete quarantine sessions, the operations log, or the live lock file. Text and JSON previews report these targets as protected even before the directory exists.
 - The dry-run `Next:` command repeats `--min-reclaim`, so applying it still skips when the plan has fallen below the threshold.
 - `make install` with a renamed `BINNAME` fails when one of its completion or service rewrite steps fails, instead of reporting success.

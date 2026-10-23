@@ -4580,6 +4580,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
           exists=true
         else
           if path_present "$use_sudo" "$path"; then
+            activity_out=""
+            activity_rc=0
+            if has_positive_age "$idle_age"; then
+              activity_out=$(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) || activity_rc=$?
+            fi
             if action_is_user_level "$custom_clean_cmd"; then
               size_bytes=0
               runtime_sized=true
@@ -4588,10 +4593,13 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
               outside_home_suffix=""
               [[ $safety_status -eq 2 ]] && outside_home_suffix=" (outside HOME)"
               debug_echo "  [${GREEN}FOUND${NC}] $name: size measured at run time ($(action_display_command "$custom_clean_cmd"))$outside_home_suffix"
-            elif has_positive_age "$idle_age" \
-               && [[ -n $(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) ]]; then
+            elif [[ -n "$activity_out" ]]; then
               target_status=clean
               debug_echo "  [${BLUE}CLEAN${NC}] $name: active within $idle_age days."
+            elif [[ "$activity_rc" -ne 0 ]]; then
+              target_status=skipped
+              target_reason="activity check failed"
+              status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: $target_reason."
             else
               read -r size_bytes should_clean < <(measure_eligible_size "$path" "$effective_age" "$use_sudo")
               readable_size=$(format_bytes "$size_bytes")
@@ -4975,11 +4983,18 @@ for i in "${!parsed_names[@]}"; do
   # quarantine do not reapply -mtime. Leave it in place and count the skip.
   # Directories with a positive age already delete through find -mtime.
   idle_limit="${parsed_idle[$i]:-0}"
-  if [[ "$custom_clean_cmd" == "filter:cxx_build" ]] && has_positive_age "$idle_limit" \
-     && [[ -n $(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_limit" -print -quit 2>/dev/null) ]]; then
-    status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: active within $idle_limit days."
-    result_skipped=$((result_skipped + 1))
-    continue
+  if [[ "$custom_clean_cmd" == "filter:cxx_build" ]] && has_positive_age "$idle_limit"; then
+    activity_rc=0
+    activity_out=$(with_sudo "$use_sudo" find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_limit" -print -quit 2>/dev/null) || activity_rc=$?
+    if [[ -n "$activity_out" ]]; then
+      status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: active within $idle_limit days."
+    elif [[ "$activity_rc" -ne 0 ]]; then
+      status_echo "  [${YELLOW}SKIP${NC}] $name: skipped: activity check failed."
+    fi
+    if [[ -n "$activity_out" || "$activity_rc" -ne 0 ]]; then
+      result_skipped=$((result_skipped + 1))
+      continue
+    fi
   fi
   if has_positive_age "$age" && ! path_is_real_dir "$use_sudo" "$path" \
      && ! path_still_older_than "$use_sudo" "$path" "$age"; then
