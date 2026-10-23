@@ -17,6 +17,7 @@ _cleaner() {
     '(-e --exclude)'{-e,--exclude}'[Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything)]:patterns:' \
     '--list-sessions[List quarantine sessions (read-only) and exit]' \
     '--report[Print the saved last cleanup report and exit]' \
+    '--check-health[With --report: exit 0 for a successful report at most this many seconds old]:seconds:' \
     '--list-targets[List configured cleanup targets (read-only) and exit]' \
     '--check-config[Validate the configuration file and exit (no disk analysis)]' \
     '--init-config[Copy the active config to your user config path (never overwrites)]' \

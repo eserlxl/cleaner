@@ -158,6 +158,7 @@ suppresses the listing. CLI-only (no environment mirror). Cannot be combined wit
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -187,6 +188,7 @@ command. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -209,6 +211,7 @@ command. Notifications and metrics are unchanged. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -240,6 +243,7 @@ notifier never changes the exit status. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -323,6 +327,45 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 or
 .BR \-\-doctor .
 .TP
+.B \-\-check\-health \fISECONDS\fR
+Requires
+.BR \-\-report ;
+keep the normal text or JSON output, then exit 0 only for a saved successful result
+whose file modification time is at most SECONDS old. Skipped targets,
+nothing-to-clean, minimum-reclaim and minimum-free skips count as success.
+Missing, unreadable, symlinked, stale, failed (failed>0), interrupted,
+retention-failed (Retention failed: true), or unrecognized reports exit 1 with
+one reason line on stderr. Unavailable age information also fails. Symlinked
+state directories are refused. Decimal integer 0..9223372036854775807 seconds;
+leading zeros are normalized and the last occurrence wins. CLI-only, without
+an environment mirror, config requirement, timer dependency, or JSON schema change.
+Without this flag, readable saved outcomes still return 0 regardless of success.
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-init\-config ,
+.BR \-\-doctor ,
+.BR \-\-only\-target ,
+.BR \-\-exclude\-target ,
+.BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
+.BR \-\-min\-reclaim ,
+.BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
+.BR \-\-min\-age ,
+.BR \-\-action\-timeout ,
+.BR \-\-trash\-keep\-days ,
+.BR \-\-notify ,
+.BR \-\-fail\-fast ,
+.BR \-\-show\-matches ,
+or
+.BR \-\-exit\-code .
+.TP
 .B \-\-list\-sessions
 List quarantine sessions (read-only) and exit. Each session is shown with its
 timestamp, size, and date, followed by the targets it holds: the type
@@ -358,6 +401,7 @@ set to true in JSON (false otherwise). Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -382,6 +426,7 @@ all risk levels. Read-only; requires a configuration file. Cannot be combined wi
 .BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -399,6 +444,7 @@ on success. Cannot be combined with
 .BR \-\-release\-session ,
 .BR \-\-list\-targets ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -418,6 +464,7 @@ combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
 .BR \-\-exclude\-target ,
@@ -505,6 +552,7 @@ the checklist. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-only\-target ,
 .BR \-\-exclude\-target ,
@@ -571,6 +619,7 @@ Cannot be combined with
 .BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -595,6 +644,7 @@ Cannot be combined with
 .BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -622,6 +672,7 @@ without analysis. Cannot be combined with
 .BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
 or
@@ -646,6 +697,7 @@ existing path, or removes every remaining target. Cannot be combined with
 .BR \-\-release\-session ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -685,6 +737,7 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -716,6 +769,7 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -745,6 +799,7 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -775,6 +830,7 @@ rows. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -805,6 +861,7 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -828,6 +885,7 @@ or if any session purge fails. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-only\-path ,
 .BR \-\-init\-config ,
 or
@@ -862,6 +920,7 @@ are rejected. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -912,6 +971,7 @@ is rejected. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 or
 .BR \-\-doctor .
@@ -953,6 +1013,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
@@ -988,6 +1049,7 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
+.BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
@@ -1024,6 +1086,7 @@ Value-taking options
 .BR \-\-only ", " \-\-only\-exact ,
 .BR \-\-only\-target ", " \-\-exclude\-target ", " \-\-only\-path ,
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
+.BR \-\-check\-health ,
 .BR \-\-min\-free ", " \-\-min\-free\-path ", " \-\-min\-age ", " \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 and
@@ -1569,6 +1632,11 @@ normally receive no such line. With systemd's default
 the prefix gives the line error priority, visible with
 .BR "journalctl \-\-user \-t linux\-cleaner \-p err" .
 .SH EXIT STATUS
+With
+.BR \-\-report\ \-\-check\-health\ SECONDS ,
+returns 0 only for a recent successful saved report (including skips), otherwise
+1 with a one-line reason on stderr. Normal text or JSON output is unchanged.
+.PP
 With
 .BR \-\-exit\-code ,
 a cleanup dry run returns 2 when cleanup would run, or 0 when a minimum-reclaim

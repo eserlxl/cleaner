@@ -18,6 +18,29 @@ When `--trash-keep-days` is requested and retention is not skipped by `--fail-fa
 
 New reports retain an `Accounted bytes: quarantined=N permanent=N` record. The additive JSON integers `quarantined_bytes` and `permanent_bytes` preserve these values without human-readable rounding; historical or malformed records yield `null`. Nothing-to-clean, minimum-reclaim and minimum-free skips explicitly record zero. These are the existing cleanup estimates credited after successful work: ordinary targets and system package actions use planned sizes, while user-level prune actions use the free-space delta clamped at zero. They do not guarantee physically freed blocks. Interrupted runs include only already-credited work, excluding any unfinished target; retention purge volume is excluded. A cancelled cleanup before work begins preserves the previous report.
 
+## Monitoring probe (`--report --check-health SECONDS`)
+
+Run `cleaner --report --check-health 86400` to require a successful cleanup report
+modified within the last day. Add `--json` for the usual JSON summary. Both forms
+keep their normal stdout unchanged and exit `0` only when the report's file mtime
+is at most the requested number of seconds old and its recorded result succeeded.
+Skipped targets, nothing-to-clean, minimum-reclaim and minimum-free skips succeed.
+The probe does not require a config file or an enabled timer.
+
+A missing, unreadable, symlinked, stale, failed (`failed>0`), interrupted, or
+retention-failed (`Retention failed: true`) report exits `1` with a one-line reason
+on stderr. Unrecognized results and unavailable age information also fail.
+Readable stale or unsuccessful reports still print normally. Symlinked state
+directories are refused as well as symlinked report files. `SECONDS` is a decimal
+integer from `0` to `9223372036854775807`; leading zeros are accepted. The option
+requires `--report` and has no environment mirror. Without it, `--report` continues
+to exit `0` for readable saved outcomes regardless of age or success.
+
+The probe observes the last saved cleanup, including manual runs. A failure before
+a report is saved leaves the previous report in place; this is not proof of which
+job produced it. The `Saved:` text and the doctor's timer-specific two-day warning
+do not determine probe health.
+
 ## Journal error priority under systemd
 
 A failed cleanup emits one `<3>linux-cleaner:` summary on stderr, naming the failed target count and targets. Interrupted cleanups name the signal; early non-zero cleanup exits name the exit status. A failed `--purge-sessions` run (the retention unit), including a lock timeout or an invalid selector, names its selector and exit status. A failed dry run (the monitor unit) says the run stopped before cleaning. A failed `--trash-keep-days` purge after a skipped cleanup says so, and after a finished cleanup the summary ends with `retention_failed=true`. This is independent of `--notify` and leaves exit statuses unchanged. The line is emitted only when `JOURNAL_STREAM` exactly matches stderr's device and inode; an unset or mismatched value, a failed or unavailable `stat`, or a successful run emits no priority line. Terminal and redirected output normally receive no such line.

@@ -3082,7 +3082,7 @@ fi
 echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
 vt_expected=$(printf '%s\n' \
   --config --risk --exclude --restore --only --only-exact --only-target \
-  --exclude-target --only-path --exclude-path --lock-wait --min-reclaim \
+  --exclude-target --only-path --exclude-path --lock-wait --check-health --min-reclaim \
   --min-free --min-free-path --min-age --action-timeout --trash-keep-days --purge-sessions \
   --hold-session --release-session | sort)
 vt_parser=$(awk '
@@ -3126,7 +3126,7 @@ fi
 if [[ -z "$vt_fail" ]]; then
   echo -e "${GREEN}PASS: require_non_option_value, cleaner.1, and docs/cli-reference.md name the same value-taking options.${NC}"
 else
-  echo -e "${RED}FAIL: value-taking options differ from the 18-flag contract:$vt_fail${NC}"
+  echo -e "${RED}FAIL: value-taking options differ from the declared contract:$vt_fail${NC}"
   exit 1
 fi
 
@@ -7431,7 +7431,7 @@ fi
 # shortcut: --json is left out of the pair matrix (its gate depends on the mode, not on
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
-mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report
+mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
   --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
@@ -7445,12 +7445,13 @@ mx_args() {
     --min-free-path) echo "--min-free-path $MOCK_HOME --min-free 1G" ;;
     --min-age) echo "--min-age 30" ;;
     --action-timeout) echo "--action-timeout 60" ;;
+    --check-health) echo "--check-health 60 --report" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
     *) echo "$1" ;;
   esac
 }
 mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
-  --check-config --init-config --doctor --report --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
+  --check-config --init-config --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
   mx_refused=""
@@ -7535,7 +7536,7 @@ do
   IFS='|' read -r check_name check_log check_flag check_value <<< "$check_spec"
   if run_test_case "$check_name" 1 "$check_log" \
        "$check_flag" "$check_value" --check-config; then
-    if grep -qF "applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
+    if grep -qF "applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
       echo -e "${GREEN}PASS: $check_flag with --check-config names the seven-mode list.${NC}"
     else
       echo -e "${RED}FAIL: $check_flag with --check-config omitted the seven-mode list.${NC}"
@@ -7564,7 +7565,7 @@ do
   fi
   [[ "$check_flag" == --min-free-path ]] && check_args+=(--min-free 1G)
   if run_test_case "$check_name" 1 "$check_log" "${check_args[@]}"; then
-    if grep -qF "applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
+    if grep -qF "applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
       echo -e "${GREEN}PASS: $check_flag with --check-config names the eight-mode list.${NC}"
     else
       echo -e "${RED}FAIL: $check_flag with --check-config omitted the eight-mode list.${NC}"
@@ -9208,6 +9209,131 @@ if run_test_case "Result Report Clean" 0 "plan_report_clean.log" \
 else
   exit 1
 fi
+
+# Health probes use saved fixtures only, with a fixed clock for inclusive age boundaries.
+echo -e "\n${BOLD}Test Case: Report Health Probe${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" <<'HEALTH_PY'
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(os.environ["TEST_ENV_DIR"]) / "health"
+state = root / "state"
+report_dir = state / "linux-cleaner"
+report_dir.mkdir(parents=True)
+report = report_dir / "last-report.txt"
+bin_dir = root / "bin"
+bin_dir.mkdir()
+clock = bin_dir / "date"
+clock.write_text("#!/bin/sh\nprintf '%s\\n' 2000000000\n")
+clock.chmod(0o755)
+env = os.environ | {"HOME": str(root), "XDG_STATE_HOME": str(state),
+                    "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]}
+env.pop("JOURNAL_STREAM", None)
+
+def run(args, status=0, reason=""):
+    result = subprocess.run([sys.argv[1], *args], env=env, capture_output=True,
+                            text=True, timeout=20)
+    assert result.returncode == status, (args, result)
+    if reason:
+        assert reason in result.stderr and len(result.stderr.splitlines()) == 1, (args, result)
+    else:
+        assert not result.stderr, (args, result)
+    return result.stdout
+
+def save(body, age=0):
+    report.write_text("Saved: 1999-01-01T00:00:00\nPlan: fixture\n" + body + "\n")
+    subprocess.run(["touch", "-d", "@" + str(2000000000 - age), str(report)], check=True)
+
+success = "Result: cleaned=1 skipped=2 failed=0 elapsed=1s"
+cases = [("fresh", success, 59, 0, ""),
+         ("boundary", success, 60, 0, ""),
+         ("stale", success, 61, 1, "older than 60 seconds"),
+         ("failed", success.replace("failed=0", "failed=1"), 0, 1, "cleanup failed"),
+         ("interrupted", success + "\nInterrupted: SIGTERM before all targets finished", 0, 1, "interrupted"),
+         ("retention failed", success + "\nRetention failed: true", 0, 1, "Retention failed: true"),
+         ("retention succeeded", success + "\nRetention failed: false", 0, 0, ""),
+         ("skipped targets", "Result: cleaned=0 skipped=2 failed=0 elapsed=0s", 0, 0, ""),
+         ("nothing", "Result: nothing to clean", 0, 0, ""),
+         ("min reclaim", "Result: skipped below --min-reclaim 1G", 0, 0, ""),
+         ("min free", "Result: skipped at or above --min-free 1G", 0, 0, ""),
+         ("skip retention failed", "Result: nothing to clean\nRetention failed: true", 0, 1, "Retention failed: true"),
+         ("unknown", "Result: unknown", 0, 1, "no successful result"),
+         ("malformed", "Result: cleaned=unknown", 0, 1, "no successful result")]
+for label, body, age, status, reason in cases:
+    save(body, age)
+    before = (report.read_bytes(), report.stat().st_mtime_ns)
+    for fmt in ([], ["--json"]):
+        normal = run(["--report", *fmt])
+        if not fmt:
+            assert normal == report.read_text(), label
+        checked = run(["--report", *fmt, "--check-health", "60"], status, reason)
+        assert checked == normal, (label, fmt, checked, normal)
+    assert before == (report.read_bytes(), report.stat().st_mtime_ns), label
+    print("PASS: report health " + label)
+
+save(success)
+for seconds in ("0", "00060", "0" * 40 + "60", "9223372036854775807"):
+    run(["--check-health", seconds, "--report"])
+save(success, 60)
+run(["--report", "--check-health", "1", "--check-health", "60"])
+run(["--report", "--check-health", "60", "--check-health", "1"], 1, "older than 1 seconds")
+for seconds in ("-1", "+1", "1.5", "1s", "1+2", "9223372036854775808", "9" * 40):
+    run(["--report", "--check-health", seconds], 1, "expects an integer")
+for args, reason in [(["--check-health", "60"], "requires --report"),
+                     (["--check-health", "60", "--json"], "requires --report"),
+                     (["--report", "--check-health"], "requires a seconds argument"),
+                     (["--report", "--check-health", ""], "requires a seconds argument"),
+                     (["--report", "--check-health", "--json"], "requires a value"),
+                     (["--report", "--check-health", "-d"], "requires a value")]:
+    run(args, 1, reason)
+
+for fmt in ([], ["--json"]):
+    args = ["--report", *fmt, "--check-health", "60"]
+    report.unlink()
+    assert run(args, 1, "report is missing") == ""
+    report.symlink_to(root / "missing")
+    assert run(args, 1, "symlinked") == ""
+    report.unlink()
+    save(success)
+    target = root / "target.txt"
+    report.rename(target)
+    report.symlink_to(target)
+    assert run(args, 1, "symlinked") == ""
+    report.unlink()
+    target.rename(report)
+    report.chmod(0)
+    if not os.access(report, os.R_OK):
+        assert run(args, 1, "unreadable") == ""
+    report.chmod(0o600)
+    report.unlink()
+    report.mkdir()
+    assert run(args, 1, "unreadable") == ""
+    report.rmdir()
+    save(success)
+    real_dir = state / "real"
+    report_dir.rename(real_dir)
+    report_dir.symlink_to(real_dir, target_is_directory=True)
+    assert run(args, 1, "symlinked") == ""
+    report_dir.unlink()
+    real_dir.rename(report_dir)
+
+stat_stub = bin_dir / "stat"
+stat_stub.write_text("#!/bin/sh\nexit 1\n")
+stat_stub.chmod(0o755)
+for fmt in ([], ["--json"]):
+    normal = run(["--report", *fmt])
+    assert run(["--report", *fmt, "--check-health", "60"], 1,
+               "cannot read cleanup report age") == normal
+print("PASS: report health arguments, missing/unreadable/symlinked reports and stat failure")
+HEALTH_PY
+then
+  echo -e "${RED}FAIL: report health probe regression.${NC}"
+  exit 1
+fi
+setup_mock_env
 
 # Last cleanup report: written only after a real cleanup, printed by --report.
 setup_mock_env
@@ -12509,7 +12635,7 @@ if ! (
     HOME="$MOCK_HOME" _cleaner
     [[ " ${compopt_calls[*]} " == *" -o filenames "* ]] || exit 1
   done
-  for word_option in -r --restore; do
+  for word_option in -r --restore --check-health; do
     compopt_calls=()
     COMP_WORDS=(cleaner "$word_option" "")
     COMP_CWORD=2

@@ -22,6 +22,7 @@ complete -c cleaner -s r -l risk -x -a 'safe medium danger' -d 'Max risk level t
 complete -c cleaner -s e -l exclude -x -d 'Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything)'
 complete -c cleaner -l list-sessions -d 'List quarantine sessions (read-only) and exit'
 complete -c cleaner -l report -d 'Print the saved last cleanup report and exit'
+complete -c cleaner -l check-health -x -d 'With --report: exit 0 for a successful report at most this many seconds old'
 complete -c cleaner -l list-targets -d 'List configured cleanup targets (read-only) and exit'
 complete -c cleaner -l check-config -d 'Validate the configuration file and exit (no disk analysis)'
 complete -c cleaner -l init-config -d 'Copy the active config to your user config path (never overwrites)'
