@@ -3746,21 +3746,30 @@ action_is_user_level() {
 # sudo stays inside the wrapped command. ACTION_TIMED_OUT reports timeout(1)'s
 # 124 (stopped by TERM) or 137 (killed after the grace period).
 ACTION_TIMED_OUT=false
+# Microseconds since the epoch. EPOCHREALTIME needs bash 5 (its radix is a comma
+# under tr_TR, hence digits only); bash 4.4 falls back to GNU date.
+now_us() {
+  if [[ -n "${EPOCHREALTIME:-}" ]]; then
+    printf '%s' "${EPOCHREALTIME//[!0-9]/}"
+  else
+    date +%s%6N
+  fi
+}
 run_action() {
   ACTION_TIMED_OUT=false
   if [[ -z "$ACTION_TIMEOUT" || "$ACTION_TIMEOUT" == 0 ]]; then
     "$@"
     return
   fi
-  local rc=0 started=${EPOCHREALTIME//[!0-9]/} elapsed_us
+  local rc=0 started elapsed_us
+  started=$(now_us)
   local -a timeout_mode=()
   # On a terminal, stay in its process group so Ctrl-C still reaches the action.
   [[ -t 0 ]] && timeout_mode=(--foreground)
   timeout "${timeout_mode[@]}" --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
   # 124/137 also come from an action's own status or an unrelated SIGKILL (OOM).
-  # Microseconds (digits only: the radix is a comma under tr_TR); whole SECONDS
-  # ticks would call a 0.6 s exit a 1 s timeout.
-  elapsed_us=$(( ${EPOCHREALTIME//[!0-9]/} - started ))
+  # Microseconds: whole SECONDS ticks would call a 0.6 s exit a 1 s timeout.
+  elapsed_us=$(( $(now_us) - started ))
   if [[ ( "$rc" -eq 124 || "$rc" -eq 137 ) ]] && (( elapsed_us >= ACTION_TIMEOUT * 1000000 )); then
     ACTION_TIMED_OUT=true
   fi
