@@ -13,7 +13,7 @@ The tool is a single self-contained script. Run it directly from a checkout (`./
 | `SYSCONFDIR` | `/etc` | system config at `$SYSCONFDIR/linux-cleaner/cleaner.conf` |
 | `MANDIR` | `$PREFIX/share/man` | the `cleaner(1)` man page (`man1/cleaner.1`) |
 | `DATADIR` | `$PREFIX/share` | `LICENSE` under `$DATADIR/licenses/linux-cleaner/`; environment template at `$DATADIR/$PKGNAME/linux-cleaner.env.example` (`PKGNAME=linux-cleaner` by default), bash completion at `$DATADIR/bash-completion/completions/cleaner` (`$BINNAME`), zsh completion at `$DATADIR/zsh/site-functions/_cleaner` (`_$BINNAME`), and fish completion at `$DATADIR/fish/vendor_completions.d/cleaner.fish` (`$BINNAME.fish`), all mode `0644` |
-| `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units (`linux-cleaner-clean`, `linux-cleaner-retention`, and `linux-cleaner-monitor` `.service` and `.timer`; mode `0644`, not enabled) |
+| `SYSTEMDUSERUNITDIR` | `$PREFIX/lib/systemd/user` | the six systemd user units (`linux-cleaner-clean`, `linux-cleaner-retention`, and `linux-cleaner-monitor` `.service` and `.timer`; mode `0644`, not enabled; with a renamed `BINNAME` the services run `/usr/bin/env $BINNAME`) |
 
 ```sh
 sudo make install                   # install under /usr/local (default PREFIX)

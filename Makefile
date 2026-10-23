@@ -58,6 +58,7 @@ install: check-binname install-man
 	  { printf '#compdef %s cleaner cleaner.sh\n' "$(BINNAME)"; tail -n +2 completions/_cleaner; } \
 	    > "$(DESTDIR)$(DATADIR)/zsh/site-functions/_$(BINNAME)"; \
 	  printf 'complete -c %s -w cleaner\n' "$(BINNAME)" >> "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d/$(BINNAME).fish"; \
+	  sed -i "s|^ExecStart=/usr/bin/env cleaner |ExecStart=/usr/bin/env $(BINNAME) |" "$(DESTDIR)$(SYSTEMDUSERUNITDIR)"/linux-cleaner-*.service; \
 	fi
 
 install-man: check-binname

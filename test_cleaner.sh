@@ -3876,8 +3876,10 @@ for rename_installer in "${rename_installers[@]}"; do
   rename_share="$rename_root/usr/share"
   if [[ "$(bash -c 'source "$1" && complete -p cache-cleaner' _ "$rename_share/bash-completion/completions/cache-cleaner" 2>/dev/null)" != "complete -F _cleaner cache-cleaner" ]] \
      || [[ "$(head -n 1 "$rename_share/zsh/site-functions/_cache-cleaner")" != "#compdef cache-cleaner cleaner cleaner.sh" ]] \
-     || ! grep -qxF 'complete -c cache-cleaner -w cleaner' "$rename_share/fish/vendor_completions.d/cache-cleaner.fish"; then
-    echo -e "${RED}FAIL: $rename_installer BINNAME=cache-cleaner did not register completions for the renamed command.${NC}"
+     || ! grep -qxF 'complete -c cache-cleaner -w cleaner' "$rename_share/fish/vendor_completions.d/cache-cleaner.fish" \
+     || [[ "$(grep -h '^ExecStart=/usr/bin/env cache-cleaner ' "$rename_root/usr/lib/systemd/user"/linux-cleaner-*.service | wc -l)" -ne 3 ]] \
+     || grep -q '^ExecStart=/usr/bin/env cleaner ' "$rename_root/usr/lib/systemd/user"/linux-cleaner-*.service; then
+    echo -e "${RED}FAIL: $rename_installer BINNAME=cache-cleaner did not register completions or point the services at the renamed command.${NC}"
     cat "$TEST_ENV_DIR/rename_install.log"
     exit 1
   fi

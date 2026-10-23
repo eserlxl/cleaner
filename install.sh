@@ -54,6 +54,8 @@ do_install() {
     { printf '#compdef %s cleaner cleaner.sh\n' "$BINNAME"; tail -n +2 "$SRC_DIR/completions/_cleaner"; } \
       > "$DESTDIR$DATADIR/zsh/site-functions/_$BINNAME"
     printf 'complete -c %s -w cleaner\n' "$BINNAME" >> "$DESTDIR$DATADIR/fish/vendor_completions.d/$BINNAME.fish"
+    # The shipped services run "cleaner"; point them at the renamed command.
+    sed -i "s|^ExecStart=/usr/bin/env cleaner |ExecStart=/usr/bin/env $BINNAME |" "$DESTDIR$SYSTEMDUSERUNITDIR"/linux-cleaner-*.service
   fi
   echo "Installed $BINNAME to $DESTDIR$BINDIR"
 }

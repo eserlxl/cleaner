@@ -36,6 +36,9 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- With a renamed `BINNAME`, both installers point the clean, retention and monitor services at the installed command; they still ran `cleaner`, so the timers failed or ran a different installation.
+- Option names and long process names match in ASCII under every locale: under `tr_TR`, `--exclude --interactive` took `--interactive` as the pattern, and a long plain process name containing `i` was not cut to 15 characters, so its running process no longer blocked the target.
+- Numeric options accept only ASCII digits: under a UTF-8 locale such as `tr_TR`, a value like `١` passed `--lock-wait`, `--min-age`, `--action-timeout`, `--trash-keep-days` and `--check-health` validation.
 - An INT/TERM interruption during post-cleanup quarantine retention is saved in the cleanup report, so `--report --check-health` reports that cleanup was interrupted instead of returning healthy.
 - Risk names match in any case under every locale: under `tr_TR`, `--risk MEDIUM`, `LINUX_CLEANER_RISK=MEDIUM` and `MEDIUM` config rows were rejected because bash lowercased `I` to a dotless `ı`.
 - Quarantine enumeration reads `find`'s exit status from the stream instead of `wait` on a process substitution, which could lose an already-reaped child under heavy load and fail listing, purge, restore or aged quarantine with a false enumeration error.
