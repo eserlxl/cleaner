@@ -3892,6 +3892,20 @@ for rename_installer in "${rename_installers[@]}"; do
   rm -rf "$rename_root"
 done
 echo -e "${GREEN}PASS: both installers register completions for a renamed BINNAME.${NC}"
+# A failing step in the Makefile's renamed-BINNAME recipe must fail make, not report success.
+if command -v make >/dev/null 2>&1; then
+  rename_fail_root="$TEST_ENV_DIR/rename_make_fail"
+  rm -rf "$rename_fail_root"
+  # A directory where the zsh completion file belongs makes its redirect fail.
+  mkdir -p "$rename_fail_root/usr/share/zsh/site-functions/_cache-cleaner"
+  if make -s -C "$SCRIPT_DIR" install DESTDIR="$rename_fail_root" PREFIX=/usr BINNAME=cache-cleaner > "$TEST_ENV_DIR/rename_make_fail.log" 2>&1; then
+    echo -e "${RED}FAIL: make install reported success although the renamed zsh completion could not be written.${NC}"
+    cat "$TEST_ENV_DIR/rename_make_fail.log"
+    exit 1
+  fi
+  rm -rf "$rename_fail_root"
+  echo -e "${GREEN}PASS: make install fails when a renamed-BINNAME step fails.${NC}"
+fi
 
 # An unsafe BINNAME (space, slash, dot path) is refused before anything is written.
 for unsafe_binname in 'cache cleaner' '../../escape' '..'; do

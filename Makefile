@@ -53,7 +53,7 @@ install: check-binname install-man
 	install -d "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d"
 	install -m 0644 completions/cleaner.fish "$(DESTDIR)$(DATADIR)/fish/vendor_completions.d/$(BINNAME).fish"
 	@# The shipped completions register cleaner and cleaner.sh; a renamed command needs its own.
-	@if [ "$(BINNAME)" != cleaner ]; then \
+	@set -e; if [ "$(BINNAME)" != cleaner ]; then \
 	  printf 'complete -F _cleaner %s\n' "$(BINNAME)" >> "$(DESTDIR)$(DATADIR)/bash-completion/completions/$(BINNAME)"; \
 	  { printf '#compdef %s cleaner cleaner.sh\n' "$(BINNAME)"; tail -n +2 completions/_cleaner; } \
 	    > "$(DESTDIR)$(DATADIR)/zsh/site-functions/_$(BINNAME)"; \
