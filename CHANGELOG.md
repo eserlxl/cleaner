@@ -37,6 +37,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Config validation rejects a positive `MIN_AGE_DAYS` on an `action:*` row; the action ignored the age, so the plan showed an age-filtered estimate for a command that cleans the whole cache.
 - Skip `filter:cxx_build` targets with `activity check failed` when an idle probe fails without finding recent activity, both during preview and immediately before cleanup, so unreadable build subdirectories cannot cause partial deletion.
 - Cleanup always protects `$HOME/.cache/linux-cleaner`, including targets equal to, under, or containing it and wildcard matches, so broad cache targets cannot delete quarantine sessions, the operations log, or the live lock file. Text and JSON previews report these targets as protected even before the directory exists.
 - The dry-run `Next:` command repeats `--min-reclaim`, so applying it still skips when the plan has fallen below the threshold.
