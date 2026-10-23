@@ -71,8 +71,14 @@ roll() {
     echo "Error: changelog not found at '$CHANGELOG'." >&2
     exit 1
   fi
-  if grep -q "^## \[${version//./\\.}\]" "$CHANGELOG"; then
+  # Only grep's "no match" (1) may continue; 2 means the check itself failed.
+  local dup_rc=0
+  grep -q "^## \[${version//./\\.}\]" "$CHANGELOG" || dup_rc=$?
+  if [[ "$dup_rc" -eq 0 ]]; then
     echo "Error: '$CHANGELOG' already has a section for version '$version'." >&2
+    exit 1
+  elif [[ "$dup_rc" -ne 1 ]]; then
+    echo "Error: could not check '$CHANGELOG' for an existing '$version' section." >&2
     exit 1
   fi
   if ! base=$(sed -n 's|^\[Unreleased\]: \(.*\)/compare/v[0-9][0-9.]*\.\.\.HEAD$|\1|p;T;q' "$CHANGELOG") \

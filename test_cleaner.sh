@@ -7017,6 +7017,18 @@ write_roll_fixture $'- An entry.\n'
 roll_refused "9.9 2026-01-02" "is not X.Y.Z"
 roll_refused "9.9.11 02-01-2026" "is not YYYY-MM-DD"
 roll_refused "9.9.11 2026-02-31" "is not YYYY-MM-DD"
+# A failed duplicate check (unreadable changelog) must stop, never continue to the write.
+if [[ "$EUID" -ne 0 ]]; then
+  chmod 000 "$rn_roll"
+  rn_unreadable_ec=0
+  CHANGELOG="$rn_roll" "$rn_sh" roll 9.9.12 2026-01-03 > "$TEST_ENV_DIR/roll_unreadable.log" 2>&1 || rn_unreadable_ec=$?
+  chmod 0644 "$rn_roll"
+  if [[ $rn_unreadable_ec -eq 0 ]] || ! grep -qF "could not check" "$TEST_ENV_DIR/roll_unreadable.log"; then
+    echo -e "${RED}FAIL: release-notes.sh roll continued after its duplicate check failed (ec=$rn_unreadable_ec).${NC}"
+    cat "$TEST_ENV_DIR/roll_unreadable.log"
+    exit 1
+  fi
+fi
 echo -e "${GREEN}PASS: release-notes.sh roll rolls [Unreleased] into a dated section that round-trips through extract, and refuses bad input without touching the changelog.${NC}"
 
 # extract without a version argument must fail with a clear error.
