@@ -8,13 +8,13 @@ MAN="$ROOT/cleaner.1"
 # Plain grep, captured through command substitution: a missing tool or unreadable
 # source must abort under set -e rather than leave an empty list that checks nothing.
 flags="$(grep -rh -- 'cleaner ' "$ROOT/RUNBOOK.md" "$ROOT/examples" \
-  | grep -oE -- '--[a-z][a-z-]*' | sort -u)"
+  | grep -oE -- '--[[:alnum:]][[:alnum:]_-]*' | sort -u)"
 if [[ -z "$flags" ]]; then
   echo "no cleaner flags found in RUNBOOK.md or examples"
   exit 1
 fi
 # Whole names only: a truncated --action must not pass because --action-timeout exists.
-help_flags="$(grep -oE -- '--[a-z][a-z-]*' <<< "$HELP" | sort -u)"
+help_flags="$(grep -oE -- '--[[:alnum:]][[:alnum:]_-]*' <<< "$HELP" | sort -u)"
 while read -r f; do
   grep -qxF -- "$f" <<< "$help_flags" || { echo "missing in help: $f"; exit 1; }
 done <<< "$flags"

@@ -8580,11 +8580,17 @@ validator_trunc_rc=0
 env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
   > "$TEST_ENV_DIR/validator_trunc.log" 2>&1 || validator_trunc_rc=$?
 cp "$SCRIPT_DIR/RUNBOOK.md" "$validator_copy/RUNBOOK.md"
+printf '\n    cleaner --dry-run2\n' >> "$validator_copy/RUNBOOK.md"
+validator_suffix_rc=0
+env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
+  > "$TEST_ENV_DIR/validator_suffix.log" 2>&1 || validator_suffix_rc=$?
+cp "$SCRIPT_DIR/RUNBOOK.md" "$validator_copy/RUNBOOK.md"
 printf '\n    LINUX_CLEANER_ACTION_TIME=5 cleaner --dry-run\n' >> "$validator_copy/RUNBOOK.md"
 validator_env_rc=0
 env -i HOME="$MOCK_HOME" PATH="$validator_bin" bash "$validator_copy/scripts/validate-runbook-examples.sh" \
   > "$TEST_ENV_DIR/validator_env.log" 2>&1 || validator_env_rc=$?
-if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 || "$validator_trunc_rc" -eq 0 || "$validator_env_rc" -eq 0 ]] \
+if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 || "$validator_trunc_rc" -eq 0 || "$validator_env_rc" -eq 0 || "$validator_suffix_rc" -eq 0 ]] \
+   || ! grep -qF 'missing in help: --dry-run2' "$TEST_ENV_DIR/validator_suffix.log" \
    || ! grep -qF 'missing in help: --no-such-flag' "$TEST_ENV_DIR/validator_bad.log" \
    || ! grep -qF 'missing in help: --action' "$TEST_ENV_DIR/validator_trunc.log" \
    || ! grep -qF 'missing in cleaner.1: LINUX_CLEANER_ACTION_TIME' "$TEST_ENV_DIR/validator_env.log"; then
