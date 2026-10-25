@@ -17,7 +17,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 |----------|------------------|
 | Config file author | Operator controls config path |
 | `/etc/linux-cleaner/cleaner.conf` | System admin |
-| Quarantine tree and `quarantine.meta` | Trusted local state; restore consumes recorded paths, privilege use, and ownership |
+| Quarantine tree and `quarantine.meta` | Trusted local state; restore consumes recorded paths, privilege use, and ownership (see the [privilege matrix](safety.md#privilege-matrix)) |
 
 ## Threat Actors
 
@@ -76,13 +76,13 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 | Symlink target | Refused (SYMLINK) | Dry Run Mode (Default) |
 | Protected system directory | UNSAFE (`check_path_safety` returns 1) | Protected System Dir UNSAFE / Top-Level System Directories |
 | User-defined protected path (`protect\|PATH`) | Skipped (`protected`, `[PROTECTED]` under `--debug`) when canonical target equals, lies under, or contains a protected path | Protect Check Config Valid / Protect Clean Force / Protect Dry Run JSON |
-| Root required, privileges unavailable | Skipped (`requires root`); the rest of the run continues and the exit status stays 0 | Root Skip Without Privileges |
+| Root required, privileges unavailable | Skipped (`requires root`); the rest of the run continues and the exit status stays 0 during cleanup, whereas `--restore` marks a `use_sudo=true` record as failed, retains its quarantined payload and `quarantine.meta` entry, reconciles any restored sibling records, and exits 1 | Root Skip Without Privileges / Restore Sudo Auth Failure |
 | Process inspection unavailable or failed | `CHECK_PROCESSES` requires `pgrep` (`procps`/`procps-ng`); query errors, including missing binary, invalid regex and partial results with an error, skip that target before sizing, sudo, actions or deletion. Ungated targets continue; skips retain the normal exit policy | Process Query |
 | TOCTOU on live paths | residual | manual VM review |
 
 Targets outside HOME are allowed. `check_path_safety` still returns 1 for protected system directories, HOME, and any ancestor of HOME, and 3 for a symlink target. Return 2 (outside HOME) is cleaned like an in-HOME target. User-defined `protect|PATH` config directives protect arbitrary directory trees: each `PATH` is expanded and physically canonicalized, and any target whose canonical path equals a protected path, lies under one, or contains one (whole path components only) is skipped before sizing or deletion.
 
-A target that needs root and cannot obtain it is skipped with a warning and an operation-log record (`outcome=skipped reason=requires-root`). An unattended run (no TTY on stdin) never prompts. A failed or cancelled prompt is remembered, and every later root-requiring target of that run is skipped without asking again. A dry-run never prompts.
+A target that needs root and cannot obtain it is skipped with a warning and an operation-log record (`outcome=skipped reason=requires-root`). An unattended run (no TTY on stdin) never prompts. A failed or cancelled prompt is remembered, and every later root-requiring target of that run is skipped without asking again. A dry-run never prompts. The per-operation rules are in the [privilege matrix](safety.md#privilege-matrix).
 
 ### GNU userland
 

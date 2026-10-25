@@ -4,7 +4,7 @@
 
 Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine.meta` recording original paths and ownership. Each session directory is created with mode `0700` (and any missing parent directories under `~/.cache/linux-cleaner/quarantine` are created `0700` when created by the tool). A symlink at that quarantine directory is refused: trash cleanup, `--list-sessions`, `--restore`, and `--purge-sessions` exit non-zero and move nothing, and `--doctor` prints a warning.
 
-Restore trusts this metadata for source and destination paths, privilege use, and ownership. Keep the quarantine tree private and restore only sessions you trust; metadata is not authenticated or comprehensively validated against tampering.
+Restore trusts this metadata for source and destination paths, privilege use, and ownership. Keep the quarantine tree private and restore only sessions you trust; metadata is not authenticated or comprehensively validated against tampering. Which operations may use `sudo`, and what an unattended restore does without it, is in the [privilege matrix](safety.md#privilege-matrix).
 
 An aged record whose files have finished moving back is atomically changed to
 `aged-restored` before empty staging directories are removed, retaining the same

@@ -36,6 +36,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `[BLOCKED]` status lines include the matching process PID when available; JSON reasons remain unchanged.
 - `--show-matches` lists eligible paths below each ordinary target in a text dry run, respecting age and exclusion filters; unfiltered targets show only their own path. File names holding control characters are shown shell-quoted on one line. The CLI-only flag rejects cleanup, JSON, and non-cleanup modes.
 
+### Changed
+
+- Document which operations may use `sudo` in one privilege matrix (`docs/safety.md`), including the unattended difference: cleanup skips a root-requiring target, while `--restore` fails that record and exits 1.
+
 ### Fixed
 
 - `--log` works when HOME is a symlink: the inside-HOME check compared the resolved log path with the unresolved HOME and disabled logging.
