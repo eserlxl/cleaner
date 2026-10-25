@@ -3971,8 +3971,13 @@ action_display_command() {
 }
 
 # Free space in bytes on the filesystem holding PATH.
+# Prints nothing when df fails or yields no integer, so a failed probe is not 0 free.
 get_fs_avail_bytes() {
-  { df -B1 --output=avail -- "$1" 2>/dev/null || true; } | awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {print v+0}'
+  local df_out
+  if ! df_out=$(df -B1 --output=avail -- "$1" 2>/dev/null); then
+    return 0
+  fi
+  awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {if (v ~ /^[0-9]+$/) print v+0}' <<< "$df_out"
 }
 
 # Preflight: probe the GNU-coreutils behaviors this tool depends on (du -sb,
@@ -4765,7 +4770,7 @@ done
 home_free_bytes=0
 # A zero threshold disables the gate, like --min-reclaim 0.
 if [[ "$MIN_FREE_BYTES" -gt 0 ]]; then
-  # Unlike get_fs_avail_bytes, an unreadable value stays empty so it is not mistaken for 0 free.
+  # An unreadable value stays empty so it is not mistaken for 0 free.
   home_free_bytes=$({ df -B1 --output=avail -- "${MIN_FREE_PATH:-$HOME}" 2>/dev/null || true; } | awk 'NR>1 && $1 ~ /^[0-9]+$/ {v=$1} END {print v}')
   if [[ -z "$home_free_bytes" ]]; then
     echo -e "${YELLOW}Warning: cannot read free space on the filesystem holding ${MIN_FREE_PATH:-HOME}; --min-free ${MIN_FREE} is ignored this run.${NC}" >&2
@@ -5154,8 +5159,12 @@ for i in "${!parsed_names[@]}"; do
       credited_bytes="$size"
       if action_is_user_level "$custom_clean_cmd"; then
         avail_after=$(get_fs_avail_bytes "$path")
-        credited_bytes=$((avail_after - avail_before))
-        if [[ "$credited_bytes" -lt 0 ]]; then
+        if [[ -n "$avail_before" && -n "$avail_after" ]]; then
+          credited_bytes=$((avail_after - avail_before))
+          if [[ "$credited_bytes" -lt 0 ]]; then
+            credited_bytes=0
+          fi
+        else
           credited_bytes=0
         fi
       fi

@@ -15032,5 +15032,64 @@ if ! run_test_case "Restore Preview Additional Malformed Variants" 0 "mal2_previ
 fi
 echo -e "${GREEN}PASS: restore and restore preview refuse structurally malformed quarantine.meta records across rules (a)-(d) while restoring valid siblings.${NC}"
 
+# A failed before-probe must not credit the later free-space reading as reclaimed bytes.
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache/uv"
+printf 'uv-entry\n' > "$MOCK_HOME/.cache/uv/entry.bin"
+cat > "$TEST_ENV_DIR/bin/df" <<'MOCK_DF_PROBE'
+#!/usr/bin/env bash
+count_file="$TEST_ENV_DIR/df_probe_fail_count"
+n=0
+[[ -f "$count_file" ]] && n=$(cat "$count_file")
+n=$((n + 1))
+printf '%s\n' "$n" > "$count_file"
+if [[ "$n" -eq 1 ]]; then
+  exit 1
+fi
+printf 'Avail\n10000000\n'
+MOCK_DF_PROBE
+chmod +x "$TEST_ENV_DIR/bin/df"
+cat > "$TEST_ENV_DIR/probe_fail.conf" <<'EOF'
+safe|UV Cache|$HOME/.cache/uv|uv package manager cache (uv cache prune: unreachable entries only)|0|uv|action:uv_cache_prune
+EOF
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/probe_fail.calls"
+: > "$MOCK_USER_ACTION_LOG"
+probe_metrics="$TEST_ENV_DIR/probe_fail.prom"
+probe_df_calls=0
+if ! LINUX_CLEANER_METRICS_FILE="$probe_metrics" \
+     run_test_case "Failed Free-Space Probe Credits Zero" 0 "probe_fail.log" \
+       --config "$TEST_ENV_DIR/probe_fail.conf" --clean --force; then
+  echo -e "${RED}FAIL: failed free-space probe run did not exit 0.${NC}"
+  cat "$TEST_ENV_DIR/probe_fail.log" 2>/dev/null || true
+  exit 1
+fi
+[[ -f "$TEST_ENV_DIR/df_probe_fail_count" ]] && probe_df_calls=$(cat "$TEST_ENV_DIR/df_probe_fail_count")
+if [[ "$probe_df_calls" != 2 ]] \
+   || ! grep -qx "uv cache prune --cache-dir $(realpath "$MOCK_HOME/.cache/uv")" "$MOCK_USER_ACTION_LOG" \
+   || ! grep -q '^Result: cleaned=1 skipped=0 failed=0 ' "$TEST_ENV_DIR/probe_fail.log" \
+   || ! grep -qx 'Reclaimed: quarantined=0 B permanent=0 B' "$TEST_ENV_DIR/probe_fail.log" \
+   || ! grep -qx 'Accounted bytes: quarantined=0 permanent=0' "$TEST_ENV_DIR/probe_fail.log" \
+   || ! grep -qF 'Total space permanently reclaimed: 0 B' "$TEST_ENV_DIR/probe_fail.log" \
+   || grep -q '10000000' "$TEST_ENV_DIR/probe_fail.log" \
+   || ! grep -qx 'Accounted bytes: quarantined=0 permanent=0' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+   || grep -q '10000000' "$XDG_STATE_HOME/linux-cleaner/last-report.txt" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="quarantined"} 0' "$probe_metrics" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="permanent"} 0' "$probe_metrics" \
+   || grep -q '10000000' "$probe_metrics" \
+   || ! run_test_case "Failed Free-Space Probe Report JSON" 0 "probe_fail.json" --report --json \
+   || ! python3 - "$TEST_ENV_DIR/probe_fail.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["cleaned"] == 1, d
+assert (d["quarantined_bytes"], d["permanent_bytes"]) == (0, 0), d
+PY
+then
+  echo -e "${RED}FAIL: a failed free-space probe credited the later probe value instead of 0 bytes.${NC}"
+  cat "$TEST_ENV_DIR/probe_fail.log" "$MOCK_USER_ACTION_LOG" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" "$probe_metrics" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_USER_ACTION_LOG
+echo -e "${GREEN}PASS: a failed free-space probe credits 0 bytes in the total, report, JSON, and metrics.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
