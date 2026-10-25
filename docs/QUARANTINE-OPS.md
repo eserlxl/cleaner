@@ -4,6 +4,8 @@
 
 Sessions under `~/.cache/linux-cleaner/quarantine/<timestamp>/` with `quarantine.meta` recording original paths and ownership. Each session directory is created with mode `0700` (and any missing parent directories under `~/.cache/linux-cleaner/quarantine` are created `0700` when created by the tool). A symlink at that quarantine directory is refused: trash cleanup, `--list-sessions`, `--restore`, and `--purge-sessions` exit non-zero and move nothing, and `--doctor` prints a warning.
 
+Per-artifact default paths, overrides, `$HOME` confinement, runtime permissions, and failure behavior are summarized in [Artifact locations](reports-and-logs.md#artifact-locations).
+
 Restore trusts this metadata for source and destination paths, privilege use, and ownership within a private `0700` quarantine tree owned by the user. Before probing paths or invoking `sudo`, `--restore` (and `--restore ... --dry-run`) structurally validates each selected record and refuses it when `RELATIVE_PATH` is empty, starts with `/`, or contains a `..` path component (`..`, `../...`, `.../..`, or `.../../...`); `ORIGINAL_PATH` does not start with `/` or contains a `..` path component; `USE_SUDO` is neither `true` nor `false`; or a non-empty `UID` or `GID` is not all ASCII digits (a real restore logs `outcome=failed`, keeps the payload and `quarantine.meta` entry, and exits `1`; a preview prints `invalid record`). Keep the quarantine tree private and restore only sessions you trust; metadata is not authenticated or tamper-proof. Which operations may use `sudo`, and what an unattended restore does without it, is in the [privilege matrix](safety.md#privilege-matrix).
 
 An aged record whose files have finished moving back is atomically changed to

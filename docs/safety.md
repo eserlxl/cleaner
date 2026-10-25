@@ -29,6 +29,8 @@ Every target in `cleaner.conf` has a risk level (`safe`, `medium`, or `danger`),
 9. **Protected directories**: Any target that equals, lies inside, or contains a configured `protect|PATH` directory is skipped before sizing or deletion. `$HOME/.cache/linux-cleaner` is always protected by the same canonical-path checks, even before it exists, so broad targets such as `$HOME/.cache` and wildcard matches cannot delete quarantine sessions, `operations.log`, or the live `cleaner.lock`. This built-in protection applies in text and JSON previews and cleanup, including `--force`, without a `protect|PATH` row.
 10. **Restore conflict guard**: Restoring a quarantine session never overwrites an existing destination file or directory; conflicts are reported and kept in quarantine.
 
+Per-artifact default paths, overrides, `$HOME` confinement, runtime permissions, and failure behavior are in [Artifact locations](reports-and-logs.md#artifact-locations).
+
 ## Privilege matrix
 
 | Operation | Privilege |

@@ -38,6 +38,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- Document the per-artifact default path, override, `$HOME`-confinement, runtime permission/symlink protection, and failure behavior contract in one table (`docs/reports-and-logs.md#artifact-locations`), with links from `docs/safety.md` and `docs/QUARANTINE-OPS.md`.
 - Document which operations may use `sudo` in one privilege matrix (`docs/safety.md`), including the unattended difference: cleanup skips a root-requiring target, while `--restore` fails that record and exits 1.
 
 ### Fixed
