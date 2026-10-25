@@ -14,7 +14,7 @@ Pre-release checklist for AUR/distro packagers. Complete every row before publis
 - [ ] `make install` ships the shell completions with mode `0644` — `$DATADIR/bash-completion/completions/cleaner`, `$DATADIR/zsh/site-functions/_cleaner` and `$DATADIR/fish/vendor_completions.d/cleaner.fish` — and `make uninstall` removes them
 - [ ] Removal docs (`make uninstall`, `pacman -R`) tell each user who enabled the timers to first run `systemctl --user disable --now linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer` and `systemctl --user daemon-reload` after removal
 - [ ] Docs for switching from `make install` to the package say to move or remove the leftover `/etc/linux-cleaner/cleaner.conf` first (pacman "exists in filesystem"), how to clear a stale `timers.target.wants` link, and that `Persistent=true` runs a missed slot at once on enable
-- [ ] `aur/aurgen.install.yaml` `package.install_messages` (`post_install` / `pre_remove`, printed verbatim) names the real timer unit (`linux-cleaner-clean.timer`) and has no `post_upgrade`; `aurgen aur-deploy` copies `PKGBUILD`, `.SRCINFO` and the install scriptlet into the AUR clone and pushes
+- [ ] `aur/aurgen.install.yaml` `package.install_messages` (`post_install`, printed verbatim) names the real timer unit (`linux-cleaner-clean.timer`) and has no `post_upgrade`; `aurgen aur-deploy` copies `PKGBUILD`, `.SRCINFO` and the install scriptlet into the AUR clone and pushes
 - [ ] `aur/aurgen.install.yaml` `depends` (`bash`) and `optdepends` (`pacman-contrib`, `libnotify`, `git`) align with the requirements table in [installation.md](installation.md#supported-platforms-and-requirements)
 
 ## Version consistency

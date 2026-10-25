@@ -62,7 +62,8 @@ builder, and never carry over to the next target. Size reporting, age checks,
 deletion, quarantine, and empty-directory cleanup all use the merged set.
 An exclusion forces file-by-file cleanup even at age `0`, preserving the target
 directory. Wildcard expansion passes the token through unchanged and keeps normal
-ancestor pruning; only `filter:cxx_build` disables that pruning.
+ancestor pruning; `filter:cxx_build` and `**` patterns disable that pruning, but a match
+nested inside an already accepted match is still not emitted again.
 
 ## CHECK_PROCESSES: name tokens and cmdline tokens
 

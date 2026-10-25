@@ -2,7 +2,7 @@
 
 ## Hermetic test boundaries
 
-The hermetic suite stubs `sudo`, the package managers, and the user-level prune tools under mock `$HOME` (full list in [hermetic-test-guards.md](hermetic-test-guards.md)); absent-manager skips are covered there by the Cross-Distro Safe Degradation tests. It does not cover live `/etc/linux-cleaner/cleaner.conf` resolution, real sudo prompts, real package managers, or race-sensitive TOCTOU.
+The hermetic suite stubs `sudo`, the package managers, and the user-level prune tools in the suite's temporary `bin` directory, next to the mock `$HOME` (full list in [hermetic-test-guards.md](hermetic-test-guards.md)); absent-manager skips are covered there by the Cross-Distro Safe Degradation tests. It does not cover live `/etc/linux-cleaner/cleaner.conf` resolution, real sudo prompts, real package managers, or race-sensitive TOCTOU.
 
 ## /etc config resolution (maintainer)
 
