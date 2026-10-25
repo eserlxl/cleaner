@@ -15091,5 +15091,67 @@ fi
 unset MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: a failed free-space probe credits 0 bytes in the total, report, JSON, and metrics.${NC}"
 
+# Wildcard rows filtered out by --only-target / --exclude-target must not expand
+# their prefix trees with find, while unfiltered runs and selected rows remain unchanged.
+echo -e "\n${BOLD}Test Case: Name Filter Skips Unselected Wildcard Expansion${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/first_tree/a/cache" "$MOCK_HOME/first_tree/b/cache" \
+         "$MOCK_HOME/second_tree/x/cache" "$MOCK_HOME/second_tree/y/cache"
+cat > "$TEST_ENV_DIR/wildcard_name_filter.conf" <<'EOF'
+safe|First Wildcard|$HOME/first_tree/*/cache|First wildcard row|0||
+safe|Second Wildcard|$HOME/second_tree/*/cache|Second wildcard row|0||
+EOF
+if ! run_test_case "Wildcard Name Filter Baseline" 0 "wnf_baseline.log" \
+       --config "$TEST_ENV_DIR/wildcard_name_filter.conf" --list-targets; then
+  exit 1
+fi
+real_find=$(command -v find)
+cat > "$TEST_ENV_DIR/bin/find" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\$TEST_ENV_DIR/find_calls.log"
+exec "$real_find" "\$@"
+EOF
+chmod +x "$TEST_ENV_DIR/bin/find"
+
+: > "$TEST_ENV_DIR/find_calls.log"
+if ! run_test_case "Wildcard Only Target Skips Second Find" 0 "wnf_only.log" \
+       --config "$TEST_ENV_DIR/wildcard_name_filter.conf" --list-targets --only-target "First Wildcard" \
+   || ! grep -qF "$MOCK_HOME/first_tree/a/cache" "$TEST_ENV_DIR/wnf_only.log" \
+   || ! grep -qF "$MOCK_HOME/first_tree/b/cache" "$TEST_ENV_DIR/wnf_only.log" \
+   || grep -qF "second_tree" "$TEST_ENV_DIR/wnf_only.log" \
+   || ! grep -qF "$MOCK_HOME/first_tree" "$TEST_ENV_DIR/find_calls.log" \
+   || grep -qF "$MOCK_HOME/second_tree" "$TEST_ENV_DIR/find_calls.log"; then
+  echo -e "${RED}FAIL: --only-target walked the unselected wildcard prefix or omitted selected matches.${NC}"
+  cat "$TEST_ENV_DIR/wnf_only.log" "$TEST_ENV_DIR/find_calls.log" 2>/dev/null || true
+  exit 1
+fi
+
+: > "$TEST_ENV_DIR/find_calls.log"
+if ! run_test_case "Wildcard Exclude Target Skips Excluded Find" 0 "wnf_exclude.log" \
+       --config "$TEST_ENV_DIR/wildcard_name_filter.conf" --list-targets --exclude-target "Second Wildcard" \
+   || ! grep -qF "$MOCK_HOME/first_tree/a/cache" "$TEST_ENV_DIR/wnf_exclude.log" \
+   || ! grep -qF "$MOCK_HOME/first_tree/b/cache" "$TEST_ENV_DIR/wnf_exclude.log" \
+   || grep -qF "second_tree" "$TEST_ENV_DIR/wnf_exclude.log" \
+   || ! grep -qF "$MOCK_HOME/first_tree" "$TEST_ENV_DIR/find_calls.log" \
+   || grep -qF "$MOCK_HOME/second_tree" "$TEST_ENV_DIR/find_calls.log"; then
+  echo -e "${RED}FAIL: --exclude-target walked the excluded wildcard prefix or omitted kept matches.${NC}"
+  cat "$TEST_ENV_DIR/wnf_exclude.log" "$TEST_ENV_DIR/find_calls.log" 2>/dev/null || true
+  exit 1
+fi
+
+: > "$TEST_ENV_DIR/find_calls.log"
+if ! run_test_case "Wildcard Unfiltered Output Unchanged" 0 "wnf_unfiltered.log" \
+       --config "$TEST_ENV_DIR/wildcard_name_filter.conf" --list-targets \
+   || ! cmp -s "$TEST_ENV_DIR/wnf_baseline.log" "$TEST_ENV_DIR/wnf_unfiltered.log" \
+   || ! grep -qF "$MOCK_HOME/first_tree/a/cache" "$TEST_ENV_DIR/wnf_unfiltered.log" \
+   || ! grep -qF "$MOCK_HOME/second_tree/x/cache" "$TEST_ENV_DIR/wnf_unfiltered.log" \
+   || ! grep -qF "$MOCK_HOME/first_tree" "$TEST_ENV_DIR/find_calls.log" \
+   || ! grep -qF "$MOCK_HOME/second_tree" "$TEST_ENV_DIR/find_calls.log"; then
+  echo -e "${RED}FAIL: unfiltered wildcard output changed.${NC}"
+  cat "$TEST_ENV_DIR/wnf_unfiltered.log" "$TEST_ENV_DIR/find_calls.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --only-target and --exclude-target skip find for filtered-out wildcard rows while preserving unfiltered output.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

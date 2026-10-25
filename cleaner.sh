@@ -1421,7 +1421,7 @@ glob_components_match() {
 # target. Each emitted line carries its physical source line number and a tab, so a
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
-  local line lineno=0 risk raw_path f1 f2 f3 frest pipes fields
+  local line lineno=0 risk name raw_path f1 f2 f3 frest pipes fields
   local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar expanded
   local -a prune_args
   local -A accepted_matches
@@ -1450,6 +1450,13 @@ expand_config_globs() {
         fi
         is_cxx_build_dir "$expanded" || continue
       fi
+      printf '%s\t%s\n' "$lineno" "$line"
+      continue
+    fi
+
+    name=$(trim "$f2")
+    if { [[ -n "$ONLY_TARGET" ]] && ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; } \
+       || { [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; }; then
       printf '%s\t%s\n' "$lineno" "$line"
       continue
     fi
