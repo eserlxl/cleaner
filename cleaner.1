@@ -258,8 +258,9 @@ emit a machine-readable JSON summary instead of human-formatted output
 .RB ( total_reclaimable_bytes ,
 .BR total_reclaimable_human ,
 .BR would_skip ,
+.BR hidden_by_risk ,
 per-target
-.BR bytes / size_human / description / min_age_days / size_at_run_time / reason ).
+.BR bytes /\: size_human /\: description /\: min_age_days /\: size_at_run_time /\: reason ).
 The top-level
 .B would_skip
 names the gate a cleanup run would stop at
@@ -270,6 +271,16 @@ or
 checked in that order), or is
 .B null
 when cleanup would proceed; runtime-sized prune actions count as cleanable.
+The top-level
+.B hidden_by_risk
+object holds
+.BR medium ,
+.BR danger ,
+and
+.BR names :
+the counts and names of selected targets above
+.B \-\-risk
+(not analysed).
 With
 .BR \-\-list\-targets ,
 emit a JSON inventory of configured targets
@@ -281,8 +292,15 @@ With
 .BR \-\-list\-sessions ,
 emit a JSON inventory of quarantine sessions
 .RB ( sessions
-array of
-.BR timestamp / size_bytes / size_human / date / unrecorded_entry_count / held / targets ).
+array of objects with
+.BR timestamp ,
+.BR size_bytes ,
+.BR size_human ,
+.BR date ,
+.BR unrecorded_entry_count ,
+.BR held ,
+and
+.BR targets ).
 With
 .BR \-\-report ,
 emit a JSON summary of the saved last cleanup report

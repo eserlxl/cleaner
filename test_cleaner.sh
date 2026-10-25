@@ -15153,5 +15153,104 @@ if ! run_test_case "Wildcard Unfiltered Output Unchanged" 0 "wnf_unfiltered.log"
 fi
 echo -e "${GREEN}PASS: --only-target and --exclude-target skip find for filtered-out wildcard rows while preserving unfiltered output.${NC}"
 
+# Dry-run JSON reports hidden_by_risk counts and names without sizing hidden targets.
+echo -e "\n${BOLD}Test Case: Dry-Run JSON Reports Targets Hidden by Risk${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/.cache"
+truncate -s 32 "$MOCK_HOME/.cache/risk-safe.bin"
+truncate -s 64 "$MOCK_HOME/.cache/risk-medium.bin"
+truncate -s 128 "$MOCK_HOME/.cache/risk-danger.bin"
+mkdir -p "$MOCK_HOME/.cache/risk-wild-a" "$MOCK_HOME/.cache/risk-wild-b"
+cat > "$TEST_ENV_DIR/hidden_risk_pair.conf" <<'EOF'
+safe|Visible Cache|$HOME/.cache/risk-safe.bin|safe cache|0||
+medium|Hidden Cache|$HOME/.cache/risk-medium.bin|medium cache|0||
+danger|Danger Cache|$HOME/.cache/risk-danger.bin|danger cache|0||
+EOF
+cat > "$TEST_ENV_DIR/hidden_risk_json.conf" <<'EOF'
+safe|Visible Cache|$HOME/.cache/risk-safe.bin|safe cache|0||
+medium|Hidden Cache|$HOME/.cache/risk-medium.bin|medium cache|0||
+medium|Wild Cache|$HOME/.cache/risk-wild-*|wildcard row named once|0||
+medium|Browser, GPU|$HOME/.cache/risk-browser-gpu|name holding the separator|0||
+medium|GPU|$HOME/.cache/risk-gpu|distinct name inside another|0||
+danger|Danger Cache|$HOME/.cache/risk-danger.bin|danger cache|0||
+EOF
+if ! run_test_case "Hidden Risk JSON Pair Safe" 0 "hr_pair_safe.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_pair.conf" --dry-run --json --risk safe \
+   || ! run_test_case "Hidden Risk JSON Pair Danger" 0 "hr_pair_danger.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_pair.conf" --dry-run --json --risk danger \
+   || ! run_test_case "Hidden Risk JSON Pair Only Medium" 0 "hr_pair_only_med.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_pair.conf" --dry-run --json --risk safe --only-target "Hidden Cache" \
+   || ! run_test_case "Hidden Risk JSON Pair Only Safe" 0 "hr_pair_only_safe.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_pair.conf" --dry-run --json --risk safe --only-target "Visible Cache" \
+   || ! run_test_case "Hidden Risk JSON Fixture Default" 0 "hr_fix_default.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_json.conf" --dry-run --json \
+   || ! run_test_case "Hidden Risk JSON Fixture Medium" 0 "hr_fix_medium.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_json.conf" --dry-run --json --risk medium \
+   || ! run_test_case "Hidden Risk JSON Fixture No Danger" 0 "hr_fix_nodanger.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_json.conf" --dry-run --json --exclude-target "Danger Cache" \
+   || ! run_test_case "Hidden Risk JSON Fixture Only Safe" 0 "hr_fix_only_safe.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_json.conf" --dry-run --json --only-target "Visible Cache" \
+   || ! run_test_case "Hidden Risk JSON Fixture Danger" 0 "hr_fix_danger.json" \
+       --config "$TEST_ENV_DIR/hidden_risk_json.conf" --dry-run --json --risk danger \
+   || ! python3 - "$TEST_ENV_DIR" <<'PY'
+import json, os, sys
+
+d = sys.argv[1]
+def load(name):
+    with open(os.path.join(d, name), encoding="utf-8") as f:
+        return json.load(f)
+
+expected_keys = ["config", "total_reclaimable_bytes", "total_reclaimable_human", "would_skip", "hidden_by_risk", "targets"]
+
+pair_safe = load("hr_pair_safe.json")
+assert list(pair_safe.keys()) == expected_keys, pair_safe
+assert pair_safe["hidden_by_risk"] == {"medium": 1, "danger": 1, "names": ["Hidden Cache", "Danger Cache"]}, pair_safe
+assert pair_safe["total_reclaimable_bytes"] == 32, pair_safe
+assert [t["name"] for t in pair_safe["targets"]] == ["Visible Cache"], pair_safe
+
+pair_danger = load("hr_pair_danger.json")
+assert pair_danger["hidden_by_risk"] == {"medium": 0, "danger": 0, "names": []}, pair_danger
+assert pair_danger["total_reclaimable_bytes"] == 32 + 64 + 128, pair_danger
+assert [t["name"] for t in pair_danger["targets"]] == ["Visible Cache", "Hidden Cache", "Danger Cache"], pair_danger
+
+pair_only_med = load("hr_pair_only_med.json")
+assert pair_only_med["hidden_by_risk"] == {"medium": 1, "danger": 0, "names": ["Hidden Cache"]}, pair_only_med
+assert pair_only_med["total_reclaimable_bytes"] == 0, pair_only_med
+assert pair_only_med["targets"] == [], pair_only_med
+
+pair_only_safe = load("hr_pair_only_safe.json")
+assert pair_only_safe["hidden_by_risk"] == {"medium": 0, "danger": 0, "names": []}, pair_only_safe
+assert pair_only_safe["total_reclaimable_bytes"] == 32, pair_only_safe
+
+fix_default = load("hr_fix_default.json")
+assert fix_default["hidden_by_risk"] == {
+    "medium": 5,
+    "danger": 1,
+    "names": ["Hidden Cache", "Wild Cache", "Browser, GPU", "GPU", "Danger Cache"],
+}, fix_default
+assert fix_default["total_reclaimable_bytes"] == 32, fix_default
+
+fix_medium = load("hr_fix_medium.json")
+assert fix_medium["hidden_by_risk"] == {"medium": 0, "danger": 1, "names": ["Danger Cache"]}, fix_medium
+
+fix_nodanger = load("hr_fix_nodanger.json")
+assert fix_nodanger["hidden_by_risk"] == {
+    "medium": 5,
+    "danger": 0,
+    "names": ["Hidden Cache", "Wild Cache", "Browser, GPU", "GPU"],
+}, fix_nodanger
+
+fix_only_safe = load("hr_fix_only_safe.json")
+assert fix_only_safe["hidden_by_risk"] == {"medium": 0, "danger": 0, "names": []}, fix_only_safe
+
+fix_danger = load("hr_fix_danger.json")
+assert fix_danger["hidden_by_risk"] == {"medium": 0, "danger": 0, "names": []}, fix_danger
+PY
+then
+  echo -e "${RED}FAIL: dry-run JSON hidden_by_risk mismatch.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: dry-run JSON reports hidden_by_risk counts and names without sizing hidden targets.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

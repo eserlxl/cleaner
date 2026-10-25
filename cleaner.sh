@@ -1202,6 +1202,12 @@ emit_dry_run_json() {
   printf '"total_reclaimable_bytes":%s,' "$total_reclaimable_bytes"
   printf '"total_reclaimable_human":"%s",' "$(json_escape "$(format_bytes "$total_reclaimable_bytes")")"
   printf '"would_skip":%s,' "$preview_would_skip"
+  printf '"hidden_by_risk":{"medium":%s,"danger":%s,"names":[' "$hidden_medium" "$hidden_danger"
+  for i in "${!hidden_risk_name_list[@]}"; do
+    [[ "$i" -gt 0 ]] && printf ','
+    printf '"%s"' "$(json_escape "${hidden_risk_name_list[$i]}")"
+  done
+  printf ']},'
   printf '"targets":['
   for i in "${!json_names[@]}"; do
     if [[ "$first" == true ]]; then
@@ -4400,6 +4406,7 @@ total_in_use_bytes=0
 hidden_medium=0
 hidden_danger=0
 hidden_risk_names=""
+hidden_risk_name_list=()
 declare -A hidden_risk_seen=()
 # Targets whose process starts after planning, blocked again in the cleanup loop.
 runtime_blocked_count=0
@@ -4485,6 +4492,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     if [[ -z "${hidden_risk_seen[$name]+set}" ]]; then
       hidden_risk_seen[$name]=1
       hidden_risk_names+="${hidden_risk_names:+, }$name"
+      hidden_risk_name_list+=("$name")
     fi
     continue
   fi
