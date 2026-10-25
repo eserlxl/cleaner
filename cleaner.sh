@@ -3022,8 +3022,16 @@ check_path_safety() {
 # Count tracked files without exposing filenames or querying Git with privileges.
 # The scanned repository is untrusted: its .git/config can name a core.fsmonitor
 # command that ls-files would run, so fsmonitor is forced off on every call.
+# Strip repository-selecting environment variables (set by hooks or git rebase
+# --exec) so git always inspects the target's own repository and index.
 # Returns 1 when a work tree's tracked files cannot be listed, or when git
 # refuses the repository, so the caller fails closed.
+git_isolated() {
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+    -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    -u GIT_COMMON_DIR -u GIT_NAMESPACE git "$@"
+}
+
 count_git_tracked() {
   local target_path="$1" git_dir="$1" pathspec=. count=0 inside_work_tree
   if [[ "$EUID" -ne 0 ]] && command -v git >/dev/null 2>&1; then
@@ -3034,12 +3042,12 @@ count_git_tracked() {
     # rev-parse exits non-zero both for a refused repository and for a path
     # that is not a repository. Fail closed only when the same probe succeeds
     # with safe.directory='*' (git refused a real repository).
-    if inside_work_tree=$(git -c core.fsmonitor=false -C "$git_dir" rev-parse --is-inside-work-tree 2>/dev/null); then
+    if inside_work_tree=$(git_isolated -c core.fsmonitor=false -C "$git_dir" rev-parse --is-inside-work-tree 2>/dev/null); then
       if [[ "$inside_work_tree" == true ]]; then
-        count=$(git -c core.fsmonitor=false --literal-pathspecs -C "$git_dir" ls-files -z -- "$pathspec" 2>/dev/null \
+        count=$(git_isolated -c core.fsmonitor=false --literal-pathspecs -C "$git_dir" ls-files -z -- "$pathspec" 2>/dev/null \
           | tr -cd '\000' | wc -c) || return 1
       fi
-    elif git -c core.fsmonitor=false -c safe.directory='*' -C "$git_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    elif git_isolated -c core.fsmonitor=false -c safe.directory='*' -C "$git_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
       return 1
     fi
   fi

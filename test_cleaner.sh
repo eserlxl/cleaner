@@ -296,6 +296,39 @@ PY
   echo -e "${GREEN}PASS: Git-tracked targets and all contents survive --force; ignored and non-repo output is cleaned.${NC}"
 done
 
+# Inherited GIT_DIR / GIT_INDEX_FILE from hooks or rebase --exec must not blind the guard.
+setup_mock_env
+mkdir -p "$MOCK_HOME/proj/build" "$MOCK_HOME/plain-build" "$TEST_ENV_DIR/empty_git_dir"
+printf 'cache\n' > "$MOCK_HOME/proj/build/CMakeCache.txt"
+printf 'source\n' > "$MOCK_HOME/proj/build/tracked.c"
+printf 'output\n' > "$MOCK_HOME/plain-build/output.bin"
+HOME="$MOCK_HOME" git init -q "$MOCK_HOME/proj"
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" config user.name 'Cleaner Test'
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" config user.email 'cleaner-test@example.invalid'
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" add -- build/tracked.c
+HOME="$MOCK_HOME" git -C "$MOCK_HOME/proj" -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+  commit -qm 'Track source in build tree'
+cat > "$TEST_ENV_DIR/git_guard_env.conf" <<'GIT_GUARD_ENV'
+safe|Tracked Build|$HOME/proj/build|Build tree with source|0||filter:cxx_build
+safe|Tracked File|$HOME/proj/build/tracked.c|Single source file|0||
+safe|Plain Build|$HOME/plain-build|Outside any repository|0||
+GIT_GUARD_ENV
+export GIT_INDEX_FILE="$TEST_ENV_DIR/missing_index" GIT_DIR="$TEST_ENV_DIR/empty_git_dir"
+if ! run_test_case "Git-Tracked Target Guard Inherited Git Env" 0 "git_guard_env.log" \
+     --config "$TEST_ENV_DIR/git_guard_env.conf" --force \
+   || ! grep -qF "[SKIP] Tracked Build: skipped: contains 1 git-tracked file(s) under '$MOCK_HOME/proj/build'." \
+     "$TEST_ENV_DIR/git_guard_env.log" \
+   || ! grep -qF "[SKIP] Tracked File: skipped: contains 1 git-tracked file(s)" "$TEST_ENV_DIR/git_guard_env.log" \
+   || [[ ! -f "$MOCK_HOME/proj/build/tracked.c" || ! -f "$MOCK_HOME/proj/build/CMakeCache.txt" \
+      || -e "$MOCK_HOME/plain-build" ]]; then
+  unset GIT_INDEX_FILE GIT_DIR
+  echo -e "${RED}FAIL: Inherited GIT_DIR/GIT_INDEX_FILE blinded the git-tracked guard or preserved plain output.${NC}"
+  cat "$TEST_ENV_DIR/git_guard_env.log"
+  exit 1
+fi
+unset GIT_INDEX_FILE GIT_DIR
+echo -e "${GREEN}PASS: Git-tracked guard ignores inherited GIT_DIR and GIT_INDEX_FILE and preserves tracked targets.${NC}"
+
 # A work tree whose index cannot be read fails closed and skips the target.
 setup_mock_env
 mkdir -p "$MOCK_HOME/proj/build" "$MOCK_HOME/plain-build"
