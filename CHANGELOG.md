@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-25
+
 ### Added
 
 - Cleanup metrics now include `linux_cleaner_last_run_duration_seconds`, the elapsed seconds from the parsed `Result:` line. Runs that exit before that line omit the sample instead of reporting `0`.
@@ -40,11 +42,15 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- A cleanup narrowed with `--only-target` or `--exclude-target` no longer walks the directory trees of wildcard rows it filters out; on the shipped config `--list-targets --only-target NPM` drops from about 13 seconds to under one.
 - Document the per-artifact default path, override, `$HOME`-confinement, runtime permission/symlink protection, and failure behavior contract in one table (`docs/reports-and-logs.md#artifact-locations`), with links from `docs/safety.md` and `docs/QUARANTINE-OPS.md`.
 - Document which operations may use `sudo` in one privilege matrix (`docs/safety.md`), including the unattended difference: cleanup skips a root-requiring target, while `--restore` fails that record and exits 1.
 
 ### Fixed
 
+- On a non-GNU userland, a cleanup that `--min-reclaim` or `--min-free` would skip now stops with the GNU refusal before inline quarantine retention runs; it previously purged old sessions and exited `0`.
+- The git-tracked target guard ignores `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` inherited from the environment (git sets them inside hooks and `git rebase --exec`), so a run started there no longer inspects another repository and cleans tracked files.
+- A user-level prune action credits `0` bytes when a free-space probe fails, instead of counting the filesystem's whole free space as reclaimed in the summary, saved report, JSON and metrics.
 - `--restore` and `--restore --dry-run` refuse structurally malformed `quarantine.meta` records before path probes or `sudo` when `rel_path` is empty, starts with `/`, or has a `..` component, `original_path` is not `/`-rooted or has a `..` component, `use_sudo` is neither `true` nor `false`, or a non-empty `uid`/`gid` is not all ASCII digits. Real restores report the failed rule on stderr, log `outcome=failed`, keep the payload and metadata line for recovery while restoring valid siblings, and exit `1`; previews print `invalid record  <original_path>` and exit `0`.
 - `--log` works when HOME is a symlink: the inside-HOME check compared the resolved log path with the unresolved HOME and disabled logging.
 - Config validation rejects a positive `MIN_AGE_DAYS` on an `action:*` row; the action ignored the age, so the plan showed an age-filtered estimate for a command that cleans the whole cache.
@@ -684,7 +690,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.8.0
 [1.7.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.1
 [1.7.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.0
 [1.6.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.6.0
