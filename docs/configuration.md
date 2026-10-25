@@ -62,10 +62,10 @@ User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `a
 
 ## Wildcard paths
 
-A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target per matching directory**, each checked individually by the safety pipeline:
+A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target per matching directory**, each checked individually by the safety pipeline; a match nested inside an already accepted match is not emitted again:
 
 - **Fixed depth by default**: Matches must sit at the exact depth after the literal prefix (e.g. `$HOME/src/*/build*` matches `~/src/app/build` but not `~/src/a/b/build`).
-- **`**` spans nesting levels**: A `**` component matches one or more directory levels, bounded at **10 levels** (`GLOB_RECURSION_MAX_DEPTH=10`) below the literal prefix.
+- **`**` spans nesting levels**: A `**` component matches one or more directory levels, searched at least **10 levels** (`GLOB_RECURSION_MAX_DEPTH=10`) below the literal prefix, or as deep as the pattern itself when it has more components.
 - **Directories only**: Wildcard expansion matches directories (`-type d`), never individual files.
 - **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing newlines, `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` tokens are skipped with a warning; a pattern with no matches is not an error.
 

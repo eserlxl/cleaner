@@ -25,7 +25,7 @@ this is not a power-loss durability guarantee. An interrupted rewrite can leave 
 
 ## Disk growth primer
 
-A `--trash` run creates a session only when a target is actually quarantined. An action-only or nothing-to-clean run creates none, so `--restore latest` can select an older session; check `--list-sessions` first. Bound growth: `estimated_disk = sessions × average_session_size`. Pair daily trash with `older-than` retention (see [RUNBOOK.md](../RUNBOOK.md)).
+A `--trash` run creates a session when it starts quarantining an ordinary target; a session whose every move failed stays behind without payload. An action-only or nothing-to-clean run creates none, so `--restore latest` can select an older session; check `--list-sessions` first. Bound growth: `estimated_disk = sessions × average_session_size`. Pair daily trash with `older-than` retention (see [RUNBOOK.md](../RUNBOOK.md)).
 
 ## Test contract cross-reference
 
