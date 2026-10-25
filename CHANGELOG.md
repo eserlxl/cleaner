@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Cleanup metrics now include `linux_cleaner_last_run_duration_seconds`, the elapsed seconds from the parsed `Result:` line. Runs that exit before that line omit the sample instead of reporting `0`.
 - Dry-run JSON (`--dry-run --json`) now includes `hidden_by_risk` (`{"medium":N,"danger":M,"names":[...]}`), reporting the counts and names of selected targets above the `--risk` ceiling without analysing them.
 - Cleanup metrics now include `linux_cleaner_quarantine_bytes`, the current `du -sb` size of `~/.cache/linux-cleaner/quarantine` after inline retention, including previous sessions. An absent directory reports `0`; measurement failures warn and omit the sample without affecting the other gauges or cleanup status.
 - `--purge-sessions SELECTOR --dry-run` previews selected session names and sizes under `Would purge`, reporting held sessions skipped by bulk selectors, without confirmation, deletion, locking, or log/report writes, even with inherited `LINUX_CLEANER_FORCE`. It uses the real purge's selector and hold rules, rejects JSON, and preserves later cleanup-flag precedence (`--dry-run --force` still purges).

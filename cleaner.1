@@ -1329,8 +1329,11 @@ lines for
 (0 when any operation failed or the run was interrupted),
 .BR linux_cleaner_targets{result="cleaned|skipped|failed"} ,
 .BR linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"} ,
+.BR linux_\:cleaner_\:last_\:run_\:duration_\:seconds ,
 and
 .BR linux_cleaner_quarantine_bytes .
+The duration gauge is the elapsed seconds of the parsed result line. It is
+omitted when that line was not written.
 The quarantine gauge measures the current size of
 .I ~/.cache/linux-cleaner/quarantine
 in bytes using

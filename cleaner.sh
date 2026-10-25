@@ -3643,7 +3643,7 @@ write_metrics_textfile() {
 write_cleanup_metrics() {
   local metrics_file="${LINUX_CLEANER_METRICS_FILE:-}"
   [[ -n "$metrics_file" ]] || return 0
-  local line cleaned=0 skipped=0 failed=0 quarantined_bytes=0 permanent_bytes=0 interrupted="" success=1 now
+  local line cleaned=0 skipped=0 failed=0 quarantined_bytes=0 permanent_bytes=0 interrupted="" success=1 now elapsed=""
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
       "Result: cleaned="*)
@@ -3651,6 +3651,7 @@ write_cleanup_metrics() {
           cleaned="${BASH_REMATCH[1]}"
           skipped="${BASH_REMATCH[2]}"
           failed="${BASH_REMATCH[3]}"
+          elapsed="${BASH_REMATCH[4]}"
         fi
         ;;
       "Accounted bytes:"*)
@@ -3682,6 +3683,15 @@ write_cleanup_metrics() {
       "linux_cleaner_quarantine_bytes ${quarantine_bytes}"
     )
   fi
+  # Absent until the Result line is parsed, so an early exit does not report 0.
+  local -a duration_metrics=()
+  if [[ -n "$elapsed" ]]; then
+    duration_metrics=(
+      "# HELP linux_cleaner_last_run_duration_seconds Elapsed seconds of the last cleanup run."
+      "# TYPE linux_cleaner_last_run_duration_seconds gauge"
+      "linux_cleaner_last_run_duration_seconds ${elapsed}"
+    )
+  fi
   now=$(date +%s 2>/dev/null) || now=0
   if write_metrics_textfile "$metrics_file" LINUX_CLEANER_METRICS_FILE cleanup \
     "# HELP linux_cleaner_last_run_timestamp_seconds Unix timestamp of the last cleanup run." \
@@ -3699,6 +3709,7 @@ write_cleanup_metrics() {
     "# TYPE linux_cleaner_reclaimed_bytes gauge" \
     "linux_cleaner_reclaimed_bytes{kind=\"quarantined\"} ${quarantined_bytes}" \
     "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}" \
+    "${duration_metrics[@]}" \
     "${quarantine_metrics[@]}"; then
     CLEANUP_METRICS_WRITTEN=true
   fi

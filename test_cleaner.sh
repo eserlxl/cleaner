@@ -14293,6 +14293,73 @@ METRICS_SIZE_PY
   setup_mock_env
 done
 
+# Last-run duration matches the report elapsed seconds. An early exit that still
+# writes metrics, before any result line, omits the sample.
+echo -e "\n${BOLD}Test Case: Prometheus Last Run Duration${NC}"
+setup_mock_env
+duration_dir="$TEST_ENV_DIR/duration_metrics"
+mkdir -p "$duration_dir" "$MOCK_HOME/.cache/duration_target"
+duration_file="$duration_dir/linux_cleaner.prom"
+truncate -s 2049 "$MOCK_HOME/.cache/duration_target/file.txt"
+cat > "$TEST_ENV_DIR/duration.conf" <<EOF
+safe|Duration Target|$MOCK_HOME/.cache/duration_target/file.txt|Duration test target|0||
+EOF
+if ! LINUX_CLEANER_METRICS_FILE="$duration_file" \
+     run_test_case "Prometheus Duration Completed Run" 0 "duration_completed.log" \
+       --config "$TEST_ENV_DIR/duration.conf" --clean --force \
+   || ! run_test_case "Prometheus Duration Report JSON" 0 "duration_completed.json" --report --json \
+   || ! python3 - "$duration_file" "$TEST_ENV_DIR/duration_completed.json" <<'DURATION_PY'
+import json, pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+report = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+lines = text.splitlines()
+elapsed = report["elapsed_seconds"]
+assert isinstance(elapsed, int) and elapsed >= 0, report
+sample = f"linux_cleaner_last_run_duration_seconds {elapsed}"
+perm = 'linux_cleaner_reclaimed_bytes{kind="permanent"} ' + str(report["permanent_bytes"])
+assert perm in lines, (perm, lines, report)
+perm_i = lines.index(perm)
+help_line = "# HELP linux_cleaner_last_run_duration_seconds Elapsed seconds of the last cleanup run."
+type_line = "# TYPE linux_cleaner_last_run_duration_seconds gauge"
+assert lines[perm_i + 1] == help_line, lines
+assert lines[perm_i + 2] == type_line, lines
+assert lines[perm_i + 3] == sample, (sample, lines, report)
+q_help = "# HELP linux_cleaner_quarantine_bytes Current quarantine size in bytes."
+assert lines[perm_i + 4] == q_help, lines
+assert "linux_cleaner_last_run_success 1" in lines, lines
+assert f'linux_cleaner_targets{{result="cleaned"}} {report["cleaned"]}' in lines, (lines, report)
+assert f'linux_cleaner_targets{{result="skipped"}} {report["skipped"]}' in lines, (lines, report)
+assert f'linux_cleaner_targets{{result="failed"}} {report["failed"]}' in lines, (lines, report)
+assert f'linux_cleaner_reclaimed_bytes{{kind="quarantined"}} {report["quarantined_bytes"]}' in lines, (lines, report)
+DURATION_PY
+then
+  echo -e "${RED}FAIL: completed cleanup duration did not match the report elapsed seconds.${NC}"
+  cat "$duration_file" "$TEST_ENV_DIR/duration_completed.log" "$TEST_ENV_DIR/duration_completed.json" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: completed cleanup duration matches the report elapsed seconds.${NC}"
+
+mkdir -p "$MOCK_HOME/.cache/duration_target"
+truncate -s 512 "$MOCK_HOME/.cache/duration_target/file.txt"
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+mkdir -p "$MOCK_HOME/.cache/linux-cleaner"
+printf 'not a directory\n' > "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+rm -f "$duration_file"
+if ! LINUX_CLEANER_METRICS_FILE="$duration_file" \
+     run_test_case "Prometheus Duration Early Exit" 1 "duration_early.log" \
+       --config "$TEST_ENV_DIR/duration.conf" --clean --trash --force \
+   || ! grep -qx 'linux_cleaner_last_run_success 0' "$duration_file" \
+   || ! grep -qx 'linux_cleaner_targets{result="cleaned"} 0' "$duration_file" \
+   || ! grep -qx 'linux_cleaner_reclaimed_bytes{kind="permanent"} 0' "$duration_file" \
+   || grep -q 'linux_cleaner_last_run_duration_seconds' "$duration_file"; then
+  rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  echo -e "${RED}FAIL: early exit before a result line wrote a duration sample.${NC}"
+  cat "$duration_file" "$TEST_ENV_DIR/duration_early.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+echo -e "${GREEN}PASS: early exit before a result line omits the duration sample.${NC}"
+
 # --doctor: read-only environment checklist (config resolution and schema, check_gnu_userland,
 # pgrep, flock, git, sudo -n, notify-send, user timers, quarantine session count).
 echo -e "\n${BOLD}Test Case: Doctor Mode Environment Checklist${NC}"
