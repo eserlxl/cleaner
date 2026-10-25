@@ -4836,6 +4836,14 @@ if [[ "$DRY_RUN" = true ]]; then
   exit "$preview_exit_status"
 fi
 
+# GNU-userland preflight: this tool relies on GNU coreutils/findutils flags on
+# the deletion path; check them before any destructive operation.
+if check_gnu_userland; then GNU_USERLAND_OK=true; else GNU_USERLAND_OK=false; fi
+if [[ "$GNU_USERLAND_OK" != true ]]; then
+  echo -e "${RED}Error: GNU coreutils are required for cleanup (du -sb, stat -c, find -print0/-quit, GNU realpath). Refusing to delete on a non-GNU userland; re-run with --dry-run for a best-effort preview.${NC}" >&2
+  exit 1
+fi
+
 handle_cleanup_signal() {
   local sig="$1" code="$2" context="${3:-before all targets finished}"
   trap - INT TERM
@@ -4918,14 +4926,6 @@ elif [[ "$INTERACTIVE" = false ]]; then
     echo -e "${YELLOW}Cleanup aborted.${NC}"
     exit 0
   fi
-fi
-
-# GNU-userland preflight: this tool relies on GNU coreutils/findutils flags on
-# the deletion path; check them before any destructive operation.
-if check_gnu_userland; then GNU_USERLAND_OK=true; else GNU_USERLAND_OK=false; fi
-if [[ "$GNU_USERLAND_OK" != true ]]; then
-  echo -e "${RED}Error: GNU coreutils are required for cleanup (du -sb, stat -c, find -print0/-quit, GNU realpath). Refusing to delete on a non-GNU userland; re-run with --dry-run for a best-effort preview.${NC}" >&2
-  exit 1
 fi
 
 # Second pass: Perform deletion or move to quarantine

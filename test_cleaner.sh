@@ -3504,6 +3504,32 @@ else
   echo -e "${RED}FAIL: non-GNU --force did not exit 1.${NC}"
   exit 1
 fi
+# (c) Non-GNU userland refuses before a skipped --min-reclaim cleanup can run quarantine retention
+setup_mock_env
+gnu_skip_qbase="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+gnu_skip_old_sess="$gnu_skip_qbase/2020-01-01_00-00-00"
+mkdir -p "$gnu_skip_old_sess/0_Old_Target"
+printf 'old-quarantined\n' > "$gnu_skip_old_sess/0_Old_Target/old.txt"
+printf 'full|0_Old_Target|%s/.cache/old_target|false|%s|%s\n' \
+  "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$gnu_skip_old_sess/quarantine.meta"
+touch -d "10 days ago" "$gnu_skip_old_sess"
+# shellcheck disable=SC2016  # literal $1/$@ are the stub's own positionals
+printf '#!/bin/sh\ncase "$1" in -c) exit 1;; esac; exec /usr/bin/stat "$@"\n' > "$TEST_ENV_DIR/bin/stat"
+chmod +x "$TEST_ENV_DIR/bin/stat"
+if run_test_case "GNU Guard Refuses Before Skipped Cleanup Retention" 1 "gnu_refuse_skip_retention.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --clean --force --min-reclaim 999T --trash-keep-days 0; then
+  if grep -q "GNU coreutils are required" "$TEST_ENV_DIR/gnu_refuse_skip_retention.log" && \
+     [[ -d "$gnu_skip_old_sess" ]]; then
+    echo -e "${GREEN}PASS: GNU guard refused --min-reclaim skip before retention on a non-GNU userland; quarantine session was preserved.${NC}"
+  else
+    echo -e "${RED}FAIL: GNU guard did not refuse or purged quarantine session on a non-GNU userland.${NC}"
+    cat "$TEST_ENV_DIR/gnu_refuse_skip_retention.log"
+    exit 1
+  fi
+else
+  echo -e "${RED}FAIL: non-GNU skipped cleanup with retention did not exit 1.${NC}"
+  exit 1
+fi
 
 # 42. Test Case: action_required_binary maps each action to the binary its arm invokes
 setup_mock_env
