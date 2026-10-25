@@ -42,6 +42,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `--restore` and `--restore --dry-run` refuse structurally malformed `quarantine.meta` records before path probes or `sudo` when `rel_path` is empty, starts with `/`, or has a `..` component, `original_path` is not `/`-rooted or has a `..` component, `use_sudo` is neither `true` nor `false`, or a non-empty `uid`/`gid` is not all ASCII digits. Real restores report the failed rule on stderr, log `outcome=failed`, keep the payload and metadata line for recovery while restoring valid siblings, and exit `1`; previews print `invalid record  <original_path>` and exit `0`.
 - `--log` works when HOME is a symlink: the inside-HOME check compared the resolved log path with the unresolved HOME and disabled logging.
 - Config validation rejects a positive `MIN_AGE_DAYS` on an `action:*` row; the action ignored the age, so the plan showed an age-filtered estimate for a command that cleans the whole cache.
 - Skip `filter:cxx_build` targets with `activity check failed` when an idle probe fails without finding recent activity, both during preview and immediately before cleanup, so unreadable build subdirectories cannot cause partial deletion.

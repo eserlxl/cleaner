@@ -4719,8 +4719,10 @@ with tempfile.TemporaryDirectory(prefix="cleaner-restore-exact-", dir="/tmp") as
     relative_session.mkdir(parents=True)
     (relative_session / "payload").write_text("relative fixture\n")
     (relative_session / "quarantine.meta").write_text(f"full|payload|relative-cache|false|{os.getuid()}|{os.getgid()}\n")
-    run("literal relative stored path", ["--restore", "latest", "--only-exact", "relative-cache"])
-    assert (home / "relative-cache").read_text() == "relative fixture\n" and not relative_session.exists()
+    # A relative ORIGINAL_PATH is never written by cleaner; restore refuses it as malformed.
+    run("literal relative stored path refused", ["--restore", "latest", "--only-exact", "relative-cache"],
+        error="invalid original path 'relative-cache'")
+    assert not (home / "relative-cache").exists() and (relative_session / "payload").is_file()
 RESTORE_EXACT_PY
 
 echo -e "\n${BOLD}Test Case: LINUX_CLEANER_JSON Requires Dry Run${NC}"
@@ -14862,6 +14864,114 @@ for freshness_kind in file build; do
   done
 done
 echo -e "${GREEN}PASS: a single file or cxx_build tree rewritten after analysis is skipped for --clean and --trash; a still-old control is cleaned.${NC}"
+
+# Structurally malformed quarantine.meta records (rules a-d) are refused before
+# path probes or sudo in both --restore --dry-run and real --restore, while a
+# valid sibling record still previews and restores normally.
+echo -e "\n${BOLD}Test Case: Refuse Structurally Malformed Quarantine Metadata Records${NC}"
+setup_mock_env
+mal_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-05-05_00-00-00"
+mkdir -p "$MOCK_HOME/.cache/linux-cleaner/quarantine/bad_rel" \
+  "$mal_session/1_bad_orig" "$mal_session/2_bad_sudo" "$mal_session/3_bad_uid" "$mal_session/4_valid"
+printf 'escape-rel\n' > "$MOCK_HOME/.cache/linux-cleaner/quarantine/bad_rel/f"
+printf 'bad-orig\n' > "$mal_session/1_bad_orig/f"
+printf 'bad-sudo\n' > "$mal_session/2_bad_sudo/f"
+printf 'bad-uid\n' > "$mal_session/3_bad_uid/f"
+printf 'valid-sibling\n' > "$mal_session/4_valid/f"
+cat > "$mal_session/quarantine.meta" <<EOF
+full|../bad_rel|$MOCK_HOME/.cache/dest_bad_rel|true|0|0
+full|1_bad_orig|relative/bad_orig|true|0|0
+full|2_bad_sudo|$MOCK_HOME/.cache/dest_bad_sudo|yes|0|0
+full|3_bad_uid|$MOCK_HOME/.cache/dest_bad_uid|true|root|0
+full|4_valid|$MOCK_HOME/.cache/dest_valid|false|$(id -u)|$(id -g)
+EOF
+cp "$mal_session/quarantine.meta" "$TEST_ENV_DIR/mal_meta.before"
+cat > "$TEST_ENV_DIR/bin/sudo" <<'MAL_SUDO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/mal_sudo.calls"
+exit 1
+MAL_SUDO
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+mal_ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$mal_ops_log" "$TEST_ENV_DIR/mal_sudo.calls"
+
+if ! run_test_case "Restore Preview Malformed Records" 0 "mal_preview.log" \
+       --restore 2020-05-05_00-00-00 --dry-run --log \
+   || ! grep -Fxq "invalid record  $MOCK_HOME/.cache/dest_bad_rel" "$TEST_ENV_DIR/mal_preview.log" \
+   || ! grep -Fxq "invalid record  relative/bad_orig" "$TEST_ENV_DIR/mal_preview.log" \
+   || ! grep -Fxq "invalid record  $MOCK_HOME/.cache/dest_bad_sudo" "$TEST_ENV_DIR/mal_preview.log" \
+   || ! grep -Fxq "invalid record  $MOCK_HOME/.cache/dest_bad_uid" "$TEST_ENV_DIR/mal_preview.log" \
+   || ! grep -Fxq "would restore  $MOCK_HOME/.cache/dest_valid" "$TEST_ENV_DIR/mal_preview.log" \
+   || ! grep -Fxq "Dry-run: nothing restored." "$TEST_ENV_DIR/mal_preview.log" \
+   || [[ -e "$TEST_ENV_DIR/mal_sudo.calls" ]] \
+   || [[ -e "$mal_ops_log" ]] \
+   || [[ -e "$MOCK_HOME/.cache/dest_valid" ]] \
+   || [[ ! -f "$mal_session/4_valid/f" ]] \
+   || ! cmp -s "$mal_session/quarantine.meta" "$TEST_ENV_DIR/mal_meta.before"; then
+  echo -e "${RED}FAIL: --restore --dry-run did not preview malformed records as 'invalid record' without side effects.${NC}"
+  cat "$TEST_ENV_DIR/mal_preview.log" 2>/dev/null || true
+  exit 1
+fi
+
+if ! run_test_case "Restore Real Malformed Records" 1 "mal_restore.log" \
+       --restore 2020-05-05_00-00-00 --log \
+   || [[ -e "$TEST_ENV_DIR/mal_sudo.calls" ]] \
+   || ! grep -qxF "valid-sibling" "$MOCK_HOME/.cache/dest_valid/f" \
+   || [[ -e "$mal_session/4_valid" ]] \
+   || [[ ! -f "$MOCK_HOME/.cache/linux-cleaner/quarantine/bad_rel/f" ]] \
+   || [[ ! -f "$mal_session/1_bad_orig/f" ]] \
+   || [[ ! -f "$mal_session/2_bad_sudo/f" ]] \
+   || [[ ! -f "$mal_session/3_bad_uid/f" ]] \
+   || [[ -e "$MOCK_HOME/.cache/dest_bad_rel" ]] \
+   || [[ -e "$MOCK_HOME/.cache/dest_bad_sudo" ]] \
+   || [[ -e "$MOCK_HOME/.cache/dest_bad_uid" ]] \
+   || grep -q '4_valid' "$mal_session/quarantine.meta" \
+   || ! grep -Fxq "full|../bad_rel|$MOCK_HOME/.cache/dest_bad_rel|true|0|0" "$mal_session/quarantine.meta" \
+   || ! grep -Fxq "full|1_bad_orig|relative/bad_orig|true|0|0" "$mal_session/quarantine.meta" \
+   || ! grep -Fxq "full|2_bad_sudo|$MOCK_HOME/.cache/dest_bad_sudo|yes|0|0" "$mal_session/quarantine.meta" \
+   || ! grep -Fxq "full|3_bad_uid|$MOCK_HOME/.cache/dest_bad_uid|true|root|0" "$mal_session/quarantine.meta" \
+   || ! grep -qF "Refusing malformed quarantine.meta record for '$MOCK_HOME/.cache/dest_bad_rel' (invalid relative path '../bad_rel')" "$TEST_ENV_DIR/mal_restore.log" \
+   || ! grep -qF "Refusing malformed quarantine.meta record for 'relative/bad_orig' (invalid original path 'relative/bad_orig')" "$TEST_ENV_DIR/mal_restore.log" \
+   || ! grep -qF "Refusing malformed quarantine.meta record for '$MOCK_HOME/.cache/dest_bad_sudo' (invalid use_sudo 'yes'" "$TEST_ENV_DIR/mal_restore.log" \
+   || ! grep -qF "Refusing malformed quarantine.meta record for '$MOCK_HOME/.cache/dest_bad_uid' (invalid uid/gid 'root:0'" "$TEST_ENV_DIR/mal_restore.log" \
+   || ! grep -q "mode=restore session='2020-05-05_00-00-00' path='$MOCK_HOME/.cache/dest_bad_rel' outcome=failed" "$mal_ops_log" \
+   || ! grep -q "mode=restore session='2020-05-05_00-00-00' path='relative/bad_orig' outcome=failed" "$mal_ops_log" \
+   || ! grep -q "mode=restore session='2020-05-05_00-00-00' path='$MOCK_HOME/.cache/dest_bad_sudo' outcome=failed" "$mal_ops_log" \
+   || ! grep -q "mode=restore session='2020-05-05_00-00-00' path='$MOCK_HOME/.cache/dest_bad_uid' outcome=failed" "$mal_ops_log" \
+   || ! grep -q "mode=restore session='2020-05-05_00-00-00' path='$MOCK_HOME/.cache/dest_valid' outcome=success" "$mal_ops_log"; then
+  echo -e "${RED}FAIL: real restore did not refuse malformed records (a)-(d), log failed outcomes, keep their payload/meta, and restore the valid sibling.${NC}"
+  cat "$TEST_ENV_DIR/mal_restore.log" "$mal_session/quarantine.meta" "$mal_ops_log" 2>/dev/null || true
+  exit 1
+fi
+
+# Additional component shapes for rules (a), (b), and (d) (empty/leading-slash/dotdot
+# rel_path, dotdot original_path, and non-ASCII/non-numeric gid).
+setup_mock_env
+mal2_session="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-05-06_00-00-00"
+mkdir -p "$mal2_session/ok_rel"
+printf 'stay\n' > "$mal2_session/ok_rel/f"
+cat > "$mal2_session/quarantine.meta" <<EOF
+full||$MOCK_HOME/.cache/empty_rel|false|0|0
+full|/abs_rel|$MOCK_HOME/.cache/abs_rel|false|0|0
+full|..|$MOCK_HOME/.cache/dotdot_rel|false|0|0
+full|sub/..|$MOCK_HOME/.cache/end_dotdot_rel|false|0|0
+full|sub/../leaf|$MOCK_HOME/.cache/mid_dotdot_rel|false|0|0
+full|ok_rel|$MOCK_HOME/.cache/../escape_orig|false|0|0
+full|ok_rel|$MOCK_HOME/.cache/end_dotdot_orig/..|false|0|0
+full|ok_rel|$MOCK_HOME/.cache/bad_gid|false|0|١
+EOF
+if ! run_test_case "Restore Preview Additional Malformed Variants" 0 "mal2_preview.log" \
+       --restore 2020-05-06_00-00-00 --dry-run \
+   || [[ "$(grep -c '^invalid record  ' "$TEST_ENV_DIR/mal2_preview.log")" -ne 8 ]] \
+   || ! run_test_case "Restore Real Additional Malformed Variants" 1 "mal2_restore.log" \
+       --restore 2020-05-06_00-00-00 --log \
+   || [[ ! -f "$mal2_session/ok_rel/f" ]] \
+   || [[ "$(grep -c '^full|' "$mal2_session/quarantine.meta")" -ne 8 ]]; then
+  echo -e "${RED}FAIL: additional malformed quarantine.meta variants were not all refused.${NC}"
+  cat "$TEST_ENV_DIR/mal2_preview.log" "$TEST_ENV_DIR/mal2_restore.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: restore and restore preview refuse structurally malformed quarantine.meta records across rules (a)-(d) while restoring valid siblings.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

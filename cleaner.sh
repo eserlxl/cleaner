@@ -2524,6 +2524,30 @@ set_session_hold() {
   echo -e "${GREEN}Released session $name; normal purge and retention apply again.${NC}"
 }
 
+# Structural check on a trimmed quarantine.meta record before path probes or sudo.
+# Sets RESTORE_RECORD_ERROR to the failed rule description when returning non-zero.
+validate_restore_record() {
+  local rel_path="$1" original_path="$2" use_sudo="$3" uid="$4" gid="$5"
+  RESTORE_RECORD_ERROR=""
+  if [[ -z "$rel_path" || "$rel_path" == /* || "$rel_path" == ".." || "$rel_path" == ../* || "$rel_path" == */.. || "$rel_path" == */../* ]]; then
+    RESTORE_RECORD_ERROR="invalid relative path '$rel_path'"
+    return 1
+  fi
+  if [[ "$original_path" != /* || "$original_path" == ".." || "$original_path" == ../* || "$original_path" == */.. || "$original_path" == */../* ]]; then
+    RESTORE_RECORD_ERROR="invalid original path '$original_path'"
+    return 1
+  fi
+  if [[ "$use_sudo" != "true" && "$use_sudo" != "false" ]]; then
+    RESTORE_RECORD_ERROR="invalid use_sudo '$use_sudo' (must be true or false)"
+    return 1
+  fi
+  if [[ ( -n "$uid" && ! "$uid" =~ ^[[:digit:]]+$ ) || ( -n "$gid" && ! "$gid" =~ ^[[:digit:]]+$ ) ]]; then
+    RESTORE_RECORD_ERROR="invalid uid/gid '$uid:$gid' (must be ASCII digits)"
+    return 1
+  fi
+  return 0
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1" stream_rc=""
@@ -2569,7 +2593,7 @@ restore_quarantine() {
   
   # Read metadata line by line
   # Format: TYPE|RELATIVE_PATH|ORIGINAL_PATH|USE_SUDO|UID|GID
-  local type rel_path original_path use_sudo uid gid meta_line
+  local type rel_path original_path use_sudo uid gid meta_line RESTORE_RECORD_ERROR=""
   local overall_success=true
   local matched_any=false
   # rel_paths actually moved back out of quarantine. Under --only, the metadata is
@@ -2599,6 +2623,17 @@ restore_quarantine() {
     use_sudo=$(trim "$use_sudo")
     uid=$(trim "${uid:-}")
     gid=$(trim "${gid:-}")
+
+    if ! validate_restore_record "$rel_path" "$original_path" "$use_sudo" "$uid" "$gid"; then
+      if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
+        printf 'invalid record  %s\n' "$original_path"
+      else
+        echo -e "${RED}Error: Refusing malformed quarantine.meta record for '$original_path' (${RESTORE_RECORD_ERROR}). Skipping.${NC}" >&2
+        overall_success=false
+        log_restore_outcome "$restore_dir" "$original_path" failed
+      fi
+      continue
+    fi
     
     if [[ -z "$uid" || -z "$gid" ]]; then
       if [[ "$use_sudo" = true ]]; then

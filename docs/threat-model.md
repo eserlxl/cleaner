@@ -17,7 +17,7 @@ linux-cleaner is a safety-critical, configuration-driven cache cleaner.
 |----------|------------------|
 | Config file author | Operator controls config path |
 | `/etc/linux-cleaner/cleaner.conf` | System admin |
-| Quarantine tree and `quarantine.meta` | Trusted local state; restore consumes recorded paths, privilege use, and ownership (see the [privilege matrix](safety.md#privilege-matrix)) |
+| Quarantine tree and `quarantine.meta` | Trusted local state in a private `0700` tree owned by the user; restore structurally validates each record's relative path, `/`-rooted original path, boolean `use_sudo`, and numeric `uid`/`gid` before probing paths or invoking `sudo`, but metadata is not authenticated or tamper-proof and restore consumes recorded paths, privilege use, and ownership (see the [privilege matrix](safety.md#privilege-matrix)) |
 
 ## Threat Actors
 
@@ -92,7 +92,7 @@ GNU guard refuses every real cleanup (--clean, --force, --interactive, or LINUX_
 
 | Scenario | Control |
 |----------|---------|
-| Metadata tampering | Residual risk: restore trusts recorded paths and ownership; protect the quarantine tree from untrusted edits |
+| Metadata tampering | Structural refusal of records with an empty, `/`-leading, or `..` `rel_path`, a relative or `..` `original_path`, a `use_sudo` other than `true`/`false`, or a non-numeric `uid`/`gid` (kept in quarantine and logged as `failed`, or previewed as `invalid record`); residual risk: metadata is not authenticated or tamper-proof and restore trusts structurally valid paths and ownership in a private `0700` tree owned by the user — protect the quarantine tree from untrusted edits |
 | Multi-user disclosure of quarantined files | Each session directory is created atomically with mode `0700` (`mkdir -m 700`), and missing `~/.cache/linux-cleaner/quarantine` parents are created `0700` when created by the tool |
 | Restore conflicts | Restore with Conflict test (collision detection) |
 | Action vs trash confusion | irreversible action:* WARNING |
@@ -122,7 +122,7 @@ Primary threats: misconfiguration, config tampering, path escape, irreversible a
 |------|--------|
 | Live /etc config tampering | residual |
 | TOCTOU | residual |
-| Quarantine metadata tampering | residual; restore only trusted sessions |
+| Quarantine metadata tampering | residual; structural validation refuses malformed fields, but metadata is not authenticated or tamper-proof — restore only trusted sessions in a private `0700` tree owned by the user |
 
 ## Periodic refresh policy
 
