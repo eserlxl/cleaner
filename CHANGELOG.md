@@ -15,6 +15,14 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- Manual runs print `Daily timer: <state> risk=<risk> env=<path>` after the plan when `linux-cleaner-clean.timer` is installed, because they do not read the timer's `~/.config/linux-cleaner/env` and so may preview a different risk than the timer cleans. Runs whose stderr is the journal, such as the timer's own, and `--quiet` runs omit it.
+
+### Fixed
+
+- Package-cache actions (`paccache`, `pacman`, `apt`, `dnf`, `zypper`, `apk`) credited the whole planned cache size as reclaimed, even when the action kept most of it or removed nothing (`paccache -rk1` reporting no candidates still counted `6.01 GB`). They now credit the bytes that left the cache directory, measured again after the action, in the result, saved report, JSON and metrics. The plan marks their size as `(cache size; the action may keep part)`.
+
 ## [1.8.0] - 2026-10-25
 
 ### Added

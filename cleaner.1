@@ -23,8 +23,15 @@ and one \(lqHidden by risk: name, ...\(rq line.
 These targets are counted and named after name/path filters, without size analysis;
 they do not contribute to reclaimable bytes. Both lines are omitted when none are hidden.
 JSON and metrics are unchanged.
+When linux\-cleaner\-clean.timer is installed, a manual run then prints
+\(lqDaily timer: STATE risk=RISK env=PATH\(rq: the timer's is\-enabled state and the
+risk its ~/.config/linux\-cleaner/env sets (safe when unset; env=none without the file;
+risk=unknown and \(lq(not readable)\(rq when it cannot be read), because manual runs
+do not read that file.
+Runs whose stderr is the journal (JOURNAL_STREAM matches it), such as the timer's own,
+omit the line.
 .B \-\-quiet
-suppresses the plan report. After cleanup, a result report lists cleaned,
+suppresses the plan report and that line. After cleanup, a result report lists cleaned,
 skipped, and failed counts, bytes quarantined versus permanently reclaimed,
 the quarantine session path when one was created, and elapsed time.
 A trash cleanup that quarantined something then prints
@@ -322,8 +329,9 @@ Cleanup-target counts are unchanged.
 The byte fields are exact accounted integers, or null for historical or malformed
 byte records. New nothing-to-clean, minimum-reclaim and minimum-free skips
 record zero.
-Ordinary targets and system actions credit planned sizes; user prune actions
-credit free-space deltas clamped at zero. These estimates do not guarantee
+Ordinary targets credit planned sizes; system package actions credit the planned
+cache size minus a re-measure after the action; user prune actions
+credit free-space deltas; both deltas are clamped at zero. These estimates do not guarantee
 physically freed blocks. Interrupted runs include only already-credited work;
 retention purge volume is excluded. Cancelling cleanup before work preserves
 the previous report.

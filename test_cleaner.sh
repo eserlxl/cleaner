@@ -111,8 +111,10 @@ EOF
  
   cat << 'EOF' > "$TEST_ENV_DIR/bin/paccache"
 #!/usr/bin/env bash
-# Mock paccache command
+# Mock paccache command; MOCK_PACCACHE_PRUNE names a file it prunes, as a real
+# keep-N run removes old packages, so the action has bytes to credit.
 echo "Mock paccache called with: $@"
+[[ -n "${MOCK_PACCACHE_PRUNE:-}" ]] && rm -f -- "$MOCK_PACCACHE_PRUNE"
 exit 0
 EOF
   chmod +x "$TEST_ENV_DIR/bin/paccache"
@@ -3438,7 +3440,7 @@ printf 'full|0_Action_Prior|%s|false|%s|%s\n' \
 cat << EOF > "$TEST_ENV_DIR/trash_action_config.conf"
 medium|Paccache Trash|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
 EOF
-if run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV_DIR/trash_action_config.conf" --trash --force --risk medium; then
+if MOCK_PACCACHE_PRUNE="$OUTSIDE_DIR/outside.txt" run_test_case "Trash Action Warning" 0 "trash_action.log" --config "$TEST_ENV_DIR/trash_action_config.conf" --trash --force --risk medium; then
   trash_action_session_count=$(find "$trash_action_qbase" -mindepth 1 -maxdepth 1 -type d | wc -l)
   if grep -q "bypass quarantine and run directly (irreversible deletion)" "$TEST_ENV_DIR/trash_action.log" \
      && grep -q "Mock paccache called with: -rk1" "$TEST_ENV_DIR/trash_action.log" \
@@ -3476,7 +3478,7 @@ cat << EOF > "$TEST_ENV_DIR/mixed_trash_action.conf"
 medium|Paccache Mixed|$OUTSIDE_DIR|Mock paccache under trash|0||action:paccache_keep1
 safe|Mixed Quarantine|$mixed_trash_target|Mock path quarantine|0||
 EOF
-if run_test_case "Mixed Trash and Action Summary" 0 "mixed_trash_action.log" \
+if MOCK_PACCACHE_PRUNE="$OUTSIDE_DIR/outside.txt" run_test_case "Mixed Trash and Action Summary" 0 "mixed_trash_action.log" \
      --config "$TEST_ENV_DIR/mixed_trash_action.conf" --trash --force --risk medium; then
   mixed_quarantined=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -name payload -print -quit)
   if [[ ! -e "$mixed_trash_target" && -n "$mixed_quarantined" ]] \
@@ -3494,6 +3496,8 @@ else
   exit 1
 fi
 
+# The action credits only what left its directory.
+mixed_action_bytes=$((mixed_action_bytes - $(du -sb "$OUTSIDE_DIR" | cut -f1)))
 if ! run_test_case "Report JSON Mixed Trash Action Bytes" 0 "mixed_report.json" --report --json \
    || ! python3 - "$TEST_ENV_DIR/mixed_report.json" "$mixed_quarantine_bytes" "$mixed_action_bytes" <<'PY'
 import json, sys
@@ -10708,7 +10712,7 @@ then
   exit 1
 fi
 
-# 6. A system action (paccache) still goes through sudo and credits planned du alongside a user action.
+# 6. A system action (paccache) still goes through sudo alongside a user action.
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/uv" "$OUTSIDE_DIR/paccache_pkg"
 dd if=/dev/zero of="$OUTSIDE_DIR/paccache_pkg/pkg.tar.zst" bs=1M count=2 status=none
@@ -10732,6 +10736,32 @@ if ! run_test_case "System Action Still Uses Sudo Alongside User Action" 0 "mixe
 fi
 unset MOCK_SUDO_LOG MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: system action still routes through sudo while user action runs directly as the user.${NC}"
+
+# 6b. A package-cache action credits only what left its directory, not the planned
+# cache size: paccache -rk1 keeps the newest packages, and may remove nothing.
+setup_mock_env
+pk_dir="$OUTSIDE_DIR/paccache_keep"
+mkdir -p "$pk_dir"
+cat > "$TEST_ENV_DIR/paccache_keep.conf" <<EOF
+medium|Pacman Cache (Keep 1)|$pk_dir|pacman cache|0||action:paccache_keep1
+EOF
+for pk_case in "prune|1 MB" "keep-all|0 B"; do
+  dd if=/dev/zero of="$pk_dir/new.pkg.tar.zst" bs=1M count=2 status=none
+  dd if=/dev/zero of="$pk_dir/old.pkg.tar.zst" bs=1M count=1 status=none
+  pk_rm=""
+  [[ "${pk_case%%|*}" == prune ]] && pk_rm="rm -f -- '$pk_dir/old.pkg.tar.zst'"
+  printf '#!/usr/bin/env bash\n%s\nexit 0\n' "$pk_rm" > "$TEST_ENV_DIR/bin/paccache"
+  chmod +x "$TEST_ENV_DIR/bin/paccache"
+  if ! run_test_case "Package Cache Action Credits Removed Bytes (${pk_case%%|*})" 0 "paccache_keep_${pk_case%%|*}.log" \
+         --config "$TEST_ENV_DIR/paccache_keep.conf" --clean --force --risk medium \
+     || ! grep -qxF "Reclaimed: quarantined=0 B permanent=${pk_case#*|}" "$TEST_ENV_DIR/paccache_keep_${pk_case%%|*}.log" \
+     || ! grep -qF "  3 MB medium Pacman Cache (Keep 1) $pk_dir (cache size; the action may keep part)" "$TEST_ENV_DIR/paccache_keep_${pk_case%%|*}.log"; then
+    echo -e "${RED}FAIL: package-cache action (${pk_case%%|*}) credited the planned cache size instead of the removed bytes, or the plan lost its cache-size note.${NC}"
+    cat "$TEST_ENV_DIR/paccache_keep_${pk_case%%|*}.log" 2>/dev/null || true
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: package-cache actions credit only the bytes that left the cache and label the plan size as the cache size.${NC}"
 
 # 7. --interactive shows "size at run time" rather than 0 B for user-level prune actions.
 setup_mock_env
@@ -12652,7 +12682,8 @@ exit "\${MOCK_ACTION_EXIT:-0}"
 EOF
 cat > "$TEST_ENV_DIR/bin/timeout" <<EOF
 #!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$at_timeout_trace"
+# Trace only action wrapping; the daily timer note's systemctl probe also uses timeout.
+[[ "\$*" == *" systemctl "* ]] || printf '%s\n' "\$*" >> "$at_timeout_trace"
 exec "$at_real_timeout" "\$@"
 EOF
 chmod +x "$TEST_ENV_DIR/bin/uv" "$TEST_ENV_DIR/bin/timeout"
@@ -13844,6 +13875,71 @@ fi
 rm -rf "$tip_nosys_bin"
 
 echo -e "${GREEN}PASS: confirmed manual cleanup suggests enabling linux-cleaner-clean.timer only when disabled and silent otherwise.${NC}"
+
+# Manual runs name the daily timer's state and the risk its env file sets; the
+# unit's own journal-bound runs, --quiet, and absent units stay silent.
+echo -e "\n${BOLD}Test Case: Daily Timer Note${NC}"
+setup_mock_env
+write_timer_tip_fixture
+tn_env="$MOCK_HOME/.config/linux-cleaner/env"
+rm -f "$tn_env"
+tn_fail() {
+  echo -e "${RED}FAIL: $1${NC}"
+  cat "$TEST_ENV_DIR/$2" 2>/dev/null || true
+  chmod 644 "$tn_env" 2>/dev/null || true
+  exit 1
+}
+tn_count() { grep -c '^Daily timer:' "$TEST_ENV_DIR/$1" || true; }
+
+# 1. Default not-found stub prints no note.
+run_test_case "Daily Timer Note (unit absent)" 0 "timer_note_nf.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run || exit 1
+[[ "$(tn_count timer_note_nf.log)" -eq 0 ]] || tn_fail "absent timer unit printed a daily timer note." timer_note_nf.log
+
+# 2. Disabled timer without an env file runs at the default risk.
+write_systemctl_state_stub disabled 1
+run_test_case "Daily Timer Note (disabled, no env)" 0 "timer_note_dis.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run || exit 1
+[[ "$(grep -cxF "Daily timer: disabled risk=safe env=none" "$TEST_ENV_DIR/timer_note_dis.log" || true)" -eq 1 ]] \
+  || tn_fail "disabled timer without env file did not print its note once." timer_note_dis.log
+
+# 3. Enabled timer: the last quoted assignment wins, as under EnvironmentFile=.
+write_systemctl_state_stub enabled 0
+mkdir -p "$(dirname "$tn_env")"
+printf '# LINUX_CLEANER_RISK=danger\nLINUX_CLEANER_RISK=safe\n  LINUX_CLEANER_RISK="medium"\n' > "$tn_env"
+run_test_case "Daily Timer Note (enabled, env risk)" 0 "timer_note_en.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run || exit 1
+[[ "$(grep -cxF "Daily timer: enabled risk=medium env=$tn_env" "$TEST_ENV_DIR/timer_note_en.log" || true)" -eq 1 ]] \
+  || tn_fail "enabled timer did not report the env file's last risk once." timer_note_en.log
+grep -qxF "Plan: mode=dry-run risk=safe config=$TEST_ENV_DIR/timer_tip.conf" "$TEST_ENV_DIR/timer_note_en.log" \
+  || tn_fail "the manual run picked up the timer env file's risk." timer_note_en.log
+
+# 4. An unreadable env file is reported, not guessed.
+chmod 000 "$tn_env"
+run_test_case "Daily Timer Note (unreadable env)" 0 "timer_note_unread.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run || exit 1
+chmod 644 "$tn_env"
+[[ "$(grep -cxF "Daily timer: enabled risk=unknown env=$tn_env (not readable)" "$TEST_ENV_DIR/timer_note_unread.log" || true)" -eq 1 ]] \
+  || tn_fail "unreadable env file was not reported in the daily timer note." timer_note_unread.log
+
+# 5. --quiet prints no note.
+run_test_case "Daily Timer Note (--quiet)" 0 "timer_note_quiet.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run --quiet || exit 1
+[[ "$(tn_count timer_note_quiet.log)" -eq 0 ]] || tn_fail "--quiet printed a daily timer note." timer_note_quiet.log
+
+# 6. stderr bound to the journal (JOURNAL_STREAM matches its device:inode) prints no
+# note; a JOURNAL_STREAM inherited by a terminal, naming another file, still does.
+: > "$TEST_ENV_DIR/timer_note_journal.log"
+tn_stream=$(stat -L -c '%d:%i' "$TEST_ENV_DIR/timer_note_journal.log")
+JOURNAL_STREAM="$tn_stream" run_test_case "Daily Timer Note (journal stderr)" 0 "timer_note_journal.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run || exit 1
+[[ "$(tn_count timer_note_journal.log)" -eq 0 ]] || tn_fail "journal-bound run printed a daily timer note." timer_note_journal.log
+JOURNAL_STREAM="$tn_stream" run_test_case "Daily Timer Note (inherited JOURNAL_STREAM)" 0 "timer_note_inherited.log" \
+  --config "$TEST_ENV_DIR/timer_tip.conf" --dry-run || exit 1
+[[ "$(tn_count timer_note_inherited.log)" -eq 1 ]] || tn_fail "terminal run with an inherited JOURNAL_STREAM lost the daily timer note." timer_note_inherited.log
+
+rm -f "$tn_env"
+echo -e "${GREEN}PASS: manual runs name the daily timer's state and env-file risk; unit, quiet, and unit-absent runs stay silent.${NC}"
 
 # Preview from a shared config suggests initializing user config when none exists.
 unset LINUX_CLEANER_CONFIG 2>/dev/null || true

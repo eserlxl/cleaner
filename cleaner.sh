@@ -3336,7 +3336,11 @@ print_plan_report() {
       fi
       size_label=$(format_bytes "${parsed_sizes[$i]}")
       # User-level prune actions are not sized in advance; 0 B would mislead.
-      action_is_user_level "${parsed_cmds[$i]:-}" && size_label="(size at run time)"
+      if action_is_user_level "${parsed_cmds[$i]:-}"; then
+        size_label="(size at run time)"
+      elif [[ "${parsed_cmds[$i]:-}" == action:* ]]; then
+        age_note+=" (cache size; the action may keep part)"
+      fi
       printf '%s\n' "  ${size_label} ${parsed_risks[$i]} ${parsed_names[$i]} ${parsed_paths[$i]}${age_note}"
       shown=$((shown + 1))
     done
@@ -3578,17 +3582,55 @@ notify_cleanup_result() {
   fi
 }
 
+# Print one user unit's is-enabled state (first line, trimmed); empty without systemctl.
+user_unit_state() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  local state
+  if command -v timeout >/dev/null 2>&1; then
+    state=$(timeout 5 systemctl --user is-enabled "$1" 2>/dev/null || true)
+  else
+    state=$(systemctl --user is-enabled "$1" 2>/dev/null || true)
+  fi
+  trim "${state%%$'\n'*}"
+}
+
+# A manual run ignores the env file the daily timer reads, so its risk can differ
+# from the timer's; name the timer's state and risk. Units stay silent: systemd sets
+# JOURNAL_STREAM to the device:inode of a journal-bound stderr. Terminals inherit the
+# variable too (INVOCATION_ID as well), so only a matching stderr counts.
+print_timer_note() {
+  [[ "$QUIET" != true ]] || return 0
+  if [[ -n "${JOURNAL_STREAM:-}" ]] \
+     && [[ "$(stat -L -c '%d:%i' "/proc/$$/fd/2" 2>/dev/null || true)" == "$JOURNAL_STREAM" ]]; then
+    return 0
+  fi
+  local state env_file="$HOME/.config/linux-cleaner/env" env_line risk=safe env_label
+  state=$(user_unit_state linux-cleaner-clean.timer)
+  [[ -z "$state" || "$state" == not-found ]] && return 0
+  if [[ ! -e "$env_file" ]]; then
+    env_label=none
+  elif [[ ! -f "$env_file" || ! -r "$env_file" ]]; then
+    risk=unknown
+    env_label="$env_file (not readable)"
+  else
+    env_label="$env_file"
+    # Like systemd's EnvironmentFile, the last assignment wins.
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+      env_line=$(trim "$env_line")
+      [[ "$env_line" == LINUX_CLEANER_RISK=* ]] && risk="${env_line#*=}"
+    done < "$env_file"
+    risk=$(trim "${risk//[\"\']/}")
+    [[ -z "$risk" ]] && risk=safe
+  fi
+  printf '%s\n\n' "Daily timer: ${state} risk=${risk} env=${env_label}"
+}
+
 # Point a confirmed manual cleanup at the installed-but-disabled daily timer.
 suggest_daily_timer() {
   [[ "${FORCE:-false}" == false && "${QUIET:-false}" == false && "${JSON_OUTPUT:-false}" == false && "${OPERATION_FAILED:-false}" == false ]] || return 0
   [[ "${result_cleaned:-0}" -eq 0 ]] && return 0
-  command -v systemctl >/dev/null 2>&1 || return 0
-  local state=""
-  if command -v timeout >/dev/null 2>&1; then
-    state=$(timeout 5 systemctl --user is-enabled linux-cleaner-clean.timer 2>/dev/null || true)
-  else
-    state=$(systemctl --user is-enabled linux-cleaner-clean.timer 2>/dev/null || true)
-  fi
+  local state
+  state=$(user_unit_state linux-cleaner-clean.timer)
   if [[ "$state" == "disabled" ]]; then
     status_echo "Tip: run this cleanup daily with 'systemctl --user enable --now linux-cleaner-clean.timer'."
     if [[ "$TRASH_MODE" == true ]]; then
@@ -4105,12 +4147,7 @@ run_doctor() {
   local clean_timer="unavailable" retention_timer="unavailable" monitor_timer="unavailable" t_unit t_state
   if command -v systemctl >/dev/null 2>&1; then
     for t_unit in linux-cleaner-clean.timer linux-cleaner-retention.timer linux-cleaner-monitor.timer; do
-      if command -v timeout >/dev/null 2>&1; then
-        t_state=$(timeout 5 systemctl --user is-enabled "$t_unit" 2>/dev/null || true)
-      else
-        t_state=$(systemctl --user is-enabled "$t_unit" 2>/dev/null || true)
-      fi
-      t_state=$(trim "${t_state%%$'\n'*}")
+      t_state=$(user_unit_state "$t_unit")
       [[ -z "$t_state" ]] && t_state="not-found"
       case "$t_unit" in
         linux-cleaner-clean.timer) clean_timer="$t_state" ;;
@@ -4782,6 +4819,7 @@ if [[ "$JSON_OUTPUT" != true ]]; then
   if [[ "$QUIET" != true ]]; then
     printf '%s\n\n' "$PLAN_REPORT_TEXT"
   fi
+  print_timer_note
 fi
 
 # Whether any analyzed target is cleanable (user-level prune rows count even at 0 B).
@@ -5191,6 +5229,14 @@ for i in "${!parsed_names[@]}"; do
             credited_bytes=0
           fi
         else
+          credited_bytes=0
+        fi
+      else
+        # A package-cache action keeps part of the cache (paccache -rk1 keeps the newest
+        # version of every package), so credit only what left the planned directory.
+        size_after=$(get_size_bytes "$path" "$age" "$use_sudo")
+        credited_bytes=$((size - size_after))
+        if [[ "$credited_bytes" -lt 0 ]]; then
           credited_bytes=0
         fi
       fi
