@@ -15,6 +15,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-26
+
 ### Added
 
 - Manual runs print `Daily timer: <state> risk=<risk> env=<path>` after the plan when `linux-cleaner-clean.timer` is installed, because they do not read the timer's `~/.config/linux-cleaner/env` and so may preview a different risk than the timer cleans. Runs whose stderr is the journal, such as the timer's own, and `--quiet` runs omit it.
@@ -698,7 +700,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.9.0
 [1.8.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.8.0
 [1.7.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.1
 [1.7.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.0
