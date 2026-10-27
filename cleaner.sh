@@ -1330,6 +1330,7 @@ expand_path_safe() {
   # whole tokens (so $HOMEDATA / $USERNAME / $XDG_CACHE_HOMEX stay literal,
   # matching the documented "explicit placeholders only" contract).
   for name in HOME USER XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
+    [[ "$expanded" == *"\$$name"* ]] || continue
     case "$name" in
       HOME|USER) value="${!name:-}" ;;
       *)

@@ -3690,6 +3690,26 @@ for xdg_case in absolute unset relative; do
   fi
 done
 
+# 44c. Test Case: mixed placeholders expand while unknown tokens stay literal.
+setup_mock_env
+mixed_expected="$MOCK_HOME/mixed-cache/\$NOTAVAR"
+mkdir -p "$mixed_expected"
+cat << EOF > "$TEST_ENV_DIR/mixed_tokens.conf"
+safe|Mixed Tokens|\$HOME\$XDG_CACHE_HOME/\$NOTAVAR|Mixed placeholders|0||
+EOF
+if XDG_CACHE_HOME=/mixed-cache run_test_case "Mixed Placeholder Expansion" 0 "mixed_tokens.json" \
+     --config "$TEST_ENV_DIR/mixed_tokens.conf" --dry-run --json; then
+  if [[ "$(xdg_target_path "$TEST_ENV_DIR/mixed_tokens.json" "Mixed Tokens")" == "$mixed_expected" ]]; then
+    echo -e "${GREEN}PASS: \$HOME and \$XDG_CACHE_HOME expanded exactly; \$NOTAVAR stayed literal.${NC}"
+  else
+    echo -e "${RED}FAIL: mixed placeholders did not expand to '$mixed_expected'.${NC}"
+    cat "$TEST_ENV_DIR/mixed_tokens.json"
+    exit 1
+  fi
+else
+  exit 1
+fi
+
 # 45. Test Case: --interactive per-target confirmation (y cleans, n skips)
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/interactive.conf"
