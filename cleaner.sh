@@ -1040,6 +1040,13 @@ trim() {
   printf '%s' "$var"
 }
 
+trim_to() {
+  local trimmed="$2"
+  trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  printf -v "$1" '%s' "$trimmed"
+}
+
 name_matches_any() {
   local name="$1" p
   shift
@@ -1184,15 +1191,21 @@ json_escape() {
   s=${s//$'\r'/\\r}
   s=${s//$'\t'/\\t}
 
-  # Bash strings cannot contain NUL; encode every other representable C0 byte.
-  for ((code = 1; code < 32; code++)); do
-    case "$code" in 8|9|10|12|13) continue ;; esac
-    printf -v octal '%03o' "$code"
-    printf -v control '%b' "\\$octal"
-    printf -v escaped '\\u%04x' "$code"
-    s=${s//"$control"/"$escaped"}
-  done
-  printf '%s' "$s"
+  if [[ "$s" == *[[:cntrl:]]* ]]; then
+    # Bash strings cannot contain NUL; encode every other representable C0 byte.
+    for ((code = 1; code < 32; code++)); do
+      case "$code" in 8|9|10|12|13) continue ;; esac
+      printf -v octal '%03o' "$code"
+      printf -v control '%b' "\\$octal"
+      printf -v escaped '\\u%04x' "$code"
+      s=${s//"$control"/"$escaped"}
+    done
+  fi
+  if [[ "$#" -gt 1 ]]; then
+    printf -v "$2" '%s' "$s"
+  else
+    printf '%s' "$s"
+  fi
 }
 
 emit_dry_run_json() {
@@ -1243,15 +1256,15 @@ emit_list_targets_json() {
     config_line="${config_line#*$'\t'}"
     # validate_config_file already rejected malformed records before this runs.
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-    risk=$(trim "$risk")
+    trim_to risk "$risk"
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-    name=$(trim "$name")
+    trim_to name "$name"
     select_target_name "$name" || continue
-    raw_path=$(trim "$raw_path")
-    desc=$(trim "$desc")
-    min_age=$(trim "$min_age")
-    check_procs=$(trim "${check_procs:-}")
-    custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+    trim_to raw_path "$raw_path"
+    trim_to desc "$desc"
+    trim_to min_age "$min_age"
+    trim_to check_procs "${check_procs:-}"
+    trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     select_target_path "$raw_path" "$custom_clean_cmd" || continue
     lt_names+=("$name")
     lt_risks+=("$risk")
@@ -1272,14 +1285,15 @@ emit_list_targets_json() {
     else
       printf ','
     fi
+    json_escape "${lt_names[$i]}" name
+    json_escape "${lt_risks[$i]}" risk
+    json_escape "${lt_paths[$i]}" raw_path
+    json_escape "${lt_descs[$i]}" desc
+    json_escape "${lt_min_ages[$i]}" min_age
+    json_escape "${lt_procs[$i]}" check_procs
+    json_escape "${lt_actions[$i]}" custom_clean_cmd
     printf '{"name":"%s","risk":"%s","path":"%s","description":"%s","min_age_days":"%s","check_processes":"%s","custom_action":"%s"}' \
-      "$(json_escape "${lt_names[$i]}")" \
-      "$(json_escape "${lt_risks[$i]}")" \
-      "$(json_escape "${lt_paths[$i]}")" \
-      "$(json_escape "${lt_descs[$i]}")" \
-      "$(json_escape "${lt_min_ages[$i]}")" \
-      "$(json_escape "${lt_procs[$i]}")" \
-      "$(json_escape "${lt_actions[$i]}")"
+      "$name" "$risk" "$raw_path" "$desc" "$min_age" "$check_procs" "$custom_clean_cmd"
   done
   printf ']}'
   printf '\n'
@@ -1350,7 +1364,11 @@ expand_path_safe() {
   done
 
   [[ "$expanded" != *$'\n'* ]] || return 1
-  printf '%s' "$expanded"
+  if [[ "$#" -gt 1 ]]; then
+    printf -v "$2" '%s' "$expanded"
+  else
+    printf '%s' "$expanded"
+  fi
 }
 
 # How many directory levels below the literal prefix a "**" pattern component may
@@ -1429,7 +1447,7 @@ glob_components_match() {
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk name raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar expanded
+  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar expanded trimmed_match match_expanded
   local -a prune_args
   local -A accepted_matches
 
@@ -1540,10 +1558,11 @@ expand_config_globs() {
     accepted_matches=()
     while IFS= read -r -d '' match; do
       [[ -z "$match" ]] && continue
+      trim_to trimmed_match "$match"
       # Config records are line/pipe-delimited and consumers trim and expand the
       # path again. Refuse a match whose identity would change in that transport.
-      if ! expanded=$(expand_path_safe "$match") \
-         || [[ "$match" == *'|'* || "$match" == *[[:cntrl:]]* || "$match" == *\\* || "$match" != "$(trim "$match")" || "$match" != "$expanded" ]]; then
+      if ! expand_path_safe "$match" match_expanded \
+         || [[ "$match" == *'|'* || "$match" == *[[:cntrl:]]* || "$match" == *\\* || "$match" != "$trimmed_match" || "$match" != "$match_expanded" ]]; then
         printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
           "$CONFIG_FILE" "$lineno" "$match" >&2
         continue

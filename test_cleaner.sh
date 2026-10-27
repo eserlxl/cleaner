@@ -3710,6 +3710,24 @@ else
   exit 1
 fi
 
+# 44d. Test Case: trim_to, the fork-free trim on the wildcard and list-targets hot paths.
+echo -e "\n${BOLD}Test Case: trim_to Helper${NC}"
+if (
+  eval "$(sed -n '/^trim_to() {/,/^}/p' "$CLEANER_SH")"
+  result=unchanged
+  trim_to result $' \t inner  spaces \t '
+  [[ "$result" == 'inner  spaces' ]] || exit 1
+  trim_to result $' \t\n '
+  [[ -z "$result" ]] || exit 1
+  trim_to result ''
+  [[ -z "$result" ]]
+); then
+  echo -e "${GREEN}PASS: trim_to trims surrounding whitespace, keeps inner spaces, and handles empty input.${NC}"
+else
+  echo -e "${RED}FAIL: trim_to did not trim like trim.${NC}"
+  exit 1
+fi
+
 # 45. Test Case: --interactive per-target confirmation (y cleans, n skips)
 setup_mock_env
 cat << EOF > "$TEST_ENV_DIR/interactive.conf"

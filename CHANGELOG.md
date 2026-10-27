@@ -17,7 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
-- Path expansion no longer forks for `$HOME`/`$USER`/`$XDG_*` placeholders a path does not contain. Wildcard rows run it once per match, so `--list-targets --json` on the shipped config dropped from about 14 s to 10 s, and cleanup runs gain the same.
+- Wildcard expansion and `--list-targets --json` fork far less: path expansion skips `$HOME`/`$USER`/`$XDG_*` placeholders a path does not contain, wildcard matches and listed rows are trimmed and escaped without subshells, and JSON escaping skips its control-byte loop when a value has none. On the shipped config `--list-targets --json` dropped from about 14 s to 6 s, and cleanup runs expand wildcard rows the same faster way. Output is unchanged.
 
 ## [1.9.0] - 2026-10-26
 
