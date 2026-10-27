@@ -15,9 +15,11 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-27
+
 ### Changed
 
-- Wildcard expansion and `--list-targets --json` fork far less: path expansion skips `$HOME`/`$USER`/`$XDG_*` placeholders a path does not contain, wildcard matches and listed rows are trimmed and escaped without subshells, and JSON escaping skips its control-byte loop when a value has none. On the shipped config `--list-targets --json` dropped from about 14 s to 6 s, and cleanup runs expand wildcard rows the same faster way. Output is unchanged.
+- Configs with wildcard rows are faster to list and clean: each wildcard match and each listed target is now handled without starting extra shell processes. With the shipped config's `/opt/**` rows, `--list-targets --json` takes about half as long as in 1.9.0, and cleanup and dry runs expand those rows the same faster way. Output is unchanged.
 
 ## [1.9.0] - 2026-10-26
 
@@ -704,7 +706,8 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
   > checkout).
 - A CI workflow running ShellCheck and the full test suite.
 
-[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/eserlxl/cleaner/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.9.1
 [1.9.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.9.0
 [1.8.0]: https://github.com/eserlxl/cleaner/releases/tag/v1.8.0
 [1.7.1]: https://github.com/eserlxl/cleaner/releases/tag/v1.7.1
