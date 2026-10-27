@@ -13231,11 +13231,17 @@ if command -v fish > /dev/null 2>&1; then
         | grep -qx 'comp_file.txt'; then
     fish_comp_failed+=" --only-path(no file offered)"
   fi
+  # The flag-presence drift check cannot see a risk level dropped from the value list.
+  if [[ "$(XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
+            fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner --risk '" \
+          | cut -f1 | sort | tr '\n' ' ')" != "danger medium safe " ]]; then
+    fish_comp_failed+=" --risk(values)"
+  fi
   if [[ -n "$fish_comp_failed" ]]; then
-    echo -e "${RED}FAIL: fish completion offered file names for bare arguments or value options, or none for --config/--log/--only-path:$fish_comp_failed.${NC}"
+    echo -e "${RED}FAIL: fish completion offered file names for bare arguments or value options, none for --config/--log/--only-path, or the wrong --risk levels:$fish_comp_failed.${NC}"
     exit 1
   fi
-  echo -e "${GREEN}PASS: fish offers no file names for bare arguments or pattern, size and number values, and still offers files for --config, --log and --only-path.${NC}"
+  echo -e "${GREEN}PASS: fish offers no file names for bare arguments or pattern, size and number values, still offers files for --config, --log and --only-path, and completes every --risk level.${NC}"
 else
   echo -e "${GREEN}PASS (skipped): fish is not installed; cannot run the fish completion check.${NC}"
 fi
