@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Fixed
+
+- `--restore` no longer rewrites `quarantine.meta` when zero records were restored (such as when every selected record is refused as malformed or skipped on conflict), preserving the metadata file's permissions, inode, and contents unchanged.
+
 ## [1.9.1] - 2026-10-27
 
 ### Changed

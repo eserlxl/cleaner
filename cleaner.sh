@@ -2904,7 +2904,7 @@ restore_quarantine() {
   # after a partial failure as well as --only: successful sibling restores have
   # already moved out and must not poison a later retry as missing sources.
   local -a retained=()
-  if [[ "$overall_success" != true || -n "${RESTORE_ONLY:-}" ]]; then
+  if [[ ( "$overall_success" != true || -n "${RESTORE_ONLY:-}" ) && ${#restored_rels[@]} -gt 0 ]]; then
     local line rp r keep
     while IFS= read -r line || [[ -n "$line" ]]; do
       [[ -z "$line" ]] && continue

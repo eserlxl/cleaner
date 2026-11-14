@@ -4,6 +4,16 @@
 # Automated test suite for refactored cleaner.sh
 
 set -euo pipefail
+umask 022
+
+# Preserve UTF-8 character encoding while keeping harness [a-z]/[A-Z] ranges and
+# sort order deterministic on hosts whose locale is e.g. tr_TR.UTF-8; explicit
+# LC_ALL=tr_TR.UTF-8 test cases below still override LC_COLLATE=C.
+if [[ -n "${LC_ALL:-}" ]]; then
+  export LANG="$LC_ALL" LC_CTYPE="$LC_ALL"
+  unset LC_ALL
+fi
+export LC_COLLATE=C
 
 # Find absolute path of the cleaner.sh directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -3249,8 +3259,8 @@ unreleased_entry_count() {
 setup_mock_env
 echo -e "\n${BOLD}Test Case: Version/Tag/Changelog Consistency${NC}"
 git_tag=$(git -C "$SCRIPT_DIR" describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null || true)
-if [[ -z "$git_tag" ]]; then
-  echo -e "${GREEN}PASS (not applicable): HEAD is not a v* release tag; the three-way check applies only on a tagged release.${NC}"
+if [[ -z "$git_tag" || -n "$(git --no-optional-locks -C "$SCRIPT_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+  echo -e "${GREEN}PASS (not applicable): working tree is not a clean v* release tag; the three-way check applies only on a tagged release.${NC}"
 else
   tag_version="${git_tag#v}"
   changelog_version=$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$SCRIPT_DIR/CHANGELOG.md" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
