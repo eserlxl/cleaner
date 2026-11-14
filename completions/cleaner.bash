@@ -12,13 +12,41 @@ _cleaner() {
     prev="${COMP_WORDS[idx - 1]}"
   fi
 
-  # Rejoin "prefix:val" when COMP_WORDBREAKS splits on ':' (e.g. older-than:7 or max-size:5G).
-  if [[ "$cur" == ":" && $idx -ge 2 ]]; then
-    cur="${COMP_WORDS[idx - 1]}:"
-    prev="${COMP_WORDS[idx - 2]}"
-  elif [[ "$prev" == ":" && $idx -ge 3 ]]; then
-    cur="${COMP_WORDS[idx - 2]}:$cur"
-    prev="${COMP_WORDS[idx - 3]}"
+  # Rejoin "prefix:val" when COMP_WORDBREAKS splits on ':' (e.g. older-than:7 or /dir:1/file).
+  if [[ "${COMP_WORDBREAKS:-}" == *:* ]]; then
+    if [[ "$cur" =~ ^:+$ && $idx -ge 2 ]]; then
+      case "${COMP_WORDS[idx - 1]}" in
+        -c|--config|-r|--risk|-e|--exclude|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--exclude-target|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--log)
+          if (( idx > 2 )) && [[ "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
+            cur="${COMP_WORDS[idx - 1]}${cur}"
+            idx=$((idx - 1))
+          fi
+          ;;
+        *)
+          cur="${COMP_WORDS[idx - 1]}${cur}"
+          idx=$((idx - 1))
+          ;;
+      esac
+    fi
+    while (( idx >= 2 )) && [[ "${COMP_WORDS[idx - 1]}" =~ ^:+$ ]]; do
+      cur="${COMP_WORDS[idx - 1]}${cur}"
+      idx=$((idx - 1))
+      if (( idx >= 2 )); then
+        case "${COMP_WORDS[idx - 1]}" in
+          -c|--config|-r|--risk|-e|--exclude|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--exclude-target|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--log)
+            if (( idx == 2 )) || [[ ! "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
+              break
+            fi
+            ;;
+        esac
+        cur="${COMP_WORDS[idx - 1]}${cur}"
+        idx=$((idx - 1))
+      fi
+    done
+    prev=""
+    if (( idx > 0 )); then
+      prev="${COMP_WORDS[idx - 1]}"
+    fi
   fi
 
   local -a sessions=()
@@ -32,15 +60,14 @@ _cleaner() {
     done < <(compgen -d -- "$HOME/.cache/linux-cleaner/quarantine/$cur")
   fi
 
+  local handled=true is_file_comp=false
   case "$prev" in
     -r|--risk)
       mapfile -t COMPREPLY < <(compgen -W "safe medium danger" -- "$cur")
-      return 0
       ;;
     --restore|--hold-session|--release-session)
       mapfile -t COMPREPLY < <(compgen -W "latest" -- "$cur")
       COMPREPLY+=("${sessions[@]}")
-      return 0
       ;;
     --purge-sessions)
       mapfile -t COMPREPLY < <(compgen -W "latest all older-than: max-size: keep-latest:" -- "$cur")
@@ -48,88 +75,96 @@ _cleaner() {
       if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *: ]]; then
         compopt -o nospace 2>/dev/null || true
       fi
-      if [[ "${COMP_WORDBREAKS:-}" == *:* && "$cur" == *:* ]]; then
-        local colon_prefix="${cur%"${cur##*:}"}"
-        local i
-        for i in "${!COMPREPLY[@]}"; do
-          COMPREPLY[i]="${COMPREPLY[i]#"$colon_prefix"}"
-          # An empty reply would replace the typed ':' with nothing.
-          [[ -z "${COMPREPLY[i]}" ]] && unset 'COMPREPLY[i]'
-        done
-      fi
-      return 0
       ;;
     --log)
       # The FILE argument is optional, so an option may follow directly.
       if [[ "$cur" != -* ]]; then
+        is_file_comp=true
         compopt -o filenames 2>/dev/null || true
         mapfile -t COMPREPLY < <(compgen -f -- "$cur")
-        return 0
+      else
+        handled=false
       fi
       ;;
-    -c|--config)
+    -c|--config|--only-path|--exclude-path|--min-free-path)
+      is_file_comp=true
       compopt -o filenames 2>/dev/null || true
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
-      return 0
-      ;;
-    --only-path|--exclude-path|--min-free-path)
-      compopt -o filenames 2>/dev/null || true
-      mapfile -t COMPREPLY < <(compgen -f -- "$cur")
-      return 0
       ;;
     -e|--exclude|--only|--only-exact|--only-target|--exclude-target|--lock-wait|--check-health|--min-reclaim|--min-free|--trash-keep-days|--min-age|--action-timeout)
-      return 0
+      ;;
+    *)
+      handled=false
       ;;
   esac
 
-  local opts="
-    -c --config
-    -d --dry-run
-    --clean
-    -i --interactive
-    -f --force
-    --yes-danger
-    -t --trash
-    -r --risk
-    -e --exclude
-    --list-sessions
-    --report
-    --check-health
-    --list-targets
-    --check-config
-    --init-config
-    --doctor
-    --restore
-    --hold-session
-    --release-session
-    --only
-    --only-exact
-    --only-target
-    --exclude-target
-    --only-path
-    --exclude-path
-    --lock-wait
-    --min-reclaim
-    --min-free
-    --min-free-path
-    --min-age
-    --action-timeout
-    --trash-keep-days
-    --purge-sessions
-    --allow-outside-home
-    --log
-    -q --quiet
-    --debug
-    --show-matches
-    --exit-code
-    --notify
-    --fail-fast
-    --json
-    -h --help
-    -V --version
-  "
+  if [[ "$handled" != true ]]; then
+    local opts="
+      -c --config
+      -d --dry-run
+      --clean
+      -i --interactive
+      -f --force
+      --yes-danger
+      -t --trash
+      -r --risk
+      -e --exclude
+      --list-sessions
+      --report
+      --check-health
+      --list-targets
+      --check-config
+      --init-config
+      --doctor
+      --restore
+      --hold-session
+      --release-session
+      --only
+      --only-exact
+      --only-target
+      --exclude-target
+      --only-path
+      --exclude-path
+      --lock-wait
+      --min-reclaim
+      --min-free
+      --min-free-path
+      --min-age
+      --action-timeout
+      --trash-keep-days
+      --purge-sessions
+      --allow-outside-home
+      --log
+      -q --quiet
+      --debug
+      --show-matches
+      --exit-code
+      --notify
+      --fail-fast
+      --json
+      -h --help
+      -V --version
+    "
 
-  mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+  fi
+
+  if [[ "${COMP_WORDBREAKS:-}" == *:* && "$cur" == *:* ]]; then
+    local colon_prefix="${cur%"${cur##*:}"}"
+    local i full
+    for i in "${!COMPREPLY[@]}"; do
+      full="${COMPREPLY[i]}"
+      if [[ "$is_file_comp" == true && -d "$full" && "$full" != */ ]]; then
+        full="${full}/"
+      fi
+      COMPREPLY[i]="${full#"$colon_prefix"}"
+      # An empty reply would replace the typed ':' with nothing.
+      [[ -z "${COMPREPLY[i]}" ]] && unset 'COMPREPLY[i]'
+    done
+    if [[ "$is_file_comp" == true && ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[*]}" == */ ]]; then
+      compopt -o nospace 2>/dev/null || true
+    fi
+  fi
 }
 
 complete -F _cleaner cleaner cleaner.sh
