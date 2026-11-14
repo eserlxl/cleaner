@@ -15686,5 +15686,71 @@ PY
   echo -e "${GREEN}PASS: permanent aged cleanup treats empty-directory pruning as best-effort while failing on unsearchable subdirectories.${NC}"
 fi
 
+echo -e "\n${BOLD}Test Case: Quarantine Named Symlink Refusal, Restore Latest Enumeration Error, and Symlinked Quarantine Metrics${NC}"
+setup_mock_env
+q_sym_base="$MOCK_HOME/.cache/linux-cleaner/quarantine"
+q_sym_ext="$TEST_ENV_DIR/external_quarantine_target"
+mkdir -p "$q_sym_base" "$q_sym_ext"
+printf 'keep-me\n' > "$q_sym_ext/precious.txt"
+printf 'full|0_ext|%s/restored_ext|false|%s|%s\n' "$MOCK_HOME" "$(id -u)" "$(id -g)" > "$q_sym_ext/quarantine.meta"
+mkdir -p "$q_sym_ext/0_ext"
+printf 'payload\n' > "$q_sym_ext/0_ext/data.txt"
+ln -s "$q_sym_ext" "$q_sym_base/2026-02-02_00-00-00"
+
+if ! run_test_case "Purge Named Symlink Session Refused" 1 "purge_sym_sess.log" \
+       --purge-sessions 2026-02-02_00-00-00 --force \
+   || ! grep -qF "Error: Quarantine session directory '$q_sym_base/2026-02-02_00-00-00' does not exist." "$TEST_ENV_DIR/purge_sym_sess.log" \
+   || ! run_test_case "Purge Dry Run Named Symlink Session Refused" 1 "purge_dry_sym_sess.log" \
+       --purge-sessions 2026-02-02_00-00-00 --dry-run \
+   || ! grep -qF "Error: Quarantine session directory '$q_sym_base/2026-02-02_00-00-00' does not exist." "$TEST_ENV_DIR/purge_dry_sym_sess.log" \
+   || ! run_test_case "Restore Named Symlink Session Refused" 1 "restore_sym_sess.log" \
+       --restore 2026-02-02_00-00-00 \
+   || ! grep -qF "Error: Quarantine session directory '$q_sym_base/2026-02-02_00-00-00' does not exist." "$TEST_ENV_DIR/restore_sym_sess.log" \
+   || ! run_test_case "Restore Dry Run Named Symlink Session Refused" 1 "restore_dry_sym_sess.log" \
+       --restore 2026-02-02_00-00-00 --dry-run \
+   || ! grep -qF "Error: Quarantine session directory '$q_sym_base/2026-02-02_00-00-00' does not exist." "$TEST_ENV_DIR/restore_dry_sym_sess.log" \
+   || [[ ! -f "$q_sym_ext/precious.txt" || -e "$MOCK_HOME/restored_ext" ]]; then
+  echo -e "${RED}FAIL: named purge or restore followed a symlinked quarantine session entry.${NC}"
+  cat "$TEST_ENV_DIR/purge_sym_sess.log" "$TEST_ENV_DIR/restore_sym_sess.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$q_sym_base/2026-02-02_00-00-00"
+
+if [[ "$EUID" -ne 0 ]]; then
+  mkdir -p "$q_sym_base/2026-02-03_00-00-00"
+  chmod 0000 "$q_sym_base"
+  if ! run_test_case "Restore Latest Enumeration Failure" 1 "restore_latest_enum_fail.log" \
+         --restore latest; then
+    chmod 0700 "$q_sym_base" 2>/dev/null || true
+    exit 1
+  fi
+  chmod 0700 "$q_sym_base"
+  if ! grep -qF "Error: Failed to enumerate quarantine sessions." "$TEST_ENV_DIR/restore_latest_enum_fail.log"; then
+    echo -e "${RED}FAIL: --restore latest did not report quarantine enumeration failure.${NC}"
+    cat "$TEST_ENV_DIR/restore_latest_enum_fail.log" 2>/dev/null || true
+    exit 1
+  fi
+fi
+
+rm -rf "$q_sym_base"
+ln -s "$q_sym_ext" "$q_sym_base"
+mkdir -p "$MOCK_HOME/.cache/metrics_sym_clean"
+printf 'clean-me\n' > "$MOCK_HOME/.cache/metrics_sym_clean/item.bin"
+cat > "$TEST_ENV_DIR/metrics_sym_q.conf" <<'EOF'
+safe|Metrics Sym Clean|$HOME/.cache/metrics_sym_clean|permanent clean with symlinked quarantine base|0||
+EOF
+q_sym_prom="$TEST_ENV_DIR/metrics_sym_q.prom"
+if ! LINUX_CLEANER_METRICS_FILE="$q_sym_prom" run_test_case "Cleanup Metrics Symlinked Quarantine Base" 0 "metrics_sym_q.log" \
+       --config "$TEST_ENV_DIR/metrics_sym_q.conf" --clean --force \
+   || ! grep -qF "Warning: could not measure quarantine size at '$q_sym_base'; omitting linux_cleaner_quarantine_bytes." "$TEST_ENV_DIR/metrics_sym_q.log" \
+   || grep -q "linux_cleaner_quarantine_bytes" "$q_sym_prom" \
+   || ! grep -q '^linux_cleaner_last_run_success 1$' "$q_sym_prom"; then
+  echo -e "${RED}FAIL: cleanup metrics followed symlinked quarantine base instead of warning and omitting linux_cleaner_quarantine_bytes.${NC}"
+  cat "$TEST_ENV_DIR/metrics_sym_q.log" "$q_sym_prom" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$q_sym_base"
+echo -e "${GREEN}PASS: quarantine refuses symlinked named sessions, reports --restore latest enumeration errors, and omits symlinked quarantine size metrics.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

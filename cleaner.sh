@@ -2263,7 +2263,7 @@ purge_quarantine_sessions() {
     # A named session must be an immediate child of the base.
     validate_quarantine_session_name "$target"
     local dir="$quarantine_base/$target"
-    if [[ ! -d "$dir" ]]; then
+    if [[ -L "$dir" || ! -d "$dir" ]]; then
       echo -e "${RED}Error: Quarantine session directory '$dir' does not exist.${NC}" >&2
       exit 1
     fi
@@ -2612,7 +2612,10 @@ restore_quarantine() {
   if [[ "$target" == "latest" ]]; then
     # Find the latest subdirectory by sorting
     local latest
-    latest=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)
+    if ! latest=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1); then
+      echo "Error: Failed to enumerate quarantine sessions." >&2
+      exit 1
+    fi
     if [[ -z "$latest" ]]; then
       echo -e "${RED}Error: No quarantined sessions found in '$quarantine_base'.${NC}" >&2
       exit 1
@@ -2622,7 +2625,7 @@ restore_quarantine() {
     # Named session must be an immediate child of the base (same rule as purge).
     validate_quarantine_session_name "$target"
     restore_dir="$quarantine_base/$target"
-    if [[ ! -d "$restore_dir" ]]; then
+    if [[ -L "$restore_dir" || ! -d "$restore_dir" ]]; then
       echo -e "${RED}Error: Quarantine session directory '$restore_dir' does not exist.${NC}" >&2
       exit 1
     fi
@@ -3749,7 +3752,7 @@ write_cleanup_metrics() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" quarantine_bytes=0
   local -a quarantine_metrics=()
   if [[ -e "$quarantine_base" || -L "$quarantine_base" ]]; then
-    if [[ ! -d "$quarantine_base" ]] || ! quarantine_bytes=$(quarantine_size_bytes "$quarantine_base" 2>/dev/null); then
+    if [[ -L "$quarantine_base" || ! -d "$quarantine_base" ]] || ! quarantine_bytes=$(quarantine_size_bytes "$quarantine_base" 2>/dev/null); then
       echo "Warning: could not measure quarantine size at '$quarantine_base'; omitting linux_cleaner_quarantine_bytes." >&2
       quarantine_bytes=""
     fi

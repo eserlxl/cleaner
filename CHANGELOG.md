@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Named `--purge-sessions <session>` and `--restore <session>` now refuse a symlinked session entry (matching `--hold-session` and `--release-session`), `--restore latest` prints `Error: Failed to enumerate quarantine sessions.` when `find` fails on an unreadable quarantine directory, and `LINUX_CLEANER_METRICS_FILE` warns and omits `linux_cleaner_quarantine_bytes` when `~/.cache/linux-cleaner/quarantine` is a symlink to a directory.
 - Nonexistent outside-`$HOME` targets under searchable read-only parents (such as `/opt/...` or `0555` directories) are now reported as `missing` instead of requiring `sudo` in unprivileged `--dry-run` and `--clean` runs, while targets behind unsearchable (`! -x`) directories or ancestors still require `sudo`.
 - Permanent file-by-file cleanup of aged or excluded directory targets now treats follow-up empty-directory pruning as best-effort (matching `--trash` mode), so an empty directory inside a read-only preserved subdirectory no longer fails the target or drops reclaimed byte accounting while file traversal or deletion failures still exit `1`.
 - `--doctor` now trims quoted whitespace on `LINUX_CLEANER_ONLY_PATH` and `LINUX_CLEANER_TRASH_KEEP_DAYS` in `~/.config/linux-cleaner/monitor.env` before checking for a conflict, and warns when `monitor.env` is a non-regular path such as a directory, matching systemd's `EnvironmentFile=-` semantics.
