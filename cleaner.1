@@ -63,7 +63,10 @@ A text preview that found something to clean ends with a
 .B Next:
 line. A bare preview names
 .BR "cleaner \-\-clean" .
-When the preview used an explicit config, a risk above safe,
+When the preview used an explicit
+.BR \-\-config ,
+a non-default or environment-overridden
+.BR \-\-risk ,
 .BR \-\-trash ,
 .BR \-\-exclude ,
 .BR \-\-only\-target ,
@@ -74,8 +77,10 @@ When the preview used an explicit config, a risk above safe,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
+.BR \-\-trash\-keep\-days ,
+.BR \-\-fail\-fast ,
 or
-.B \-\-trash\-keep\-days
+.B \-\-action\-timeout
 (from the command line or their environment variables), the next line
 prints the full apply command with those options, each value quoted with
 .BR "printf %q" ,
@@ -93,8 +98,10 @@ Perform cleanup with a summary confirmation prompt. When
 is available, mutating runs
 .RB ( \-\-clean / \-\-force / \-\-interactive ,
 .BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-hold\-session ,
 and
-.BR \-\-purge\-sessions )
+.BR \-\-release\-session )
 take an exclusive lock on
 .I ~/.cache/linux\-cleaner/cleaner.lock
 and fail immediately on contention by default.
@@ -1613,8 +1620,10 @@ Exclusive (non-blocking by default, or bounded by
 lock held by mutating runs
 .RB ( \-\-clean / \-\-force / \-\-interactive ,
 .BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-hold\-session ,
 and
-.BR \-\-purge\-sessions ).
+.BR \-\-release\-session ).
 The directory is created mode 0700 and symlinks are refused.
 .TP
 .I ~/.cache/linux\-cleaner/quarantine/

@@ -3227,6 +3227,65 @@ else
   exit 1
 fi
 
+# 33c. Test Case: cleaner.sh's dry-run Next: replay options (next_args) and cleanup
+# Prometheus gauge names (# TYPE lines in write_cleanup_metrics) match cleaner.1,
+# docs/cli-reference.md, and docs/env-automation-contract.md.
+echo -e "\n${BOLD}Test Case: Dry-Run Next Options And Cleanup Metrics Doc Parity${NC}"
+if contract_drift=$(python3 - "$SCRIPT_DIR/cleaner.sh" "$SCRIPT_DIR/cleaner.1" "$SCRIPT_DIR/docs/cli-reference.md" "$SCRIPT_DIR/docs/env-automation-contract.md" <<'CONTRACT_PY'
+import re, sys
+
+cleaner_p, man_p, cli_p, env_p = sys.argv[1:]
+cleaner = open(cleaner_p, encoding="utf-8").read()
+man = open(man_p, encoding="utf-8").read()
+cli = open(cli_p, encoding="utf-8").read()
+env = open(env_p, encoding="utf-8").read()
+
+drift = []
+
+code_next = sorted(set(re.findall(r"next_args\+=\((--[a-z0-9-]+)", cleaner)))
+man_clean = man.replace(r"\:", "").replace(r"\-", "-")
+m_man_next = re.search(r"When the preview used\b.*?\(from the command line", man_clean, re.S)
+man_next = sorted(set(re.findall(r"--[a-z][a-z0-9-]*", m_man_next.group(0)))) if m_man_next else []
+m_cli_next = re.search(r"When the preview used\b.*?\(from the command line", cli, re.S)
+cli_next = sorted(set(re.findall(r"--[a-z][a-z0-9-]*", m_cli_next.group(0)))) if m_cli_next else []
+
+if not code_next:
+    drift.append("cleaner.sh next_args empty")
+if man_next != code_next:
+    drift.append(f"cleaner.1 Next: options {man_next} != cleaner.sh {code_next}")
+if cli_next != code_next:
+    drift.append(f"docs/cli-reference.md Next: options {cli_next} != cleaner.sh {code_next}")
+
+m_wcm = re.search(r"^write_cleanup_metrics\(\)\s*\{.*?^\}", cleaner, re.M | re.S)
+code_metrics = sorted(set(re.findall(r"# TYPE (linux_cleaner_[a-z0-9_]+)\s+gauge", m_wcm.group(0)))) if m_wcm else []
+m_man_met = re.search(r"^\.B LINUX_CLEANER_METRICS_FILE\n.*?(?=^\.TP\b|^\.SH\b)", man_clean, re.M | re.S)
+man_metrics = sorted(set(re.findall(r"\blinux_cleaner_[a-z0-9_]+\b", m_man_met.group(0)))) if m_man_met else []
+m_cli_met = re.search(r"^\|\s*`LINUX_CLEANER_METRICS_FILE`\s*\|.*$", cli, re.M)
+cli_metrics = sorted(set(re.findall(r"\blinux_cleaner_[a-z0-9_]+\b", m_cli_met.group(0)))) if m_cli_met else []
+m_env_met = re.search(r"^\|\s*`LINUX_CLEANER_METRICS_FILE`\s*\|.*$", env, re.M)
+env_metrics = sorted(set(re.findall(r"\blinux_cleaner_[a-z0-9_]+\b", m_env_met.group(0)))) if m_env_met else []
+
+if not code_metrics:
+    drift.append("cleaner.sh write_cleanup_metrics gauges empty")
+if man_metrics != code_metrics:
+    drift.append(f"cleaner.1 LINUX_CLEANER_METRICS_FILE {man_metrics} != cleaner.sh {code_metrics}")
+if cli_metrics != code_metrics:
+    drift.append(f"docs/cli-reference.md LINUX_CLEANER_METRICS_FILE {cli_metrics} != cleaner.sh {code_metrics}")
+if env_metrics != code_metrics:
+    drift.append(f"docs/env-automation-contract.md LINUX_CLEANER_METRICS_FILE {env_metrics} != cleaner.sh {code_metrics}")
+
+if drift:
+    print("\n".join(drift))
+    sys.exit(1)
+CONTRACT_PY
+); then
+  echo -e "${GREEN}PASS: dry-run Next: options and cleanup Prometheus gauges match across cleaner.sh, cleaner.1, and docs.${NC}"
+else
+  echo -e "${RED}FAIL: contract parity drift detected:${NC}"
+  printf '%s\n' "$contract_drift"
+  exit 1
+fi
+
 # 34. Test Case: CHANGELOG top released version matches --version, and so does
 # the man page (RELEASING.md pre-release gate). AUR pkgver is not tracked;
 # aurgen aur takes it from the v* tag.
@@ -3313,6 +3372,14 @@ if [[ "$stranded_n" -eq 2 && "$rolled_n" -eq 0 ]]; then
   echo -e "${GREEN}PASS: the release guard detects stranded [Unreleased] entries (2) and a rolled changelog (0).${NC}"
 else
   echo -e "${RED}FAIL: the release guard miscounts (stranded=$stranded_n expected 2, rolled=$rolled_n expected 0).${NC}"
+  exit 1
+fi
+matrix_unreleased_count() {
+  awk '/^## Unreleased/{f=1;next} f&&/^## /{exit} f&&/^\| U-[0-9]+/{c++} END{print c+0}' "$1"
+}
+if [[ "$(unreleased_entry_count "$SCRIPT_DIR/CHANGELOG.md")" -eq 0 ]] \
+   && [[ "$(matrix_unreleased_count "$SCRIPT_DIR/docs/test-coverage-matrix.md")" -ne 0 ]]; then
+  echo -e "${RED}FAIL: docs/test-coverage-matrix.md still has Unreleased rows while CHANGELOG.md [Unreleased] is empty.${NC}"
   exit 1
 fi
 # Belt and braces: this suite must never create a tag in the real repository.

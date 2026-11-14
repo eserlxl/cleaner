@@ -39,8 +39,9 @@ A change to `cleaner.sh` must preserve all of these:
    `--clean`, `--force`, `--interactive`, or a truthy `LINUX_CLEANER_FORCE`;
    the last CLI execution/preview flag wins. `--trash` only selects quarantine.
    `danger` targets still require confirmation unless `--yes-danger` is set.
-   Restore and purge are separate explicit operations. Purge rejects an active
-   explicit `--dry-run`; restore with `--dry-run` only previews each record.
+   Restore and purge are separate explicit operations. Restore and purge with
+   an active explicit `--dry-run` only preview without mutating; `--hold-session`
+   and `--release-session` reject `--dry-run`.
 
 
 Threat model: [docs/threat-model.md](docs/threat-model.md) (maps invariants to scenarios).
