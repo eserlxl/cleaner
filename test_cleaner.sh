@@ -12920,18 +12920,21 @@ if ! LINUX_CLEANER_ACTION_TIMEOUT=0030 MOCK_ACTION_SLEEP=0 \
 fi
 echo -e "${GREEN}PASS: LINUX_CLEANER_ACTION_TIMEOUT wraps the action with the normalized limit and a finished action succeeds.${NC}"
 
-# An action killed before the limit (OOM, kill -9) exits 137 too: report a failure, not a timeout.
-at_reset
-if ! MOCK_ACTION_SLEEP=0 MOCK_ACTION_EXIT=137 \
-     run_test_case "Action Timeout Early Kill Is Not A Timeout" 1 "action_timeout_early_kill.log" \
-       --config "$TEST_ENV_DIR/action_timeout.conf" --clean --force --action-timeout 30 \
-   || ! grep -qF "Error: Action 'action:uv_cache_prune' for 'Hung Action' failed." "$TEST_ENV_DIR/action_timeout_early_kill.log" \
-   || grep -q 'timed out after' "$TEST_ENV_DIR/action_timeout_early_kill.log"; then
-  echo -e "${RED}FAIL: an action that exited 137 before the limit was reported as a timeout.${NC}"
-  cat "$TEST_ENV_DIR/action_timeout_early_kill.log" 2>/dev/null || true
-  exit 1
-fi
-echo -e "${GREEN}PASS: an early exit 137 is reported as a failed action, not a timeout.${NC}"
+# An action killed before the limit (OOM, kill -9) exits 137 too: report a failure, not a timeout,
+# including large decimal limits that would overflow 64-bit ACTION_TIMEOUT * 1000000 arithmetic.
+for at_limit in 30 10000000000000 99999999999999999999; do
+  at_reset
+  if ! MOCK_ACTION_SLEEP=0 MOCK_ACTION_EXIT=137 \
+       run_test_case "Action Timeout Early Kill Is Not A Timeout ($at_limit)" 1 "action_timeout_early_kill_${at_limit}.log" \
+         --config "$TEST_ENV_DIR/action_timeout.conf" --clean --force --action-timeout "$at_limit" \
+     || ! grep -qF "Error: Action 'action:uv_cache_prune' for 'Hung Action' failed." "$TEST_ENV_DIR/action_timeout_early_kill_${at_limit}.log" \
+     || grep -q 'timed out after' "$TEST_ENV_DIR/action_timeout_early_kill_${at_limit}.log"; then
+    echo -e "${RED}FAIL: an action that exited 137 before limit $at_limit was reported as a timeout.${NC}"
+    cat "$TEST_ENV_DIR/action_timeout_early_kill_${at_limit}.log" 2>/dev/null || true
+    exit 1
+  fi
+done
+echo -e "${GREEN}PASS: an early exit 137 is reported as a failed action, not a timeout, including large decimal limits.${NC}"
 
 at_env_bad_ec=0
 LINUX_CLEANER_ACTION_TIMEOUT=-1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \

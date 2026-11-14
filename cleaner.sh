@@ -4050,7 +4050,7 @@ run_action() {
     "$@"
     return
   fi
-  local rc=0 started elapsed_us
+  local rc=0 started elapsed_us elapsed_s
   started=$(now_us)
   local -a timeout_mode=()
   # On a terminal, stay in its process group so Ctrl-C still reaches the action.
@@ -4058,8 +4058,15 @@ run_action() {
   timeout "${timeout_mode[@]}" --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
   # 124/137 also come from an action's own status or an unrelated SIGKILL (OOM).
   # Microseconds: whole SECONDS ticks would call a 0.6 s exit a 1 s timeout.
+  # Compare whole elapsed seconds as decimal text so large ACTION_TIMEOUT values
+  # never overflow ACTION_TIMEOUT * 1000000 in 64-bit shell arithmetic.
   elapsed_us=$(( $(now_us) - started ))
-  if [[ ( "$rc" -eq 124 || "$rc" -eq 137 ) ]] && (( elapsed_us >= ACTION_TIMEOUT * 1000000 )); then
+  (( elapsed_us < 0 )) && elapsed_us=0
+  elapsed_s=$(( elapsed_us / 1000000 ))
+  # shellcheck disable=SC2071
+  if [[ ( "$rc" -eq 124 || "$rc" -eq 137 ) ]] && \
+     [[ ${#elapsed_s} -gt ${#ACTION_TIMEOUT} || \
+        ( ${#elapsed_s} -eq ${#ACTION_TIMEOUT} && ( "$elapsed_s" > "$ACTION_TIMEOUT" || "$elapsed_s" == "$ACTION_TIMEOUT" ) ) ]]; then
     ACTION_TIMED_OUT=true
   fi
   return "$rc"
