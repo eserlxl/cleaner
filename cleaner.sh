@@ -1684,6 +1684,17 @@ build_exclude_find_args() {
     if [[ -z "$pat" ]]; then
       continue
     fi
+    # Normalize directory-style trailing slashes (e.g. sub/, a/b/, sub///)
+    # while keeping root "/" intact and refusing to widen "*/" into bare "*".
+    if [[ "$pat" == */ && ! "$pat" =~ ^/+$ ]]; then
+      local stripped_pat="$pat"
+      while [[ "$stripped_pat" == */ ]]; do
+        stripped_pat="${stripped_pat%/}"
+      done
+      if [[ -n "$stripped_pat" && "$stripped_pat" != "*" && "$stripped_pat" != "**" ]]; then
+        pat="$stripped_pat"
+      fi
+    fi
     if [[ ${#clauses[@]} -gt 0 ]]; then
       clauses+=("-o")
     fi

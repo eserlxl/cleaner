@@ -15755,5 +15755,44 @@ fi
 rm -f "$q_sym_base"
 echo -e "${GREEN}PASS: quarantine refuses symlinked named sessions, reports --restore latest enumeration errors, and omits symlinked quarantine size metrics.${NC}"
 
+echo -e "\n${BOLD}Test Case: Exclude Trailing Slashes Normalized Without Widening Star-Slash${NC}"
+setup_mock_env
+excl_slash_dir="$MOCK_HOME/.cache/excl_slash"
+mkdir -p "$excl_slash_dir/sub" "$excl_slash_dir/a/b" "$excl_slash_dir/triple"
+printf 'keep-sub\n' > "$excl_slash_dir/sub/a.txt"
+printf 'keep-ab\n' > "$excl_slash_dir/a/b/nested.txt"
+printf 'keep-triple\n' > "$excl_slash_dir/triple/c.txt"
+printf 'drop-me\n' > "$excl_slash_dir/drop.txt"
+cat > "$TEST_ENV_DIR/excl_slash_cli.conf" <<'EOF'
+safe|Exclude Slash CLI|$HOME/.cache/excl_slash|trailing slash cli exclude test|0||
+EOF
+cat > "$TEST_ENV_DIR/excl_slash_row.conf" <<'EOF'
+safe|Exclude Slash Row|$HOME/.cache/excl_slash|trailing slash row exclude test|0||exclude:sub/,a/b/,triple///
+EOF
+
+if ! run_test_case "Exclude Trailing Slash CLI Dry Run Show Matches" 0 "excl_slash_cli_dry.log" \
+       --config "$TEST_ENV_DIR/excl_slash_cli.conf" --exclude 'sub/,a/b/,triple///' --dry-run --show-matches \
+   || ! grep -qF "drop.txt" "$TEST_ENV_DIR/excl_slash_cli_dry.log" \
+   || grep -qF "sub/a.txt" "$TEST_ENV_DIR/excl_slash_cli_dry.log" \
+   || grep -qF "a/b/nested.txt" "$TEST_ENV_DIR/excl_slash_cli_dry.log" \
+   || grep -qF "triple/c.txt" "$TEST_ENV_DIR/excl_slash_cli_dry.log" \
+   || ! run_test_case "Exclude Trailing Slash Row Dry Run Show Matches" 0 "excl_slash_row_dry.log" \
+       --config "$TEST_ENV_DIR/excl_slash_row.conf" --dry-run --show-matches \
+   || ! grep -qF "drop.txt" "$TEST_ENV_DIR/excl_slash_row_dry.log" \
+   || grep -qF "sub/a.txt" "$TEST_ENV_DIR/excl_slash_row_dry.log" \
+   || grep -qF "a/b/nested.txt" "$TEST_ENV_DIR/excl_slash_row_dry.log" \
+   || grep -qF "triple/c.txt" "$TEST_ENV_DIR/excl_slash_row_dry.log" \
+   || ! run_test_case "Exclude Star-Slash Does Not Widen To Star" 0 "excl_star_slash.log" \
+       --config "$TEST_ENV_DIR/excl_slash_cli.conf" --exclude '*/' --dry-run --show-matches \
+   || ! grep -qF "drop.txt" "$TEST_ENV_DIR/excl_star_slash.log" \
+   || ! run_test_case "Exclude Trailing Slash Row Clean Force" 0 "excl_slash_row_clean.log" \
+       --config "$TEST_ENV_DIR/excl_slash_row.conf" --clean --force \
+   || [[ ! -f "$excl_slash_dir/sub/a.txt" || ! -f "$excl_slash_dir/a/b/nested.txt" || ! -f "$excl_slash_dir/triple/c.txt" || -e "$excl_slash_dir/drop.txt" ]]; then
+  echo -e "${RED}FAIL: trailing-slash exclude normalization failed or widened '*/' to '*'.${NC}"
+  cat "$TEST_ENV_DIR/excl_slash_cli_dry.log" "$TEST_ENV_DIR/excl_slash_row_dry.log" "$TEST_ENV_DIR/excl_star_slash.log" "$TEST_ENV_DIR/excl_slash_row_clean.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: trailing slashes in CLI --exclude and config exclude: patterns are normalized safely without widening '*/'.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
