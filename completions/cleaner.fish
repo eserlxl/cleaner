@@ -2,7 +2,11 @@
 # Fish tab completion for cleaner / cleaner.sh.
 
 function __cleaner_sessions
-  for session in "$HOME/.cache/linux-cleaner/quarantine/"*/ "$HOME/.cache/linux-cleaner/quarantine/".*/
+  set -q HOME; and test -n "$HOME"; or return 0
+  set -l quarantine_dir "$HOME/.cache/linux-cleaner/quarantine"
+  test -L "$quarantine_dir"; and return 0
+  test -d "$quarantine_dir"; or return 0
+  for session in "$quarantine_dir/"*/ "$quarantine_dir/".*/
     if not test -L (string replace -r '/$' '' -- $session)
       string replace -r '^.*/([^/]+)/$' '$1' -- $session
     end

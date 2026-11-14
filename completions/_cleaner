@@ -3,8 +3,11 @@
 # Zsh tab completion for cleaner / cleaner.sh.
 
 _cleaner() {
-  local -a sessions
-  sessions=("$HOME/.cache/linux-cleaner/quarantine/"*(ND/:t))
+  local -a sessions=()
+  local quarantine_dir="${HOME:-}/.cache/linux-cleaner/quarantine"
+  if [[ -n "${HOME:-}" && ! -L "$quarantine_dir" && -d "$quarantine_dir" ]]; then
+    sessions=("$quarantine_dir/"*(ND/:t))
+  fi
   _arguments \
     '(-c --config)'{-c,--config}'[Path to a configuration file (default search order: XDG user config, then /etc/linux-cleaner/cleaner.conf, then cleaner.conf beside the script)]:file:_files' \
     '(-d --dry-run)'{-d,--dry-run}'[Calculate and display potential space savings without deleting anything (default)]' \

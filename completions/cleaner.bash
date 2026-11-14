@@ -51,13 +51,16 @@ _cleaner() {
 
   local -a sessions=()
   if [[ "$prev" == --restore || "$prev" == --purge-sessions || "$prev" == --hold-session || "$prev" == --release-session ]]; then
-    local session
-    while IFS= read -r session; do
-      [[ -d "$session" && ! -L "$session" ]] || continue
-      session="${session##*/}"
-      [[ "$session" == "." || "$session" == ".." ]] && continue
-      [[ "$session" == "$cur"* ]] && sessions+=("$session")
-    done < <(compgen -d -- "$HOME/.cache/linux-cleaner/quarantine/$cur")
+    local quarantine_dir="${HOME:-}/.cache/linux-cleaner/quarantine"
+    if [[ -n "${HOME:-}" && "$cur" != */* && -d "$quarantine_dir" && ! -L "$quarantine_dir" ]]; then
+      local session
+      while IFS= read -r session; do
+        [[ -d "$session" && ! -L "$session" ]] || continue
+        session="${session##*/}"
+        [[ "$session" == "." || "$session" == ".." ]] && continue
+        [[ "$session" == "$cur"* ]] && sessions+=("$session")
+      done < <(compgen -d -- "$quarantine_dir/$cur")
+    fi
   fi
 
   local handled=true is_file_comp=false
