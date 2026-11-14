@@ -15914,5 +15914,64 @@ EOF
   echo -e "${GREEN}PASS: outside-HOME aged/excluded single files and 0555 dirs require sudo while 0755 dirs under 0555 parents still clean without sudo.${NC}"
 fi
 
+echo -e "\n${BOLD}Test Case: Prometheus Metrics Pre-Lock And Non-Cleanup Preservation${NC}"
+setup_mock_env
+prelock_metrics_dir="$TEST_ENV_DIR/prelock_metrics"
+prelock_metrics_file="$prelock_metrics_dir/linux_cleaner.prom"
+mkdir -p "$prelock_metrics_dir" "$MOCK_HOME/.cache/prelock_target" "$MOCK_HOME/.cache/linux-cleaner"
+printf 'keep-or-clean\n' > "$MOCK_HOME/.cache/prelock_target/item.txt"
+printf 'safe|Prelock Target|%s/.cache/prelock_target|Pre-lock metrics preservation test|0||\n' "$MOCK_HOME" > "$TEST_ENV_DIR/prelock_metrics.conf"
+printf 'linux_cleaner_last_run_success 1\n' > "$prelock_metrics_file"
+
+# Lock contention must not overwrite existing cleanup metrics without holding cleaner.lock.
+lock_ec=0
+flock -x "$MOCK_HOME/.cache/linux-cleaner/cleaner.lock" -c \
+  "LINUX_CLEANER_METRICS_FILE=\"$prelock_metrics_file\" PATH=\"$TEST_ENV_DIR/bin:\$PATH\" HOME=\"$MOCK_HOME\" XDG_STATE_HOME=\"$TEST_ENV_DIR/xdg_state\" \"$CLEANER_SH\" --config \"$TEST_ENV_DIR/prelock_metrics.conf\" --clean --force" \
+  > "$TEST_ENV_DIR/metrics_lock_contention.log" 2>&1 || lock_ec=$?
+if [[ $lock_ec -ne 1 ]] \
+   || ! grep -q "another linux-cleaner run is in progress" "$TEST_ENV_DIR/metrics_lock_contention.log" \
+   || [[ "$(cat "$prelock_metrics_file")" != "linux_cleaner_last_run_success 1" ]]; then
+  echo -e "${RED}FAIL: lock contention modified metrics or exited unexpectedly (ec=$lock_ec).${NC}"
+  cat "$prelock_metrics_file" "$TEST_ENV_DIR/metrics_lock_contention.log" 2>/dev/null || true
+  exit 1
+fi
+
+# Pre-lock invalid --only-path, missing config, and failed --purge-sessions --force / --restore leave metrics intact.
+if ! LINUX_CLEANER_METRICS_FILE="$prelock_metrics_file" \
+     run_test_case "Prometheus Metrics Invalid Only-Path Preserved" 1 "metrics_bad_only_path.log" \
+       --config "$TEST_ENV_DIR/prelock_metrics.conf" --only-path "/nonexistent_pw_metrics_path" --clean --force \
+   || [[ "$(cat "$prelock_metrics_file")" != "linux_cleaner_last_run_success 1" ]] \
+   || ! LINUX_CLEANER_METRICS_FILE="$prelock_metrics_file" \
+     run_test_case "Prometheus Metrics Missing Config Preserved" 1 "metrics_missing_cfg.log" \
+       --config "$TEST_ENV_DIR/nonexistent_metrics.conf" --clean --force \
+   || [[ "$(cat "$prelock_metrics_file")" != "linux_cleaner_last_run_success 1" ]] \
+   || ! LINUX_CLEANER_METRICS_FILE="$prelock_metrics_file" \
+     run_test_case "Prometheus Metrics Failed Purge Preserved" 1 "metrics_bad_purge.log" \
+       --purge-sessions latest --force \
+   || [[ "$(cat "$prelock_metrics_file")" != "linux_cleaner_last_run_success 1" ]] \
+   || ! LINUX_CLEANER_METRICS_FILE="$prelock_metrics_file" \
+     run_test_case "Prometheus Metrics Failed Restore Preserved" 1 "metrics_bad_restore.log" \
+       --restore latest \
+   || [[ "$(cat "$prelock_metrics_file")" != "linux_cleaner_last_run_success 1" ]]; then
+  echo -e "${RED}FAIL: pre-lock failure or failed purge/restore overwrote LINUX_CLEANER_METRICS_FILE.${NC}"
+  cat "$prelock_metrics_file" 2>/dev/null || true
+  exit 1
+fi
+
+# Post-lock cleanup failure (quarantine creation error) still records success 0.
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+printf 'not a directory\n' > "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+if ! LINUX_CLEANER_METRICS_FILE="$prelock_metrics_file" \
+     run_test_case "Prometheus Metrics Post-Lock Quarantine Error" 1 "metrics_postlock_fail.log" \
+       --config "$TEST_ENV_DIR/prelock_metrics.conf" --clean --trash --force \
+   || ! grep -qx 'linux_cleaner_last_run_success 0' "$prelock_metrics_file"; then
+  rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+  echo -e "${RED}FAIL: post-lock cleanup failure did not record linux_cleaner_last_run_success 0.${NC}"
+  cat "$prelock_metrics_file" "$TEST_ENV_DIR/metrics_postlock_fail.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+echo -e "${GREEN}PASS: pre-lock failures and failed purge/restore leave metrics untouched while post-lock cleanup failures export success 0.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

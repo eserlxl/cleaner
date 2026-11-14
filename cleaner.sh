@@ -155,6 +155,7 @@ RESULT_FAILED_TARGETS=()
 OPERATION_FAILED=false
 RETENTION_FAILED=false
 CLEANUP_METRICS_WRITTEN=false
+CLEANUP_METRICS_ARMED=false
 
 # Operation log (opt-in, OFF by default). Enable via --log or by setting the
 # LINUX_CLEANER_LOG environment variable. The log lives under $HOME (see the
@@ -268,7 +269,7 @@ notify_failed_exit() {
     journal_error_line "Run stopped with exit status ${status} before cleaning."
     return "$status"
   fi
-  if [[ "${CLEANUP_METRICS_WRITTEN:-false}" != true ]] && declare -F write_cleanup_metrics >/dev/null 2>&1; then
+  if [[ "${CLEANUP_METRICS_ARMED:-false}" == true && "${CLEANUP_METRICS_WRITTEN:-false}" != true ]] && declare -F write_cleanup_metrics >/dev/null 2>&1; then
     OPERATION_FAILED=true
     write_cleanup_metrics || true
   fi
@@ -4468,6 +4469,12 @@ if [[ -n "${PURGE_TARGET:-}" ]]; then
     exit 1
   fi
   exit 0
+fi
+
+# Arm failure-metrics export only after pre-lock validation, non-cleanup dispatch,
+# and mutation lock acquisition succeed on the cleanup path.
+if [[ "$DRY_RUN" == false ]]; then
+  CLEANUP_METRICS_ARMED=true
 fi
 
 # Header output

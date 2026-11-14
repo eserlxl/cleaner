@@ -14,6 +14,7 @@
 | U-145 | `strip_trailing_slashes` preserves `-n`, `-e`, `-E`, `-ne`, and `/` inputs via `printf '%s\n'` instead of letting `echo` consume them as flags | Strip Trailing Slashes Preserves Echo Option Strings / Strip Trailing Slashes Preserves -n In Target Path |
 | U-146 | `-i/--interactive` and `-f/--force` mutually clear each other so the last flag wins (`-f -i` and `LINUX_CLEANER_FORCE=1 -i` prompt per target, `-i -f` runs forced without prompting), while `--force --clean` stays forced | -i/--interactive and -f/--force Mutually Clear Each Other / Force Then Clean Stays Forced |
 | U-147 | Outside-`$HOME` aged/excluded single files under `0555` parents and aged/excluded `0555` directories require `sudo` (skipping cleanly as `requires root` without privileges and preserving files), while user-writable `0755` directories under `0555` parents still clean file-by-file without `sudo` | Outside HOME Filtered Sudo Requirements Without Privileges |
+| U-148 | Lock contention, invalid `--only-path` / missing-config pre-lock failures, and failed `--purge-sessions --force` / `--restore` runs leave `LINUX_CLEANER_METRICS_FILE` untouched while post-lock cleanup failures still record `linux_cleaner_last_run_success 0` | Prometheus Metrics Pre-Lock And Non-Cleanup Preservation |
 
 ## 1.6.0 shipped feature inventory
 
