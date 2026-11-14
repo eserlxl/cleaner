@@ -2387,6 +2387,22 @@ path_is_real_dir() {
   with_sudo "$1" test -d "$2" && ! with_sudo "$1" test -L "$2"
 }
 
+# True when the closest existing ancestor directory of PATH lacks search (+x)
+# permission, blocking unprivileged stat/lstat lookup of PATH.
+path_lookup_blocked() {
+  local cur="$1" parent
+  while [[ "$cur" != "/" && -n "$cur" ]]; do
+    parent=$(dirname -- "$cur") || return 1
+    [[ "$parent" != "$cur" ]] || break
+    cur="$parent"
+    if [[ -e "$cur" || -L "$cur" ]]; then
+      [[ -d "$cur" && ! -x "$cur" ]]
+      return
+    fi
+  done
+  return 1
+}
+
 # Move a whole target into quarantine and record it in quarantine.meta. The
 # record is written ONLY after the move actually succeeded: a record for a file
 # that never moved makes every later --restore of the session fail on a missing
@@ -4684,9 +4700,10 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         requires_sudo=false
         root_unavailable=false
         if { [[ "$custom_clean_cmd" == action:* ]] && ! action_is_user_level "$custom_clean_cmd"; } || \
-           [[ -e "$path" && ! -r "$path" ]] || \
-           { [[ "$custom_clean_cmd" != action:* ]] && [[ "$safety_status" -eq 2 ]] && [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]] && \
-             { [[ ! -e "$path" ]] || { ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; }; }; then
+           [[ -e "$path" && ( ! -r "$path" || ( -d "$path" && ! -x "$path" ) ) ]] || \
+           { [[ "$custom_clean_cmd" != action:* ]] && path_lookup_blocked "$path"; } || \
+           { [[ "$custom_clean_cmd" != action:* && "$safety_status" -eq 2 && ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]] && \
+             path_present false "$path" && ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; then
           requires_sudo=true
           if [[ "$DRY_RUN" = false ]]; then
             if ensure_sudo; then

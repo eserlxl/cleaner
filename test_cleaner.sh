@@ -2241,6 +2241,73 @@ else
   exit 1
 fi
 
+# 21c. Test Case: absent outside-HOME targets under searchable unwritable parents stay missing, while unsearchable parents require root
+if [[ "$EUID" -ne 0 ]]; then
+  setup_mock_env
+  outside_ro_parent="$OUTSIDE_DIR/ro_searchable_parent"
+  outside_locked_parent="$OUTSIDE_DIR/locked_unsearchable_parent"
+  mkdir -p "$outside_ro_parent" "$outside_locked_parent/hidden_cache"
+  printf 'hidden\n' > "$outside_locked_parent/hidden_cache/file.bin"
+  chmod 555 "$outside_ro_parent"
+  chmod 000 "$outside_locked_parent"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/sudo"
+  chmod +x "$TEST_ENV_DIR/bin/sudo"
+  cat > "$TEST_ENV_DIR/outside_absent_ro.conf" <<EOF
+safe|Absent Direct Outside|$outside_ro_parent/absent_cache|absent outside target under searchable ro parent|0||
+safe|Absent Nested Outside|$outside_ro_parent/absent_dir/cache|nested absent outside target under searchable ro parent|0||
+EOF
+  cat > "$TEST_ENV_DIR/outside_locked_parent.conf" <<EOF
+safe|Blocked Lookup Outside|$outside_locked_parent/hidden_cache|target behind unsearchable ancestor|0||
+EOF
+  if ! run_test_case "Absent Outside Searchable RO Dry Run JSON Exit Code" 0 "outside_absent_ro_dry.json" \
+         --config "$TEST_ENV_DIR/outside_absent_ro.conf" --dry-run --json --exit-code \
+     || ! python3 - "$TEST_ENV_DIR/outside_absent_ro_dry.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+assert doc["would_skip"] == "nothing_to_clean", doc
+assert [t["status"] for t in doc["targets"]] == ["missing", "missing"], doc["targets"]
+assert all(t["bytes"] == 0 and t["reason"] == "" for t in doc["targets"]), doc["targets"]
+PY
+  then
+    chmod 755 "$outside_ro_parent" "$outside_locked_parent" 2>/dev/null || true
+    echo -e "${RED}FAIL: absent outside-HOME target under searchable 0555 parent was not reported missing in --dry-run --json --exit-code.${NC}"
+    cat "$TEST_ENV_DIR/outside_absent_ro_dry.json" 2>/dev/null || true
+    exit 1
+  fi
+  if ! run_test_case "Absent Outside Searchable RO Clean Force" 0 "outside_absent_ro_clean.log" \
+         --config "$TEST_ENV_DIR/outside_absent_ro.conf" --clean --force \
+     || grep -qi "requires root" "$TEST_ENV_DIR/outside_absent_ro_clean.log" \
+     || ! grep -qF "Result: nothing to clean" "$XDG_STATE_HOME/linux-cleaner/last-report.txt"; then
+    chmod 755 "$outside_ro_parent" "$outside_locked_parent" 2>/dev/null || true
+    echo -e "${RED}FAIL: absent outside-HOME target under searchable 0555 parent required root during --clean --force.${NC}"
+    cat "$TEST_ENV_DIR/outside_absent_ro_clean.log" "$XDG_STATE_HOME/linux-cleaner/last-report.txt" 2>/dev/null || true
+    exit 1
+  fi
+  if ! run_test_case "Unsearchable Ancestor Dry Run JSON Exit Code" 2 "outside_locked_dry.json" \
+         --config "$TEST_ENV_DIR/outside_locked_parent.conf" --dry-run --json --exit-code \
+     || ! python3 - "$TEST_ENV_DIR/outside_locked_dry.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+assert [t["status"] for t in doc["targets"]] == ["root"], doc["targets"]
+PY
+  then
+    chmod 755 "$outside_ro_parent" "$outside_locked_parent" 2>/dev/null || true
+    echo -e "${RED}FAIL: target behind unsearchable 0000 parent was not reported as root in --dry-run.${NC}"
+    cat "$TEST_ENV_DIR/outside_locked_dry.json" 2>/dev/null || true
+    exit 1
+  fi
+  if ! run_test_case "Unsearchable Ancestor Clean Skip Without Privileges" 0 "outside_locked_clean.log" \
+         --config "$TEST_ENV_DIR/outside_locked_parent.conf" --clean --force \
+     || ! grep -qF "Skipped (requires root): Blocked Lookup Outside" "$TEST_ENV_DIR/outside_locked_clean.log"; then
+    chmod 755 "$outside_ro_parent" "$outside_locked_parent" 2>/dev/null || true
+    echo -e "${RED}FAIL: target behind unsearchable 0000 parent was not skipped as requiring root.${NC}"
+    cat "$TEST_ENV_DIR/outside_locked_clean.log" 2>/dev/null || true
+    exit 1
+  fi
+  chmod 755 "$outside_ro_parent" "$outside_locked_parent"
+  echo -e "${GREEN}PASS: absent outside-HOME targets under searchable 0555 parents stay missing without sudo, while unsearchable 0000 parents require root.${NC}"
+fi
+
 # 22. Test Case: format_bytes GB scaling (unit_idx reaching 3)
 setup_mock_env
 mkdir -p "$MOCK_HOME/.cache/gb_probe"
