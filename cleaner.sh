@@ -324,12 +324,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     -i|--interactive)
       INTERACTIVE=true
+      FORCE=false
       DRY_RUN=false
       DRY_RUN_EXPLICIT=false
       shift
       ;;
     -f|--force)
       FORCE=true
+      INTERACTIVE=false
       DRY_RUN=false
       DRY_RUN_EXPLICIT=false
       shift

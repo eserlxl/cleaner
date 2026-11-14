@@ -109,10 +109,21 @@ and fail immediately on contention by default.
 opts in to bounded waiting; dry-run and read-only modes never take the lock.
 .TP
 .BR \-i ", " \-\-interactive
-Enable cleanup and prompt for confirmation before cleaning each target.
+Enable cleanup and prompt for confirmation before cleaning each target
+(overrides an earlier
+.BR \-f / \-\-force
+or
+.BR LINUX_CLEANER_FORCE ;
+.B \-\-clean
+does not clear it).
 .TP
 .BR \-f ", " \-\-force
-Clean immediately without confirmation prompts (except danger level).
+Clean immediately without confirmation prompts (except danger level;
+overrides an earlier
+.BR \-i / \-\-interactive ,
+and
+.B \-\-clean
+does not clear it).
 .TP
 .B \-\-yes\-danger
 Bypass the manual confirmation prompt for danger-risk targets.
@@ -1319,7 +1330,11 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-force
-(non-interactive clean). No CLI flag disables it; set it to 0 or unset it.
+(non-interactive clean). An explicit
+.B \-\-dry\-run
+restores preview mode and
+.BR \-i / \-\-interactive
+switches to per-target confirmation; otherwise set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_YES_DANGER
 When set to

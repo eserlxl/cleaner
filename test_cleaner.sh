@@ -15819,5 +15819,55 @@ if ! run_test_case "Strip Trailing Slashes Preserves -n In Target Path" 0 "dash_
 fi
 echo -e "${GREEN}PASS: strip_trailing_slashes preserves -n, -e, -E, -ne, and / inputs.${NC}"
 
+echo -e "\n${BOLD}Test Case: -i/--interactive and -f/--force Mutually Clear Each Other${NC}"
+setup_mock_env
+if_dir="$MOCK_HOME/.cache/if_precedence"
+mkdir -p "$if_dir"
+printf 'keep-or-clean\n' > "$if_dir/item.txt"
+cat > "$TEST_ENV_DIR/if_precedence.conf" <<'EOF'
+safe|IF Precedence|$HOME/.cache/if_precedence|interactive vs force precedence test|0||
+EOF
+
+if_ec=0
+printf 'n\n' | PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/if_precedence.conf" -f -i > "$TEST_ENV_DIR/if_force_then_i.log" 2>&1 || if_ec=$?
+if [[ $if_ec -ne 0 ]] || ! grep -qF "Clean target 'IF Precedence'" "$TEST_ENV_DIR/if_force_then_i.log" \
+   || [[ ! -f "$if_dir/item.txt" ]]; then
+  echo -e "${RED}FAIL: -f -i bypassed interactive confirmation or deleted target (ec=$if_ec).${NC}"
+  cat "$TEST_ENV_DIR/if_force_then_i.log" 2>/dev/null || true
+  exit 1
+fi
+
+if_ec=0
+printf 'n\n' | LINUX_CLEANER_FORCE=1 PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/if_precedence.conf" -i > "$TEST_ENV_DIR/if_env_then_i.log" 2>&1 || if_ec=$?
+if [[ $if_ec -ne 0 ]] || ! grep -qF "Clean target 'IF Precedence'" "$TEST_ENV_DIR/if_env_then_i.log" \
+   || [[ ! -f "$if_dir/item.txt" ]]; then
+  echo -e "${RED}FAIL: LINUX_CLEANER_FORCE=1 -i bypassed interactive confirmation or deleted target (ec=$if_ec).${NC}"
+  cat "$TEST_ENV_DIR/if_env_then_i.log" 2>/dev/null || true
+  exit 1
+fi
+
+if_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --config "$TEST_ENV_DIR/if_precedence.conf" -i -f < /dev/null > "$TEST_ENV_DIR/if_i_then_force.log" 2>&1 || if_ec=$?
+if [[ $if_ec -ne 0 ]] || grep -qF "Clean target 'IF Precedence'" "$TEST_ENV_DIR/if_i_then_force.log" \
+   || [[ -e "$if_dir/item.txt" ]]; then
+  echo -e "${RED}FAIL: -i -f failed to clear interactive mode or left target behind (ec=$if_ec).${NC}"
+  cat "$TEST_ENV_DIR/if_i_then_force.log" 2>/dev/null || true
+  exit 1
+fi
+
+mkdir -p "$if_dir"
+printf 'clean-forced\n' > "$if_dir/item.txt"
+if ! run_test_case "Force Then Clean Stays Forced" 0 "if_force_clean.log" \
+       --config "$TEST_ENV_DIR/if_precedence.conf" --force --clean \
+   || [[ -e "$if_dir/item.txt" ]]; then
+  echo -e "${RED}FAIL: --force --clean stopped running forced.${NC}"
+  cat "$TEST_ENV_DIR/if_force_clean.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: -i/--interactive and -f/--force mutually clear each other while --clean stays non-clobbering.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
