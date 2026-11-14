@@ -13,6 +13,7 @@
 | U-144 | CLI `--exclude` and config `exclude:` patterns ending in `/` (`sub/`, `a/b/`, `sub///`) strip trailing slashes before building `find` exclusion clauses so excluded subdirectories and nested files stay untouched, while leaving `/` intact and refusing to widen `*/` into `*` | Exclude Trailing Slash CLI Dry Run Show Matches / Exclude Trailing Slash Row Dry Run Show Matches / Exclude Star-Slash Does Not Widen To Star / Exclude Trailing Slash Row Clean Force |
 | U-145 | `strip_trailing_slashes` preserves `-n`, `-e`, `-E`, `-ne`, and `/` inputs via `printf '%s\n'` instead of letting `echo` consume them as flags | Strip Trailing Slashes Preserves Echo Option Strings / Strip Trailing Slashes Preserves -n In Target Path |
 | U-146 | `-i/--interactive` and `-f/--force` mutually clear each other so the last flag wins (`-f -i` and `LINUX_CLEANER_FORCE=1 -i` prompt per target, `-i -f` runs forced without prompting), while `--force --clean` stays forced | -i/--interactive and -f/--force Mutually Clear Each Other / Force Then Clean Stays Forced |
+| U-147 | Outside-`$HOME` aged/excluded single files under `0555` parents and aged/excluded `0555` directories require `sudo` (skipping cleanly as `requires root` without privileges and preserving files), while user-writable `0755` directories under `0555` parents still clean file-by-file without `sudo` | Outside HOME Filtered Sudo Requirements Without Privileges |
 
 ## 1.6.0 shipped feature inventory
 

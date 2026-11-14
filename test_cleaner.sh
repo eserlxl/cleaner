@@ -15869,5 +15869,50 @@ if ! run_test_case "Force Then Clean Stays Forced" 0 "if_force_clean.log" \
 fi
 echo -e "${GREEN}PASS: -i/--interactive and -f/--force mutually clear each other while --clean stays non-clobbering.${NC}"
 
+if [[ "$EUID" -ne 0 ]]; then
+  echo -e "\n${BOLD}Test Case: Outside-HOME Files And Unwritable Dirs Under Age/Exclude Require Sudo${NC}"
+  setup_mock_env
+  ro_out_p="$OUTSIDE_DIR/ro_parent_filtered"
+  ro_out_d_age="$OUTSIDE_DIR/ro_dir_aged"
+  ro_out_d_exc="$OUTSIDE_DIR/ro_dir_excluded"
+  rw_out_d_age="$ro_out_p/writable_sub"
+  mkdir -p "$ro_out_p" "$ro_out_d_age" "$ro_out_d_exc" "$rw_out_d_age"
+  printf 'old-file-age\n' > "$ro_out_p/old_age.txt"
+  printf 'old-file-exc\n' > "$ro_out_p/old_exc.txt"
+  printf 'old-dir-age\n' > "$ro_out_d_age/old.txt"
+  printf 'old-dir-exc\n' > "$ro_out_d_exc/drop.txt"
+  printf 'keep-dir-exc\n' > "$ro_out_d_exc/keep.lock"
+  printf 'old-writable-sub\n' > "$rw_out_d_age/old.txt"
+  touch -d '10 days ago' "$ro_out_p/old_age.txt" "$ro_out_d_age/old.txt" "$rw_out_d_age/old.txt"
+  chmod 555 "$ro_out_p" "$ro_out_d_age" "$ro_out_d_exc"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TEST_ENV_DIR/bin/sudo"
+  chmod +x "$TEST_ENV_DIR/bin/sudo"
+  cat > "$TEST_ENV_DIR/outside_filtered_sudo.conf" <<EOF
+safe|RO Parent Aged File|$ro_out_p/old_age.txt|aged outside single file under 0555 parent|5||
+safe|RO Parent Excluded File|$ro_out_p/old_exc.txt|excluded outside single file under 0555 parent|0||exclude:*.keep
+safe|RO Aged Dir|$ro_out_d_age|0555 outside dir with min_age|5||
+safe|RO Excluded Dir|$ro_out_d_exc|0555 outside dir with exclude|0||exclude:*.lock
+safe|Writable Sub Under RO Parent|$rw_out_d_age|0755 dir under 0555 parent with min_age|5||
+EOF
+  if ! run_test_case "Outside HOME Filtered Sudo Requirements Without Privileges" 0 "outside_filtered_sudo.log" \
+         --config "$TEST_ENV_DIR/outside_filtered_sudo.conf" --clean --force; then
+    chmod 755 "$ro_out_p" "$ro_out_d_age" "$ro_out_d_exc" 2>/dev/null || true
+    exit 1
+  fi
+  chmod 755 "$ro_out_p" "$ro_out_d_age" "$ro_out_d_exc"
+  if ! grep -qF "Warning: skipping 'RO Parent Aged File' " "$TEST_ENV_DIR/outside_filtered_sudo.log" \
+     || ! grep -qF "Warning: skipping 'RO Parent Excluded File' " "$TEST_ENV_DIR/outside_filtered_sudo.log" \
+     || ! grep -qF "Warning: skipping 'RO Aged Dir' " "$TEST_ENV_DIR/outside_filtered_sudo.log" \
+     || ! grep -qF "Warning: skipping 'RO Excluded Dir' " "$TEST_ENV_DIR/outside_filtered_sudo.log" \
+     || ! grep -qF "Skipped (requires root): RO Parent Aged File, RO Parent Excluded File, RO Aged Dir, RO Excluded Dir" "$TEST_ENV_DIR/outside_filtered_sudo.log" \
+     || [[ ! -f "$ro_out_p/old_age.txt" || ! -f "$ro_out_p/old_exc.txt" || ! -f "$ro_out_d_age/old.txt" || ! -f "$ro_out_d_exc/drop.txt" ]] \
+     || [[ -e "$rw_out_d_age/old.txt" || ! -d "$rw_out_d_age" ]]; then
+    echo -e "${RED}FAIL: outside-HOME aged/excluded files or 0555 dirs did not require sudo, or 0755 dir failed to clean without sudo.${NC}"
+    cat "$TEST_ENV_DIR/outside_filtered_sudo.log" 2>/dev/null || true
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: outside-HOME aged/excluded single files and 0555 dirs require sudo while 0755 dirs under 0555 parents still clean without sudo.${NC}"
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

@@ -26,6 +26,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Directory-style `--exclude` and `exclude:` patterns ending in `/` (such as `sub/`, `a/b/`, and `sub///`) now strip trailing slashes before building `find` exclusions so subdirectories and their files are excluded, while preserving `/` and refusing to collapse `*/` into bare `*`.
 - `strip_trailing_slashes` now uses `printf '%s\n'` instead of `echo`, preserving inputs such as `-n`, `-e`, `-E`, and `-ne` instead of consuming them as `echo` options and collapsing them to an empty path.
 - `-i/--interactive` and `-f/--force` now mutually clear each other so the last flag wins (including `-i` overriding `LINUX_CLEANER_FORCE=1`), while `--clean` continues to preserve either flag.
+- Outside-`$HOME` single files under unwritable (`0555`) parents and existing `0555` directories now require `sudo` (and skip as `requires root` when unavailable) even when `MIN_AGE_DAYS > 0` or exclusions are active, while user-writable `0755` directories under `0555` parents still clean file-by-file without `sudo`.
 
 ## [1.9.1] - 2026-10-27
 

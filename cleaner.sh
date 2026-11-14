@@ -4725,8 +4725,11 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
         if { [[ "$custom_clean_cmd" == action:* ]] && ! action_is_user_level "$custom_clean_cmd"; } || \
            [[ -e "$path" && ( ! -r "$path" || ( -d "$path" && ! -x "$path" ) ) ]] || \
            { [[ "$custom_clean_cmd" != action:* ]] && path_lookup_blocked "$path"; } || \
-           { [[ "$custom_clean_cmd" != action:* && "$safety_status" -eq 2 && ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]] && \
-             path_present false "$path" && ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; then
+           { [[ "$custom_clean_cmd" != action:* && "$safety_status" -eq 2 ]] && path_present false "$path" && \
+             { { { [[ ! -d "$path" ]] || { ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; } && \
+                 [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; } || \
+               { [[ -d "$path" && ! -w "$path" ]] && \
+                 { has_positive_age "$effective_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; }; }; }; then
           requires_sudo=true
           if [[ "$DRY_RUN" = false ]]; then
             if ensure_sudo; then
