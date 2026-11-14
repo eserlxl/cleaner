@@ -15497,5 +15497,60 @@ then
 fi
 echo -e "${GREEN}PASS: dry-run JSON reports hidden_by_risk counts and names without sizing hidden targets.${NC}"
 
+# Permanent aged/excluded directory cleanup treats empty-directory pruning as best-effort
+# (matching --trash mode), while still failing when an unsearchable subdirectory blocks traversal.
+if [[ "$EUID" -ne 0 ]]; then
+  echo -e "\n${BOLD}Test Case: Permanent Aged Cleanup Best-Effort Empty Dir Prune${NC}"
+  setup_mock_env
+  aged_prune_dir="$MOCK_HOME/.cache/aged_ro_prune"
+  mkdir -p "$aged_prune_dir/writable_empty" "$aged_prune_dir/fresh_ro/stuck_empty"
+  printf '0123456789abcdef' > "$aged_prune_dir/writable_empty/old.bin"
+  touch -d "10 days ago" "$aged_prune_dir/writable_empty/old.bin"
+  printf 'keep1234' > "$aged_prune_dir/fresh_ro/keep.bin"
+  chmod 0555 "$aged_prune_dir/fresh_ro"
+  cat > "$TEST_ENV_DIR/aged_ro_prune.conf" <<'EOF'
+safe|Aged Read-Only Prune|$HOME/.cache/aged_ro_prune|Aged cache with preserved read-only subdir|7||
+EOF
+  if ! run_test_case "Permanent Aged Empty Dir Under Read-Only Subdir" 0 "aged_ro_prune.log" \
+       --config "$TEST_ENV_DIR/aged_ro_prune.conf" --clean --force \
+     || ! run_test_case "Permanent Aged Empty Dir Report JSON" 0 "aged_ro_prune_report.json" \
+       --report --json; then
+    chmod 0755 "$aged_prune_dir/fresh_ro" 2>/dev/null || true
+    exit 1
+  fi
+  chmod 0755 "$aged_prune_dir/fresh_ro"
+  if [[ -e "$aged_prune_dir/writable_empty" ]] \
+     || [[ ! -f "$aged_prune_dir/fresh_ro/keep.bin" ]] \
+     || [[ ! -d "$aged_prune_dir/fresh_ro/stuck_empty" ]] \
+     || ! python3 - "$TEST_ENV_DIR/aged_ro_prune_report.json" <<'PY'
+import json, sys
+rep = json.load(open(sys.argv[1]))
+assert rep["cleaned"] == 1 and rep["failed"] == 0 and rep["permanent_bytes"] == 16, rep
+PY
+  then
+    echo -e "${RED}FAIL: permanent aged cleanup did not prune writable empty dirs, keep 0555 subdir, and credit bytes.${NC}"
+    cat "$TEST_ENV_DIR/aged_ro_prune.log" "$TEST_ENV_DIR/aged_ro_prune_report.json" 2>/dev/null || true
+    exit 1
+  fi
+
+  mkdir -p "$aged_prune_dir/writable_again" "$aged_prune_dir/blocked_sub"
+  printf '0123456789abcdef' > "$aged_prune_dir/writable_again/old2.bin"
+  touch -d "10 days ago" "$aged_prune_dir/writable_again/old2.bin"
+  printf 'blocked!' > "$aged_prune_dir/blocked_sub/old3.bin"
+  touch -d "10 days ago" "$aged_prune_dir/blocked_sub/old3.bin"
+  chmod 0000 "$aged_prune_dir/blocked_sub"
+  if ! run_test_case "Permanent Aged Unsearchable Subdir Fails" 1 "aged_ro_blocked.log" \
+       --config "$TEST_ENV_DIR/aged_ro_prune.conf" --clean --force; then
+    chmod 0755 "$aged_prune_dir/blocked_sub" 2>/dev/null || true
+    exit 1
+  fi
+  chmod 0755 "$aged_prune_dir/blocked_sub"
+  if [[ ! -f "$aged_prune_dir/blocked_sub/old3.bin" ]]; then
+    echo -e "${RED}FAIL: unsearchable 0000 subdirectory did not preserve blocked payload and fail cleanup.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: permanent aged cleanup treats empty-directory pruning as best-effort while failing on unsearchable subdirectories.${NC}"
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

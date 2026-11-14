@@ -5405,8 +5405,8 @@ for i in "${!parsed_names[@]}"; do
         [[ "$use_sudo" = true ]] && via=" with sudo"
 
         status_echo "  Cleaning filtered files in ${YELLOW}$name${NC}${via}..."
-        if with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete && \
-           with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null; then
+        if with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${find_mtime_args[@]}" -delete; then
+          with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
           total_deleted_bytes=$((total_deleted_bytes + size))
         else
           echo -e "  ${RED}Error: Failed to completely clean aged/filtered files in '$path'${via}${NC}" >&2

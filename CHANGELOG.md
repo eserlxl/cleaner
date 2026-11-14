@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- Permanent file-by-file cleanup of aged or excluded directory targets now treats follow-up empty-directory pruning as best-effort (matching `--trash` mode), so an empty directory inside a read-only preserved subdirectory no longer fails the target or drops reclaimed byte accounting while file traversal or deletion failures still exit `1`.
 - `--doctor` now trims quoted whitespace on `LINUX_CLEANER_ONLY_PATH` and `LINUX_CLEANER_TRASH_KEEP_DAYS` in `~/.config/linux-cleaner/monitor.env` before checking for a conflict, and warns when `monitor.env` is a non-regular path such as a directory, matching systemd's `EnvironmentFile=-` semantics.
 - `--restore` no longer rewrites `quarantine.meta` when zero records were restored (such as when every selected record is refused as malformed or skipped on conflict), preserving the metadata file's permissions, inode, and contents unchanged.
 
