@@ -5,6 +5,7 @@
 | ID | Feature | Test case |
 |----|---------|-----------|
 | U-138 | `--restore` leaves `quarantine.meta` untouched (preserving file mode, inode, and contents) when zero records were restored because every selected record failed validation, conflicted, or could not be moved | Restore Exact literal relative stored path refused |
+| U-139 | `--doctor` trims quoted whitespace on `LINUX_CLEANER_ONLY_PATH` and `LINUX_CLEANER_TRASH_KEEP_DAYS` in `~/.config/linux-cleaner/monitor.env` before checking for conflicts and warns `WARN: monitor env: <path> (not readable)` when `monitor.env` is a non-regular path such as a directory | Doctor Monitor Env Warnings |
 
 ## 1.6.0 shipped feature inventory
 

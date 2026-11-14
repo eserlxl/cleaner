@@ -4285,10 +4285,12 @@ run_doctor() {
     done < "$monitor_env"
     mon_only="${mon_only//[\"\']/}"
     mon_keep="${mon_keep//[\"\']/}"
+    mon_only=$(trim "$mon_only")
+    mon_keep=$(trim "$mon_keep")
     if [[ -n "$mon_only" && -n "$mon_keep" ]]; then
       printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
     fi
-  elif [[ -e "$monitor_env" && ! -r "$monitor_env" ]]; then
+  elif [[ -e "$monitor_env" ]]; then
     printf 'WARN: monitor env: %s (not readable)\n' "$monitor_env"
   fi
 

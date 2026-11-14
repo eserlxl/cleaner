@@ -14814,6 +14814,34 @@ if [[ "$doc_mon_ec" -ne 0 ]] \
   cat "$TEST_ENV_DIR/doctor_monitor.log" 2>/dev/null || true
   exit 1
 fi
+for mon_blank_pair in $'LINUX_CLEANER_ONLY_PATH=/tmp\nLINUX_CLEANER_TRASH_KEEP_DAYS="   "\n' \
+                      $'LINUX_CLEANER_ONLY_PATH=\'   \'\nLINUX_CLEANER_TRASH_KEEP_DAYS=7\n'; do
+  printf '%s' "$mon_blank_pair" > "$doc_env_dir/monitor.env"
+  doc_mon_ec=0
+  XDG_CONFIG_HOME="$doc_mon_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+    "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+    < /dev/null > "$TEST_ENV_DIR/doctor_monitor.log" 2>&1 || doc_mon_ec=$?
+  if [[ "$doc_mon_ec" -ne 0 ]] \
+     || grep -q "WARN: monitor env:" "$TEST_ENV_DIR/doctor_monitor.log"; then
+    echo -e "${RED}FAIL: --doctor warned on quoted-whitespace monitor.env value (ec=$doc_mon_ec).${NC}"
+    cat "$TEST_ENV_DIR/doctor_monitor.log" 2>/dev/null || true
+    exit 1
+  fi
+done
+rm -f "$doc_env_dir/monitor.env"
+mkdir "$doc_env_dir/monitor.env"
+doc_mon_ec=0
+XDG_CONFIG_HOME="$doc_mon_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+  "$CLEANER_SH" --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" \
+  < /dev/null > "$TEST_ENV_DIR/doctor_monitor.log" 2>&1 || doc_mon_ec=$?
+rmdir "$doc_env_dir/monitor.env"
+if [[ "$doc_mon_ec" -ne 0 ]] \
+   || ! grep -qxF "WARN: monitor env: $doc_env_dir/monitor.env (not readable)" "$TEST_ENV_DIR/doctor_monitor.log" \
+   || grep -q "combines LINUX_CLEANER_ONLY_PATH" "$TEST_ENV_DIR/doctor_monitor.log"; then
+  echo -e "${RED}FAIL: --doctor did not warn about a directory at monitor.env (ec=$doc_mon_ec).${NC}"
+  cat "$TEST_ENV_DIR/doctor_monitor.log" 2>/dev/null || true
+  exit 1
+fi
 if [[ "$EUID" -ne 0 ]]; then
   printf 'LINUX_CLEANER_ONLY_PATH=/tmp\n' > "$doc_env_dir/monitor.env"
   chmod 000 "$doc_env_dir/monitor.env"
