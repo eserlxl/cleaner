@@ -24,6 +24,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `--doctor` now trims quoted whitespace on `LINUX_CLEANER_ONLY_PATH` and `LINUX_CLEANER_TRASH_KEEP_DAYS` in `~/.config/linux-cleaner/monitor.env` before checking for a conflict, and warns when `monitor.env` is a non-regular path such as a directory, matching systemd's `EnvironmentFile=-` semantics.
 - `--restore` no longer rewrites `quarantine.meta` when zero records were restored (such as when every selected record is refused as malformed or skipped on conflict), preserving the metadata file's permissions, inode, and contents unchanged.
 - Directory-style `--exclude` and `exclude:` patterns ending in `/` (such as `sub/`, `a/b/`, and `sub///`) now strip trailing slashes before building `find` exclusions so subdirectories and their files are excluded, while preserving `/` and refusing to collapse `*/` into bare `*`.
+- `strip_trailing_slashes` now uses `printf '%s\n'` instead of `echo`, preserving inputs such as `-n`, `-e`, `-E`, and `-ne` instead of consuming them as `echo` options and collapsing them to an empty path.
 
 ## [1.9.1] - 2026-10-27
 

@@ -1599,13 +1599,13 @@ fi
 strip_trailing_slashes() {
   local p="$1"
   if [[ "$p" =~ ^/+$ ]]; then
-    echo "/"
+    printf '%s\n' "/"
     return 0
   fi
   while [[ "$p" == */ ]]; do
     p="${p%/}"
   done
-  echo "$p"
+  printf '%s\n' "$p"
 }
 
 # Canonicalize paths physically (resolves nonexistent paths physically by resolving the closest existing parent directory)

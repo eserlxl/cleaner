@@ -15794,5 +15794,30 @@ if ! run_test_case "Exclude Trailing Slash CLI Dry Run Show Matches" 0 "excl_sla
 fi
 echo -e "${GREEN}PASS: trailing slashes in CLI --exclude and config exclude: patterns are normalized safely without widening '*/'.${NC}"
 
+echo -e "\n${BOLD}Test Case: Strip Trailing Slashes Preserves Echo Option Strings${NC}"
+setup_mock_env
+if ! (
+  eval "$(awk '/^strip_trailing_slashes\(\)/,/^}/' "$CLEANER_SH")"
+  [[ "$(strip_trailing_slashes -n)" == "-n" ]] \
+    && [[ "$(strip_trailing_slashes -n///)" == "-n" ]] \
+    && [[ "$(strip_trailing_slashes -e)" == "-e" ]] \
+    && [[ "$(strip_trailing_slashes -e///)" == "-e" ]] \
+    && [[ "$(strip_trailing_slashes -E)" == "-E" ]] \
+    && [[ "$(strip_trailing_slashes -ne///)" == "-ne" ]] \
+    && [[ "$(strip_trailing_slashes ///)" == "/" ]]
+); then
+  echo -e "${RED}FAIL: strip_trailing_slashes corrupted echo-flag-like or root inputs.${NC}"
+  exit 1
+fi
+printf 'safe|DashN|-n///|dash-n path|0||\n' > "$TEST_ENV_DIR/dash_n_strip.conf"
+if ! run_test_case "Strip Trailing Slashes Preserves -n In Target Path" 0 "dash_n_strip.log" \
+       --config "$TEST_ENV_DIR/dash_n_strip.conf" --dry-run --debug \
+   || ! grep -qF "Path '$PWD/-n' does not exist." "$TEST_ENV_DIR/dash_n_strip.log"; then
+  echo -e "${RED}FAIL: -n/// config path was corrupted instead of stripping to '-n'.${NC}"
+  cat "$TEST_ENV_DIR/dash_n_strip.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: strip_trailing_slashes preserves -n, -e, -E, -ne, and / inputs.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
