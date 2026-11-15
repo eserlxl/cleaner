@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- `--doctor` now validates startup-fatal scheduler environment settings in `~/.config/linux-cleaner/monitor.env` via a shared `_collect_scheduler_env_problems` helper with `daily timer plan`, emitting `WARN` lines (and `--strict` failures), setting JSON `monitor_env.status` to `"warn"` or `"conflict"`, and exposing additive `monitor_env.problems` while preserving legacy `combines LINUX_CLEANER_ONLY_PATH` conflict handling.
 - Exported additive Prometheus gauges `linux_cleaner_quarantine_sessions` and `linux_cleaner_quarantine_held_sessions` in `LINUX_CLEANER_METRICS_FILE` so unattended `node_exporter` alerts track session counts and forgotten `.hold` pins directly without external JSON wrappers, emitting `0` when quarantine is absent and omitting with a warning on symlinked, non-directory, or unreadable quarantine directories.
 - Added `--no-sudo` (`LINUX_CLEANER_NO_SUDO`) to suppress all `sudo` probes, cached-credential escalation, and interactive `sudo -v` prompts across `--dry-run` (replayed in `Next:`), `--clean`/`--trash`, and `--restore`, cleanly skipping/keeping root-only targets and records while user-owned targets proceed and enforcing mode exclusions for CLI `--no-sudo`.
 - Added `--strict` modifier for `--doctor` to exit `1` (and emit `"ready": false` and `"exit_code": 1` under `--json`) whenever any diagnostic warning is present while failing closed when given without `--doctor` and keeping default `--doctor` behavior unchanged.

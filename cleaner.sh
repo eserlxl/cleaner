@@ -5531,6 +5531,90 @@ run_check_config() {
   return "$rc"
 }
 
+# Collect startup-fatal scheduler configuration problems from an associative array
+# of LINUX_CLEANER_* variables (already trimmed/unquoted by read_systemd_env_file)
+# into _out_problems. Shared by daily_timer_plan and monitor.env in run_doctor.
+_collect_scheduler_env_problems() {
+  local -n _sched_vars="$1"
+  local _cfg_base="$2"
+  local -n _out_problems="$3"
+
+  local _risk="${_sched_vars[LINUX_CLEANER_RISK]:-}"
+  local _cfg="${_sched_vars[LINUX_CLEANER_CONFIG]:-}"
+  local _only="${_sched_vars[LINUX_CLEANER_ONLY_PATH]:-}"
+  local _keep="${_sched_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]:-}"
+  local _max_size="${_sched_vars[LINUX_CLEANER_TRASH_MAX_SIZE]:-}"
+  local _log="${_sched_vars[LINUX_CLEANER_LOG]:-}"
+  local _log_max_size="${_sched_vars[LINUX_CLEANER_LOG_MAX_SIZE]:-}"
+  local _min_reclaim="${_sched_vars[LINUX_CLEANER_MIN_RECLAIM]:-}"
+  local _min_free="${_sched_vars[LINUX_CLEANER_MIN_FREE]:-}"
+  local _min_free_path="${_sched_vars[LINUX_CLEANER_MIN_FREE_PATH]:-}"
+  local _min_age="${_sched_vars[LINUX_CLEANER_MIN_AGE]:-}"
+  local _action_timeout="${_sched_vars[LINUX_CLEANER_ACTION_TIMEOUT]:-}"
+  local _lock_wait="${_sched_vars[LINUX_CLEANER_LOCK_WAIT]:-}"
+
+  case "$(risk_lower "$_risk")" in
+    ""|safe|medium|danger|dangerous) ;;
+    *) _out_problems+=("invalid risk") ;;
+  esac
+  # The clean run refuses --only-path together with --trash-keep-days or --trash-max-size.
+  if [[ -n "$_only" && -n "$_keep" ]]; then
+    _out_problems+=("only-path with keep-days")
+  fi
+  if [[ -n "$_keep" && ! "$_keep" =~ ^[0123456789]+$ ]]; then
+    _out_problems+=("invalid keep-days")
+  fi
+  if [[ -n "$_max_size" ]]; then
+    if [[ -n "$_only" ]]; then
+      _out_problems+=("only-path with trash-max-size")
+    fi
+    if ! parse_size_bytes "$_max_size" >/dev/null 2>&1; then
+      _out_problems+=("invalid trash-max-size")
+    fi
+  fi
+  if [[ -n "$_cfg" ]]; then
+    # The user service starts in HOME, so a relative path resolves there.
+    local _cfg_path="$_cfg"
+    [[ "$_cfg_path" == /* ]] || _cfg_path="$_cfg_base/$_cfg_path"
+    if [[ ! -f "$_cfg_path" || ! -r "$_cfg_path" ]]; then
+      _out_problems+=("config not readable")
+    elif ! (CONFIG_FILE="$_cfg_path" validate_config_file >/dev/null 2>&1); then
+      _out_problems+=("config invalid")
+    fi
+  fi
+  if [[ -n "$_min_reclaim" ]] && ! parse_size_bytes "$_min_reclaim" >/dev/null 2>&1; then
+    _out_problems+=("invalid min-reclaim")
+  fi
+  if [[ -n "$_min_free" ]] && ! parse_size_bytes "$_min_free" >/dev/null 2>&1; then
+    _out_problems+=("invalid min-free")
+  fi
+  if [[ -n "$_min_free_path" ]]; then
+    if [[ -z "$_min_free" ]]; then
+      _out_problems+=("min-free-path without min-free")
+    fi
+    if [[ "$_min_free_path" != /* || "$_min_free_path" == *$'\n'* ]]; then
+      _out_problems+=("invalid min-free-path")
+    fi
+  fi
+  if [[ -n "$_min_age" && ! "$_min_age" =~ ^[0123456789]+$ ]]; then
+    _out_problems+=("invalid min-age")
+  fi
+  if [[ -n "$_action_timeout" && ! "$_action_timeout" =~ ^[0123456789]+$ ]]; then
+    _out_problems+=("invalid action-timeout")
+  fi
+  if [[ -n "$_lock_wait" ]] && ! is_valid_lock_wait "$_lock_wait"; then
+    _out_problems+=("invalid lock-wait")
+  fi
+  if [[ -n "$_log_max_size" ]]; then
+    if [[ -z "$_log" ]]; then
+      _out_problems+=("log-max-size without log")
+    fi
+    if ! parse_size_bytes "$_log_max_size" >/dev/null 2>&1; then
+      _out_problems+=("invalid log-max-size")
+    fi
+  fi
+}
+
 # Read-only environment checklist: explain config resolution, GNU userland,
 # optional helper binaries, user timer states, last cleanup, and quarantine count.
 # Exits 0 when cleanup can run, or 1 when the config is missing, unreadable,
@@ -5695,12 +5779,11 @@ run_doctor() {
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
-  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" env_max_size="" mon_only="" mon_keep="" mon_max_size=""
-  local env_log="" env_log_max_size="" env_min_reclaim="" env_min_free="" env_min_free_path="" env_min_age="" env_action_timeout="" env_lock_wait=""
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_trash="" env_keep="" env_max_size=""
   local timer_env_source="no env file" timer_deletion=permanent
-  local ret_warn=false mon_present=false mon_readable=false mon_status="absent"
+  local ret_warn=false mon_present=false mon_readable=false mon_status="absent" mon_prob=""
   local plan_status="ok" plan_has_env=false plan_env_readable=true env_keep_valid=false env_max_size_valid=false
-  local -a plan_problem_list=()
+  local -a plan_problem_list=() mon_problems=()
   local -A doc_timer_vars=(
     [LINUX_CLEANER_RISK]=""
     [LINUX_CLEANER_CONFIG]=""
@@ -5717,10 +5800,23 @@ run_doctor() {
     [LINUX_CLEANER_ACTION_TIMEOUT]=""
     [LINUX_CLEANER_LOCK_WAIT]=""
   )
+  # Populated and read by name via read_systemd_env_file and _collect_scheduler_env_problems.
+  # shellcheck disable=SC2034
   local -A doc_mon_vars=(
+    [LINUX_CLEANER_RISK]=""
+    [LINUX_CLEANER_CONFIG]=""
     [LINUX_CLEANER_ONLY_PATH]=""
+    [LINUX_CLEANER_TRASH]=""
     [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
     [LINUX_CLEANER_TRASH_MAX_SIZE]=""
+    [LINUX_CLEANER_LOG]=""
+    [LINUX_CLEANER_LOG_MAX_SIZE]=""
+    [LINUX_CLEANER_MIN_RECLAIM]=""
+    [LINUX_CLEANER_MIN_FREE]=""
+    [LINUX_CLEANER_MIN_FREE_PATH]=""
+    [LINUX_CLEANER_MIN_AGE]=""
+    [LINUX_CLEANER_ACTION_TIMEOUT]=""
+    [LINUX_CLEANER_LOCK_WAIT]=""
   )
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     timer_env_source="$timer_env"
@@ -5728,18 +5824,9 @@ run_doctor() {
     read_systemd_env_file "$timer_env" doc_timer_vars
     env_risk="${doc_timer_vars[LINUX_CLEANER_RISK]}"
     env_config="${doc_timer_vars[LINUX_CLEANER_CONFIG]}"
-    env_only="${doc_timer_vars[LINUX_CLEANER_ONLY_PATH]}"
     env_trash="${doc_timer_vars[LINUX_CLEANER_TRASH]}"
     env_keep="${doc_timer_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
     env_max_size="${doc_timer_vars[LINUX_CLEANER_TRASH_MAX_SIZE]}"
-    env_log="${doc_timer_vars[LINUX_CLEANER_LOG]}"
-    env_log_max_size="${doc_timer_vars[LINUX_CLEANER_LOG_MAX_SIZE]}"
-    env_min_reclaim="${doc_timer_vars[LINUX_CLEANER_MIN_RECLAIM]}"
-    env_min_free="${doc_timer_vars[LINUX_CLEANER_MIN_FREE]}"
-    env_min_free_path="${doc_timer_vars[LINUX_CLEANER_MIN_FREE_PATH]}"
-    env_min_age="${doc_timer_vars[LINUX_CLEANER_MIN_AGE]}"
-    env_action_timeout="${doc_timer_vars[LINUX_CLEANER_ACTION_TIMEOUT]}"
-    env_lock_wait="${doc_timer_vars[LINUX_CLEANER_LOCK_WAIT]}"
     if [[ -n "$env_keep" && "$env_keep" =~ ^[0123456789]+$ ]]; then
       env_keep_valid=true
     fi
@@ -5766,99 +5853,14 @@ run_doctor() {
     doc_warnings+=("daily timer plan: env file not readable ($timer_env)")
     [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: daily timer plan: env file not readable (%s)\n' "$timer_env"
   elif [[ "$clean_timer" == enabled ]]; then
-    local plan_level=INFO plan_config="" plan_max_size="" plan_problems=""
-    case "$(risk_lower "$env_risk")" in
-      ""|safe|medium|danger|dangerous) ;;
-      *) plan_level=WARN; plan_problems+="; invalid risk"; plan_problem_list+=("invalid risk") ;;
-    esac
-    # The clean run refuses --only-path together with --trash-keep-days or --trash-max-size.
-    if [[ -n "$env_only" && -n "$env_keep" ]]; then
+    local plan_level=INFO plan_config="" plan_max_size="" plan_problems="" plan_prob=""
+    [[ -n "$env_max_size" ]] && plan_max_size=" max-size=$env_max_size"
+    [[ -n "$env_config" ]] && plan_config=" config=$env_config"
+    _collect_scheduler_env_problems doc_timer_vars "$HOME" plan_problem_list
+    for plan_prob in "${plan_problem_list[@]}"; do
       plan_level=WARN
-      plan_problems+="; only-path with keep-days"
-      plan_problem_list+=("only-path with keep-days")
-    fi
-    if [[ -n "$env_keep" && "$env_keep_valid" != true ]]; then
-      plan_level=WARN
-      plan_problems+="; invalid keep-days"
-      plan_problem_list+=("invalid keep-days")
-    fi
-    if [[ -n "$env_max_size" ]]; then
-      plan_max_size=" max-size=$env_max_size"
-      if [[ -n "$env_only" ]]; then
-        plan_level=WARN
-        plan_problems+="; only-path with trash-max-size"
-        plan_problem_list+=("only-path with trash-max-size")
-      fi
-      if ! parse_size_bytes "$env_max_size" >/dev/null 2>&1; then
-        plan_level=WARN
-        plan_problems+="; invalid trash-max-size"
-        plan_problem_list+=("invalid trash-max-size")
-      fi
-    fi
-    if [[ -n "$env_config" ]]; then
-      plan_config=" config=$env_config"
-      # The user service starts in HOME, so a relative path resolves there.
-      local plan_config_path="$env_config"
-      [[ "$plan_config_path" == /* ]] || plan_config_path="$HOME/$plan_config_path"
-      if [[ ! -f "$plan_config_path" || ! -r "$plan_config_path" ]]; then
-        plan_level=WARN
-        plan_problems+="; config not readable"
-        plan_problem_list+=("config not readable")
-      elif ! (CONFIG_FILE="$plan_config_path" validate_config_file >/dev/null 2>&1); then
-        plan_level=WARN
-        plan_problems+="; config invalid"
-        plan_problem_list+=("config invalid")
-      fi
-    fi
-    if [[ -n "$env_min_reclaim" ]] && ! parse_size_bytes "$env_min_reclaim" >/dev/null 2>&1; then
-      plan_level=WARN
-      plan_problems+="; invalid min-reclaim"
-      plan_problem_list+=("invalid min-reclaim")
-    fi
-    if [[ -n "$env_min_free" ]] && ! parse_size_bytes "$env_min_free" >/dev/null 2>&1; then
-      plan_level=WARN
-      plan_problems+="; invalid min-free"
-      plan_problem_list+=("invalid min-free")
-    fi
-    if [[ -n "$env_min_free_path" ]]; then
-      if [[ -z "$env_min_free" ]]; then
-        plan_level=WARN
-        plan_problems+="; min-free-path without min-free"
-        plan_problem_list+=("min-free-path without min-free")
-      fi
-      if [[ "$env_min_free_path" != /* || "$env_min_free_path" == *$'\n'* ]]; then
-        plan_level=WARN
-        plan_problems+="; invalid min-free-path"
-        plan_problem_list+=("invalid min-free-path")
-      fi
-    fi
-    if [[ -n "$env_min_age" && ! "$env_min_age" =~ ^[0123456789]+$ ]]; then
-      plan_level=WARN
-      plan_problems+="; invalid min-age"
-      plan_problem_list+=("invalid min-age")
-    fi
-    if [[ -n "$env_action_timeout" && ! "$env_action_timeout" =~ ^[0123456789]+$ ]]; then
-      plan_level=WARN
-      plan_problems+="; invalid action-timeout"
-      plan_problem_list+=("invalid action-timeout")
-    fi
-    if [[ -n "$env_lock_wait" ]] && ! is_valid_lock_wait "$env_lock_wait"; then
-      plan_level=WARN
-      plan_problems+="; invalid lock-wait"
-      plan_problem_list+=("invalid lock-wait")
-    fi
-    if [[ -n "$env_log_max_size" ]]; then
-      if [[ -z "$env_log" ]]; then
-        plan_level=WARN
-        plan_problems+="; log-max-size without log"
-        plan_problem_list+=("log-max-size without log")
-      fi
-      if ! parse_size_bytes "$env_log_max_size" >/dev/null 2>&1; then
-        plan_level=WARN
-        plan_problems+="; invalid log-max-size"
-        plan_problem_list+=("invalid log-max-size")
-      fi
-    fi
+      plan_problems+="; $plan_prob"
+    done
     if [[ "$plan_level" == WARN ]]; then
       plan_status="warn"
       doc_warnings+=("daily timer plan: risk=${env_risk:-safe} deletion=${timer_deletion} keep-days=${env_keep:-none}${plan_max_size}${plan_config} (${timer_env_source})${plan_problems}")
@@ -5870,18 +5872,30 @@ run_doctor() {
     mon_readable=true
     mon_status="ok"
     read_systemd_env_file "$monitor_env" doc_mon_vars
-    mon_only="${doc_mon_vars[LINUX_CLEANER_ONLY_PATH]}"
-    mon_keep="${doc_mon_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
-    mon_max_size="${doc_mon_vars[LINUX_CLEANER_TRASH_MAX_SIZE]}"
-    if [[ -n "$mon_only" && -n "$mon_keep" ]]; then
-      mon_status="conflict"
-      doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS")
-      [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
-    fi
-    if [[ -n "$mon_only" && -n "$mon_max_size" ]]; then
-      mon_status="conflict"
-      doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE")
-      [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE\n' "$monitor_env"
+    _collect_scheduler_env_problems doc_mon_vars "$HOME" mon_problems
+    local mon_other_problems=""
+    for mon_prob in "${mon_problems[@]}"; do
+      case "$mon_prob" in
+        "only-path with keep-days")
+          mon_status="conflict"
+          doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS")
+          [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
+          ;;
+        "only-path with trash-max-size")
+          mon_status="conflict"
+          doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE")
+          [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE\n' "$monitor_env"
+          ;;
+        *)
+          mon_other_problems+="; $mon_prob"
+          ;;
+      esac
+    done
+    if [[ -n "$mon_other_problems" ]]; then
+      [[ "$mon_status" == conflict ]] || mon_status="warn"
+      mon_other_problems="${mon_other_problems#; }"
+      doc_warnings+=("monitor env: $monitor_env ($mon_other_problems)")
+      [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s (%s)\n' "$monitor_env" "$mon_other_problems"
     fi
   elif [[ -e "$monitor_env" ]]; then
     mon_present=true
@@ -5967,10 +5981,16 @@ run_doctor() {
     fi
     printf '"quarantine_retention":{"warn":%s,"env_file":%s},' \
       "$ret_warn" "$(_json_str_or_null "$ret_warn" "$timer_env")"
-    local mon_read_json="null"
+    local mon_read_json="null" mon_probs_json="" mon_prob_esc="" mon_first=true
     [[ "$mon_present" == true ]] && mon_read_json="$mon_readable"
-    printf '"monitor_env":{"present":%s,"path":"%s","readable":%s,"status":"%s"},' \
-      "$mon_present" "$(json_escape "$monitor_env")" "$mon_read_json" "$mon_status"
+    for mon_prob in "${mon_problems[@]}"; do
+      [[ "$mon_first" == true ]] || mon_probs_json+=","
+      mon_first=false
+      json_escape "$mon_prob" mon_prob_esc
+      mon_probs_json+="\"$mon_prob_esc\""
+    done
+    printf '"monitor_env":{"present":%s,"path":"%s","readable":%s,"status":"%s","problems":[%s]},' \
+      "$mon_present" "$(json_escape "$monitor_env")" "$mon_read_json" "$mon_status" "$mon_probs_json"
     local q_cnt_json="null"
     [[ "$q_has_count" == true ]] && q_cnt_json="${#session_dots}"
     printf '"quarantine":{"path":"%s","status":"%s","session_count":%s},' \

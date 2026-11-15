@@ -19892,5 +19892,194 @@ PY
 fi
 echo -e "${GREEN}PASS: LINUX_CLEANER_METRICS_FILE exports quarantine session and held-session gauges safely.${NC}"
 
+echo -e "\n${BOLD}Test Case: Doctor Monitor Env Startup-Fatal Validation${NC}"
+python3 - "$CLEANER_SH" <<'PY'
+import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+cleaner = os.path.abspath(os.sys.argv[1])
+has_tr_locale = "tr_TR.utf8" in subprocess.run(
+    ["locale", "-a"], capture_output=True, text=True, check=False
+).stdout.lower()
+
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    bin_dir = root / "bin"
+    env_dir = root / ".config/linux-cleaner"
+    work_dir = root / "work"
+    bin_dir.mkdir()
+    env_dir.mkdir(parents=True)
+    work_dir.mkdir()
+    cfg = root / "doc.conf"
+    cfg.write_text(f"safe|Target|{work_dir}|desc|0||\n", encoding="utf-8")
+    rel_ok = root / "rel-ok.conf"
+    rel_ok.write_text(f"safe|Rel|{work_dir}|desc|0||\n", encoding="utf-8")
+    rel_bad = root / "rel-bad.conf"
+    rel_bad.write_text("broken-line\n", encoding="utf-8")
+    sc = bin_dir / "systemctl"
+    sc.write_text("#!/usr/bin/env bash\necho disabled\nexit 1\n", encoding="utf-8")
+    os.chmod(sc, 0o755)
+    base_env = {
+        "HOME": str(root),
+        "XDG_CONFIG_HOME": str(root / ".config"),
+        "XDG_STATE_HOME": str(root / ".local/state"),
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+    }
+    mon_path = env_dir / "monitor.env"
+
+    def run_doc(*extra, locale=None):
+        env = dict(base_env)
+        if locale:
+            env["LC_ALL"] = locale
+        return subprocess.run(
+            [cleaner, "--config", str(cfg), "--doctor", *extra],
+            env=env, capture_output=True, text=True, check=False,
+        )
+
+    # 1. Absent monitor.env -> absent, problems == [].
+    r_abs = run_doc("--json")
+    assert r_abs.returncode == 0, r_abs.stderr
+    d_abs = json.loads(r_abs.stdout)
+    assert d_abs["monitor_env"]["present"] is False, d_abs
+    assert d_abs["monitor_env"]["status"] == "absent", d_abs
+    assert d_abs["monitor_env"]["problems"] == [], d_abs
+
+    # 2. Valid + whitespace-trimmed monitor.env -> ok, problems == [], --strict exits 0.
+    mon_path.write_text(
+        'LINUX_CLEANER_RISK=medium\n'
+        'LINUX_CLEANER_CONFIG=rel-ok.conf\n'
+        'LINUX_CLEANER_TRASH_KEEP_DAYS="   "\n'
+        'LINUX_CLEANER_TRASH_MAX_SIZE=1G\n'
+        'LINUX_CLEANER_MIN_RECLAIM=500M\n'
+        'LINUX_CLEANER_MIN_FREE=5G\n'
+        'LINUX_CLEANER_MIN_FREE_PATH=/tmp\n'
+        'LINUX_CLEANER_MIN_AGE=7\n'
+        'LINUX_CLEANER_ACTION_TIMEOUT=30\n'
+        'LINUX_CLEANER_LOCK_WAIT=005\n'
+        'LINUX_CLEANER_LOG=$HOME/mon.log\n'
+        'LINUX_CLEANER_LOG_MAX_SIZE=1M\n',
+        encoding="utf-8",
+    )
+    r_ok = run_doc("--json", "--strict")
+    assert r_ok.returncode == 0, (r_ok.returncode, r_ok.stdout, r_ok.stderr)
+    d_ok = json.loads(r_ok.stdout)
+    assert d_ok["monitor_env"]["status"] == "ok", d_ok
+    assert d_ok["monitor_env"]["problems"] == [], d_ok
+
+    # 3. Non-conflict startup-fatal settings -> status=warn, problems exact, --strict fails.
+    mon_path.write_text(
+        "LINUX_CLEANER_RISK=bogus\n"
+        "LINUX_CLEANER_CONFIG=rel-bad.conf\n"
+        "LINUX_CLEANER_TRASH_KEEP_DAYS=weekly\n"
+        "LINUX_CLEANER_TRASH_MAX_SIZE=nope\n"
+        "LINUX_CLEANER_MIN_RECLAIM=bad\n"
+        "LINUX_CLEANER_MIN_FREE=bad\n"
+        "LINUX_CLEANER_MIN_FREE_PATH=relative/path\n"
+        "LINUX_CLEANER_MIN_AGE=nope\n"
+        "LINUX_CLEANER_ACTION_TIMEOUT=nope\n"
+        "LINUX_CLEANER_LOCK_WAIT=9999999999\n"
+        "LINUX_CLEANER_LOG_MAX_SIZE=bad\n",
+        encoding="utf-8",
+    )
+    r_warn_txt = run_doc()
+    assert r_warn_txt.returncode == 0, r_warn_txt.stderr
+    assert "WARN: monitor env:" in r_warn_txt.stdout, r_warn_txt.stdout
+    assert "invalid risk" in r_warn_txt.stdout, r_warn_txt.stdout
+    r_warn_json = run_doc("--json", "--strict")
+    assert r_warn_json.returncode == 1, r_warn_json
+    d_warn = json.loads(r_warn_json.stdout)
+    assert d_warn["ready"] is False and d_warn["exit_code"] == 1, d_warn
+    assert d_warn["monitor_env"]["status"] == "warn", d_warn
+    expected_warn = {
+        "invalid risk",
+        "invalid keep-days",
+        "invalid trash-max-size",
+        "config invalid",
+        "invalid min-reclaim",
+        "invalid min-free",
+        "invalid min-free-path",
+        "invalid min-age",
+        "invalid action-timeout",
+        "invalid lock-wait",
+        "log-max-size without log",
+        "invalid log-max-size",
+    }
+    assert set(d_warn["monitor_env"]["problems"]) == expected_warn, d_warn
+
+    # 4. Missing config + min-free-path without min-free.
+    mon_path.write_text(
+        "LINUX_CLEANER_CONFIG=missing.conf\n"
+        "LINUX_CLEANER_MIN_FREE_PATH=/tmp\n",
+        encoding="utf-8",
+    )
+    r_cfg_missing = run_doc("--json")
+    assert r_cfg_missing.returncode == 0, r_cfg_missing.stderr
+    d_cfg_missing = json.loads(r_cfg_missing.stdout)
+    assert d_cfg_missing["monitor_env"]["status"] == "warn", d_cfg_missing
+    assert set(d_cfg_missing["monitor_env"]["problems"]) == {
+        "config not readable",
+        "min-free-path without min-free",
+    }, d_cfg_missing
+
+    # 5. Combined ONLY_PATH conflicts + invalid setting keep status=conflict & legacy WARN lines.
+    mon_path.write_text(
+        "LINUX_CLEANER_ONLY_PATH=/tmp\n"
+        "LINUX_CLEANER_TRASH_KEEP_DAYS=7\n"
+        "LINUX_CLEANER_TRASH_MAX_SIZE=1G\n"
+        "LINUX_CLEANER_MIN_FREE=bad\n",
+        encoding="utf-8",
+    )
+    r_conf_txt = run_doc()
+    assert r_conf_txt.returncode == 0, r_conf_txt.stderr
+    assert "combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS" in r_conf_txt.stdout
+    assert "combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE" in r_conf_txt.stdout
+    assert "(invalid min-free)" in r_conf_txt.stdout
+    r_conf_json = run_doc("--json")
+    assert r_conf_json.returncode == 0, r_conf_json.stderr
+    d_conf = json.loads(r_conf_json.stdout)
+    assert d_conf["monitor_env"]["status"] == "conflict", d_conf
+    assert set(d_conf["monitor_env"]["problems"]) == {
+        "only-path with keep-days",
+        "only-path with trash-max-size",
+        "invalid min-free",
+    }, d_conf
+
+    # 6. Unreadable monitor.env keeps status=unreadable and problems=[].
+    os.chmod(mon_path, 0o000)
+    try:
+        r_unr = run_doc("--json", "--strict")
+        assert r_unr.returncode == 1, r_unr
+        d_unr = json.loads(r_unr.stdout)
+        assert d_unr["monitor_env"]["status"] == "unreadable", d_unr
+        assert d_unr["monitor_env"]["readable"] is False, d_unr
+        assert d_unr["monitor_env"]["problems"] == [], d_unr
+    finally:
+        os.chmod(mon_path, 0o600)
+
+    # 7. LC_ALL=tr_TR.UTF-8 non-ASCII Arabic-Indic digits are rejected cleanly.
+    if has_tr_locale:
+        mon_path.write_text(
+            "LINUX_CLEANER_TRASH_KEEP_DAYS=٧\n"
+            "LINUX_CLEANER_MIN_AGE=٥\n"
+            "LINUX_CLEANER_ACTION_TIMEOUT=١٠\n"
+            "LINUX_CLEANER_LOCK_WAIT=٣\n",
+            encoding="utf-8",
+        )
+        r_tr = run_doc("--json", locale="tr_TR.UTF-8")
+        assert r_tr.returncode == 0, r_tr.stderr
+        d_tr = json.loads(r_tr.stdout)
+        assert d_tr["monitor_env"]["status"] == "warn", d_tr
+        assert set(d_tr["monitor_env"]["problems"]) == {
+            "invalid keep-days",
+            "invalid min-age",
+            "invalid action-timeout",
+            "invalid lock-wait",
+        }, d_tr
+PY
+echo -e "${GREEN}PASS: --doctor validates startup-fatal monitor.env settings cleanly via shared helper.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

@@ -749,7 +749,8 @@ for the clean, retention, and monitor timers; the last cleanup outcome; a WARN w
 timer's env file sets LINUX_CLEANER_TRASH without LINUX_CLEANER_TRASH_KEEP_DAYS, valid LINUX_CLEANER_TRASH_MAX_SIZE, or
 an enabled retention timer; a WARN when
 .I ~/.config/linux\-cleaner/monitor.env
-is unreadable or sets LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS or LINUX_CLEANER_TRASH_MAX_SIZE;
+is unreadable, combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS or LINUX_CLEANER_TRASH_MAX_SIZE, or contains any of the startup\-fatal scheduler settings validated for daily\-timer env files (exporting detected labels in JSON
+.BR monitor_env.problems );
 and the quarantine session count).
 After the timer states, prints
 .B "INFO: last cleanup: <Saved> <Result>"
