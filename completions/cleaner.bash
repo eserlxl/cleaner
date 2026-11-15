@@ -131,6 +131,7 @@ _cleaner() {
       --exclude-target-exact
       --only-path
       --exclude-path
+      --skip-actions
       --lock-wait
       --min-reclaim
       --min-free

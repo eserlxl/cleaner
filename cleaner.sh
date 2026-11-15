@@ -71,6 +71,7 @@ Options:
   --exclude-target-exact NAME With cleanup or --list-targets: skip config targets whose NAME equals literal NAME.
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --exclude-path PATH        With cleanup or --list-targets: skip targets at, below, or containing an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH).
+  --skip-actions             With cleanup or --list-targets: exclude all action:* targets (env: LINUX_CLEANER_SKIP_ACTIONS).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --min-free SIZE            With cleanup: skip the run when the selected filesystem (default: HOME) has at least SIZE free (e.g. 10G).
@@ -110,6 +111,8 @@ NOTIFY_CLI=false
 NOTIFY_SENT=false
 FAIL_FAST=false
 FAIL_FAST_CLI=false
+SKIP_ACTIONS=false
+SKIP_ACTIONS_CLI=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
@@ -195,6 +198,9 @@ case "${LINUX_CLEANER_NOTIFY:-}" in
 esac
 case "${LINUX_CLEANER_FAIL_FAST:-}" in
   1|true|TRUE|yes|YES) FAIL_FAST=true ;;
+esac
+case "${LINUX_CLEANER_SKIP_ACTIONS:-}" in
+  1|true|TRUE|yes|YES) SKIP_ACTIONS=true ;;
 esac
 case "${LINUX_CLEANER_JSON:-}" in
   1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
@@ -384,6 +390,11 @@ while [[ $# -gt 0 ]]; do
     --fail-fast)
       FAIL_FAST=true
       FAIL_FAST_CLI=true
+      shift
+      ;;
+    --skip-actions)
+      SKIP_ACTIONS=true
+      SKIP_ACTIONS_CLI=true
       shift
       ;;
     --json)
@@ -838,9 +849,9 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
-        || "$EXCLUDE_FROM_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
+        || "$EXCLUDE_FROM_CLI" == true || "$SKIP_ACTIONS_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --exclude-from, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --exclude-from, --skip-actions, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -906,6 +917,11 @@ fi
 
 if [[ "$EXCLUDE_FROM_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --exclude-from applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+  exit 1
+fi
+
+if [[ "$SKIP_ACTIONS_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --skip-actions applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -1190,6 +1206,7 @@ name_filter_kept=false
 path_filter_matched=false
 exclude_path_kept=false
 age_filter_matched=false
+action_filter_kept=false
 SELECTED_TARGET_PATH=""
 
 target_name_included() {
@@ -1266,6 +1283,14 @@ select_target_path() {
   return 0
 }
 
+select_target_action() {
+  if [[ "$SKIP_ACTIONS" == true ]]; then
+    [[ "$1" == action:* ]] && return 1
+    action_filter_kept=true
+  fi
+  return 0
+}
+
 check_target_selection() {
   if [[ -n "$ONLY_TARGET" && "$only_target_matched" != true ]]; then
     echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
@@ -1289,6 +1314,10 @@ check_target_selection() {
   fi
   if [[ -n "$EXCLUDE_PATH" && "$exclude_path_kept" != true ]]; then
     echo "Error: --exclude-path ${EXCLUDE_PATH} left no config targets to process." >&2
+    return 1
+  fi
+  if [[ "$SKIP_ACTIONS" == true && "$action_filter_kept" != true ]]; then
+    echo "Error: --skip-actions left no config targets to process." >&2
     return 1
   fi
   if [[ -n "$MIN_AGE_OVERRIDE" && "$age_filter_matched" != true ]]; then
@@ -1399,6 +1428,7 @@ emit_list_targets_json() {
     trim_to check_procs "${check_procs:-}"
     trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     select_target_path "$raw_path" "$custom_clean_cmd" || continue
+    select_target_action "$custom_clean_cmd" || continue
     lt_names+=("$name")
     lt_risks+=("$risk")
     lt_paths+=("$raw_path")
@@ -2148,6 +2178,7 @@ list_config_targets() {
     trim_to raw_path "$raw_path"
     trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     select_target_path "$raw_path" "$custom_clean_cmd" || continue
+    select_target_action "$custom_clean_cmd" || continue
     trim_to desc "$desc"
     printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
   done < <(expand_config_globs)
@@ -5005,6 +5036,7 @@ while IFS= read -r -d '' config_src_file && IFS= read -r -d '' config_lineno && 
 
   select_target_name "$name" || continue
   select_target_path "$raw_path" "$custom_clean_cmd" || continue
+  select_target_action "$custom_clean_cmd" || continue
 
   # Map risk levels
   target_risk_int=$(risk_to_int "$risk" "${config_src_file}:${config_lineno}: ") || exit 1
@@ -5383,6 +5415,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
     [[ -n "$TRASH_KEEP_DAYS" ]] && next_args+=(--trash-keep-days "$TRASH_KEEP_DAYS")
     [[ "$FAIL_FAST" == true ]] && next_args+=(--fail-fast)
+    [[ "$SKIP_ACTIONS" == true ]] && next_args+=(--skip-actions)
     # An explicit 0 must survive replay over an inherited LINUX_CLEANER_ACTION_TIMEOUT.
     [[ -n "$ACTION_TIMEOUT" ]] && next_args+=(--action-timeout "$ACTION_TIMEOUT")
     if [[ ${#next_args[@]} -eq 2 ]]; then

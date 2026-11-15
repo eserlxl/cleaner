@@ -7867,7 +7867,7 @@ fi
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 : > "$TEST_ENV_DIR/mx_empty.excl"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
-  --init-config --doctor --exclude-from --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
+  --init-config --doctor --exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -7886,7 +7886,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--exclude-from --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
+mx_subjects=(--exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
   --check-config --init-config --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -16932,6 +16932,123 @@ EXCLUDE_FROM_PY
   exit 1
 fi
 echo -e "${GREEN}PASS: --exclude-from pattern files preserve commas/comments/trailing slashes across dry-run, trash, permanent cleanup, and parity checks.${NC}"
+
+echo -e "\n${BOLD}Test Case: Skip Actions Target Selection And Parity${NC}"
+if ! python3 - "$CLEANER_SH" <<'SKIP_ACTIONS_PY'; then
+import json, os, pathlib, shutil, subprocess, tempfile
+
+cleaner = os.sys.argv[1]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-skip-act-"))
+try:
+    home = tmp / "home"
+    ord_dir = home / ".cache/ord"
+    med_dir = home / ".cache/med"
+    cxx_dir = home / "projects/build"
+    uv_dir = home / ".cache/uv"
+    ord_dir.mkdir(parents=True)
+    med_dir.mkdir(parents=True)
+    cxx_dir.mkdir(parents=True)
+    uv_dir.mkdir(parents=True)
+
+    (ord_dir / "item.bin").write_bytes(b"12345")
+    (med_dir / "med.bin").write_bytes(b"123456")
+    (uv_dir / "uv.bin").write_bytes(b"1234567")
+    (cxx_dir / "CMakeCache.txt").write_text("cmake\n", encoding="utf-8")
+    (cxx_dir / "old.o").write_bytes(b"12345678")
+    old_ts = 1700000000
+    os.utime(cxx_dir / "CMakeCache.txt", (old_ts, old_ts))
+    os.utime(cxx_dir / "old.o", (old_ts, old_ts))
+    os.utime(cxx_dir, (old_ts, old_ts))
+
+    bindir = tmp / "bin"
+    bindir.mkdir()
+    called = tmp / "action_called"
+    for cmd in ("uv", "paccache", "nix-store", "sudo"):
+        stub = bindir / cmd
+        stub.write_text(f"#!/bin/sh\necho {cmd} >> {str(called)!r}\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    mixed_cfg = tmp / "mixed.conf"
+    mixed_cfg.write_text(
+        "safe|Ord|$HOME/.cache/ord|ordinary safe|0||\n"
+        "safe|Cxx|$HOME/projects/build|cxx build|7||filter:cxx_build\n"
+        "medium|Med Ord|$HOME/.cache/med|ordinary medium|0||\n"
+        "safe|UV Action|$HOME/.cache/uv|uv prune|0||action:uv_cache_prune\n"
+        "medium|Pacman Action|/var/cache/pacman/pkg|pacman prune|0||action:paccache_keep1\n"
+        "danger|Nix Action|$HOME/.local/share/nix|nix gc|0||action:nix_store_gc\n",
+        encoding="utf-8",
+    )
+    actions_only_cfg = tmp / "actions.conf"
+    actions_only_cfg.write_text("safe|UV Action|$HOME/.cache/uv|uv prune|0||action:uv_cache_prune\n", encoding="utf-8")
+
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    base_env.update(
+        HOME=str(home),
+        XDG_CONFIG_HOME=str(tmp / "xdg_cfg"),
+        XDG_STATE_HOME=str(tmp / "xdg_state"),
+        NO_COLOR="1",
+        PATH=str(bindir) + ":" + base_env.get("PATH", ""),
+    )
+
+    def run_cli(args, cfg=mixed_cfg, extra_env=None, check=False):
+        env = base_env | (extra_env or {})
+        return subprocess.run(["bash", cleaner, "--config", str(cfg)] + args, env=env, capture_output=True, text=True, check=check)
+
+    # 1. --list-targets (human + JSON) excludes action:* rows and keeps ordinary + filter:cxx_build rows.
+    lt_human = run_cli(["--skip-actions", "--list-targets"], check=True)
+    assert "Ord" in lt_human.stdout and "Cxx" in lt_human.stdout and "UV Action" not in lt_human.stdout, lt_human.stdout
+    lt_json = json.loads(run_cli(["--skip-actions", "--list-targets", "--json"], check=True).stdout)
+    assert [t["name"] for t in lt_json["targets"]] == ["Ord", "Cxx", "Med Ord"], lt_json
+
+    # 2. --dry-run --json excludes action:* before hidden_by_risk, sizing, and probes.
+    dry_json = json.loads(run_cli(["--skip-actions", "--dry-run", "--json"], check=True).stdout)
+    assert [t["name"] for t in dry_json["targets"]] == ["Ord", "Cxx"], dry_json
+    assert dry_json["hidden_by_risk"] == {"medium": 1, "danger": 0, "names": ["Med Ord"]}, dry_json["hidden_by_risk"]
+    assert not called.exists(), called.read_text()
+
+    # 3. Dry-run Next: replays --skip-actions for both CLI and env mirror.
+    dry_text = run_cli(["--skip-actions", "--dry-run"], check=True)
+    assert "Next: run 'cleaner --clean' to apply this plan" in dry_text.stdout and "--skip-actions" in dry_text.stdout, dry_text.stdout
+    dry_env_text = run_cli(["--dry-run"], extra_env={"LINUX_CLEANER_SKIP_ACTIONS": "yes"}, check=True)
+    assert "Next: run 'cleaner --clean' to apply this plan" in dry_env_text.stdout and "--skip-actions" in dry_env_text.stdout, dry_env_text.stdout
+
+    # 4. Truthy vs non-truthy env values, and non-cleanup mode ignores env mirror.
+    for val in ("1", "true", "TRUE", "yes", "YES"):
+        r_t = json.loads(run_cli(["--list-targets", "--json"], extra_env={"LINUX_CLEANER_SKIP_ACTIONS": val}, check=True).stdout)
+        assert [t["name"] for t in r_t["targets"]] == ["Ord", "Cxx", "Med Ord"], (val, r_t)
+    for val in ("0", "false", "no"):
+        r_f = json.loads(run_cli(["--list-targets", "--json"], extra_env={"LINUX_CLEANER_SKIP_ACTIONS": val}, check=True).stdout)
+        assert any(t["name"] == "UV Action" for t in r_f["targets"]), (val, r_f)
+    for m_args in [["--check-config"], ["--list-sessions"]]:
+        r_ok = run_cli(m_args, extra_env={"LINUX_CLEANER_SKIP_ACTIONS": "1"})
+        assert r_ok.returncode == 0, (m_args, r_ok.returncode, r_ok.stderr)
+
+    # 5. All-actions config or filter intersection leaving zero targets fails with clear error.
+    for z_args in [["--skip-actions", "--list-targets"], ["--skip-actions", "--dry-run"], ["--skip-actions", "--clean", "--force"]]:
+        r_zero = run_cli(z_args, cfg=actions_only_cfg)
+        assert r_zero.returncode == 1 and "Error: --skip-actions left no config targets to process." in r_zero.stderr, (z_args, r_zero.returncode, r_zero.stderr)
+    r_empty_combo = run_cli(["--only-target", "Action", "--skip-actions", "--list-targets"])
+    assert r_empty_combo.returncode == 1 and "Error: --skip-actions left no config targets to process." in r_empty_combo.stderr, r_empty_combo
+
+    # 6. CLI mutexes with non-cleanup/non-inventory modes.
+    for bad_mode in ["--check-config", "--report", "--list-sessions", "--init-config", "--doctor"]:
+        r_mx = run_cli(["--skip-actions", bad_mode])
+        assert r_mx.returncode == 1, (bad_mode, r_mx.returncode, r_mx.stderr)
+
+    # 7. --trash --clean --force --trash-keep-days 7 --skip-actions cleans ordinary+cxx, preserves uv cache, never runs actions/sudo.
+    run_cli(["--skip-actions", "--trash", "--clean", "--force", "--trash-keep-days", "7"], check=True)
+    assert not called.exists(), called.read_text()
+    assert not (ord_dir / "item.bin").exists()
+    assert not (cxx_dir / "old.o").exists()
+    assert (med_dir / "med.bin").exists()
+    assert (uv_dir / "uv.bin").exists()
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+SKIP_ACTIONS_PY
+  echo -e "${RED}FAIL: --skip-actions tests failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --skip-actions excludes action:* rows cleanly across list/dry-run/quarantine/retention without calling external binaries.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

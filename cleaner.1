@@ -76,6 +76,7 @@ a non-default or environment-overridden
 .BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -438,6 +439,7 @@ Cannot be combined with
 .BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -503,7 +505,9 @@ uses the same matching and empty-selection errors as cleanup.
 .B \-\-only\-path
 and
 .B \-\-exclude\-path
-select or skip physical paths with the same rules as cleanup. Inventory includes
+select or skip physical paths with the same rules as cleanup, and
+.B \-\-skip\-actions
+excludes all action:* targets. Inventory includes
 all risk levels. Read-only; requires a configuration file. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
@@ -559,6 +563,7 @@ combined with
 .BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -650,6 +655,7 @@ the checklist. Cannot be combined with
 .BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -834,6 +840,32 @@ unset or empty environment input means no exclusion. Exits 1 if
 .I PATH
 is not a literal absolute path without line feeds, does not resolve to an
 existing path, or removes every remaining target. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
+.B \-\-skip\-actions
+With cleanup or configured-target inventory, exclude every
+.B action:*
+target while retaining ordinary paths (including
+.B filter:cxx_build
+rows) and global quarantine retention
+.RB ( \-\-trash\-keep\-days ).
+Applies before risk-hiding counts and root/command probes, so skipped actions
+are omitted from
+.B hidden_by_risk
+and never invoke external package-manager binaries. Repeatable; overrides non-truthy
+environment values and is set by a truthy
+.BR LINUX_CLEANER_SKIP_ACTIONS .
+Exits 1 if excluding actions leaves no targets to process. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
@@ -1178,6 +1210,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -1217,6 +1250,7 @@ Cannot be combined with
 .BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -1319,6 +1353,17 @@ enables
 (stop after the first failed cleanup target and skip inline retention).
 Also accepts TRUE and YES, like LINUX_CLEANER_NOTIFY. Non-cleanup modes ignore it.
 No CLI flag disables it; set it to 0 or unset it.
+.TP
+.B LINUX_CLEANER_SKIP_ACTIONS
+When set to
+.BR 1 ", " true ", " TRUE ", " yes ", or " YES ,
+enables
+.BR \-\-skip\-actions
+(exclude all
+.B action:*
+targets in cleanup runs or
+.BR \-\-list\-targets ).
+Other non-cleanup modes ignore it. No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to
