@@ -76,6 +76,7 @@ Options:
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --exclude-path PATH        With cleanup or --list-targets: skip targets at, below, or containing an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH).
   --skip-actions             With cleanup or --list-targets: exclude all action:* targets (env: LINUX_CLEANER_SKIP_ACTIONS).
+  --no-sudo                  With cleanup or --restore: never probe or invoke sudo; skip privileged paths/records cleanly (env: LINUX_CLEANER_NO_SUDO).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
   --min-reclaim SIZE         With cleanup: skip the run when the planned reclaim is below SIZE (e.g. 500M, 2G).
   --min-free SIZE            With cleanup: skip the run when the selected filesystem (default: HOME) has at least SIZE free (e.g. 10G).
@@ -119,6 +120,8 @@ FAIL_FAST=false
 FAIL_FAST_CLI=false
 SKIP_ACTIONS=false
 SKIP_ACTIONS_CLI=false
+NO_SUDO=false
+NO_SUDO_CLI=false
 JSON_OUTPUT=false
 TRASH_MODE=false
 TRASH_CLI=false
@@ -215,6 +218,9 @@ case "${LINUX_CLEANER_FAIL_FAST:-}" in
 esac
 case "${LINUX_CLEANER_SKIP_ACTIONS:-}" in
   1|true|TRUE|yes|YES) SKIP_ACTIONS=true ;;
+esac
+case "${LINUX_CLEANER_NO_SUDO:-}" in
+  1|true|TRUE|yes|YES) NO_SUDO=true ;;
 esac
 case "${LINUX_CLEANER_JSON:-}" in
   1|true|TRUE|yes|YES) JSON_OUTPUT=true ;;
@@ -418,6 +424,11 @@ while [[ $# -gt 0 ]]; do
     --skip-actions)
       SKIP_ACTIONS=true
       SKIP_ACTIONS_CLI=true
+      shift
+      ;;
+    --no-sudo)
+      NO_SUDO=true
+      NO_SUDO_CLI=true
       shift
       ;;
     --json)
@@ -941,9 +952,9 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true \
-        || "$EXCLUDE_FROM_CLI" == true || "$SKIP_ACTIONS_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" || -n "$TRASH_MAX_SIZE" \
+        || "$EXCLUDE_FROM_CLI" == true || "$SKIP_ACTIONS_CLI" == true || "$NO_SUDO_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" || -n "$TRASH_MAX_SIZE" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, --doctor, --exclude-from, --skip-actions, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --trash-max-size, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, --doctor, --exclude-from, --skip-actions, --no-sudo, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --trash-max-size, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -1028,6 +1039,10 @@ fi
 
 if [[ "$SKIP_ACTIONS_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --skip-actions applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
+  exit 1
+fi
+if [[ "$NO_SUDO_CLI" == true && ( -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --no-sudo applies only to cleanup runs or --restore (not --purge-sessions, --list-sessions, --hold-session, --release-session, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -4214,6 +4229,10 @@ restore_quarantine() {
 # A failed or cancelled prompt is remembered for the rest of the run.
 SUDO_AUTH_FAILED=false
 ensure_sudo() {
+  if [[ "${NO_SUDO:-false}" == true ]]; then
+    SUDO_AUTH_FAILED=true
+    return 1
+  fi
   if [[ "$SUDO_AUTH_FAILED" == true ]]; then
     return 1
   fi
@@ -6352,7 +6371,7 @@ while IFS= read -r -d '' config_src_file && IFS= read -r -d '' config_lineno && 
                 target_reason="requires root"
                 warn_root_skip "$name" "$path" "$risk"
               fi
-            elif sudo -n true 2>/dev/null; then
+            elif [[ "${NO_SUDO:-false}" != true ]] && sudo -n true 2>/dev/null; then
               use_sudo=true
             else
               use_sudo=false
@@ -6570,6 +6589,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$TRASH_MAX_SIZE" ]] && next_args+=(--trash-max-size "$TRASH_MAX_SIZE")
     [[ "$FAIL_FAST" == true ]] && next_args+=(--fail-fast)
     [[ "$SKIP_ACTIONS" == true ]] && next_args+=(--skip-actions)
+    [[ "$NO_SUDO" == true ]] && next_args+=(--no-sudo)
     # An explicit 0 must survive replay over an inherited LINUX_CLEANER_ACTION_TIMEOUT.
     [[ -n "$ACTION_TIMEOUT" ]] && next_args+=(--action-timeout "$ACTION_TIMEOUT")
     if [[ ${#next_args[@]} -eq 2 ]]; then

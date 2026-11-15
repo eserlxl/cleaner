@@ -136,6 +136,7 @@ _cleaner() {
       --only-path
       --exclude-path
       --skip-actions
+      --no-sudo
       --lock-wait
       --min-reclaim
       --min-free

@@ -8759,7 +8759,7 @@ fi
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 : > "$TEST_ENV_DIR/mx_empty.excl"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
-  --init-config --init-env --doctor --exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --notify --fail-fast --show-matches --exit-code)
+  --init-config --init-env --doctor --exclude-from --skip-actions --no-sudo --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -8779,7 +8779,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --notify --fail-fast --list-targets
+mx_subjects=(--exclude-from --skip-actions --no-sudo --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --notify --fail-fast --list-targets
   --check-config --init-config --init-env --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -19624,6 +19624,149 @@ PY
   exit 1
 fi
 echo -e "${GREEN}PASS: --doctor --strict fails closed on diagnostic warnings while preserving default --doctor behavior.${NC}"
+
+echo -e "\n${BOLD}Test Case: No Sudo Mode (--no-sudo / LINUX_CLEANER_NO_SUDO)${NC}"
+if ! python3 - "$CLEANER_SH" <<'PY'; then
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+cleaner = sys.argv[1]
+root = Path(tempfile.mkdtemp(prefix="test_no_sudo_"))
+try:
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    sudo_log = root / "sudo.log"
+    apt_log = root / "apt.log"
+
+    sudo_shim = bin_dir / "sudo"
+    sudo_shim.write_text(f"#!/usr/bin/env bash\necho \"CALLED $*\" >> {str(sudo_log)!r}\nexit 0\n", encoding="utf-8")
+    sudo_shim.chmod(0o755)
+
+    apt_shim = bin_dir / "apt-get"
+    apt_shim.write_text(f"#!/usr/bin/env bash\necho \"APT $*\" >> {str(apt_log)!r}\nexit 0\n", encoding="utf-8")
+    apt_shim.chmod(0o755)
+
+    user_cache = root / "home" / "user_cache"
+    user_cache.mkdir(parents=True)
+    (user_cache / "item.tmp").write_text("user payload\n", encoding="utf-8")
+
+    ro_parent = root / "ro_parent"
+    root_priv = ro_parent / "priv"
+    root_priv.mkdir(parents=True)
+    (root_priv / "secret.bin").write_text("root payload\n", encoding="utf-8")
+    os.chmod(root_priv, 0o000)
+    os.chmod(ro_parent, 0o555)
+
+    cfg = root / "c.conf"
+    cfg.write_text(
+        f"safe|UserCache|{user_cache}|user|0||\n"
+        f"safe|RootPriv|{root_priv}|root|0||\n"
+        f"safe|AptClean|/var/cache/apt/archives|root|0|action:apt_clean|\n",
+        encoding="utf-8",
+    )
+
+    base_env = {
+        "HOME": str(root / "home"),
+        "XDG_CONFIG_HOME": str(root / ".config"),
+        "XDG_CACHE_HOME": str(root / ".cache"),
+        "XDG_STATE_HOME": str(root / ".local" / "state"),
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "NO_COLOR": "1",
+    }
+
+    def run_cmd(*args, extra_env=None):
+        env = dict(base_env)
+        if extra_env:
+            env.update(extra_env)
+        return subprocess.run([cleaner, *args], env=env, capture_output=True, text=True, check=False)
+
+    # 1. Dry-run with CLI --no-sudo and env LINUX_CLEANER_NO_SUDO=1 never probes sudo and replays --no-sudo in Next:
+    for label, args, xenv in (
+        ("cli", ["--config", str(cfg), "--dry-run", "--no-sudo"], None),
+        ("env", ["--config", str(cfg), "--dry-run"], {"LINUX_CLEANER_NO_SUDO": "1"}),
+    ):
+        r_dry = run_cmd(*args, extra_env=xenv)
+        assert r_dry.returncode == 0, (label, r_dry)
+        assert not sudo_log.exists(), (label, sudo_log.read_text() if sudo_log.exists() else "")
+        assert "--no-sudo" in r_dry.stdout, (label, r_dry.stdout)
+        assert "[ROOT]" in r_dry.stdout, (label, r_dry.stdout)
+
+    # 2. Live --clean --trash --force --no-sudo quarantines user cache, skips root target and root action, never invokes sudo.
+    r_clean = run_cmd("--config", str(cfg), "--clean", "--trash", "--force", "--no-sudo")
+    assert r_clean.returncode == 0, r_clean
+    assert not user_cache.exists(), "user_cache should have been quarantined"
+    assert not sudo_log.exists(), "sudo must never be called under --no-sudo"
+    assert not apt_log.exists(), "apt-get action must not run under --no-sudo"
+    assert "requires root privileges" in r_clean.stderr, r_clean.stderr
+
+    # 3. --restore with both use_sudo=false and use_sudo=true records: restores user record, skips root record without calling sudo.
+    q_root = root / "home" / ".cache" / "linux-cleaner" / "quarantine"
+    sessions = [p for p in q_root.iterdir() if p.is_dir()]
+    assert len(sessions) == 1, sessions
+    sess_dir = sessions[0]
+    root_payload_q = sess_dir / "1_RootFake"
+    root_payload_q.mkdir()
+    (root_payload_q / "file").write_text("root data\n", encoding="utf-8")
+    root_dest = root / "home" / "restored_root_target"
+    with (sess_dir / "quarantine.meta").open("a", encoding="utf-8") as mf:
+        mf.write(f"full|1_RootFake|{root_dest}|true|0|0\n")
+
+    r_rest = run_cmd("--config", str(cfg), "--restore", sess_dir.name, "--no-sudo")
+    assert r_rest.returncode == 1, r_rest
+    assert not sudo_log.exists(), "sudo must not be invoked during --restore --no-sudo"
+    assert (user_cache / "item.tmp").exists(), "user-owned record should have been restored"
+    assert not root_dest.exists(), "use_sudo=true record must not restore under --no-sudo"
+    assert sess_dir.exists() and "1_RootFake" in (sess_dir / "quarantine.meta").read_text(encoding="utf-8")
+
+    # Env LINUX_CLEANER_NO_SUDO=1 also suppresses sudo on --restore retries.
+    r_rest_env = run_cmd("--config", str(cfg), "--restore", sess_dir.name, extra_env={"LINUX_CLEANER_NO_SUDO": "1"})
+    assert r_rest_env.returncode == 1 and "sudo authentication failed" in r_rest_env.stderr, r_rest_env
+    assert not sudo_log.exists(), "sudo must not be invoked when LINUX_CLEANER_NO_SUDO=1 is set on --restore"
+
+    # 4. Inherited LINUX_CLEANER_NO_SUDO=1 is ignored cleanly by non-cleanup/non-restore modes.
+    for ro_args in (
+        ["--config", str(cfg), "--check-config"],
+        ["--config", str(cfg), "--list-targets"],
+        ["--config", str(cfg), "--list-sessions"],
+        ["--config", str(cfg), "--report"],
+    ):
+        r_ro = run_cmd(*ro_args, extra_env={"LINUX_CLEANER_NO_SUDO": "1"})
+        assert r_ro.returncode == 0, (ro_args, r_ro)
+        assert not sudo_log.exists(), (ro_args, "sudo invoked")
+    r_doc_env = run_cmd("--config", str(cfg), "--doctor", extra_env={"LINUX_CLEANER_NO_SUDO": "1"})
+    assert r_doc_env.returncode == 0, r_doc_env
+
+    # 5. CLI --no-sudo rejects incompatible modes cleanly.
+    for bad_args, needle in (
+        (["--config", str(cfg), "--no-sudo", "--doctor"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--check-config"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--report"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--report", "--check-health", "60"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--list-targets"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--list-sessions"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--purge-sessions", sess_dir.name], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--init-config"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--init-env"], "applies only to cleanup runs or --restore"),
+        (["--config", str(cfg), "--no-sudo", "--hold-session", sess_dir.name], "--no-sudo"),
+        (["--config", str(cfg), "--no-sudo", "--release-session", sess_dir.name], "--no-sudo"),
+    ):
+        r_bad = run_cmd(*bad_args)
+        assert r_bad.returncode == 1 and needle in r_bad.stderr, (bad_args, needle, r_bad)
+finally:
+    for p in (root / "ro_parent", root / "ro_parent" / "priv"):
+        if p.exists():
+            os.chmod(p, stat.S_IRWXU)
+    shutil.rmtree(root, ignore_errors=True)
+PY
+  echo -e "${RED}FAIL: No Sudo Mode checks failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --no-sudo and LINUX_CLEANER_NO_SUDO keep cleanup and restore unprivileged.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

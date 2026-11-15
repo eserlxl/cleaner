@@ -77,6 +77,7 @@ a non-default or environment-overridden
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -504,6 +505,7 @@ Cannot be combined with
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -637,6 +639,7 @@ combined with
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -716,6 +719,7 @@ Cannot be combined with
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -839,6 +843,7 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -1106,6 +1111,37 @@ Exits 1 if excluding actions leaves no targets to process. Cannot be combined wi
 .BR \-\-list\-sessions ,
 .BR \-\-hold\-session ,
 .BR \-\-release\-session ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-init\-config ,
+.BR \-\-init\-env ,
+or
+.BR \-\-doctor .
+.TP
+.B \-\-no\-sudo
+With cleanup, dry-run preview, or
+.BR \-\-restore :
+never probe
+.BR "sudo \-n" ,
+never prompt for a
+.B sudo
+password, and never run commands through
+.BR sudo ,
+even when cached credentials or a controlling terminal exist. Root-privileged targets (system package-cache actions, unreadable targets, or outside-\fB$HOME\fR targets with unwritable parents) are skipped cleanly as requiring root while user-owned targets proceed normally, and privileged
+.RB ( use_sudo=true )
+quarantine records in
+.B \-\-restore
+fail cleanly without altering unprivileged sibling restores. Repeatable; overrides non-truthy environment values and is set by a truthy
+.BR LINUX_CLEANER_NO_SUDO .
+Replayed in dry-run
+.B Next:
+commands. Cannot be combined with
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-check\-health ,
@@ -1521,6 +1557,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -1563,6 +1600,7 @@ Cannot be combined with
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-skip\-actions ,
+.BR \-\-no\-sudo ,
 .BR \-\-min\-reclaim ,
 .BR \-\-min\-free ,
 .BR \-\-min\-free\-path ,
@@ -1696,6 +1734,16 @@ enables
 targets in cleanup runs or
 .BR \-\-list\-targets ).
 Other non-cleanup modes ignore it. No CLI flag disables it; set it to 0 or unset it.
+.TP
+.B LINUX_CLEANER_NO_SUDO
+When set to
+.BR 1 ", " true ", " TRUE ", " yes ", or " YES ,
+enables
+.BR \-\-no\-sudo
+(never invoke
+.BR sudo ;
+treat root-owned targets or restore records as skipped/unrestorable without root privileges).
+No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_JSON
 When set to
