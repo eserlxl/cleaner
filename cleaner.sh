@@ -1333,46 +1333,46 @@ _expand_var_token() {
 # and $XDG_STATE_HOME (XDG variables fall back to their spec default when unset
 # or relative).
 expand_path_safe() {
-  local raw_path="$1"
-  local expanded="$raw_path" name value default
-  [[ "$raw_path" != *$'\n'* ]] || return 1
+  local _eps_raw="$1"
+  local _eps_expanded="$_eps_raw" _eps_name _eps_value _eps_default
+  [[ "$_eps_raw" != *$'\n'* ]] || return 1
 
   # Safe leading ~ expansion
   # shellcheck disable=SC2088
-  if [[ "$expanded" == "~" ]]; then
-    expanded="$HOME"
-  elif [[ "$expanded" == "~/"* ]]; then
-    expanded="$HOME/${expanded:2}"
+  if [[ "$_eps_expanded" == "~" ]]; then
+    _eps_expanded="$HOME"
+  elif [[ "$_eps_expanded" == "~/"* ]]; then
+    _eps_expanded="$HOME/${_eps_expanded:2}"
   fi
 
   # Replace $HOME, $USER, and the four XDG base-directory variables only as
   # whole tokens (so $HOMEDATA / $USERNAME / $XDG_CACHE_HOMEX stay literal,
   # matching the documented "explicit placeholders only" contract).
-  for name in HOME USER XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
-    [[ "$expanded" == *"\$$name"* ]] || continue
-    case "$name" in
-      HOME|USER) value="${!name:-}" ;;
+  for _eps_name in HOME USER XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
+    [[ "$_eps_expanded" == *"\$$_eps_name"* ]] || continue
+    case "$_eps_name" in
+      HOME|USER) _eps_value="${!_eps_name:-}" ;;
       *)
-        case "$name" in
-          XDG_CACHE_HOME) default="${HOME:-}/.cache" ;;
-          XDG_CONFIG_HOME) default="${HOME:-}/.config" ;;
-          XDG_DATA_HOME) default="${HOME:-}/.local/share" ;;
-          XDG_STATE_HOME) default="${HOME:-}/.local/state" ;;
+        case "$_eps_name" in
+          XDG_CACHE_HOME) _eps_default="${HOME:-}/.cache" ;;
+          XDG_CONFIG_HOME) _eps_default="${HOME:-}/.config" ;;
+          XDG_DATA_HOME) _eps_default="${HOME:-}/.local/share" ;;
+          XDG_STATE_HOME) _eps_default="${HOME:-}/.local/state" ;;
         esac
-        value=$(_xdg_dir "$name" "$default" && printf '.') || return 1
-        value=${value%.}
+        _eps_value=$(_xdg_dir "$_eps_name" "$_eps_default" && printf '.') || return 1
+        _eps_value=${_eps_value%.}
         ;;
     esac
     # Helpers emit no delimiter; remove only the capture sentinel, preserving LF.
-    expanded=$(_expand_var_token "$expanded" "$name" "$value" && printf '.') || return 1
-    expanded=${expanded%.}
+    _eps_expanded=$(_expand_var_token "$_eps_expanded" "$_eps_name" "$_eps_value" && printf '.') || return 1
+    _eps_expanded=${_eps_expanded%.}
   done
 
-  [[ "$expanded" != *$'\n'* ]] || return 1
+  [[ "$_eps_expanded" != *$'\n'* ]] || return 1
   if [[ "$#" -gt 1 ]]; then
-    printf -v "$2" '%s' "$expanded"
+    printf -v "$2" '%s' "$_eps_expanded"
   else
-    printf '%s' "$expanded"
+    printf '%s' "$_eps_expanded"
   fi
 }
 
@@ -1519,7 +1519,7 @@ _expand_glob_accept_match() {
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
   local line lineno=0 risk name raw_path f1 f2 f3 frest pipes fields expanded_glob_path norm_raw_path
-  local prefix depth max_depth tail_part leaf match target_filter has_globstar expanded
+  local prefix depth max_depth tail_part leaf match target_filter has_globstar
   local p_min p_max cache_start cache_len cache_end cache_idx
   local -a prune_args cfg_lines=() globstar_dirs=()
   local -A accepted_matches globstar_prefix_counts=() globstar_prefix_min=() globstar_prefix_max=() globstar_cache_start=() globstar_cache_len=()
@@ -1573,11 +1573,11 @@ expand_config_globs() {
     [[ "$fields" -eq 7 ]] && trim_to target_filter "${frest##*|}"
     if [[ "$raw_path" != *[*?]* ]]; then
       if [[ "$target_filter" == "filter:cxx_build" ]]; then
-        if ! expand_path_safe "$raw_path" expanded; then
+        if ! expand_path_safe "$raw_path" expanded_glob_path; then
           printf 'Warning: %s:%s: skipping target with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
           continue
         fi
-        is_cxx_build_dir "$expanded" || continue
+        is_cxx_build_dir "$expanded_glob_path" || continue
       fi
       printf '%s\t%s\n' "$lineno" "$line"
       continue
