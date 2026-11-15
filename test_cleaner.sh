@@ -7005,6 +7005,35 @@ if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay JSON Rejected" 1
 else
   ov_err_ok=false
 fi
+# Readable symlinked -c resolves to its canonical target in include|.
+ln -s "$TEST_ENV_DIR/test_cleaner.conf" "$TEST_ENV_DIR/ov_bad_dir/readable_link.conf"
+if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Symlinked Readable Source" 0 "init_ov_readlink.log" \
+     --init-config --overlay -c "$TEST_ENV_DIR/ov_bad_dir/readable_link.conf"; then
+  ov_link_target=$(realpath -e -- "$TEST_ENV_DIR/test_cleaner.conf")
+  grep -qxF "include|${ov_link_target}" "$ov_xdg/linux-cleaner/cleaner.conf" \
+    && XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Symlinked Check Config" 0 "init_ov_readlink_cc.log" --check-config \
+    || ov_err_ok=false
+else
+  ov_err_ok=false
+fi
+rm -rf "$ov_xdg"
+# Unreadable source configs must fail closed before creating XDG directories or writing cleaner.conf.
+if [[ "$EUID" -ne 0 ]]; then
+  ov_unreadable_src="$TEST_ENV_DIR/ov_bad_dir/unreadable.conf"
+  cp "$TEST_ENV_DIR/test_cleaner.conf" "$ov_unreadable_src"
+  chmod 000 "$ov_unreadable_src"
+  for ov_mode_flag in "--init-config" "--init-config --overlay"; do
+    read -r -a ov_mode_args <<< "$ov_mode_flag"
+    if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Rejects Unreadable Source ($ov_mode_flag)" 1 "init_unreadable.log" \
+         "${ov_mode_args[@]}" -c "$ov_unreadable_src"; then
+      grep -qF "is not readable" "$TEST_ENV_DIR/init_unreadable.log" || ov_err_ok=false
+      [[ ! -e "$ov_xdg/linux-cleaner" ]] || ov_err_ok=false
+    else
+      ov_err_ok=false
+    fi
+  done
+  chmod 644 "$ov_unreadable_src"
+fi
 mkdir -p "$ov_xdg"
 ln -s "$TEST_ENV_DIR/ov_sym_target" "$ov_xdg/linux-cleaner"
 if ! XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Refuses Symlinked Directory" 1 "init_ov_sym.log" \

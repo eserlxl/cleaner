@@ -1237,6 +1237,10 @@ init_user_config() {
     echo -e "${RED}Error: No source configuration file found to copy.${NC}" >&2
     return 1
   fi
+  if [[ ! -r "$src" ]]; then
+    echo -e "${RED}Error: Configuration file '$src' is not readable.${NC}" >&2
+    return 1
+  fi
 
   if [[ "$INIT_OVERLAY" == true ]]; then
     inc_src=$(realpath -e -- "$src" 2>/dev/null && printf '.') || {
