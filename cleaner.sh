@@ -774,6 +774,9 @@ fi
 if [[ -z "${HOME:-}" ]]; then
   echo -e "${RED}Error: HOME is not set; refusing to run without a home-directory boundary.${NC}" >&2
   exit 1
+elif [[ "$HOME" != /* || "$HOME" == *$'\n'* || "$HOME" == *$'\r'* ]]; then
+  echo -e "${RED}Error: HOME must be an absolute path without CR or LF characters; refusing to run without a valid home-directory boundary.${NC}" >&2
+  exit 1
 fi
 USER="${USER:-$(id -un 2>/dev/null || true)}"
 
