@@ -19768,5 +19768,129 @@ PY
 fi
 echo -e "${GREEN}PASS: --no-sudo and LINUX_CLEANER_NO_SUDO keep cleanup and restore unprivileged.${NC}"
 
+# U-185: LINUX_CLEANER_METRICS_FILE exposes quarantine total and held session counts safely.
+echo -e "\n${BOLD}Test Case: Quarantine Session Prometheus Metrics${NC}"
+if ! python3 - "$CLEANER_SH" <<'PY'; then
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+cleaner = sys.argv[1]
+root = Path(tempfile.mkdtemp(prefix="test_q_metrics_"))
+q_base = root / "home" / ".cache" / "linux-cleaner" / "quarantine"
+try:
+    (root / "home").mkdir(parents=True)
+    mf = root / "metrics.prom"
+    base_env = {
+        "HOME": str(root / "home"),
+        "XDG_STATE_HOME": str(root / "state"),
+        "PATH": os.environ["PATH"],
+        "NO_COLOR": "1",
+    }
+
+    def run_cmd(*args, metrics=True):
+        env = dict(base_env)
+        if metrics:
+            env["LINUX_CLEANER_METRICS_FILE"] = str(mf)
+        return subprocess.run([cleaner, *args], env=env, capture_output=True, text=True, check=False)
+
+    # 1. Absent quarantine directory -> 0 sessions, 0 held sessions.
+    t_empty = root / "home" / "empty_src"
+    t_empty.mkdir()
+    (t_empty / "a").write_text("x\n", encoding="utf-8")
+    c_perm = root / "perm.conf"
+    c_perm.write_text(f"safe|Perm|{t_empty}|Perm|0||\n", encoding="utf-8")
+    r0 = run_cmd("--config", str(c_perm), "--clean", "--force")
+    assert r0.returncode == 0, r0
+    lines0 = mf.read_text(encoding="utf-8").splitlines()
+    assert "# TYPE linux_cleaner_quarantine_sessions gauge" in lines0, lines0
+    assert "# TYPE linux_cleaner_quarantine_held_sessions gauge" in lines0, lines0
+    assert "linux_cleaner_quarantine_sessions 0" in lines0, lines0
+    assert "linux_cleaner_quarantine_held_sessions 0" in lines0, lines0
+
+    # 2. Quarantine S1, hold it, add expired unheld S0 + active S2 with retention, check counts.
+    s1 = root / "home" / "s1"
+    s1.mkdir()
+    (s1 / "f1").write_text("one\n", encoding="utf-8")
+    c1 = root / "c1.conf"
+    c1.write_text(f"safe|S1|{s1}|S1|0||\n", encoding="utf-8")
+    r1 = run_cmd("--config", str(c1), "--clean", "--trash", "--force")
+    assert r1.returncode == 0, r1
+    assert "linux_cleaner_quarantine_sessions 1" in mf.read_text(encoding="utf-8").splitlines()
+    assert "linux_cleaner_quarantine_held_sessions 0" in mf.read_text(encoding="utf-8").splitlines()
+
+    rh = run_cmd("--hold-session", "latest", metrics=False)
+    assert rh.returncode == 0, rh
+    sess_dirs = [p for p in q_base.iterdir() if p.is_dir()]
+    assert len(sess_dirs) == 1, sess_dirs
+    old_ts = time.time() - 10 * 86400
+    os.utime(sess_dirs[0], (old_ts, old_ts))
+
+    s0 = q_base / "2020-01-01_00-00-00"
+    s0.mkdir()
+    (s0 / "expired").write_text("exp\n", encoding="utf-8")
+    os.utime(s0, (old_ts, old_ts))
+
+    s2 = root / "home" / "s2"
+    s2.mkdir()
+    (s2 / "f2").write_text("two\n", encoding="utf-8")
+    c2 = root / "c2.conf"
+    c2.write_text(f"safe|S2|{s2}|S2|0||\n", encoding="utf-8")
+    r2 = run_cmd("--config", str(c2), "--clean", "--trash", "--force", "--trash-keep-days", "7")
+    assert r2.returncode == 0, r2
+    assert not s0.exists(), "expired unheld session should have been purged"
+    assert sess_dirs[0].exists(), "held session must survive retention"
+    lines2 = mf.read_text(encoding="utf-8").splitlines()
+    assert "linux_cleaner_quarantine_sessions 2" in lines2, lines2
+    assert "linux_cleaner_quarantine_held_sessions 1" in lines2, lines2
+
+    # 3. Release held session -> held_sessions drops to 0 cleanly.
+    rr = run_cmd("--release-session", sess_dirs[0].name, metrics=False)
+    assert rr.returncode == 0, rr
+    r3 = run_cmd("--config", str(c_perm), "--clean", "--force")
+    assert r3.returncode == 0, r3
+    lines3 = mf.read_text(encoding="utf-8").splitlines()
+    assert "linux_cleaner_quarantine_sessions 2" in lines3, lines3
+    assert "linux_cleaner_quarantine_held_sessions 0" in lines3, lines3
+
+    # 4. Unsearchable quarantine directory omits session gauges cleanly without failing cleanup.
+    if os.geteuid() != 0:
+        os.chmod(q_base, 0o000)
+        try:
+            r_unr = run_cmd("--config", str(c_perm), "--clean", "--force")
+            assert r_unr.returncode == 0, r_unr
+            assert "omitting linux_cleaner_quarantine_sessions" in r_unr.stderr, r_unr.stderr
+            text_unr = mf.read_text(encoding="utf-8")
+            assert "linux_cleaner_quarantine_sessions" not in text_unr, text_unr
+            assert "linux_cleaner_quarantine_held_sessions" not in text_unr, text_unr
+        finally:
+            os.chmod(q_base, stat.S_IRWXU)
+
+    # 5. Symlinked quarantine base omits bytes, sessions, and held_sessions without failing cleanup.
+    shutil.rmtree(q_base)
+    sym_target = root / "ext_q"
+    sym_target.mkdir()
+    q_base.symlink_to(sym_target)
+    r_sym = run_cmd("--config", str(c_perm), "--clean", "--force")
+    assert r_sym.returncode == 0, r_sym
+    text_sym = mf.read_text(encoding="utf-8")
+    assert "linux_cleaner_quarantine_bytes" not in text_sym, text_sym
+    assert "linux_cleaner_quarantine_sessions" not in text_sym, text_sym
+    assert "linux_cleaner_quarantine_held_sessions" not in text_sym, text_sym
+finally:
+    if q_base.exists() and not q_base.is_symlink():
+        os.chmod(q_base, stat.S_IRWXU)
+    shutil.rmtree(root, ignore_errors=True)
+PY
+  echo -e "${RED}FAIL: Quarantine Session Prometheus Metrics checks failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: LINUX_CLEANER_METRICS_FILE exports quarantine session and held-session gauges safely.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

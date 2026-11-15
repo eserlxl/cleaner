@@ -1920,16 +1920,18 @@ lines for
 .BR linux_cleaner_targets{result="cleaned|skipped|failed"} ,
 .BR linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"} ,
 .BR linux_\:cleaner_\:last_\:run_\:duration_\:seconds ,
+.BR linux_cleaner_quarantine_bytes ,
+.BR linux_cleaner_quarantine_sessions ,
 and
-.BR linux_cleaner_quarantine_bytes .
+.BR linux_cleaner_quarantine_held_sessions .
 The duration gauge is the elapsed seconds of the parsed result line. It is
 omitted when that line was not written.
-The quarantine gauge measures the current size of
+The quarantine gauges measure the current size of
 .I ~/.cache/linux-cleaner/quarantine
 in bytes using
 .B du -sb
-after inline retention, including sessions from previous runs. It is 0 when the
-directory is absent; a measurement failure warns and omits the sample.
+plus total and held session directory counts after inline retention, including sessions from previous runs. They are 0 when the
+directory is absent; a symlink, non-directory, measurement failure, or enumeration failure warns and omits the affected sample(s).
 Environment-only (no CLI flag). A relative path, line feed, symlinked target or
 parent directory, or write error prints a warning on stderr without failing the
 run. Dry-run and read-only modes never write the file.

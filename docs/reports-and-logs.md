@@ -76,7 +76,7 @@ When `LINUX_CLEANER_METRICS_FILE` is set to a literal absolute file path without
 LINUX_CLEANER_METRICS_FILE=/var/lib/node_exporter/textfile_collector/linux_cleaner.prom cleaner --clean --force
 ```
 
-The file emits `# HELP` and `# TYPE` lines for six gauge families. The run counts and reclaimed bytes come from the same `Result:` and `Accounted bytes:` values saved in `last-report.txt` (`0` on nothing-to-clean, `--min-reclaim`, and `--min-free` skips):
+The file emits `# HELP` and `# TYPE` lines for eight gauge families. The run counts and reclaimed bytes come from the same `Result:` and `Accounted bytes:` values saved in `last-report.txt` (`0` on nothing-to-clean, `--min-reclaim`, and `--min-free` skips):
 
 - `linux_cleaner_last_run_timestamp_seconds`: Unix timestamp of the cleanup exit.
 - `linux_cleaner_last_run_success`: `1` on a clean run, or `0` when any target or inline retention failed (`OPERATION_FAILED`), the cleanup was interrupted by a signal, or the cleanup exited non-zero after acquiring the mutation lock and before saving its report (with zero target and byte counts). Failures before acquiring the mutation lock on the cleanup path (for example invalid options, a missing or invalid configuration file, invalid `--only-path` / `--exclude-path`, lock contention, or non-cleanup modes such as `--restore` and `--purge-sessions`) exit without touching the file, so the previous values stay; alert on the age of `linux_cleaner_last_run_timestamp_seconds` as well.
@@ -84,6 +84,8 @@ The file emits `# HELP` and `# TYPE` lines for six gauge families. The run count
 - `linux_cleaner_reclaimed_bytes{kind="quarantined|permanent"}`: accounted bytes quarantined and permanently reclaimed.
 - `linux_cleaner_last_run_duration_seconds`: elapsed seconds from the parsed `Result: cleaned=N skipped=N failed=N elapsed=Ns` line, the same value as `--report --json` `elapsed_seconds`. Omitted when that line was not parsed, including an early exit before a result line, instead of reporting `0`.
 - `linux_cleaner_quarantine_bytes`: current `du -sb` size of `~/.cache/linux-cleaner/quarantine` after inline retention, including sessions from previous runs. Reports `0` when the directory is absent. If measurement fails, warns on stderr and omits the sample while still exporting the other gauges.
+- `linux_cleaner_quarantine_sessions`: current number of immediate session directories under `~/.cache/linux-cleaner/quarantine` after inline retention, including sessions from previous runs. Reports `0` when the directory is absent; warns on stderr and omits the session-count samples on symlinked, non-directory, or unreadable bases.
+- `linux_cleaner_quarantine_held_sessions`: subset of quarantine sessions currently protected by a `.hold` marker (`--hold-session`). Reports `0` when absent; warns on stderr and omits on symlinked, non-directory, or unreadable bases.
 
 A relative path, a path containing a line feed, a symlinked target or parent directory, or a write error prints a warning on stderr without failing the cleanup. Unset or empty `LINUX_CLEANER_METRICS_FILE`, dry-runs, and read-only modes do not write this cleanup metrics file.
 

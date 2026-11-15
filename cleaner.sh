@@ -5038,12 +5038,36 @@ write_cleanup_metrics() {
   if [[ "${OPERATION_FAILED:-false}" == true || -n "$interrupted" ]]; then
     success=0
   fi
-  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" quarantine_bytes=0
-  local -a quarantine_metrics=()
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" quarantine_bytes=0 q_sessions=0 q_held=0
+  local -a quarantine_metrics=() q_session_metrics=()
   if [[ -e "$quarantine_base" || -L "$quarantine_base" ]]; then
-    if [[ -L "$quarantine_base" || ! -d "$quarantine_base" ]] || ! quarantine_bytes=$(quarantine_size_bytes "$quarantine_base" 2>/dev/null); then
+    if [[ -L "$quarantine_base" || ! -d "$quarantine_base" ]]; then
       echo "Warning: could not measure quarantine size at '$quarantine_base'; omitting linux_cleaner_quarantine_bytes." >&2
       quarantine_bytes=""
+      q_sessions=""
+      q_held=""
+    else
+      if ! quarantine_bytes=$(quarantine_size_bytes "$quarantine_base" 2>/dev/null); then
+        echo "Warning: could not measure quarantine size at '$quarantine_base'; omitting linux_cleaner_quarantine_bytes." >&2
+        quarantine_bytes=""
+      fi
+      local q_session="" q_stream_rc="" q_sessions_cnt=0 q_held_cnt=0
+      while IFS= read -r -d '' q_session; do
+        if [[ -z "$q_session" ]]; then
+          IFS= read -r -d '' q_stream_rc
+          break
+        fi
+        q_sessions_cnt=$((q_sessions_cnt + 1))
+        session_is_held "$q_session" && q_held_cnt=$((q_held_cnt + 1))
+      done < <(print0_with_status find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+      if [[ "$q_stream_rc" != 0 ]]; then
+        echo "Warning: could not enumerate quarantine sessions at '$quarantine_base'; omitting linux_cleaner_quarantine_sessions and linux_cleaner_quarantine_held_sessions." >&2
+        q_sessions=""
+        q_held=""
+      else
+        q_sessions="$q_sessions_cnt"
+        q_held="$q_held_cnt"
+      fi
     fi
   fi
   if [[ -n "$quarantine_bytes" ]]; then
@@ -5051,6 +5075,16 @@ write_cleanup_metrics() {
       "# HELP linux_cleaner_quarantine_bytes Current quarantine size in bytes."
       "# TYPE linux_cleaner_quarantine_bytes gauge"
       "linux_cleaner_quarantine_bytes ${quarantine_bytes}"
+    )
+  fi
+  if [[ -n "$q_sessions" && -n "$q_held" ]]; then
+    q_session_metrics=(
+      "# HELP linux_cleaner_quarantine_sessions Current number of quarantine sessions."
+      "# TYPE linux_cleaner_quarantine_sessions gauge"
+      "linux_cleaner_quarantine_sessions ${q_sessions}"
+      "# HELP linux_cleaner_quarantine_held_sessions Current number of held quarantine sessions."
+      "# TYPE linux_cleaner_quarantine_held_sessions gauge"
+      "linux_cleaner_quarantine_held_sessions ${q_held}"
     )
   fi
   # Absent until the Result line is parsed, so an early exit does not report 0.
@@ -5080,7 +5114,8 @@ write_cleanup_metrics() {
     "linux_cleaner_reclaimed_bytes{kind=\"quarantined\"} ${quarantined_bytes}" \
     "linux_cleaner_reclaimed_bytes{kind=\"permanent\"} ${permanent_bytes}" \
     "${duration_metrics[@]}" \
-    "${quarantine_metrics[@]}"; then
+    "${quarantine_metrics[@]}" \
+    "${q_session_metrics[@]}"; then
     CLEANUP_METRICS_WRITTEN=true
   fi
   return 0
