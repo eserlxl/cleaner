@@ -11390,6 +11390,89 @@ if ! run_test_case "Restore Aged Original Path Symlink Retry" 0 "r_aged_sym_orig
   exit 1
 fi
 
+# (b2) Aged record whose original path or intermediate directory became a regular
+# file before restore matches --dry-run --json conflict status and logs outcome=conflict.
+setup_mock_env
+mkdir -p "$MOCK_HOME/aged_file_orig/sub"
+printf 'aged-file-orig\n' > "$MOCK_HOME/aged_file_orig/sub/old.txt"
+touch -d '10 days ago' "$MOCK_HOME/aged_file_orig/sub/old.txt"
+cat > "$TEST_ENV_DIR/aged_file_orig.conf" <<'EOF'
+safe|Aged File Orig|$HOME/aged_file_orig|aged target whose root becomes file|7||
+EOF
+ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$ops_log"
+if ! run_test_case "Quarantine Aged File Orig" 0 "q_aged_file_orig.log" \
+       --config "$TEST_ENV_DIR/aged_file_orig.conf" --clean --force --trash; then
+  exit 1
+fi
+aged_file_orig_sess=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+rmdir "$MOCK_HOME/aged_file_orig"
+printf 'blocking-file\n' > "$MOCK_HOME/aged_file_orig"
+if ! run_test_case "Restore Aged Orig File Conflict Dry Run" 0 "r_aged_file_orig_dry.log" \
+       --restore latest --dry-run --json \
+   || ! grep -q '"status":"conflict"' "$TEST_ENV_DIR/r_aged_file_orig_dry.log" \
+   || ! run_test_case "Restore Aged Orig File Conflict Live" 1 "r_aged_file_orig_live.log" \
+       --restore latest --log \
+   || ! grep -q "Conflict detected" "$TEST_ENV_DIR/r_aged_file_orig_live.log" \
+   || grep -q "^mkdir:" "$TEST_ENV_DIR/r_aged_file_orig_live.log" \
+   || [[ ! -f "$aged_file_orig_sess/0_Aged_File_Orig/sub/old.txt" ]] \
+   || ! grep -qF "|$MOCK_HOME/aged_file_orig|" "$aged_file_orig_sess/quarantine.meta" \
+   || ! grep -q "mode=restore .*path='$MOCK_HOME/aged_file_orig' outcome=conflict" "$ops_log"; then
+  echo -e "${RED}FAIL: aged restore with regular-file original path did not match dry-run conflict or log outcome=conflict.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_file_orig_dry.log" "$TEST_ENV_DIR/r_aged_file_orig_live.log" "$ops_log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/aged_file_orig"
+if ! run_test_case "Restore Aged Orig File Conflict Retry" 0 "r_aged_file_orig_retry.log" \
+       --restore latest \
+   || ! grep -qx "aged-file-orig" "$MOCK_HOME/aged_file_orig/sub/old.txt" \
+   || [[ -d "$aged_file_orig_sess" ]]; then
+  echo -e "${RED}FAIL: retry after removing original-path blocking file did not restore or retire session.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_file_orig_retry.log" 2>/dev/null || true
+  exit 1
+fi
+
+setup_mock_env
+mkdir -p "$MOCK_HOME/aged_file_sub/sub/nested" "$MOCK_HOME/aged_file_sub/sibling"
+printf 'aged-sub-file\n' > "$MOCK_HOME/aged_file_sub/sub/nested/old.txt"
+printf 'aged-sib-ok\n' > "$MOCK_HOME/aged_file_sub/sibling/ok.txt"
+touch -d '10 days ago' "$MOCK_HOME/aged_file_sub/sub/nested/old.txt" "$MOCK_HOME/aged_file_sub/sibling/ok.txt"
+cat > "$TEST_ENV_DIR/aged_file_sub.conf" <<'EOF'
+safe|Aged File Sub|$HOME/aged_file_sub|aged target whose subdir becomes file|7||
+EOF
+ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+rm -f "$ops_log"
+if ! run_test_case "Quarantine Aged File Sub" 0 "q_aged_file_sub.log" \
+       --config "$TEST_ENV_DIR/aged_file_sub.conf" --clean --force --trash; then
+  exit 1
+fi
+aged_file_sub_sess=$(find "$MOCK_HOME/.cache/linux-cleaner/quarantine" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+printf 'blocking-sub\n' > "$MOCK_HOME/aged_file_sub/sub"
+if ! run_test_case "Restore Aged Subdir File Conflict Dry Run" 0 "r_aged_file_sub_dry.log" \
+       --restore latest --dry-run --json \
+   || ! grep -q '"status":"conflict"' "$TEST_ENV_DIR/r_aged_file_sub_dry.log" \
+   || ! run_test_case "Restore Aged Subdir File Conflict Live" 1 "r_aged_file_sub_live.log" \
+       --restore latest --log \
+   || ! grep -q "Conflict detected" "$TEST_ENV_DIR/r_aged_file_sub_live.log" \
+   || grep -q "^mkdir:" "$TEST_ENV_DIR/r_aged_file_sub_live.log" \
+   || ! grep -qx "aged-sib-ok" "$MOCK_HOME/aged_file_sub/sibling/ok.txt" \
+   || [[ ! -f "$aged_file_sub_sess/0_Aged_File_Sub/sub/nested/old.txt" ]] \
+   || ! grep -qF "|$MOCK_HOME/aged_file_sub|" "$aged_file_sub_sess/quarantine.meta" \
+   || ! grep -q "mode=restore .*path='$MOCK_HOME/aged_file_sub' outcome=conflict" "$ops_log"; then
+  echo -e "${RED}FAIL: aged restore with regular-file intermediate dir did not isolate conflict or log outcome=conflict.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_file_sub_dry.log" "$TEST_ENV_DIR/r_aged_file_sub_live.log" "$ops_log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$MOCK_HOME/aged_file_sub/sub"
+if ! run_test_case "Restore Aged Subdir File Conflict Retry" 0 "r_aged_file_sub_retry.log" \
+       --restore latest \
+   || ! grep -qx "aged-sub-file" "$MOCK_HOME/aged_file_sub/sub/nested/old.txt" \
+   || [[ -d "$aged_file_sub_sess" ]]; then
+  echo -e "${RED}FAIL: retry after removing intermediate blocking file did not restore or retire session.${NC}"
+  cat "$TEST_ENV_DIR/r_aged_file_sub_retry.log" 2>/dev/null || true
+  exit 1
+fi
+
 # (c) Full record whose original path became a symlink before restore.
 setup_mock_env
 mkdir -p "$MOCK_HOME/full_sym_orig" "$MOCK_HOME/other_full_dir"

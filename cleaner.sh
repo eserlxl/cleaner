@@ -3653,6 +3653,11 @@ restore_quarantine() {
         overall_success=false
         log_restore_outcome "$restore_dir" "$original_path" conflict
         continue
+      elif with_sudo "$use_sudo" test -e "$original_path" && ! with_sudo "$use_sudo" test -d "$original_path"; then
+        echo -e "${RED}Error: Restore destination '$original_path' exists and is not a directory. Conflict detected, skipping.${NC}" >&2
+        overall_success=false
+        log_restore_outcome "$restore_dir" "$original_path" conflict
+        continue
       fi
       # shellcheck disable=SC2016
       if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$original_path"; then
@@ -3670,7 +3675,7 @@ restore_quarantine() {
             fi
             local file_rel="${file#"$src_path"/}"
             local dest_file="$original_path/$file_rel"
-            local dest_parent check_dir="$original_path" rel_dir part symlink_conflict=false
+            local dest_parent check_dir="$original_path" rel_dir part path_conflict=false
             dest_parent=$(dirname "$dest_file")
             if [[ "$dest_parent" != "$original_path" ]]; then
               rel_dir="${file_rel%/*}"
@@ -3679,14 +3684,18 @@ restore_quarantine() {
                 check_dir="$check_dir/$part"
                 if with_sudo "$use_sudo" test -L "$check_dir"; then
                   echo -e "${RED}Error: Restore destination path '$check_dir' is a symlink. Conflict detected, skipping '$dest_file'.${NC}" >&2
-                  symlink_conflict=true
+                  path_conflict=true
+                  break
+                elif with_sudo "$use_sudo" test -e "$check_dir" && ! with_sudo "$use_sudo" test -d "$check_dir"; then
+                  echo -e "${RED}Error: Restore destination path '$check_dir' exists and is not a directory. Conflict detected, skipping '$dest_file'.${NC}" >&2
+                  path_conflict=true
                   break
                 fi
                 [[ "$rel_dir" == "$part" ]] && break
                 rel_dir="${rel_dir#*/}"
               done
             fi
-            if [[ "$symlink_conflict" = true ]]; then
+            if [[ "$path_conflict" = true ]]; then
               success=false
               had_conflict=true
               continue
