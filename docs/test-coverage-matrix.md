@@ -17,6 +17,7 @@
 | U-148 | Lock contention, invalid `--only-path` / missing-config pre-lock failures, and failed `--purge-sessions --force` / `--restore` runs leave `LINUX_CLEANER_METRICS_FILE` untouched while post-lock cleanup failures still record `linux_cleaner_last_run_success 0` | Prometheus Metrics Pre-Lock And Non-Cleanup Preservation |
 | U-149 | Systemd `EnvironmentFile` parsing in `print_timer_note` and `--doctor` strips at most one matching outer quote pair while preserving embedded quotes (`'`, `"`) and trimming quoted whitespace (`"   "`, `'   '`) | Systemd EnvironmentFile Outer Quote Preservation / Timer Note Embedded Quote Preserved |
 | U-150 | `--doctor` preserves trailing newlines in `XDG_STATE_HOME` when reading `last-report.txt`, reporting the recorded cleanup summary instead of `none recorded` | Doctor Trailing-Newline XDG_STATE_HOME Preservation |
+| U-151 | `parse_size_bytes` accepts zero-padded sizes longer than 18 characters (`0000000000000000001G`, `000000000000000000000`, `max-size:0000000000000000001K`) while rejecting real 64-bit overflows (`99999999999T`) | Parse Size Bytes Zero-Padded Inputs |
 
 ## 1.6.0 shipped feature inventory
 

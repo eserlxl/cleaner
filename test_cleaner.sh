@@ -16043,5 +16043,26 @@ if [[ $doc_nl_ec -ne 0 ]] \
 fi
 echo -e "${GREEN}PASS: --doctor preserves trailing newlines in XDG_STATE_HOME when reading last-report.txt.${NC}"
 
+echo -e "\n${BOLD}Test Case: Parse Size Bytes Zero-Padded Inputs${NC}"
+setup_mock_env
+rm -rf "$MOCK_HOME/.cache/linux-cleaner/quarantine"
+if ! run_test_case "Min Reclaim Zero-Padded 1G" 0 "size_pad_1g.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 0000000000000000001G --dry-run \
+   || ! run_test_case "Min Reclaim Zero-Padded Zero" 0 "size_pad_zero.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 000000000000000000000 --dry-run \
+   || ! run_test_case "Purge Max-Size Zero-Padded 1K" 0 "size_pad_purge_1k.log" \
+       --purge-sessions max-size:0000000000000000001K --force \
+   || ! run_test_case "Min Reclaim Real Overflow Rejected" 1 "size_pad_overflow.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 99999999999T --dry-run \
+   || ! grep -qF "is too large." "$TEST_ENV_DIR/size_pad_overflow.log" \
+   || ! run_test_case "Min Reclaim Padded Huge Overflow Rejected" 1 "size_pad_huge_overflow.log" \
+       --config "$TEST_ENV_DIR/test_cleaner.conf" --min-reclaim 000000000000000000099999999999999999999 --dry-run \
+   || ! grep -qF "is too large." "$TEST_ENV_DIR/size_pad_huge_overflow.log"; then
+  echo -e "${RED}FAIL: parse_size_bytes zero-padded or overflow size handling failed.${NC}"
+  cat "$TEST_ENV_DIR/size_pad_1g.log" "$TEST_ENV_DIR/size_pad_zero.log" "$TEST_ENV_DIR/size_pad_purge_1k.log" "$TEST_ENV_DIR/size_pad_overflow.log" "$TEST_ENV_DIR/size_pad_huge_overflow.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: parse_size_bytes accepts zero-padded valid sizes and rejects real 64-bit overflows.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

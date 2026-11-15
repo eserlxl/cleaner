@@ -688,12 +688,14 @@ parse_size_bytes() {
     g|G) mult=$((1024 * 1024 * 1024)) ;;
     t|T) mult=$((1024 * 1024 * 1024 * 1024)) ;;
   esac
+  num="${num#"${num%%[!0]*}"}"
+  [[ -z "$num" ]] && num=0
   # Refuse values whose byte count would overflow 64-bit shell arithmetic.
   if [[ ${#num} -gt 18 ]] \
-     || (( 10#$num > 9223372036854775807 / mult )); then
+     || (( num > 9223372036854775807 / mult )); then
     return 2
   fi
-  printf '%s\n' "$((10#$num * mult))"
+  printf '%s\n' "$((num * mult))"
 }
 
 if [[ -n "$MIN_RECLAIM" ]]; then

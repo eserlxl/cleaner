@@ -30,6 +30,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Exit-trap Prometheus metrics export (`LINUX_CLEANER_METRICS_FILE`) now runs only after pre-lock validation, non-cleanup mode dispatch, and `cleaner.lock` acquisition succeed on the cleanup path, so lock contention, invalid `--only-path` / missing-config pre-lock failures, and failed `--purge-sessions --force` or `--restore` runs leave any existing metrics file untouched while post-lock cleanup failures still record `linux_cleaner_last_run_success 0`.
 - Systemd `EnvironmentFile` parsing in `print_timer_note` and `--doctor` now shares `unquote_env_value` / `read_systemd_env_file` to trim surrounding whitespace and strip only one matching outer single- or double-quote pair, preserving embedded quotes in paths and values.
 - `--doctor` now preserves trailing newlines in `XDG_STATE_HOME` when resolving `last-report.txt`, preventing saved cleanup summaries under newline-terminated `XDG_STATE_HOME` directories from being missed as `none recorded`.
+- `parse_size_bytes` now strips leading zeros before checking 64-bit digit length and overflow bounds, so zero-padded valid sizes such as `0000000000000000001G`, `000000000000000000000`, and `max-size:0000000000000000001K` parse cleanly while real overflows like `99999999999T` still fail.
 
 ## [1.9.1] - 2026-10-27
 
