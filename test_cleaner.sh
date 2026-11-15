@@ -6415,9 +6415,10 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Purge Dry Run Preview Consistency${NC}"
 # Purge previews use the real selector/hold rules without opening the mutation path.
 python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'PURGE_PREVIEW_PY'
-import fcntl, hashlib, os, pathlib, re, subprocess, sys, tempfile, time
+import fcntl, hashlib, json, os, pathlib, re, subprocess, sys, tempfile, time
 
 cleaner = sys.argv[1]
 with tempfile.TemporaryDirectory(prefix="purge-preview-", dir=sys.argv[2]) as directory:
@@ -6502,7 +6503,19 @@ with tempfile.TemporaryDirectory(prefix="purge-preview-", dir=sys.argv[2]) as di
             fcntl.flock(locked, fcntl.LOCK_EX | fcntl.LOCK_NB)
             preview(["--dry-run", "--purge-sessions", selector, "--lock-wait", "1"])
             preview(["--force", *args])
-            result = preview([*args, "--json"], 1)
+            before_json = snapshot(home)
+            json_res = subprocess.run([cleaner, *args, "--json"], env=preview_env, stdin=subprocess.DEVNULL,
+                                      capture_output=True, text=True, timeout=20)
+            assert json_res.returncode == 0 and json_res.stderr == "", (selector, json_res)
+            pdata = json.loads(json_res.stdout)
+            assert pdata["selector"] == selector, pdata
+            assert [s["timestamp"] for s in pdata["sessions"]] == [names[i] for i in selected], pdata
+            assert pdata["held_skipped"] == [names[i] for i in skipped], pdata
+            assert pdata["purge_count"] == len(selected) and pdata["held_skipped_count"] == len(skipped), pdata
+            assert snapshot(home) == before_json and not trace.exists(), (selector, "json preview mutated state")
+            result = preview([*args, "--force", "--json"], 1)
+            assert "json is valid only" in result.stderr, result
+            result = preview(["--purge-sessions", selector, "--json"], 1)
             assert "json is valid only" in result.stderr, result
             if selector == "latest":
                 (sessions[3] / ".hold").write_text("held latest\n")
@@ -6518,6 +6531,139 @@ with tempfile.TemporaryDirectory(prefix="purge-preview-", dir=sys.argv[2]) as di
         assert re.findall(r"^Purged (\S+)$", result.stdout, re.M) == [names[i] for i in selected], result
         print("PASS: Purge Preview " + selector + " matches real purge without state changes", flush=True)
 PURGE_PREVIEW_PY
+
+echo -e "\n${BOLD}Test Case: Purge Sessions Dry Run JSON Preview${NC}"
+if ! python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'PURGE_JSON_PREVIEW_PY'; then
+import fcntl, json, os, pathlib, shutil, subprocess, sys, time
+
+cleaner, test_env = sys.argv[1:]
+te = pathlib.Path(test_env)
+home = te / "purge_json_home"
+q_base = home / ".cache/linux-cleaner/quarantine"
+
+env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+env["HOME"] = str(home)
+
+def run_p(args, extra=None):
+    return subprocess.run(
+        ["bash", cleaner] + args,
+        env=env | (extra or {}),
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+# 1. Missing quarantine base fast paths return valid empty JSON without lock.
+for sel in ("older-than:30", "max-size:1G", "keep-latest:5"):
+    r_emp = run_p(["--purge-sessions", sel, "--dry-run", "--json"])
+    assert r_emp.returncode == 0 and r_emp.stderr == "", (sel, r_emp)
+    de = json.loads(r_emp.stdout)
+    assert de == {
+        "selector": sel,
+        "sessions": [],
+        "held_skipped": [],
+        "purge_count": 0,
+        "held_skipped_count": 0,
+        "total_reclaimable_bytes": 0,
+        "total_reclaimable_human": "0 B",
+    }, de
+
+# Build populated sessions with aged/aged-restored/unrecorded entries and one held session.
+q_base.mkdir(parents=True, exist_ok=True)
+s1 = q_base / "2026-01-01_00-00-00"
+s2 = q_base / "2026-01-02_00-00-00"
+s3 = q_base / "2026-01-03_00-00-00"
+for s in (s1, s2, s3):
+    s.mkdir(parents=True, exist_ok=True)
+(s1 / ".hold").write_text("hold\n", encoding="utf-8")
+(s1 / "a").write_bytes(b"a" * 100)
+(s2 / "b").write_bytes(b"b" * 200)
+(s2 / "unrec_item").write_bytes(b"u" * 25)
+(s2 / "quarantine.meta").write_text(
+    "full|b|/tmp/p_b|false|1000|1000\naged-restored|ag|/tmp/p_ag|false|1000|1000\n",
+    encoding="utf-8",
+)
+(s3 / "c").write_bytes(b"c" * 300)
+(s3 / "quarantine.meta").write_text("full|c|/tmp/p_c|true|0|0\n", encoding="utf-8")
+os.utime(s1, (time.time() - 40 * 86400,) * 2)
+os.utime(s2, (time.time() - 40 * 86400,) * 2)
+
+# Verify exact totals, targets schema (including aged-restored -> aged), unrecorded count,
+# LINUX_CLEANER_JSON=1, and inherited LINUX_CLEANER_FORCE=1 without lock creation.
+for args, extra in (
+    (["--purge-sessions", "all", "--dry-run", "--json"], {}),
+    (["--purge-sessions", "all", "--dry-run"], {"LINUX_CLEANER_JSON": "1"}),
+    (["--purge-sessions", "all", "--dry-run", "--json"], {"LINUX_CLEANER_FORCE": "1"}),
+):
+    r_all = run_p(args, extra)
+    assert r_all.returncode == 0 and r_all.stderr == "", (args, extra, r_all)
+    da = json.loads(r_all.stdout)
+    assert da["selector"] == "all", da
+    assert da["purge_count"] == 2 and da["held_skipped"] == ["2026-01-01_00-00-00"] and da["held_skipped_count"] == 1, da
+    assert [x["timestamp"] for x in da["sessions"]] == ["2026-01-02_00-00-00", "2026-01-03_00-00-00"], da
+    exp_s2 = int(subprocess.check_output(["du", "-sb", str(s2)], text=True).split()[0])
+    exp_s3 = int(subprocess.check_output(["du", "-sb", str(s3)], text=True).split()[0])
+    assert da["sessions"][0]["size_bytes"] == exp_s2 and da["sessions"][0]["unrecorded_entry_count"] == 1, da["sessions"][0]
+    assert da["sessions"][0]["targets"] == [
+        {"type": "full", "path": "/tmp/p_b"},
+        {"type": "aged", "path": "/tmp/p_ag"},
+    ], da["sessions"][0]
+    assert da["sessions"][1]["size_bytes"] == exp_s3 and da["sessions"][1]["unrecorded_entry_count"] == 0, da["sessions"][1]
+    assert da["total_reclaimable_bytes"] == exp_s2 + exp_s3 and da["total_reclaimable_human"], da
+    assert not (home / ".cache/linux-cleaner/cleaner.lock").exists()
+
+# Named held session fails closed with empty stdout; all-held bulk selector returns purge_count 0.
+r_held_named = run_p(["--purge-sessions", "2026-01-01_00-00-00", "--dry-run", "--json"])
+assert r_held_named.returncode == 1 and r_held_named.stdout == "" and "is held" in r_held_named.stderr, r_held_named
+(s2 / ".hold").write_text("h\n", encoding="utf-8")
+(s3 / ".hold").write_text("h\n", encoding="utf-8")
+r_held_latest = run_p(["--purge-sessions", "latest", "--dry-run", "--json"])
+assert r_held_latest.returncode == 1 and r_held_latest.stdout == "" and "is held" in r_held_latest.stderr, r_held_latest
+r_all_held = run_p(["--purge-sessions", "all", "--dry-run", "--json"])
+assert r_all_held.returncode == 0 and r_all_held.stderr == "", r_all_held
+dah = json.loads(r_all_held.stdout)
+assert dah["purge_count"] == 0 and dah["held_skipped_count"] == 3 and dah["total_reclaimable_bytes"] == 0 and dah["total_reclaimable_human"] == "0 B", dah
+(s2 / ".hold").unlink()
+(s3 / ".hold").unlink()
+
+# Unreadable metadata fails closed BEFORE stdout JSON emission; mutating JSON combinations reject.
+if os.geteuid() != 0:
+    meta2 = s2 / "quarantine.meta"
+    meta2.chmod(0)
+    try:
+        r_unr = run_p(["--purge-sessions", "2026-01-02_00-00-00", "--dry-run", "--json"])
+        assert r_unr.returncode == 1 and r_unr.stdout == "" and r_unr.stderr, r_unr
+    finally:
+        meta2.chmod(0o644)
+
+# Symlinked quarantine base fails closed before stdout.
+q_sym_home = te / "purge_json_sym_home"
+q_real = te / "purge_json_sym_real"
+q_real.mkdir(parents=True, exist_ok=True)
+(q_sym_home / ".cache/linux-cleaner").mkdir(parents=True, exist_ok=True)
+(q_sym_home / ".cache/linux-cleaner/quarantine").symlink_to(q_real)
+r_sym = subprocess.run(
+    ["bash", cleaner, "--purge-sessions", "all", "--dry-run", "--json"],
+    env=env | {"HOME": str(q_sym_home)}, capture_output=True, text=True, timeout=20,
+)
+assert r_sym.returncode == 1 and r_sym.stdout == "" and "Refusing symlinked" in r_sym.stderr, r_sym
+
+for bad_args, extra in (
+    (["--purge-sessions", "all", "--dry-run", "--force", "--json"], {}),
+    (["--purge-sessions", "all", "--dry-run", "--clean", "--json"], {}),
+    (["--purge-sessions", "all", "--json"], {}),
+    (["--purge-sessions", "all"], {"LINUX_CLEANER_JSON": "1"}),
+):
+    rb = run_p(bad_args, extra)
+    assert rb.returncode == 1 and rb.stdout == "" and "json is valid only" in rb.stderr, (bad_args, extra, rb)
+
+assert len(list(q_base.iterdir())) == 3, "purge JSON preview deleted sessions"
+print("PASS: Purge Sessions Dry Run JSON Preview covers all selectors, fast paths, errors, and rejections", flush=True)
+PURGE_JSON_PREVIEW_PY
+  echo -e "${RED}FAIL: Purge Sessions Dry Run JSON Preview failed.${NC}"
+  exit 1
+fi
 setup_mock_env
 
 echo -e "\n${BOLD}Test Case: Check Config Valid${NC}"

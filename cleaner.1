@@ -413,6 +413,17 @@ instead of plain text; mutating restores (including
 .BR "\-\-restore SESSION \-\-dry\-run \-\-force" )
 still reject
 .BR \-\-json .
+With
+.BR \-\-purge\-sessions
+and an active explicit
+.BR \-\-dry\-run ,
+emit a machine-readable JSON retention preview
+.RB ( selector ", " sessions ", " held_skipped ", " purge_count ", " held_skipped_count ,
+.BR total_reclaimable_bytes ", and " total_reclaimable_human )
+instead of plain text; mutating purges (including
+.BR "\-\-purge\-sessions SESSION \-\-dry\-run \-\-force" )
+still reject
+.BR \-\-json .
 .TP
 .B \-\-report
 Print the saved last cleanup report and exit. Read-only; requires no
@@ -1190,7 +1201,20 @@ session is refused as in a real purge. A later
 or
 .B \-\-interactive
 cancels the preview, so \-\-dry\-run \-\-force purges.
-JSON is not supported, including for previews. Cannot be combined with
+With both an active explicit
+.B \-\-dry\-run
+and
+.BR \-\-json ,
+emits one JSON retention preview object
+.RB ( selector ", " sessions ", " held_skipped ", " purge_count ", " held_skipped_count ,
+.BR total_reclaimable_bytes ", and " total_reclaimable_human )
+instead of plain text; mutating purges (without an active
+.BR \-\-dry\-run ,
+such as
+.BR \-\-dry\-run\ \-\-force )
+continue to reject
+.BR \-\-json .
+Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-list\-sessions ,
 .BR \-\-hold\-session ,
@@ -1411,7 +1435,9 @@ When set to
 enables
 .BR \-\-json .
 Valid with dry-run (including
-.BR \-\-restore\ \fISESSION\fP\ \-\-dry\-run ),
+.BR \-\-restore\ \fISESSION\fP\ \-\-dry\-run
+and
+.BR \-\-purge\-sessions\ \fISELECTOR\fP\ \-\-dry\-run ),
 .BR \-\-list\-targets ,
 .BR \-\-list\-sessions ,
 .BR \-\-report ,

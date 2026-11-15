@@ -60,7 +60,7 @@ complete -c cleaner -l show-matches -d 'List eligible paths under each ordinary 
 complete -c cleaner -l exit-code -d 'Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1)'
 complete -c cleaner -l notify -d 'With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY)'
 complete -c cleaner -l fail-fast -d 'With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST)'
-complete -c cleaner -l json -d 'Emit machine-readable JSON (--dry-run summary, --restore --dry-run preview, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary)'
+complete -c cleaner -l json -d 'Emit machine-readable JSON (--dry-run summary, --restore --dry-run preview, --purge-sessions --dry-run preview, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary)'
 complete -c cleaner -s h -l help -d 'Display this help message and exit'
 complete -c cleaner -s V -l version -d 'Print the tool version and exit'
 

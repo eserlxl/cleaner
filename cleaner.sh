@@ -88,7 +88,7 @@ Options:
   --exit-code                Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --fail-fast                With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST).
-  --json                     Emit machine-readable JSON (--dry-run summary, --restore --dry-run preview, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary).
+  --json                     Emit machine-readable JSON (--dry-run summary, --restore --dry-run preview, --purge-sessions --dry-run preview, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -1003,10 +1003,10 @@ if [[ "$session_mode_count" -gt 1 ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      ( -n "$RESTORE_TARGET" && "$DRY_RUN_EXPLICIT" != true ) || -n "$PURGE_TARGET" || "$INIT_CONFIG" == true || \
+      ( ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" ) && "$DRY_RUN_EXPLICIT" != true ) || "$INIT_CONFIG" == true || \
       ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true && "$CHECK_CONFIG" != true ) \
     ) ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (cleanup or --restore preview), --list-targets, --list-sessions, --report, --doctor, or --check-config.${NC}" >&2
+  echo -e "${RED}Error: --json is valid only with --dry-run (cleanup, --restore, or --purge-sessions preview), --list-targets, --list-sessions, --report, --doctor, or --check-config.${NC}" >&2
   exit 1
 fi
 
@@ -2466,6 +2466,70 @@ quarantine_size_bytes() {
   return 1
 }
 
+_emit_session_targets_json() {
+  local meta="$1" mtype morig jmtype jmorig tgt_first=true
+  [[ -f "$meta" ]] || return 0
+  while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
+    trim_to mtype "$mtype"
+    [[ "$mtype" == aged-restored ]] && mtype=aged
+    [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
+    trim_to morig "${morig:-}"
+    json_escape "$mtype" jmtype
+    json_escape "$morig" jmorig
+    if [[ "$tgt_first" == true ]]; then
+      tgt_first=false
+    else
+      printf ','
+    fi
+    printf '{"type":"%s","path":"%s"}' "$jmtype" "$jmorig"
+  done < "$meta"
+}
+
+_emit_purge_preview_json() {
+  local selector="$1" target_cnt="$2"
+  shift 2
+  local -a sessions=() held_list=() sess_sizes=() sess_unrec=()
+  local i=0 s ts sb sh ur total_bytes=0 total_human="" first=true esc=""
+  while (( i < target_cnt )); do
+    sessions+=("$1")
+    shift
+    i=$((i + 1))
+  done
+  held_list=("$@")
+
+  for s in "${sessions[@]}"; do
+    sb=$(quarantine_size_bytes "$s") || return 1
+    sess_sizes+=("$sb")
+    total_bytes=$((total_bytes + sb))
+    ur=$(quarantine_unrecorded_entry_count "$s") || return 1
+    sess_unrec+=("$ur")
+  done
+  total_human=$(format_bytes "$total_bytes")
+
+  printf '{"selector":"%s","sessions":[' "$(json_escape "$selector")"
+  for i in "${!sessions[@]}"; do
+    s="${sessions[$i]}"
+    ts=$(basename "$s")
+    sb="${sess_sizes[$i]}"
+    sh=$(format_bytes "$sb")
+    [[ "$i" -eq 0 ]] || printf ','
+    printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","unrecorded_entry_count":%s,"targets":[' \
+      "$(json_escape "$ts")" "$sb" "$(json_escape "$sh")" "${sess_unrec[$i]}"
+    _emit_session_targets_json "$s/quarantine.meta"
+    printf ']}'
+  done
+  printf '],"held_skipped":['
+  first=true
+  for s in "${held_list[@]}"; do
+    [[ "$first" == true ]] || printf ','
+    first=false
+    json_escape "$s" esc
+    printf '"%s"' "$esc"
+  done
+  printf '],"purge_count":%d,"held_skipped_count":%d,"total_reclaimable_bytes":%s,"total_reclaimable_human":"%s"}\n' \
+    "${#sessions[@]}" "${#held_list[@]}" "$total_bytes" "$(json_escape "$total_human")"
+}
+
 # List quarantine sessions (strictly read-only): print each session's
 # timestamp (directory name), size, and modification date, plus the targets it
 # holds. Never moves, deletes, or modifies any session or its metadata.
@@ -2473,8 +2537,8 @@ quarantine_size_bytes() {
 emit_list_sessions_json() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   local -a sessions=() session_sizes=() session_unrecorded=()
-  local s session idx ts size_bytes size_human mdate meta mtype morig jmtype jmorig unrecorded held
-  local sess_first=true tgt_first
+  local s session idx ts size_bytes size_human mdate unrecorded held
+  local sess_first=true
 
   if [[ -d "$quarantine_base" ]]; then
     local enum_rc=0 enum_list
@@ -2512,24 +2576,7 @@ emit_list_sessions_json() {
     session_is_held "$session" && held=true
     printf '{"timestamp":"%s","size_bytes":%s,"size_human":"%s","date":"%s","unrecorded_entry_count":%s,"held":%s,"targets":[' \
       "$(json_escape "$ts")" "$size_bytes" "$(json_escape "$size_human")" "$(json_escape "${mdate:-}")" "${session_unrecorded[idx]}" "$held"
-    tgt_first=true
-    meta="$session/quarantine.meta"
-    if [[ -f "$meta" ]]; then
-      while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
-        trim_to mtype "$mtype"
-        [[ "$mtype" == aged-restored ]] && mtype=aged
-        [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
-        trim_to morig "${morig:-}"
-        json_escape "$mtype" jmtype
-        json_escape "$morig" jmorig
-        if [[ "$tgt_first" == true ]]; then
-          tgt_first=false
-        else
-          printf ','
-        fi
-        printf '{"type":"%s","path":"%s"}' "$jmtype" "$jmorig"
-      done < "$meta"
-    fi
+    _emit_session_targets_json "$session/quarantine.meta"
     printf ']}'
   done
   printf ']}\n'
@@ -2599,6 +2646,9 @@ purge_quarantine_sessions() {
   local max_size_spec="" max_size_bytes=0 max_size_rc=0
   local keep_count=""
 
+  local json_preview=false
+  [[ "$DRY_RUN_EXPLICIT" == true && "$JSON_OUTPUT" == true ]] && json_preview=true
+
   if [[ "$target" == older-than:* ]]; then
     # Age-based retention: what makes trash mode viable unattended. Without it a
     # cron '--trash --force' accumulates one session per run forever, so the tool
@@ -2609,7 +2659,11 @@ purge_quarantine_sessions() {
       exit 1
     fi
     if [[ ! -d "$quarantine_base" ]]; then
-      echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      fi
       return 0
     fi
   elif [[ "$target" == max-size:* ]]; then
@@ -2623,7 +2677,11 @@ purge_quarantine_sessions() {
       exit 1
     fi
     if [[ ! -d "$quarantine_base" ]]; then
-      echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
+      fi
       return 0
     fi
   elif [[ "$target" == keep-latest:* ]]; then
@@ -2634,7 +2692,11 @@ purge_quarantine_sessions() {
       exit 1
     fi
     if [[ ! -d "$quarantine_base" ]]; then
-      echo -e "${YELLOW}No quarantine sessions beyond the newest ${keep_count}.${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions beyond the newest ${keep_count}.${NC}"
+      fi
       return 0
     fi
   fi
@@ -2658,7 +2720,11 @@ purge_quarantine_sessions() {
       return 1
     fi
     if [[ ${#targets[@]} -eq 0 ]]; then
-      echo -e "${YELLOW}No quarantine sessions found.${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions found.${NC}"
+      fi
       return 0
     fi
   elif [[ "$target" == "latest" ]]; then
@@ -2685,7 +2751,11 @@ purge_quarantine_sessions() {
     fi
     # Nothing old enough is a success for a cron wrapper, not an error.
     if [[ ${#targets[@]} -eq 0 ]]; then
-      echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions older than ${days} day(s).${NC}"
+      fi
       return 0
     fi
   elif [[ "$target" == max-size:* ]]; then
@@ -2708,7 +2778,11 @@ purge_quarantine_sessions() {
       fi
     done
     if [[ ${#over_budget[@]} -eq 0 ]]; then
-      echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions beyond the max-size:${max_size_spec} budget.${NC}"
+      fi
       return 0
     fi
     local idx
@@ -2737,7 +2811,11 @@ purge_quarantine_sessions() {
       done
     fi
     if [[ ${#over_count[@]} -eq 0 ]]; then
-      echo -e "${YELLOW}No quarantine sessions beyond the newest ${keep_count}.${NC}"
+      if [[ "$json_preview" == true ]]; then
+        _emit_purge_preview_json "$target" 0
+      else
+        echo -e "${YELLOW}No quarantine sessions beyond the newest ${keep_count}.${NC}"
+      fi
       return 0
     fi
     for (( idx=${#over_count[@]}-1; idx>=0; idx-- )); do
@@ -2754,7 +2832,7 @@ purge_quarantine_sessions() {
     targets+=("$dir")
   fi
 
-  if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
+  if [[ "$DRY_RUN_EXPLICIT" == true && "$json_preview" != true ]]; then
     echo -e "${BOLD}${BLUE}=== Would purge Quarantine Sessions ===${NC}"
   fi
 
@@ -2762,7 +2840,7 @@ purge_quarantine_sessions() {
   # inline retention skip held sessions (they still count toward max-size and
   # keep-latest), and a held latest or named session is refused, never replaced.
   local d
-  local -a unheld=()
+  local -a unheld=() held_skipped=()
   for d in "${targets[@]}"; do
     if ! session_is_held "$d"; then
       unheld+=("$d")
@@ -2770,7 +2848,10 @@ purge_quarantine_sessions() {
     fi
     case "$target" in
       all|older-than:*|max-size:*|keep-latest:*)
-        echo -e "${YELLOW}Skipping held session $(basename "$d") (release it with --release-session $(basename "$d")).${NC}"
+        held_skipped+=("$(basename "$d")")
+        if [[ "$json_preview" != true ]]; then
+          echo -e "${YELLOW}Skipping held session $(basename "$d") (release it with --release-session $(basename "$d")).${NC}"
+        fi
         ;;
       *)
         echo -e "${RED}Error: Quarantine session '$(basename "$d")' is held; run --release-session $(basename "$d") before purging it.${NC}" >&2
@@ -2779,10 +2860,19 @@ purge_quarantine_sessions() {
     esac
   done
   if [[ ${#unheld[@]} -eq 0 ]]; then
-    echo -e "${YELLOW}No quarantine sessions to purge; every selected session is held.${NC}"
+    if [[ "$json_preview" == true ]]; then
+      _emit_purge_preview_json "$target" 0 "${held_skipped[@]}" || return 1
+    else
+      echo -e "${YELLOW}No quarantine sessions to purge; every selected session is held.${NC}"
+    fi
     return 0
   fi
   targets=("${unheld[@]}")
+
+  if [[ "$json_preview" == true ]]; then
+    _emit_purge_preview_json "$target" "${#targets[@]}" "${targets[@]}" "${held_skipped[@]}" || return 1
+    return 0
+  fi
 
   # Show what will be freed -- and exactly which targets are about to be destroyed
   # -- before touching anything. This is the last thing a user sees before the
