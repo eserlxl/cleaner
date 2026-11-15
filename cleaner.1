@@ -613,6 +613,23 @@ combined with
 or
 .BR \-\-json .
 .TP
+.B \-\-overlay
+With
+.BR \-\-init\-config :
+write a thin user overlay configuration containing
+.B include|\fIPATH\fR
+pointing at the canonicalized active configuration file (plus commented
+.B protect|
+and custom target examples) instead of copying every default target row. Uses
+the same mode
+.BR 0644 ,
+no\-overwrite, and symlink refusals; exits 1 if combined with any mode other
+than
+.BR \-\-init\-config
+or if the resolved source path cannot be represented safely in an
+.B include|
+directive.
+.TP
 .B \-\-doctor
 Print a read-only checklist of the runtime environment a cleanup depends on
 .RB ( OK / WARN / INFO
@@ -1812,7 +1829,11 @@ error, and diagnostics inside included files report their own source filename an
 .B \-\-check\-config
 while
 .B \-\-init\-config
-still copies only the single active file.
+copies only the single active file and
+.B \-\-init\-config \-\-overlay
+writes a thin
+.B include|\fIPATH\fR
+overlay referencing it.
 .PP
 The default config is resolved from an explicit
 .BR \-c ,

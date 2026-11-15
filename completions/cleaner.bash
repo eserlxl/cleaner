@@ -119,6 +119,7 @@ _cleaner() {
       --list-targets
       --check-config
       --init-config
+      --overlay
       --doctor
       --restore
       --hold-session

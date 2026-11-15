@@ -31,6 +31,7 @@ complete -c cleaner -l check-health -x -d 'With --report: exit 0 for a successfu
 complete -c cleaner -l list-targets -d 'List configured cleanup targets (read-only) and exit'
 complete -c cleaner -l check-config -d 'Validate the configuration file (supports --json) and exit (no disk analysis)'
 complete -c cleaner -l init-config -d 'Copy the active config to your user config path (never overwrites)'
+complete -c cleaner -l overlay -d 'With --init-config: write a minimal include| overlay layered over the active config'
 complete -c cleaner -l doctor -d 'Check the runtime environment a cleanup depends on (read-only; supports --json) and exit'
 complete -c cleaner -l restore -x -a 'latest (__cleaner_sessions)' -d 'Restore files from quarantine session (latest or timestamp); --dry-run previews'
 complete -c cleaner -l hold-session -x -a 'latest (__cleaner_sessions)' -d 'Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention'

@@ -128,7 +128,7 @@ safe|NPM Cache|$HOME/.npm/_cacache|NPM dependency cache files|0|node,npm|
 protect|$HOME/Projects
 ```
 
-Run `cleaner --init-config` to copy the active config to `~/.config/linux-cleaner/cleaner.conf` for editing, `cleaner --list-targets` to see what it covers, and `cleaner --check-config` to validate it.
+Run `cleaner --init-config --overlay` to create a thin `~/.config/linux-cleaner/cleaner.conf` layering your rules over the packaged defaults (or `cleaner --init-config` to copy the full active config), `cleaner --list-targets` to see what it covers, and `cleaner --check-config` to validate it.
 
 > [!WARNING]
 > Predefined `action:*` commands (for example `action:paccache_keep1`) bypass quarantine and delete irreversibly.

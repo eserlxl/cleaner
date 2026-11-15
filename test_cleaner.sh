@@ -6865,6 +6865,112 @@ else
 fi
 rm -rf "$TEST_ENV_DIR/xdg_cfg" "$TEST_ENV_DIR/xdg_sym_target"
 
+echo -e "\n${BOLD}Test Case: Init Config Overlay Scaffolding And Guards${NC}"
+setup_mock_env
+ov_xdg="$TEST_ENV_DIR/init_ov_xdg"
+ov_abs_src=$(realpath -e -- "$TEST_ENV_DIR/test_cleaner.conf")
+rm -rf "$ov_xdg" "$TEST_ENV_DIR/ov_bad_dir" "$TEST_ENV_DIR/ov_sym_target"
+# Relative -c path must canonicalize to an absolute include|PATH and validate cleanly.
+if (cd "$TEST_ENV_DIR" && XDG_CONFIG_HOME="$ov_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" \
+      "$CLEANER_SH" --init-config --overlay -c ./test_cleaner.conf < /dev/null > "$TEST_ENV_DIR/init_ov_rel.log" 2>&1) \
+   && [[ -f "$ov_xdg/linux-cleaner/cleaner.conf" && ! -L "$ov_xdg/linux-cleaner/cleaner.conf" ]] \
+   && [[ "$(stat -c %a "$ov_xdg/linux-cleaner/cleaner.conf")" == "644" ]] \
+   && grep -qxF "include|${ov_abs_src}" "$ov_xdg/linux-cleaner/cleaner.conf" \
+   && grep -qF "Created $ov_xdg/linux-cleaner/cleaner.conf layering over ${ov_abs_src}" "$TEST_ENV_DIR/init_ov_rel.log" \
+   && python3 - "$CLEANER_SH" "$ov_xdg" "$MOCK_HOME" "$ov_abs_src" "$TEST_ENV_DIR/bin:$PATH" <<'OV_VERIFY_PY'
+import json, os, pathlib, subprocess, sys
+cleaner, xdg_cfg, home, abs_src, path_env = sys.argv[1:]
+env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+env.update(HOME=home, XDG_CONFIG_HOME=xdg_cfg, PATH=path_env, NO_COLOR="1")
+cc = subprocess.run([cleaner, "--check-config", "--json"], env=env, capture_output=True, text=True, timeout=20)
+assert cc.returncode == 0 and cc.stderr == "", (cc.returncode, cc.stdout, cc.stderr)
+payload = json.loads(cc.stdout)
+overlay_path = str(pathlib.Path(xdg_cfg) / "linux-cleaner/cleaner.conf")
+assert payload["valid"] is True and payload["status"] == "ok", payload
+assert payload["config_file"] == overlay_path and payload["source"] == "XDG", payload
+assert payload["include_files"] == [overlay_path, abs_src], payload
+assert payload["targets_count"] >= 1, payload
+# Verify overwrite refusal leaves overlay untouched.
+before = pathlib.Path(overlay_path).read_bytes()
+ow = subprocess.run([cleaner, "--init-config", "--overlay", "-c", abs_src], env=env, capture_output=True, text=True, timeout=20)
+assert ow.returncode == 1 and "refusing to overwrite" in ow.stderr, ow
+assert pathlib.Path(overlay_path).read_bytes() == before
+assert not list(pathlib.Path(overlay_path).parent.glob("*.tmp.*"))
+# Append a protect| rule to the generated overlay and verify dry-run protects it.
+pinned = pathlib.Path(home) / ".npm/_cacache"
+pinned.mkdir(parents=True, exist_ok=True)
+(pinned / "keep.bin").write_bytes(b"1234")
+with open(overlay_path, "a", encoding="utf-8") as fh:
+    fh.write(f"protect|{pinned}\n")
+dr = subprocess.run([cleaner, "--dry-run", "--json"], env=env, capture_output=True, text=True, timeout=20)
+assert dr.returncode == 0, dr
+dr_json = json.loads(dr.stdout)
+npm_rows = [t for t in dr_json["targets"] if t["name"] == "NPM Cache"]
+assert npm_rows and all(t["status"] == "protected" for t in npm_rows), npm_rows
+assert (pinned / "keep.bin").exists()
+OV_VERIFY_PY
+then
+  echo -e "${GREEN}PASS: --init-config --overlay creates a valid 0644 include| overlay and enforces overwrite refusal.${NC}"
+else
+  echo -e "${RED}FAIL: --init-config --overlay verification failed.${NC}"
+  cat "$TEST_ENV_DIR/init_ov_rel.log" 2>/dev/null || true
+  exit 1
+fi
+# Standalone checkout discovery + unsafe path + --overlay without --init-config + symlink refusals.
+rm -rf "$ov_xdg"
+mkdir -p "$TEST_ENV_DIR/ov_bad_dir" "$TEST_ENV_DIR/ov_sym_target"
+printf 'safe|Bad Path|%s/cache|bad|0||\n' "\$HOME" > "$TEST_ENV_DIR/ov_bad_dir/bad|pipe.conf"
+printf 'safe|Bad Glob|%s/cache|bad|0||\n' "\$HOME" > "$TEST_ENV_DIR/ov_bad_dir/bad[glob].conf"
+ov_err_ok=true
+if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Default Discovery" 0 "init_ov_default.log" \
+     --init-config --overlay; then
+  ov_default_src=$(realpath -e -- "$SCRIPT_DIR/cleaner.conf")
+  [[ -f "$ov_xdg/linux-cleaner/cleaner.conf" ]] \
+    && grep -qxF "include|${ov_default_src}" "$ov_xdg/linux-cleaner/cleaner.conf" \
+    && XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Default Check Config" 0 "init_ov_default_cc.log" --check-config \
+    || ov_err_ok=false
+else
+  ov_err_ok=false
+fi
+rm -rf "$ov_xdg"
+for bad_src in "$TEST_ENV_DIR/ov_bad_dir/bad|pipe.conf" "$TEST_ENV_DIR/ov_bad_dir/bad[glob].conf"; do
+  if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Rejects Unsafe Source $(basename "$bad_src")" 1 "init_ov_badsrc.log" \
+       --init-config --overlay -c "$bad_src"; then
+    grep -qF "cannot be represented safely in an include directive" "$TEST_ENV_DIR/init_ov_badsrc.log" || ov_err_ok=false
+    [[ ! -e "$ov_xdg/linux-cleaner" ]] || ov_err_ok=false
+  else
+    ov_err_ok=false
+  fi
+done
+for solo_args in "--overlay" "--overlay --doctor" "--overlay --clean" "--overlay --check-config"; do
+  read -r -a solo_arr <<< "$solo_args"
+  if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Overlay Without Init Config ($solo_args)" 1 "init_ov_solo.log" "${solo_arr[@]}"; then
+    grep -qF "Error: --overlay requires --init-config." "$TEST_ENV_DIR/init_ov_solo.log" || ov_err_ok=false
+  else
+    ov_err_ok=false
+  fi
+done
+if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay JSON Rejected" 1 "init_ov_json.log" \
+     --init-config --overlay --json -c "$TEST_ENV_DIR/test_cleaner.conf"; then
+  [[ ! -e "$ov_xdg/linux-cleaner/cleaner.conf" ]] || ov_err_ok=false
+else
+  ov_err_ok=false
+fi
+mkdir -p "$ov_xdg"
+ln -s "$TEST_ENV_DIR/ov_sym_target" "$ov_xdg/linux-cleaner"
+if ! XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Refuses Symlinked Directory" 1 "init_ov_sym.log" \
+     --init-config --overlay -c "$TEST_ENV_DIR/test_cleaner.conf" \
+   || [[ -n "$(find "$TEST_ENV_DIR/ov_sym_target" -mindepth 1 -print -quit)" ]]; then
+  ov_err_ok=false
+fi
+rm -rf "$ov_xdg" "$TEST_ENV_DIR/ov_bad_dir" "$TEST_ENV_DIR/ov_sym_target"
+if [[ "$ov_err_ok" == true ]]; then
+  echo -e "${GREEN}PASS: --overlay rejects missing --init-config, --json, symlinked dirs, and unsafe include paths.${NC}"
+else
+  echo -e "${RED}FAIL: --init-config --overlay negative guard check failed.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: List Targets Read-Only${NC}"
 if run_test_case "List Targets" 0 "list_targets.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets; then

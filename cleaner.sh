@@ -59,6 +59,7 @@ Options:
   --list-targets             List configured cleanup targets (read-only) and exit.
   --check-config             Validate the configuration file (supports --json) and exit (no disk analysis).
   --init-config              Copy the active config to your user config path (never overwrites).
+  --overlay                  With --init-config: write a minimal include| overlay layered over the active config.
   --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
   --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention.
@@ -152,6 +153,7 @@ LIST_SESSIONS=false
 LIST_TARGETS=false
 CHECK_CONFIG=false
 INIT_CONFIG=false
+INIT_OVERLAY=false
 DOCTOR=false
 CONFIG_DISCOVERED=false
 CONFIG_EXPLICIT=false
@@ -691,6 +693,10 @@ while [[ $# -gt 0 ]]; do
       INIT_CONFIG=true
       shift
       ;;
+    --overlay)
+      INIT_OVERLAY=true
+      shift
+      ;;
     --doctor)
       DOCTOR=true
       shift
@@ -881,6 +887,11 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
+if [[ "$INIT_OVERLAY" == true && "$INIT_CONFIG" != true ]]; then
+  echo -e "${RED}Error: --overlay requires --init-config.${NC}" >&2
+  exit 1
+fi
+
 if [[ -n "$ONLY_TARGET" && -n "$ONLY_TARGET_EXACT" ]]; then
   echo -e "${RED}Error: --only-target and --only-target-exact cannot be combined.${NC}" >&2
   exit 1
@@ -1039,26 +1050,159 @@ set_default_config_candidates() {
     "$SCRIPT_DIR/cleaner.conf")
 }
 
-# Copy the active configuration file to the user config path without overwriting.
+# Trim whitespace from variables
+trim() {
+  local var="$*"
+  # remove leading whitespace
+  var="${var#"${var%%[![:space:]]*}"}"
+  # remove trailing whitespace
+  var="${var%"${var##*[![:space:]]}"}"
+  printf '%s' "$var"
+}
+
+trim_to() {
+  local trimmed="$2"
+  trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  printf -v "$1" '%s' "$trimmed"
+}
+
+# Replace every whole-token occurrence of $NAME (arg 2) with VALUE (arg 3) in
+# STRING (arg 1). "Whole token" means the $NAME is not immediately followed by
+# an identifier character, so $HOMEDATA / $USERNAME are left literal -- only the
+# explicit $HOME / $USER / $XDG_*_HOME placeholders are resolved (no eval, no
+# substring creep).
+_expand_var_token() {
+  local str="$1" name="$2" value="$3"
+  local token="\$$name"
+  local out="" rest="$str" before after nextc
+  while [[ "$rest" == *"$token"* ]]; do
+    before="${rest%%"$token"*}"
+    after="${rest#*"$token"}"
+    nextc="${after:0:1}"
+    # Spelled out: before bash 5.2 (globasciiranges off), an A-Z range under tr_TR skips i and I.
+    if [[ -z "$nextc" || "$nextc" != [abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_] ]]; then
+      out+="$before$value"
+    else
+      out+="$before$token"
+    fi
+    rest="$after"
+  done
+  printf '%s' "$out$rest"
+}
+
+# Expand standard environment variables in a safe way (avoiding eval):
+# leading ~, $HOME, $USER, $XDG_CACHE_HOME, $XDG_CONFIG_HOME, $XDG_DATA_HOME,
+# and $XDG_STATE_HOME (XDG variables fall back to their spec default when unset
+# or relative).
+expand_path_safe() {
+  local _eps_raw="$1"
+  local _eps_expanded="$_eps_raw" _eps_name _eps_value _eps_default
+  [[ "$_eps_raw" != *$'\n'* ]] || return 1
+
+  # Safe leading ~ expansion
+  # shellcheck disable=SC2088
+  if [[ "$_eps_expanded" == "~" ]]; then
+    _eps_expanded="$HOME"
+  elif [[ "$_eps_expanded" == "~/"* ]]; then
+    _eps_expanded="$HOME/${_eps_expanded:2}"
+  fi
+
+  # Replace $HOME, $USER, and the four XDG base-directory variables only as
+  # whole tokens (so $HOMEDATA / $USERNAME / $XDG_CACHE_HOMEX stay literal,
+  # matching the documented "explicit placeholders only" contract).
+  for _eps_name in HOME USER XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
+    [[ "$_eps_expanded" == *"\$$_eps_name"* ]] || continue
+    case "$_eps_name" in
+      HOME|USER) _eps_value="${!_eps_name:-}" ;;
+      *)
+        case "$_eps_name" in
+          XDG_CACHE_HOME) _eps_default="${HOME:-}/.cache" ;;
+          XDG_CONFIG_HOME) _eps_default="${HOME:-}/.config" ;;
+          XDG_DATA_HOME) _eps_default="${HOME:-}/.local/share" ;;
+          XDG_STATE_HOME) _eps_default="${HOME:-}/.local/state" ;;
+        esac
+        _eps_value=$(_xdg_dir "$_eps_name" "$_eps_default" && printf '.') || return 1
+        _eps_value=${_eps_value%.}
+        ;;
+    esac
+    # Helpers emit no delimiter; remove only the capture sentinel, preserving LF.
+    _eps_expanded=$(_expand_var_token "$_eps_expanded" "$_eps_name" "$_eps_value" && printf '.') || return 1
+    _eps_expanded=${_eps_expanded%.}
+  done
+
+  [[ "$_eps_expanded" != *$'\n'* ]] || return 1
+  if [[ "$#" -gt 1 ]]; then
+    printf -v "$2" '%s' "$_eps_expanded"
+  else
+    printf '%s' "$_eps_expanded"
+  fi
+}
+
+# Verify parent/destination paths have no symlinks and do not overwrite existing files.
+_check_user_file_dest() {
+  local parent="$1" dest_dir="$2" dest="$3" label="$4" init_kind="$5"
+  if [[ -L "$parent" ]]; then
+    echo -e "${RED}Error: Refusing to initialize ${init_kind}; parent directory '$parent' is a symlink.${NC}" >&2
+    return 1
+  fi
+  if [[ -L "$dest_dir" ]]; then
+    echo -e "${RED}Error: Refusing to initialize ${init_kind}; directory '$dest_dir' is a symlink.${NC}" >&2
+    return 1
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    echo -e "${RED}Error: ${label} already exists at '$dest'; refusing to overwrite.${NC}" >&2
+    return 1
+  fi
+}
+
+# Create DEST_DIR safely with 0700 umask and re-verify it is a real directory.
+_prepare_user_file_dir() {
+  local parent="$1" dest_dir="$2" init_kind="$3"
+  if ! (umask 077; mkdir -p -- "$dest_dir"); then
+    echo -e "${RED}Error: Failed to create user config directory '$dest_dir'.${NC}" >&2
+    return 1
+  fi
+  if [[ -L "$parent" || -L "$dest_dir" || ! -d "$dest_dir" ]]; then
+    echo -e "${RED}Error: Refusing to initialize ${init_kind}; '$dest_dir' is not a real directory.${NC}" >&2
+    return 1
+  fi
+}
+
+# Publish a staged temporary file TMP to DEST atomically with mode 0644 and no-overwrite semantics.
+_publish_staged_user_file() {
+  local tmp="$1" dest="$2" label="$3"
+  if ! chmod 0644 "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: Failed to set permissions on '$tmp'.${NC}" >&2
+    return 1
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: ${label} already exists at '$dest'; refusing to overwrite.${NC}" >&2
+    return 1
+  fi
+  if ! mv -n -T -- "$tmp" "$dest"; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: Failed to move '$tmp' to '$dest'.${NC}" >&2
+    return 1
+  fi
+  if [[ -e "$tmp" || -L "$tmp" ]]; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: ${label} already exists at '$dest'; refusing to overwrite.${NC}" >&2
+    return 1
+  fi
+}
+
+# Copy the active configuration file (or write a thin include| overlay) to the user config path without overwriting.
 init_user_config() {
-  local xdg_parent dest_dir dest src="" candidate tmp
+  local xdg_parent dest_dir dest src="" candidate tmp inc_src="" inc_trimmed="" inc_exp=""
   xdg_parent=$(_xdg_dir XDG_CONFIG_HOME "$HOME/.config" && printf '.') || return 1
   xdg_parent=${xdg_parent%.}
   dest_dir="$xdg_parent/linux-cleaner"
   dest="$dest_dir/cleaner.conf"
 
-  if [[ -L "$xdg_parent" ]]; then
-    echo -e "${RED}Error: Refusing to initialize config; parent directory '$xdg_parent' is a symlink.${NC}" >&2
-    return 1
-  fi
-  if [[ -L "$dest_dir" ]]; then
-    echo -e "${RED}Error: Refusing to initialize config; directory '$dest_dir' is a symlink.${NC}" >&2
-    return 1
-  fi
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
-    return 1
-  fi
+  _check_user_file_dest "$xdg_parent" "$dest_dir" "$dest" "User config" "config" || return 1
 
   if [[ -n "$CONFIG_FILE" ]]; then
     if [[ -f "$CONFIG_FILE" && "$CONFIG_FILE" != "$dest" ]]; then
@@ -1078,43 +1222,56 @@ init_user_config() {
     return 1
   fi
 
-  if ! (umask 077; mkdir -p -- "$dest_dir"); then
-    echo -e "${RED}Error: Failed to create user config directory '$dest_dir'.${NC}" >&2
-    return 1
+  if [[ "$INIT_OVERLAY" == true ]]; then
+    inc_src=$(realpath -e -- "$src" 2>/dev/null && printf '.') || {
+      echo -e "${RED}Error: Could not resolve source configuration file '$src'.${NC}" >&2
+      return 1
+    }
+    inc_src=${inc_src%.}
+    inc_src=${inc_src%$'\n'}
+    trim_to inc_trimmed "$inc_src"
+    if [[ -z "$inc_src" || "$inc_src" != /* || "$inc_src" != "$inc_trimmed" || "$inc_src" == *'|'* || "$inc_src" == *$'\n'* || "$inc_src" == *$'\r'* || "$inc_src" == *[*?\[]* ]] \
+       || ! expand_path_safe "$inc_src" inc_exp || [[ "$inc_exp" != "$inc_src" ]]; then
+      echo -e "${RED}Error: Source configuration path '$src' cannot be represented safely in an include directive.${NC}" >&2
+      return 1
+    fi
   fi
-  if [[ -L "$xdg_parent" || -L "$dest_dir" || ! -d "$dest_dir" ]]; then
-    echo -e "${RED}Error: Refusing to initialize config; '$dest_dir' is not a real directory.${NC}" >&2
-    return 1
-  fi
+
+  _prepare_user_file_dir "$xdg_parent" "$dest_dir" "config" || return 1
 
   tmp="$dest.tmp.$$"
-  if ! cp -- "$src" "$tmp"; then
-    rm -f -- "$tmp" || true
-    echo -e "${RED}Error: Failed to copy '$src' to '$tmp'.${NC}" >&2
-    return 1
-  fi
-  if ! chmod 0644 "$tmp"; then
-    rm -f -- "$tmp" || true
-    echo -e "${RED}Error: Failed to set permissions on '$tmp'.${NC}" >&2
-    return 1
-  fi
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    rm -f -- "$tmp" || true
-    echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
-    return 1
-  fi
-  if ! mv -n -T -- "$tmp" "$dest"; then
-    rm -f -- "$tmp" || true
-    echo -e "${RED}Error: Failed to move '$tmp' to '$dest'.${NC}" >&2
-    return 1
-  fi
-  if [[ -e "$tmp" || -L "$tmp" ]]; then
-    rm -f -- "$tmp" || true
-    echo -e "${RED}Error: User config already exists at '$dest'; refusing to overwrite.${NC}" >&2
-    return 1
+  if [[ "$INIT_OVERLAY" == true ]]; then
+    if ! printf '%s\n' \
+      "# User overlay configuration for linux-cleaner" \
+      "# Inherits upstream targets from the included config; add protect| or custom rows below." \
+      "# Validate edits with: cleaner --check-config" \
+      "include|${inc_src}" \
+      "" \
+      "# Example: protect a directory from cleanup rules" \
+      "# protect|\$HOME/Projects" \
+      "" \
+      "# Example: add a custom cleanup target" \
+      "# safe|My App Cache|\$HOME/.cache/my-app|Application cache files|7||" \
+      > "$tmp"; then
+      rm -f -- "$tmp" || true
+      echo -e "${RED}Error: Failed to write overlay config to '$tmp'.${NC}" >&2
+      return 1
+    fi
+  else
+    if ! cp -- "$src" "$tmp"; then
+      rm -f -- "$tmp" || true
+      echo -e "${RED}Error: Failed to copy '$src' to '$tmp'.${NC}" >&2
+      return 1
+    fi
   fi
 
-  echo "Created $dest from $src; edit it, then preview with: cleaner --dry-run"
+  _publish_staged_user_file "$tmp" "$dest" "User config" || return 1
+
+  if [[ "$INIT_OVERLAY" == true ]]; then
+    echo "Created $dest layering over $inc_src; edit it, then check with: cleaner --check-config && cleaner --dry-run"
+  else
+    echo "Created $dest from $src; edit it, then preview with: cleaner --dry-run"
+  fi
   return 0
 }
 
@@ -1168,23 +1325,6 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" &&
     fi
   fi
 fi
-
-# Trim whitespace from variables
-trim() {
-  local var="$*"
-  # remove leading whitespace
-  var="${var#"${var%%[![:space:]]*}"}"
-  # remove trailing whitespace
-  var="${var%"${var##*[![:space:]]}"}"
-  printf '%s' "$var"
-}
-
-trim_to() {
-  local trimmed="$2"
-  trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
-  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-  printf -v "$1" '%s' "$trimmed"
-}
 
 name_matches_any() {
   local name="$1" p
@@ -1479,78 +1619,6 @@ emit_list_targets_json() {
   done
   printf ']}'
   printf '\n'
-}
-
-# Replace every whole-token occurrence of $NAME (arg 2) with VALUE (arg 3) in
-# STRING (arg 1). "Whole token" means the $NAME is not immediately followed by
-# an identifier character, so $HOMEDATA / $USERNAME are left literal -- only the
-# explicit $HOME / $USER / $XDG_*_HOME placeholders are resolved (no eval, no
-# substring creep).
-_expand_var_token() {
-  local str="$1" name="$2" value="$3"
-  local token="\$$name"
-  local out="" rest="$str" before after nextc
-  while [[ "$rest" == *"$token"* ]]; do
-    before="${rest%%"$token"*}"
-    after="${rest#*"$token"}"
-    nextc="${after:0:1}"
-    # Spelled out: before bash 5.2 (globasciiranges off), an A-Z range under tr_TR skips i and I.
-    if [[ -z "$nextc" || "$nextc" != [abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_] ]]; then
-      out+="$before$value"
-    else
-      out+="$before$token"
-    fi
-    rest="$after"
-  done
-  printf '%s' "$out$rest"
-}
-
-# Expand standard environment variables in a safe way (avoiding eval):
-# leading ~, $HOME, $USER, $XDG_CACHE_HOME, $XDG_CONFIG_HOME, $XDG_DATA_HOME,
-# and $XDG_STATE_HOME (XDG variables fall back to their spec default when unset
-# or relative).
-expand_path_safe() {
-  local _eps_raw="$1"
-  local _eps_expanded="$_eps_raw" _eps_name _eps_value _eps_default
-  [[ "$_eps_raw" != *$'\n'* ]] || return 1
-
-  # Safe leading ~ expansion
-  # shellcheck disable=SC2088
-  if [[ "$_eps_expanded" == "~" ]]; then
-    _eps_expanded="$HOME"
-  elif [[ "$_eps_expanded" == "~/"* ]]; then
-    _eps_expanded="$HOME/${_eps_expanded:2}"
-  fi
-
-  # Replace $HOME, $USER, and the four XDG base-directory variables only as
-  # whole tokens (so $HOMEDATA / $USERNAME / $XDG_CACHE_HOMEX stay literal,
-  # matching the documented "explicit placeholders only" contract).
-  for _eps_name in HOME USER XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
-    [[ "$_eps_expanded" == *"\$$_eps_name"* ]] || continue
-    case "$_eps_name" in
-      HOME|USER) _eps_value="${!_eps_name:-}" ;;
-      *)
-        case "$_eps_name" in
-          XDG_CACHE_HOME) _eps_default="${HOME:-}/.cache" ;;
-          XDG_CONFIG_HOME) _eps_default="${HOME:-}/.config" ;;
-          XDG_DATA_HOME) _eps_default="${HOME:-}/.local/share" ;;
-          XDG_STATE_HOME) _eps_default="${HOME:-}/.local/state" ;;
-        esac
-        _eps_value=$(_xdg_dir "$_eps_name" "$_eps_default" && printf '.') || return 1
-        _eps_value=${_eps_value%.}
-        ;;
-    esac
-    # Helpers emit no delimiter; remove only the capture sentinel, preserving LF.
-    _eps_expanded=$(_expand_var_token "$_eps_expanded" "$_eps_name" "$_eps_value" && printf '.') || return 1
-    _eps_expanded=${_eps_expanded%.}
-  done
-
-  [[ "$_eps_expanded" != *$'\n'* ]] || return 1
-  if [[ "$#" -gt 1 ]]; then
-    printf -v "$2" '%s' "$_eps_expanded"
-  else
-    printf '%s' "$_eps_expanded"
-  fi
 }
 
 # How many directory levels below the literal prefix a "**" pattern component may
