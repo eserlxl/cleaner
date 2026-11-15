@@ -1633,6 +1633,18 @@ CFG_REC_LINES=()
 _CFG_INCLUDE_STACK=()
 _CFG_REC_LOADED=false
 
+# Resolve an existing config file physically while preserving valid internal or
+# trailing newlines in discovered XDG_CONFIG_HOME paths; emit with trailing '.' so
+# callers can strip only the capture sentinel.
+_config_file_identity() {
+  local resolved
+  resolved=$(realpath -e -- "$1" 2>/dev/null && printf '.') || return 1
+  resolved="${resolved%.}"
+  resolved="${resolved%$'\n'}"
+  [[ -n "$resolved" ]] || return 1
+  printf '%s.' "$resolved"
+}
+
 _collect_config_lines_walk() {
   local src_file="$1" depth="$2"
   local canon_cur line lineno=0 pipes field_count risk inc_raw inc_exp inc_canon stack_item
@@ -1644,10 +1656,11 @@ _collect_config_lines_walk() {
     printf '%bError: Configuration file '\''%s'\'' is not readable%b\n' "$RED" "$src_file" "$NC" >&2
     return 1
   fi
-  if ! canon_cur=$(canonicalize_physical "$src_file"); then
+  if ! canon_cur=$(_config_file_identity "$src_file"); then
     printf '%bError: Could not resolve configuration file '\''%s'\''%b\n' "$RED" "$src_file" "$NC" >&2
     return 1
   fi
+  canon_cur="${canon_cur%.}"
   for stack_item in "${_CFG_INCLUDE_STACK[@]}"; do
     if [[ "$stack_item" == "$canon_cur" ]]; then
       printf '%bError: circular include detected for '\''%s'\''%b\n' "$RED" "$src_file" "$NC" >&2
@@ -1698,11 +1711,12 @@ _collect_config_lines_walk() {
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
-      if ! inc_canon=$(canonicalize_physical "$inc_exp"); then
+      if ! inc_canon=$(_config_file_identity "$inc_exp"); then
         printf '%bError: %s:%s: could not resolve included configuration file '\''%s'\''%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
+      inc_canon="${inc_canon%.}"
       for stack_item in "${_CFG_INCLUDE_STACK[@]}"; do
         if [[ "$stack_item" == "$inc_canon" ]]; then
           printf '%bError: %s:%s: circular include '\''%s'\''%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
