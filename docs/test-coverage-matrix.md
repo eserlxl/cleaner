@@ -24,6 +24,7 @@
 | U-155 | Replacing `$(trim ...)` subshell forks with `trim_to` keeps `$(trim` call count `<=10`, completes 300-target `--list-targets --json` in `<2.2s`, and preserves whitespace trimming for `protect`, `--only-target`, `--exclude`, and `--check-config` | Config Validation And Target Inventory With Padded Whitespace |
 | U-156 | Shared `/**` prefix walks check newline-preserving `glob_components_match` before emitting unsafe-character wildcard warnings, silencing unrelated `|`/`\n` siblings while still warning once on matching rows | Shared Globstar Prefix Skips Unrelated Unsafe Matches |
 | U-157 | Active readable `filter:cxx_build` directories under unwritable (`0555`) parents report `clean` (`0` reclaimable bytes, `--exit-code` `0`, no `requires root` skip) in `--dry-run` and `--clean`, while idle siblings still require root and git-tracked trees keep `skipped` precedence | Active Filter Cxx Build Under Unwritable Parent |
+| U-158 | Config `include\|PATH` directive layers packaged/base configs with custom `protect\|PATH` and target rows across `--check-config`, `--doctor`, `--list-targets --json`, `--dry-run`, and `--clean --force` (preserving shared `/**` caching, diamond includes, tricky filenames with spaces/tabs/leading-dashes, and `file:lineno:` error attribution) while rejecting missing, non-regular, unreadable, relative, glob-bearing, unsafe-expansion, cyclic, symlink-cyclic, and depth>8 includes | Config Include Directive Overlay And Guards |
 
 ## 1.6.0 shipped feature inventory
 

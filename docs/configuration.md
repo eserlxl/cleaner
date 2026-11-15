@@ -127,6 +127,20 @@ Any target whose canonical path equals `PATH`, lies inside `PATH`, or contains `
 - `protect` lines are not listed by `--list-targets` or counted as targets by `--check-config`.
 - Skipped targets appear under `Protected (by config):` in the plan report, as `[PROTECTED]` under `--debug`, and with `"status": "protected"` in `--dry-run --json`.
 
+## Layering with `include|PATH`
+
+To add your own `protect|PATH` rules or extra targets without copying the packaged defaults (so package updates to `/etc/linux-cleaner/cleaner.conf` stay active), add a two-field `include|PATH` line:
+
+```text
+include|/etc/linux-cleaner/cleaner.conf
+protect|$HOME/Projects/pinned
+safe|Custom App Cache|$HOME/.cache/my-app|Custom cache|7||
+```
+
+- `PATH` supports the same safe placeholders (`$HOME`, `$USER`, `~`, `$XDG_*_HOME`), must be absolute after expansion, cannot contain wildcards (`*`, `?`, `[`), and must resolve to an existing readable regular file (no cycles, max include depth `8`).
+- Missing, unreadable, non-regular, relative, glob-bearing, cyclic, or over-depth includes fail closed during config loading and `--check-config`. Errors inside an included file report `<included-file>:<lineno>:`.
+- Included files merge `protect|PATH` rules and target rows in place across `--check-config`, `--list-targets`, `--doctor`, `--dry-run`, and cleanup (`**` wildcard prefix caching also spans root and included rows). `--init-config` still copies only the single active file.
+
 ## Validation (`--check-config`)
 
 Validate a configuration file without scanning disk usage:

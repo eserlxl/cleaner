@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Added
+
+- Configuration files now support the `include|PATH` two-field directive to layer a thin user config over packaged defaults (such as `include|/etc/linux-cleaner/cleaner.conf`) while keeping custom `protect|PATH` rules and targets in `~/.config/linux-cleaner/cleaner.conf`; includes expand placeholders safely, preserve source `file:lineno:` diagnostics and shared `/**` prefix caching, and fail closed on missing, unreadable, non-regular, glob-bearing, relative, cyclic, or over-depth (`>8`) files.
+
 ### Changed
 
 - `expand_config_globs` now pre-scans and caches shared `/**` directory traversals by prefix root so multiple recursive wildcard rows sharing one base directory (such as the five `/opt/**` rows in the default config) reuse a single `find` walk instead of repeating identical directory scans.

@@ -1257,8 +1257,8 @@ emit_list_targets_json() {
   local risk name raw_path desc min_age check_procs custom_clean_cmd
   local i first=true
 
-  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_line="${config_line#*$'\t'}"
+  load_config_lines || return 1
+  while IFS= read -r -d '' _ && IFS= read -r -d '' _ && IFS= read -r -d '' config_line; do
     # validate_config_file already rejected malformed records before this runs.
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
     trim_to risk "$risk"
@@ -1504,7 +1504,7 @@ _expand_glob_accept_match() {
   if ! expand_path_safe "$cand" c_expanded \
      || [[ "$cand" == *'|'* || "$cand" == *[[:cntrl:]]* || "$cand" == *\\* || "$cand" != "$c_trimmed" || "$cand" != "$c_expanded" ]]; then
     printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
-      "$CONFIG_FILE" "$lineno" "$cand" >&2
+      "$src_file" "$lineno" "$cand" >&2
     return 0
   fi
   if [[ "${#prune_args[@]}" -eq 0 ]]; then
@@ -1518,29 +1518,141 @@ _expand_glob_accept_match() {
     is_cxx_build_dir "$cand" || return 0
   fi
   [[ "${#prune_args[@]}" -eq 0 ]] && accepted_matches["$cand"]=1
-  printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$cand" "$frest"
+  printf '%s\0%s\0%s|%s|%s|%s\0' "$src_file" "$lineno" "$f1" "$f2" "$cand" "$frest"
+}
+
+CONFIG_INCLUDE_MAX_DEPTH=8
+CFG_REC_FILES=()
+CFG_REC_LINENOS=()
+CFG_REC_LINES=()
+_CFG_INCLUDE_STACK=()
+_CFG_REC_LOADED=false
+
+_collect_config_lines_walk() {
+  local src_file="$1" depth="$2"
+  local canon_cur line lineno=0 pipes field_count risk inc_raw inc_exp inc_canon stack_item
+  if (( depth > CONFIG_INCLUDE_MAX_DEPTH )); then
+    printf '%bError: %s: include depth exceeds limit (%s)%b\n' "$RED" "$src_file" "$CONFIG_INCLUDE_MAX_DEPTH" "$NC" >&2
+    return 1
+  fi
+  if [[ ! -f "$src_file" || ! -r "$src_file" ]]; then
+    printf '%bError: Configuration file '\''%s'\'' is not readable%b\n' "$RED" "$src_file" "$NC" >&2
+    return 1
+  fi
+  if ! canon_cur=$(canonicalize_physical "$src_file"); then
+    printf '%bError: Could not resolve configuration file '\''%s'\''%b\n' "$RED" "$src_file" "$NC" >&2
+    return 1
+  fi
+  for stack_item in "${_CFG_INCLUDE_STACK[@]}"; do
+    if [[ "$stack_item" == "$canon_cur" ]]; then
+      printf '%bError: circular include detected for '\''%s'\''%b\n' "$RED" "$src_file" "$NC" >&2
+      return 1
+    fi
+  done
+  _CFG_INCLUDE_STACK+=("$canon_cur")
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    pipes="${line//[^|]/}"
+    field_count=$(( ${#pipes} + 1 ))
+    IFS='|' read -r risk inc_raw _ <<< "$line"
+    trim_to risk "$risk"
+    if [[ "$risk" == "include" ]]; then
+      if [[ "$field_count" -ne 2 ]]; then
+        printf '%bError: %s:%s: include line requires 2 fields (include|PATH), found %s%b\n' "$RED" "$src_file" "$lineno" "$field_count" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      trim_to inc_raw "$inc_raw"
+      if [[ -z "$inc_raw" ]]; then
+        printf '%bError: %s:%s: include PATH is empty%b\n' "$RED" "$src_file" "$lineno" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      if [[ "$inc_raw" == *$'\r'* ]] || ! expand_path_safe "$inc_raw" inc_exp || [[ "$inc_exp" == *$'\r'* ]]; then
+        printf 'Error: %s:%s: include PATH has unsafe path expansion\n' "$src_file" "$lineno" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      if [[ "$inc_exp" != /* ]]; then
+        printf '%bError: %s:%s: include PATH '\''%s'\'' must be absolute%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      if [[ "$inc_exp" == *[*?\[]* ]]; then
+        printf '%bError: %s:%s: include PATH '\''%s'\'' cannot contain glob characters%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      if [[ -d "$inc_exp" || ! -e "$inc_exp" || ! -f "$inc_exp" ]]; then
+        printf '%bError: %s:%s: included configuration file '\''%s'\'' does not exist or is not a regular file%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      if [[ ! -r "$inc_exp" ]]; then
+        printf '%bError: %s:%s: included configuration file '\''%s'\'' is not readable%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      if ! inc_canon=$(canonicalize_physical "$inc_exp"); then
+        printf '%bError: %s:%s: could not resolve included configuration file '\''%s'\''%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      for stack_item in "${_CFG_INCLUDE_STACK[@]}"; do
+        if [[ "$stack_item" == "$inc_canon" ]]; then
+          printf '%bError: %s:%s: circular include '\''%s'\''%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+          unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+          return 1
+        fi
+      done
+      if (( depth + 1 > CONFIG_INCLUDE_MAX_DEPTH )); then
+        printf '%bError: %s:%s: include depth exceeds limit (%s)%b\n' "$RED" "$src_file" "$lineno" "$CONFIG_INCLUDE_MAX_DEPTH" "$NC" >&2
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      fi
+      _collect_config_lines_walk "$inc_exp" $((depth + 1)) || {
+        unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+        return 1
+      }
+      continue
+    fi
+    CFG_REC_FILES+=("$src_file")
+    CFG_REC_LINENOS+=("$lineno")
+    CFG_REC_LINES+=("$line")
+  done < "$src_file"
+  unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
+}
+
+load_config_lines() {
+  _CFG_REC_LOADED=false
+  CFG_REC_FILES=()
+  CFG_REC_LINENOS=()
+  CFG_REC_LINES=()
+  _CFG_INCLUDE_STACK=()
+  _collect_config_lines_walk "$CONFIG_FILE" 0 || return 1
+  _CFG_REC_LOADED=true
 }
 
 # Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
-# one line per matching directory. Expansion runs through find, never a shell glob
+# one record per matching directory. Expansion runs through find, never a shell glob
 # and never eval, so the documented no-wildcard-eval contract still holds: only the
 # $HOME / ~ / $USER placeholders are substituted, and every expanded match re-enters
 # the same safety pipeline (check_path_safety, canonicalize_physical) as a literal
-# target. Each emitted line carries its physical source line number and a tab, so a
-# line that expands into many still reports config errors against the real line.
+# target. Each emitted NUL-delimited triple carries its physical source file, 1-based
+# line number, and record line so warnings and errors report against the real file:line.
 expand_config_globs() {
-  local line lineno=0 risk name raw_path f1 f2 f3 frest pipes fields expanded_glob_path norm_raw_path
+  local line src_file="" lineno=0 risk name raw_path f1 f2 f3 frest pipes fields expanded_glob_path norm_raw_path
   local prefix depth max_depth tail_part leaf match target_filter has_globstar
-  local p_min p_max cache_start cache_len cache_end cache_idx
-  local -a prune_args cfg_lines=() globstar_dirs=()
+  local p_min p_max cache_start cache_len cache_end cache_idx rec_idx
+  local -a prune_args globstar_dirs=()
   local -A accepted_matches globstar_prefix_counts=() globstar_prefix_min=() globstar_prefix_max=() globstar_cache_start=() globstar_cache_len=()
 
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    cfg_lines+=("$line")
-  done < "$CONFIG_FILE"
+  if [[ "${_CFG_REC_LOADED:-false}" != true ]]; then
+    load_config_lines || return 1
+  fi
 
   # Pre-scan shared "**" prefixes so rows sharing one literal root reuse one find traversal.
-  for line in "${cfg_lines[@]}"; do
+  for line in "${CFG_REC_LINES[@]}"; do
     pipes="${line//[^|]/}"
     fields=$(( ${#pipes} + 1 ))
     IFS='|' read -r f1 f2 f3 frest <<< "$line"
@@ -1566,8 +1678,10 @@ expand_config_globs() {
     fi
   done
 
-  for line in "${cfg_lines[@]}"; do
-    lineno=$((lineno + 1))
+  for rec_idx in "${!CFG_REC_LINES[@]}"; do
+    src_file="${CFG_REC_FILES[$rec_idx]}"
+    lineno="${CFG_REC_LINENOS[$rec_idx]}"
+    line="${CFG_REC_LINES[$rec_idx]}"
     pipes="${line//[^|]/}"
     fields=$(( ${#pipes} + 1 ))
     IFS='|' read -r f1 f2 f3 frest <<< "$line"
@@ -1576,7 +1690,7 @@ expand_config_globs() {
     trim_to raw_path "$f3"
     # Leave malformed lines intact for the field-count validator.
     if [[ -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$fields" -gt 7 ]]; then
-      printf '%s\t%s\n' "$lineno" "$line"
+      printf '%s\0%s\0%s\0' "$src_file" "$lineno" "$line"
       continue
     fi
 
@@ -1585,40 +1699,39 @@ expand_config_globs() {
     if [[ "$raw_path" != *[*?]* ]]; then
       if [[ "$target_filter" == "filter:cxx_build" ]]; then
         if ! expand_path_safe "$raw_path" expanded_glob_path; then
-          printf 'Warning: %s:%s: skipping target with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
+          printf 'Warning: %s:%s: skipping target with unsafe path expansion\n' "$src_file" "$lineno" >&2
           continue
         fi
         is_cxx_build_dir "$expanded_glob_path" || continue
       fi
-      printf '%s\t%s\n' "$lineno" "$line"
+      printf '%s\0%s\0%s\0' "$src_file" "$lineno" "$line"
       continue
     fi
 
     trim_to name "$f2"
     if { [[ -n "$ONLY_TARGET" ]] && ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; } \
        || { [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; }; then
-      printf '%s\t%s\n' "$lineno" "$line"
+      printf '%s\0%s\0%s\0' "$src_file" "$lineno" "$line"
       continue
     fi
 
     if ! expand_path_safe "$raw_path" expanded_glob_path; then
-      printf 'Warning: %s:%s: skipping wildcard with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
+      printf 'Warning: %s:%s: skipping wildcard with unsafe path expansion\n' "$src_file" "$lineno" >&2
       continue
     fi
     if [[ "$expanded_glob_path" == *'['* || "$expanded_glob_path" == *']'* ]]; then
-      printf 'Warning: %s:%s: skipping wildcard with bracket characters in expanded path\n' "$CONFIG_FILE" "$lineno" >&2
+      printf 'Warning: %s:%s: skipping wildcard with bracket characters in expanded path\n' "$src_file" "$lineno" >&2
       continue
     fi
     _expand_glob_parse_pattern "$expanded_glob_path"
 
-    # A wildcard in the first component would make find walk the whole filesystem.
     # Refuse to expand it and pass the line through untouched: the literal pattern
     # then fails the ordinary existence and HOME-boundary checks, so nothing is
     # scanned and nothing is deleted. This runs inside a process substitution, so
     # it warns and degrades rather than trying to abort the run from a subshell.
     if [[ -z "$prefix" ]]; then
-      echo -e "${YELLOW}Warning: ${CONFIG_FILE}:${lineno}: wildcard must follow a literal directory, not the filesystem root; leaving '${norm_raw_path}' unexpanded${NC}" >&2
-      printf '%s\t%s\n' "$lineno" "$line"
+      printf '%bWarning: %s:%s: wildcard must follow a literal directory, not the filesystem root; leaving '\''%s'\'' unexpanded%b\n' "$YELLOW" "$src_file" "$lineno" "$norm_raw_path" "$NC" >&2
+      printf '%s\0%s\0%s\0' "$src_file" "$lineno" "$line"
       continue
     fi
 
@@ -1837,8 +1950,8 @@ list_config_targets() {
   echo -e "Config file: ${YELLOW}$CONFIG_FILE${NC}"
   echo
 
-  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_line="${config_line#*$'\t'}"
+  load_config_lines || return 1
+  while IFS= read -r -d '' _ && IFS= read -r -d '' _ && IFS= read -r -d '' config_line; do
     # validate_config_file already rejected malformed records before this runs.
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
     trim_to risk "$risk"
@@ -1867,12 +1980,15 @@ print0_with_status() {
 }
 
 validate_config_file() {
-  local config_line config_lineno=0 config_pipes field_count
+  local config_line config_src config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
-  local target_count=0 exclusion_patterns
+  local target_count=0 exclusion_patterns rec_idx
 
-  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-    config_lineno=$((config_lineno + 1))
+  load_config_lines || exit 1
+  for rec_idx in "${!CFG_REC_LINES[@]}"; do
+    config_src="${CFG_REC_FILES[$rec_idx]}"
+    config_lineno="${CFG_REC_LINENOS[$rec_idx]}"
+    config_line="${CFG_REC_LINES[$rec_idx]}"
     config_pipes="${config_line//[^|]/}"
     field_count=$(( ${#config_pipes} + 1 ))
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -1880,30 +1996,30 @@ validate_config_file() {
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
     if [[ "$risk" == "protect" ]]; then
       if [[ "$field_count" -ne 2 ]]; then
-        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect line requires 2 fields (protect|PATH), found ${field_count}${NC}" >&2
+        printf '%bError: %s:%s: protect line requires 2 fields (protect|PATH), found %s%b\n' "$RED" "$config_src" "$config_lineno" "$field_count" "$NC" >&2
         exit 1
       fi
       trim_to name "$name"
       if [[ -z "$name" ]]; then
-        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH is empty${NC}" >&2
+        printf '%bError: %s:%s: protect PATH is empty%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
         exit 1
       fi
       if ! name=$(expand_path_safe "$name"); then
-        echo "Error: ${CONFIG_FILE}:${config_lineno}: protect PATH has unsafe path expansion" >&2
+        printf 'Error: %s:%s: protect PATH has unsafe path expansion\n' "$config_src" "$config_lineno" >&2
         exit 1
       fi
       if [[ "$name" != /* ]]; then
-        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH '${name}' must be absolute${NC}" >&2
+        printf '%bError: %s:%s: protect PATH '\''%s'\'' must be absolute%b\n' "$RED" "$config_src" "$config_lineno" "$name" "$NC" >&2
         exit 1
       fi
       if [[ "$name" == *[*?\[]* ]]; then
-        echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH '${name}' cannot contain glob characters${NC}" >&2
+        printf '%bError: %s:%s: protect PATH '\''%s'\'' cannot contain glob characters%b\n' "$RED" "$config_src" "$config_lineno" "$name" "$NC" >&2
         exit 1
       fi
       continue
     fi
     if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
+      printf '%bError: %s:%s: expected 5-7 fields, found %s%b\n' "$RED" "$config_src" "$config_lineno" "$field_count" "$NC" >&2
       exit 1
     fi
     trim_to name "$name"
@@ -1913,25 +2029,25 @@ validate_config_file() {
     trim_to check_procs "${check_procs:-}"
     trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     if [[ -z "$name" ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
+      printf '%bError: %s:%s: NAME (field 2) is empty%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
       exit 1
     fi
     if [[ -z "$raw_path" ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH (field 3) is empty${NC}" >&2
+      printf '%bError: %s:%s: PATH (field 3) is empty%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
       exit 1
     fi
     if [[ ( "$raw_path" == *'*'* || "$raw_path" == *'?'* ) &&
           ( "$raw_path" == *'['* || "$raw_path" == *']'* ) ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: PATH cannot contain '[' or ']' in a wildcard path${NC}" >&2
+      printf '%bError: %s:%s: PATH cannot contain '\''['\'' or '\'']'\'' in a wildcard path%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
       exit 1
     fi
     if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)${NC}" >&2
+      printf '%bError: %s:%s: malformed CHECK_PROCESSES '\''%s'\'' (empty or stray comma-separated token)%b\n' "$RED" "$config_src" "$config_lineno" "$check_procs" "$NC" >&2
       exit 1
     fi
     # A cmdline: token with nothing after the prefix would match every process.
     if [[ "$check_procs" =~ (^|,)[[:space:]]*cmdline:[[:space:]]*(,|$) ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty pattern after 'cmdline:')${NC}" >&2
+      printf '%bError: %s:%s: malformed CHECK_PROCESSES '\''%s'\'' (empty pattern after '\''cmdline:'\'')%b\n' "$RED" "$config_src" "$config_lineno" "$check_procs" "$NC" >&2
       exit 1
     fi
     if [[ -n "$custom_clean_cmd" ]]; then
@@ -1941,33 +2057,33 @@ validate_config_file() {
           if [[ -z "$exclusion_patterns" || "$exclusion_patterns" =~ (^|,)[[:space:]]*(,|$) \
                 || "$exclusion_patterns" == *'|'* || "$exclusion_patterns" == *$'\n'* \
                 || "$exclusion_patterns" == *$'\r'* ]]; then
-            echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: malformed CUSTOM_ACTION '${custom_clean_cmd}' (unsafe or empty exclusion pattern)${NC}" >&2
+            printf '%bError: %s:%s: malformed CUSTOM_ACTION '\''%s'\'' (unsafe or empty exclusion pattern)%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$NC" >&2
             exit 1
           fi
           ;;
         action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc|filter:cxx_build)
           ;;
         *)
-          echo -e "${RED}${CONFIG_FILE}:${config_lineno}: Error: Unknown action '$custom_clean_cmd' in target '$name'.${NC}" >&2
+          printf '%b%s:%s: Error: Unknown action '\''%s'\'' in target '\''%s'\''.%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$name" "$NC" >&2
           exit 1
           ;;
       esac
     fi
-    risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: " >/dev/null || exit 1
+    risk_to_int "$risk" "${config_src}:${config_lineno}: " >/dev/null || exit 1
     if [[ -z "$min_age" ]]; then
       :
     elif [[ ! "$min_age" =~ ^[[:digit:]]+$ ]]; then
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'${NC}" >&2
+      printf '%bError: %s:%s: invalid MIN_AGE_DAYS '\''%s'\''%b\n' "$RED" "$config_src" "$config_lineno" "$min_age" "$NC" >&2
       exit 1
     elif [[ "$custom_clean_cmd" == action:* ]] && has_positive_age "$min_age"; then
       # The action runs its own command over the whole cache; an age would only narrow the plan's estimate.
-      echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: MIN_AGE_DAYS must be 0 for ${custom_clean_cmd} (the action ignores file age)${NC}" >&2
+      printf '%bError: %s:%s: MIN_AGE_DAYS must be 0 for %s (the action ignores file age)%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$NC" >&2
       exit 1
     fi
     target_count=$((target_count + 1))
-  done < "$CONFIG_FILE"
+  done
 
-  echo "OK: ${target_count} targets in ${CONFIG_FILE}"
+  printf 'OK: %s targets in %s\n' "$target_count" "$CONFIG_FILE"
 }
 
 # Named SESSION arguments for --restore / --purge-sessions must be an immediate
@@ -4634,7 +4750,8 @@ PROTECTED_PATHS=()
 collect_protected_paths() {
   local line f1 f2 expanded stripped canonical
   PROTECTED_PATHS=()
-  while IFS= read -r line || [[ -n "$line" ]]; do
+  load_config_lines || return 1
+  for line in "${CFG_REC_LINES[@]}"; do
     IFS='|' read -r f1 f2 _ <<< "$line"
     trim_to f1 "$f1"
     [[ "$f1" == "protect" ]] || continue
@@ -4649,7 +4766,7 @@ collect_protected_paths() {
       return 1
     fi
     PROTECTED_PATHS+=("$canonical")
-  done < "$CONFIG_FILE"
+  done
   # Keep undo data, operation history and the live lock out of cleanup targets.
   # An unresolvable HOME needs no entry: the safety check already marks targets
   # under it unsafe.
@@ -4676,13 +4793,9 @@ collect_protected_paths || exit 1
 status_echo "${BOLD}Analyzing targets...${NC}"
 
 # Read configuration file line by line
+config_src_file="$CONFIG_FILE"
 config_lineno=0
-while IFS= read -r config_line || [[ -n "$config_line" ]]; do
-  # The physical (1-based) source line number arrives as a tab-prefixed field from
-  # expand_config_globs, so a wildcard line that expands into many targets still
-  # reports errors against the real config line.
-  config_lineno="${config_line%%$'\t'*}"
-  config_line="${config_line#*$'\t'}"
+while IFS= read -r -d '' config_src_file && IFS= read -r -d '' config_lineno && IFS= read -r -d '' config_line; do
   # validate_config_file already rejected malformed records (field count, empty
   # NAME/PATH, CHECK_PROCESSES, CUSTOM_ACTION, risk, MIN_AGE_DAYS) before this runs.
   IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
@@ -4701,7 +4814,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   select_target_path "$raw_path" "$custom_clean_cmd" || continue
 
   # Map risk levels
-  target_risk_int=$(risk_to_int "$risk" "${CONFIG_FILE}:${config_lineno}: ") || exit 1
+  target_risk_int=$(risk_to_int "$risk" "${config_src_file}:${config_lineno}: ") || exit 1
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
     case "$target_risk_int" in
       2) hidden_medium=$((hidden_medium + 1)) ;;
@@ -4737,7 +4850,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   
   # Safe path expansions & cleanup trailing slashes
   if ! expanded_path=$(expand_path_safe "$raw_path"); then
-    echo "Error: ${CONFIG_FILE}:${config_lineno}: target PATH has unsafe path expansion" >&2
+    printf 'Error: %s:%s: target PATH has unsafe path expansion\n' "$config_src_file" "$config_lineno" >&2
     exit 1
   fi
   stripped_path=$(strip_trailing_slashes "$expanded_path")
@@ -4751,7 +4864,7 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
       path="$stripped_path"
       safety_status=3
     else
-      echo "Error: ${CONFIG_FILE}:${config_lineno}: could not resolve target PATH" >&2
+      printf 'Error: %s:%s: could not resolve target PATH\n' "$config_src_file" "$config_lineno" >&2
       exit 1
     fi
   fi

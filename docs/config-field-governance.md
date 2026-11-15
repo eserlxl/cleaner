@@ -97,3 +97,10 @@ Alongside 5–7 field target rows, the config accepts a two-field directive:
 - **Non-target semantics**: `protect` lines are skipped by `expand_config_globs` and every target-row consumer (`--list-targets`, `--list-targets --json`, and the cleanup loop), and are not counted in `--check-config`'s `OK: N targets` total.
 - **Protection rules**: Before target analysis, each `protect|PATH` is canonicalized (`canonicalize_physical` after `strip_trailing_slashes`). Any target whose canonical path equals a protected path, lies under one, or contains one (whole path components only) gets `target_status=protected`, reason `"protected by config"`, and is never sized or cleaned.
 
+## `include|PATH` directive lines
+
+Alongside `protect|PATH`, the config accepts a two-field directive `include|PATH` (first field literally `include`, case-sensitive) handled in `load_config_lines` before validation, protection collection, and glob expansion.
+
+- **Validation**: Must have exactly 2 fields. `PATH` passes `expand_path_safe`, must be literal absolute without `\r`, `\n`, or glob characters (`*`, `?`, `[`), and must resolve to an existing readable regular file (`-f` and `-r`). Active ancestor canonical paths are tracked via `canonicalize_physical` to reject direct, indirect, or symlinked cycles while permitting sequential diamond includes; include depth is capped at `8`.
+- **Attribution**: Records expanded from included files carry their true `(source_file, lineno)` across `validate_config_file`, `expand_config_globs` (via NUL-delimited streams and shared `**` prefix pre-scanning), and cleanup error paths, while `validate_config_file` reports total targets across the included tree (`OK: <N> targets in <CONFIG_FILE>`).
+

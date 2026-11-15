@@ -1553,6 +1553,28 @@ as
 and grouped in the plan report under
 .BR "Protected (by config):" .
 .PP
+A two-field directive of the form
+.B include|\fIPATH\fR
+(first field literally
+.BR include ,
+case-sensitive) loads another configuration file in place so a thin user config can extend
+.I /etc/linux\-cleaner/cleaner.conf
+with extra
+.B protect|\fIPATH\fR
+or target lines without copying the packaged defaults.
+.I PATH
+expands the same placeholders as
+.B protect|\fIPATH\fR
+and must resolve to an existing readable regular file (absolute, no glob characters
+.BR * ", " ? ", " [ ,
+no cycles, max depth 8). Malformed, missing, unreadable, cyclic, or over-depth includes fail closed with a
+.IR file : line :
+error, and diagnostics inside included files report their own source filename and line number. Included targets count toward
+.B \-\-check\-config
+while
+.B \-\-init\-config
+still copies only the single active file.
+.PP
 The default config is resolved from an explicit
 .BR \-c ,
 then the XDG user config, then

@@ -16481,5 +16481,148 @@ ACTIVE_CXX_RO_PY
   echo -e "${GREEN}PASS: active readable filter:cxx_build trees under 0555 parents report clean without sudo while idle and git-tracked siblings preserve their guards.${NC}"
 fi
 
+echo -e "\n${BOLD}Test Case: Config Include Directive Overlay And Guards${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" "$TEST_ENV_DIR" "$MOCK_HOME" <<'INCLUDE_PY'; then
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+
+cleaner, test_dir, mock_home = sys.argv[1:]
+root = pathlib.Path(test_dir) / "include_directive"
+home = pathlib.Path(mock_home) / "inc_home"
+shutil.rmtree(root, ignore_errors=True)
+shutil.rmtree(home, ignore_errors=True)
+home.mkdir(parents=True)
+root.mkdir(parents=True)
+
+for sub in (".cache/base_a", ".cache/pin_b", ".cache/ext_c", ".cache/shared_inc",
+            "ws/proj1/logs", "ws/proj2/sub/cache", "ws_inc/a"):
+    (home / sub).mkdir(parents=True, exist_ok=True)
+(home / ".cache/base_a/a.txt").write_text("base\n")
+(home / ".cache/pin_b/b.txt").write_text("pin\n")
+(home / ".cache/ext_c/c.txt").write_text("ext\n")
+(home / ".cache/shared_inc/s.txt").write_text("shared\n")
+(home / "ws/proj1/logs/l.txt").write_text("log\n")
+(home / "ws/proj2/sub/cache/k.txt").write_text("k\n")
+
+shared_conf = root / "shared.conf"
+shared_conf.write_text("safe|Shared Inc|$HOME/.cache/shared_inc|shared|0||\n")
+
+base_conf = root / "sub dir\twith space" / "-leading-dash base.conf"
+base_conf.parent.mkdir(parents=True)
+base_conf.write_text(f"""include|{shared_conf}
+safe|Base A|$HOME/.cache/base_a|base|0||
+safe|Pinned B|$HOME/.cache/pin_b|pin|0||
+safe|Base Globstar|$HOME/ws/**/logs|glob base|0||
+""")
+
+# Also test diamond include (shared.conf included via both base.conf and top.conf)
+# plus shared ** prefix spanning included + top files.
+top_conf = root / "-top.conf"
+top_conf.write_text(f"""include|{base_conf}
+include|{shared_conf}
+protect|$HOME/.cache/pin_b
+safe|Extra C|$HOME/.cache/ext_c|extra|0||
+safe|Top Globstar|$HOME/ws/**/cache|glob top|0||
+""")
+
+env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+env.update(HOME=str(home), NO_COLOR="1", PATH="/usr/bin:/bin")
+
+chk = subprocess.run(["bash", cleaner, "--config", str(top_conf), "--check-config"], env=env, capture_output=True, text=True)
+assert chk.returncode == 0 and f"OK: 7 targets in {top_conf}" in chk.stdout, (chk.returncode, chk.stdout, chk.stderr)
+
+doc = subprocess.run(["bash", cleaner, "--config", str(top_conf), "--doctor"], env=env, capture_output=True, text=True)
+assert "OK: config:" in doc.stdout, (doc.returncode, doc.stdout, doc.stderr)
+
+lt = json.loads(subprocess.run(["bash", cleaner, "--config", str(top_conf), "--list-targets", "--json"], env=env, capture_output=True, text=True, check=True).stdout)
+lt_names = [t["name"] for t in lt["targets"]]
+assert "Base A" in lt_names and "Extra C" in lt_names and "Base Globstar" in lt_names and "Top Globstar" in lt_names, lt_names
+
+dry = json.loads(subprocess.run(["bash", cleaner, "--config", str(top_conf), "--dry-run", "--json"], env=env, capture_output=True, text=True, check=True).stdout)
+statuses = {t["name"]: t["status"] for t in dry["targets"]}
+assert statuses["Pinned B"] == "protected", statuses
+assert statuses["Base A"] == "found" and statuses["Extra C"] == "found", statuses
+assert statuses["Base Globstar"] == "found" and statuses["Top Globstar"] == "found", statuses
+
+cln = subprocess.run(["bash", cleaner, "--config", str(top_conf), "--clean", "--force"], env=env, capture_output=True, text=True, check=True)
+assert (home / ".cache/pin_b/b.txt").exists(), cln.stdout
+assert not (home / ".cache/base_a").exists() and not (home / ".cache/ext_c").exists()
+assert not (home / "ws/proj1/logs").exists() and not (home / "ws/proj2/sub/cache").exists()
+
+# Error attribution must name exact included file and line number.
+bad_inc = root / "bad_inc.conf"
+bad_inc.write_text("# comment\n# ok\nbad|line|only\n")
+wrap_bad = root / "wrap_bad.conf"
+wrap_bad.write_text(f"include|{bad_inc}\n")
+rb = subprocess.run(["bash", cleaner, "--config", str(wrap_bad), "--check-config"], env=env, capture_output=True, text=True)
+assert rb.returncode == 1 and f"{bad_inc}:3: expected 5-7 fields" in rb.stderr, (rb.returncode, rb.stderr)
+
+# Fail-closed validation cases.
+dir_inc = root / "dir_inc"
+dir_inc.mkdir()
+unreadable = root / "unreadable.conf"
+unreadable.write_text("safe|U|$HOME/.cache/u|u|0||\n")
+unreadable.chmod(0o000)
+
+cyc_a = root / "cyc_a.conf"
+cyc_b = root / "cyc_b.conf"
+cyc_a.write_text(f"include|{cyc_b}\n")
+cyc_b.write_text(f"include|{cyc_a}\n")
+sym_cyc = root / "sym_cyc.conf"
+sym_cyc.symlink_to(cyc_a)
+cyc_b.write_text(f"include|{sym_cyc}\n")
+
+self_cyc = root / "self_cyc.conf"
+self_cyc.write_text(f"include|{self_cyc}\n")
+
+depth_files = [root / f"d{i}.conf" for i in range(10)]
+for i in range(9):
+    depth_files[i].write_text(f"include|{depth_files[i + 1]}\n")
+depth_files[9].write_text("safe|Leaf|$HOME/.cache/leaf|leaf|0||\n")
+
+bad_cases = [
+    ("extra_field", f"include|{shared_conf}|extra\n", "include line requires 2 fields"),
+    ("empty", "include|\n", "include PATH is empty"),
+    ("relative", "include|relative.conf\n", "must be absolute"),
+    ("glob", f"include|{root}/*.conf\n", "cannot contain glob characters"),
+    ("missing", f"include|{root}/missing.conf\n", "does not exist or is not a regular file"),
+    ("directory", f"include|{dir_inc}\n", "does not exist or is not a regular file"),
+    ("self_cycle", f"include|{self_cyc}\n", "circular include"),
+    ("sym_cycle", None, "circular include"),
+    ("depth_exceeded", None, "include depth exceeds limit"),
+]
+try:
+    for label, text, err_sub in bad_cases:
+        if label == "sym_cycle":
+            cfg_p = cyc_a
+        elif label == "depth_exceeded":
+            cfg_p = depth_files[0]
+        else:
+            cfg_p = root / f"bad_{label}.conf"
+            cfg_p.write_text(text)
+        res = subprocess.run(["bash", cleaner, "--config", str(cfg_p), "--check-config"], env=env, capture_output=True, text=True)
+        assert res.returncode == 1 and err_sub in res.stderr, (label, res.returncode, res.stderr)
+
+    # Check unreadable only when non-root (root ignores 0000 mode bits)
+    if os.geteuid() != 0:
+        unr_wrap = root / "bad_unr.conf"
+        unr_wrap.write_text(f"include|{unreadable}\n")
+        ru = subprocess.run(["bash", cleaner, "--config", str(unr_wrap), "--check-config"], env=env, capture_output=True, text=True)
+        assert ru.returncode == 1 and "is not readable" in ru.stderr, (ru.returncode, ru.stderr)
+
+    # Depth 8 (0..8 = 9 files) succeeds cleanly.
+    ok_d8 = root / "d8_ok.conf"
+    ok_d8.write_text(f"include|{depth_files[2]}\n")
+    # depth_files[2] -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 is depth 8 from ok_d8
+    rd8 = subprocess.run(["bash", cleaner, "--config", str(ok_d8), "--check-config"], env=env, capture_output=True, text=True)
+    assert rd8.returncode == 0 and f"OK: 1 targets in {ok_d8}" in rd8.stdout, (rd8.returncode, rd8.stdout, rd8.stderr)
+finally:
+    unreadable.chmod(0o644)
+INCLUDE_PY
+  echo -e "${RED}FAIL: Config include|PATH directive tests failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: Config include|PATH overlays shipped/base configs, preserves file:line attribution, and fails closed on invalid or cyclic includes.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
