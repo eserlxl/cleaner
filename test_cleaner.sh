@@ -18932,6 +18932,25 @@ try:
     bad_env_only = run_cli(env1 | {"LINUX_CLEANER_ONLY_PATH": str(h1), "LINUX_CLEANER_TRASH_MAX_SIZE": "1G"},
                            ["--config", str(cfg1), "--dry-run"])
     assert bad_env_only.returncode == 1 and "--only-path applies only" in bad_env_only.stderr
+    bad_env_sz = run_cli(env1 | {"LINUX_CLEANER_TRASH_MAX_SIZE": "bad"}, ["--config", str(cfg1), "--dry-run"])
+    assert bad_env_sz.returncode == 1 and "--trash-max-size expects a size" in bad_env_sz.stderr
+
+    # Symlinked quarantine base must record Retention failed: true and exit 1 under --trash-max-size.
+    h3b = tmp / "h3b"
+    s3b = tmp / "s3b"
+    t3b = h3b / "tgt"
+    t3b.mkdir(parents=True)
+    (t3b / "f.bin").write_text("x", encoding="utf-8")
+    (h3b / ".cache/linux-cleaner").mkdir(parents=True)
+    sym_q_target = tmp / "sym_q_target"
+    sym_q_target.mkdir()
+    (h3b / ".cache/linux-cleaner/quarantine").symlink_to(sym_q_target)
+    cfg3b = tmp / "c3b.conf"
+    cfg3b.write_text(f"safe|T3b|{t3b}|t3b|0||\n", encoding="utf-8")
+    r3b = run_cli(base_env(h3b, s3b), ["--config", str(cfg3b), "--clean", "--force", "--trash-max-size", "1K"])
+    assert r3b.returncode == 1, r3b
+    assert "Retention failed: true" in r3b.stdout, r3b.stdout
+    assert "\nRetention failed: true" in (s3b / "linux-cleaner/last-report.txt").read_text(encoding="utf-8")
 
     # Turkish locale check when available.
     locales = subprocess.run(["locale", "-a"], capture_output=True, text=True).stdout
@@ -19137,6 +19156,28 @@ try:
     assert (h4 / "plain.log.1").is_symlink()
     assert outside.read_text(encoding="utf-8") == "DO_NOT_OVERWRITE\n"
     assert "mode=delete" in plain_log.read_text(encoding="utf-8")
+
+    # Directory at <log>.1 must warn and stay intact; mode-0200 append-only log must emit zero stderr noise.
+    t4.mkdir(parents=True, exist_ok=True)
+    (t4 / "f3.bin").write_text("z", encoding="utf-8")
+    dir_log = h4 / "dirlog.log"
+    dir_log.write_text("DIRLOG " + ("d" * 300) + "\n", encoding="utf-8")
+    (h4 / "dirlog.log.1/keep").mkdir(parents=True)
+    (h4 / "dirlog.log.1/keep/item").write_text("KEEP\n", encoding="utf-8")
+    rs3 = run_cli(env4, ["--config", str(cfg4), "--clean", "--force", "--log", str(dir_log), "--log-max-size", "64"])
+    assert rs3.returncode == 0, rs3
+    assert "refusing to rotate log to unsafe backup path" in rs3.stderr
+    assert (h4 / "dirlog.log.1/keep/item").read_text(encoding="utf-8") == "KEEP\n"
+    assert "mode=delete" in dir_log.read_text(encoding="utf-8")
+
+    t4.mkdir(parents=True, exist_ok=True)
+    (t4 / "f4.bin").write_text("w", encoding="utf-8")
+    os.chmod(dir_log, 0o200)
+    rs4 = run_cli(env4, ["--config", str(cfg4), "--clean", "--force", "--log", str(dir_log), "--log-max-size", "64"])
+    os.chmod(dir_log, 0o600)
+    assert rs4.returncode == 0, rs4
+    assert rs4.stderr == "", f"unexpected stderr on 0200 append-only log: {rs4.stderr!r}"
+    assert dir_log.read_text(encoding="utf-8").count("mode=delete") >= 2
 
     # 5. Validation errors: missing value, missing --log/LINUX_CLEANER_LOG, invalid size, overflow, tr_TR.UTF-8 digit.
     assert run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size"]).returncode == 1

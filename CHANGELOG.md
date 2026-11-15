@@ -43,6 +43,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `log_operation` now suppresses bash input-redirection errors around `wc -c < "$target"` when `--log-max-size` inspects an unreadable append-only (`0200`) log file, avoiding leaked localized `Permission denied` diagnostics on stderr while continuing to append cleanly.
 - Live `aged` quarantine restoration now rejects an existing non-directory destination at the target root or any intermediate parent path with `Conflict detected` and `outcome=conflict` (matching `--restore --dry-run`) instead of leaking `mkdir` errors and logging `outcome=failed`.
 - `--restore` now authenticates through `ensure_sudo` before probing a missing privileged (`use_sudo=true`) `full`-target payload's original path, drops stale records without invoking `sudo` when the restored destination is already visible without root, and records `outcome=failed` (`sudo authentication failed`) instead of misreporting unverified protected paths as `missing`.
 - Startup now rejects relative `HOME` values (`!= /*`) with an explicit error and exit `1` before expanding target rules or initializing XDG/timer user files, preventing home-directory boundaries from resolving relative to `PWD`.

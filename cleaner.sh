@@ -2480,7 +2480,7 @@ log_operation() {
     if [[ -L "$target" ]]; then
       echo -e "  [${YELLOW:-}LOG${NC:-}] Warning: refusing to rotate symlinked log '$target'." >&2
     elif [[ -f "$target" ]]; then
-      log_bytes=$(wc -c < "$target" 2>/dev/null || printf 0)
+      log_bytes=$({ wc -c < "$target"; } 2>/dev/null || printf 0)
       log_bytes=${log_bytes//[[:space:]]/}
       if [[ "$log_bytes" =~ ^[[:digit:]]+$ ]] && (( log_bytes > 0 && log_bytes >= max_bytes )); then
         if [[ -L "$rotated" || -d "$rotated" ]]; then
