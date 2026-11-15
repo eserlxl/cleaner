@@ -688,7 +688,11 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     --log-max-size)
-      require_non_option_value "$1" "${2:-}"
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --log-max-size requires a size argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
       LOG_MAX_SIZE="$2"
       shift 2
       ;;

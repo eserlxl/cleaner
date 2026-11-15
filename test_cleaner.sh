@@ -19201,8 +19201,13 @@ try:
     assert rs4.stderr == "", f"unexpected stderr on 0200 append-only log: {rs4.stderr!r}"
     assert dir_log.read_text(encoding="utf-8").count("mode=delete") >= 2
 
-    # 5. Validation errors: missing value, missing --log/LINUX_CLEANER_LOG, invalid size, overflow, tr_TR.UTF-8 digit.
-    assert run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size"]).returncode == 1
+    # 5. Validation errors: missing/empty value, missing --log/LINUX_CLEANER_LOG, invalid size, overflow, tr_TR.UTF-8 digit.
+    miss_sz = run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size"])
+    assert miss_sz.returncode == 1 and "--log-max-size requires a size argument" in miss_sz.stderr, miss_sz
+    empty_sz = run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size", ""])
+    assert empty_sz.returncode == 1 and "--log-max-size requires a size argument" in empty_sz.stderr, empty_sz
+    empty_ovr = run_cli(env1 | {"LINUX_CLEANER_LOG_MAX_SIZE": "1M"}, ["--config", str(cfg1), "--log", "--log-max-size", "", "--dry-run"])
+    assert empty_ovr.returncode == 1 and "--log-max-size requires a size argument" in empty_ovr.stderr, empty_ovr
     no_log = run_cli(env1, ["--config", str(cfg1), "--log-max-size", "1M"])
     assert no_log.returncode == 1 and "--log-max-size requires --log" in no_log.stderr
     bad_env_only = run_cli(env1 | {"LINUX_CLEANER_LOG_MAX_SIZE": "1M"}, ["--config", str(cfg1), "--dry-run"])
