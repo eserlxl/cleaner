@@ -16064,5 +16064,62 @@ if ! run_test_case "Min Reclaim Zero-Padded 1G" 0 "size_pad_1g.log" \
 fi
 echo -e "${GREEN}PASS: parse_size_bytes accepts zero-padded valid sizes and rejects real 64-bit overflows.${NC}"
 
+echo -e "\n${BOLD}Test Case: Shared Globstar Prefix Single Walk Cache${NC}"
+setup_mock_env
+shared_opt="$OUTSIDE_DIR/shared_opt"
+mkdir -p "$shared_opt/p1/build/nested/build" \
+         "$shared_opt/p2/.gemini/model_debug_logs" \
+         "$shared_opt/p3/.codex/logs" \
+         "$shared_opt/p4/builder" \
+         "$shared_opt/sym_real/logs"
+printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$shared_opt/p1/build/CMakeCache.txt"
+printf 'CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n' > "$shared_opt/p1/build/nested/build/CMakeCache.txt"
+printf 'not build\n' > "$shared_opt/p4/builder/readme.txt"
+mkdir -p "$shared_opt/p5/.remember"
+ln -s "$shared_opt/sym_real/logs" "$shared_opt/p5/.remember/logs"
+shared_trace="$TEST_ENV_DIR/shared_find_trace.log"
+: > "$shared_trace"
+shared_real_find=$(command -v find)
+cat > "$TEST_ENV_DIR/bin/find" <<SHARED_FIND
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$shared_trace"
+exec "$shared_real_find" "\$@"
+SHARED_FIND
+chmod +x "$TEST_ENV_DIR/bin/find"
+cat > "$TEST_ENV_DIR/shared_globstar.conf" <<EOF
+safe|Build Output|$shared_opt/**/build*|C/C++ build trees|14||filter:cxx_build
+safe|CMake Build Output|$shared_opt/**/cmake-build*|CMake build trees|14||filter:cxx_build
+safe|Gemini Logs|$shared_opt/**/.gemini/model_debug_logs|Gemini logs|7||
+safe|Codex Logs|$shared_opt/**/.codex/logs|Codex logs|7||
+safe|Remember Logs|$shared_opt/**/.remember/logs|Remember logs|365||
+EOF
+if ! run_test_case "Shared Globstar Prefix List Targets" 0 "shared_globstar_list.log" \
+       --config "$TEST_ENV_DIR/shared_globstar.conf" --list-targets --json; then
+  rm -f "$TEST_ENV_DIR/bin/find"
+  exit 1
+fi
+rm -f "$TEST_ENV_DIR/bin/find"
+if ! python3 - "$TEST_ENV_DIR/shared_globstar_list.log" "$shared_opt" "$shared_trace" <<'SHARED_GLOB_PY'
+import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+opt = sys.argv[2]
+trace = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8").splitlines()
+opt_walks = [ln for ln in trace if ln.startswith(opt + " -mindepth")]
+paths = sorted(t["path"] for t in data["targets"])
+expected = sorted([
+    f"{opt}/p1/build",
+    f"{opt}/p2/.gemini/model_debug_logs",
+    f"{opt}/p3/.codex/logs",
+])
+assert paths == expected, (paths, expected)
+assert len(opt_walks) == 1, opt_walks
+SHARED_GLOB_PY
+then
+  echo -e "${RED}FAIL: shared globstar prefix walk repeated find traversals or altered targets.${NC}"
+  cat "$TEST_ENV_DIR/shared_globstar_list.log" "$shared_trace" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: shared /** rows reuse one cached directory walk and preserve filtering, pruning, and symlink refusal.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

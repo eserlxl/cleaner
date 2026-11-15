@@ -18,6 +18,7 @@
 | U-149 | Systemd `EnvironmentFile` parsing in `print_timer_note` and `--doctor` strips at most one matching outer quote pair while preserving embedded quotes (`'`, `"`) and trimming quoted whitespace (`"   "`, `'   '`) | Systemd EnvironmentFile Outer Quote Preservation / Timer Note Embedded Quote Preserved |
 | U-150 | `--doctor` preserves trailing newlines in `XDG_STATE_HOME` when reading `last-report.txt`, reporting the recorded cleanup summary instead of `none recorded` | Doctor Trailing-Newline XDG_STATE_HOME Preservation |
 | U-151 | `parse_size_bytes` accepts zero-padded sizes longer than 18 characters (`0000000000000000001G`, `000000000000000000000`, `max-size:0000000000000000001K`) while rejecting real 64-bit overflows (`99999999999T`) | Parse Size Bytes Zero-Padded Inputs |
+| U-152 | Shared `/**` config rows under one prefix reuse a single cached `find` directory traversal while preserving `filter:cxx_build`, ancestor deduplication, component matching, depth bounds, and symlink refusal | Shared Globstar Prefix List Targets |
 
 ## 1.6.0 shipped feature inventory
 

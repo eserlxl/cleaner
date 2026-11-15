@@ -15,6 +15,10 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ## [Unreleased]
 
+### Changed
+
+- `expand_config_globs` now pre-scans and caches shared `/**` directory traversals by prefix root so multiple recursive wildcard rows sharing one base directory (such as the five `/opt/**` rows in the default config) reuse a single `find` walk instead of repeating identical directory scans.
+
 ### Fixed
 
 - `--action-timeout` now compares elapsed microsecond durations without 64-bit integer multiplication overflow, so an `action:*` command that exits `124` or `137` immediately under a large decimal timeout (such as `10000000000000` or `99999999999999999999`) is reported as `failed` instead of `timed out`.

@@ -1443,6 +1443,73 @@ glob_components_match() {
   _glob_parts_match 0 0
 }
 
+# Split normalized wildcard path into literal prefix, relative pattern tail, min/max depth,
+# globstar presence, and trailing leaf name into caller locals in expand_config_globs.
+_expand_glob_parse_pattern() {
+  local raw="$1" head slashes
+  while [[ "$raw" == *//* ]]; do
+    raw="${raw//\/\//\/}"
+  done
+  if [[ "$raw" =~ ^/+$ ]]; then
+    raw="/"
+  else
+    while [[ "$raw" == */ ]]; do
+      raw="${raw%/}"
+    done
+  fi
+  head="${raw%%[*?]*}"
+  prefix="${head%/*}"
+  tail_part="${raw#"$prefix"/}"
+  slashes="${tail_part//[^\/]/}"
+  depth=$(( ${#slashes} + 1 ))
+  max_depth="$depth"
+  has_globstar=false
+  if [[ "/$tail_part/" == *"/**/"* || "$tail_part" == "**" ]]; then
+    has_globstar=true
+    max_depth="$GLOB_RECURSION_MAX_DEPTH"
+    [[ "$depth" -gt "$max_depth" ]] && max_depth="$depth"
+  fi
+  leaf="${raw##*/}"
+  norm_raw_path="$raw"
+}
+
+# Filter and emit one candidate directory for the current config row in expand_config_globs.
+_expand_glob_accept_match() {
+  local cand="$1" from_cache="$2" c_trimmed c_expanded c_rel c_slashes c_depth c_anc
+  [[ -z "$cand" ]] && return 0
+  if [[ "$from_cache" == true ]]; then
+    # When reusing a shared prefix walk, filter leaf and depth before safety warnings.
+    # shellcheck disable=SC2053
+    [[ "${cand##*/}" == $leaf ]] || return 0
+    c_rel="${cand#"$prefix"/}"
+    c_slashes="${c_rel//[^\/]/}"
+    c_depth=$(( ${#c_slashes} + 1 ))
+    (( c_depth >= depth && c_depth <= max_depth )) || return 0
+  fi
+  trim_to c_trimmed "$cand"
+  # Config records are line/pipe-delimited and consumers trim and expand the
+  # path again. Refuse a match whose identity would change in that transport.
+  if ! expand_path_safe "$cand" c_expanded \
+     || [[ "$cand" == *'|'* || "$cand" == *[[:cntrl:]]* || "$cand" == *\\* || "$cand" != "$c_trimmed" || "$cand" != "$c_expanded" ]]; then
+    printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
+      "$CONFIG_FILE" "$lineno" "$cand" >&2
+    return 0
+  fi
+  glob_components_match "${cand#"$prefix"/}" "$tail_part" || return 0
+  if [[ "${#prune_args[@]}" -eq 0 ]]; then
+    c_anc="${cand%/*}"
+    while [[ "$c_anc" == "$prefix"/* ]]; do
+      [[ -n "${accepted_matches[$c_anc]:-}" ]] && return 0
+      c_anc="${c_anc%/*}"
+    done
+  fi
+  if [[ "$target_filter" == "filter:cxx_build" ]]; then
+    is_cxx_build_dir "$cand" || return 0
+  fi
+  [[ "${#prune_args[@]}" -eq 0 ]] && accepted_matches["$cand"]=1
+  printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$cand" "$frest"
+}
+
 # Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
 # one line per matching directory. Expansion runs through find, never a shell glob
 # and never eval, so the documented no-wildcard-eval contract still holds: only the
@@ -1451,19 +1518,51 @@ glob_components_match() {
 # target. Each emitted line carries its physical source line number and a tab, so a
 # line that expands into many still reports config errors against the real line.
 expand_config_globs() {
-  local line lineno=0 risk name raw_path f1 f2 f3 frest pipes fields
-  local prefix depth max_depth head tail_part slashes leaf match target_filter ancestor has_globstar expanded trimmed_match match_expanded
-  local -a prune_args
-  local -A accepted_matches
+  local line lineno=0 risk name raw_path f1 f2 f3 frest pipes fields expanded_glob_path norm_raw_path
+  local prefix depth max_depth tail_part leaf match target_filter has_globstar expanded
+  local p_min p_max cache_start cache_len cache_end cache_idx
+  local -a prune_args cfg_lines=() globstar_dirs=()
+  local -A accepted_matches globstar_prefix_counts=() globstar_prefix_min=() globstar_prefix_max=() globstar_cache_start=() globstar_cache_len=()
 
   while IFS= read -r line || [[ -n "$line" ]]; do
+    cfg_lines+=("$line")
+  done < "$CONFIG_FILE"
+
+  # Pre-scan shared "**" prefixes so rows sharing one literal root reuse one find traversal.
+  for line in "${cfg_lines[@]}"; do
+    pipes="${line//[^|]/}"
+    fields=$(( ${#pipes} + 1 ))
+    IFS='|' read -r f1 f2 f3 frest <<< "$line"
+    trim_to risk "$f1"
+    [[ "$risk" == "protect" || -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$fields" -gt 7 ]] && continue
+    trim_to raw_path "$f3"
+    [[ "$raw_path" == *[*?]* ]] || continue
+    trim_to name "$f2"
+    if { [[ -n "$ONLY_TARGET" ]] && ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; } \
+       || { [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; }; then
+      continue
+    fi
+    expand_path_safe "$raw_path" expanded_glob_path || continue
+    [[ "$expanded_glob_path" == *'['* || "$expanded_glob_path" == *']'* ]] && continue
+    _expand_glob_parse_pattern "$expanded_glob_path"
+    [[ -n "$prefix" && "$has_globstar" == true ]] || continue
+    globstar_prefix_counts["$prefix"]=$(( ${globstar_prefix_counts[$prefix]:-0} + 1 ))
+    if [[ -z "${globstar_prefix_min[$prefix]+set}" || "$depth" -lt "${globstar_prefix_min[$prefix]}" ]]; then
+      globstar_prefix_min["$prefix"]="$depth"
+    fi
+    if [[ -z "${globstar_prefix_max[$prefix]+set}" || "$max_depth" -gt "${globstar_prefix_max[$prefix]}" ]]; then
+      globstar_prefix_max["$prefix"]="$max_depth"
+    fi
+  done
+
+  for line in "${cfg_lines[@]}"; do
     lineno=$((lineno + 1))
     pipes="${line//[^|]/}"
     fields=$(( ${#pipes} + 1 ))
     IFS='|' read -r f1 f2 f3 frest <<< "$line"
-    risk=$(trim "$f1")
+    trim_to risk "$f1"
     [[ "$risk" == "protect" ]] && continue
-    raw_path=$(trim "$f3")
+    trim_to raw_path "$f3"
     # Leave malformed lines intact for the field-count validator.
     if [[ -z "$risk" || "$risk" =~ ^# || "$fields" -lt 5 || "$fields" -gt 7 ]]; then
       printf '%s\t%s\n' "$lineno" "$line"
@@ -1471,10 +1570,10 @@ expand_config_globs() {
     fi
 
     target_filter=""
-    [[ "$fields" -eq 7 ]] && target_filter=$(trim "${frest##*|}")
+    [[ "$fields" -eq 7 ]] && trim_to target_filter "${frest##*|}"
     if [[ "$raw_path" != *[*?]* ]]; then
       if [[ "$target_filter" == "filter:cxx_build" ]]; then
-        if ! expanded=$(expand_path_safe "$raw_path"); then
+        if ! expand_path_safe "$raw_path" expanded; then
           printf 'Warning: %s:%s: skipping target with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
           continue
         fi
@@ -1484,53 +1583,22 @@ expand_config_globs() {
       continue
     fi
 
-    name=$(trim "$f2")
+    trim_to name "$f2"
     if { [[ -n "$ONLY_TARGET" ]] && ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; } \
        || { [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; }; then
       printf '%s\t%s\n' "$lineno" "$line"
       continue
     fi
 
-    if ! raw_path=$(expand_path_safe "$raw_path"); then
+    if ! expand_path_safe "$raw_path" expanded_glob_path; then
       printf 'Warning: %s:%s: skipping wildcard with unsafe path expansion\n' "$CONFIG_FILE" "$lineno" >&2
       continue
     fi
-    if [[ "$raw_path" == *'['* || "$raw_path" == *']'* ]]; then
+    if [[ "$expanded_glob_path" == *'['* || "$expanded_glob_path" == *']'* ]]; then
       printf 'Warning: %s:%s: skipping wildcard with bracket characters in expanded path\n' "$CONFIG_FILE" "$lineno" >&2
       continue
     fi
-    # Collapse redundant slashes and strip trailing slashes to match the literal-path
-    # pipeline, so a trailing or doubled slash cannot silently drop the line.
-    while [[ "$raw_path" == *//* ]]; do
-      raw_path="${raw_path//\/\//\/}"
-    done
-    raw_path=$(strip_trailing_slashes "$raw_path")
-
-    # Split into the longest wildcard-free leading prefix and the depth of the
-    # remaining pattern components, so find scans only below a literal root.
-    # This uses parameter expansion only: an unquoted split would itself undergo
-    # pathname expansion, which is exactly the shell globbing this must avoid.
-    head="${raw_path%%[*?]*}"
-    prefix="${head%/*}"
-    tail_part="${raw_path#"$prefix"/}"
-    slashes="${tail_part//[^\/]/}"
-    depth=$(( ${#slashes} + 1 ))
-    max_depth="$depth"
-
-    # A "**" component matches one or more intervening directories, so the pattern
-    # spans a range of depths instead of one exact depth. Because GNU find's -path
-    # lets a plain * cross '/', widen the search bounds here and then verify each
-    # candidate component by component via glob_components_match so only a "**"
-    # component spans multiple directory levels while * and ? match within a single
-    # component. The ceiling is fixed rather than unbounded so a mistyped pattern
-    # cannot walk an arbitrarily deep tree; a "**" in the first component is still
-    # refused below, because the prefix is then empty.
-    has_globstar=false
-    if [[ "/$tail_part/" == *"/**/"* || "$tail_part" == "**" ]]; then
-      has_globstar=true
-      max_depth="$GLOB_RECURSION_MAX_DEPTH"
-      [[ "$depth" -gt "$max_depth" ]] && max_depth="$depth"
-    fi
+    _expand_glob_parse_pattern "$expanded_glob_path"
 
     # A wildcard in the first component would make find walk the whole filesystem.
     # Refuse to expand it and pass the line through untouched: the literal pattern
@@ -1538,56 +1606,43 @@ expand_config_globs() {
     # scanned and nothing is deleted. This runs inside a process substitution, so
     # it warns and degrades rather than trying to abort the run from a subshell.
     if [[ -z "$prefix" ]]; then
-      echo -e "${YELLOW}Warning: ${CONFIG_FILE}:${lineno}: wildcard must follow a literal directory, not the filesystem root; leaving '${raw_path}' unexpanded${NC}" >&2
+      echo -e "${YELLOW}Warning: ${CONFIG_FILE}:${lineno}: wildcard must follow a literal directory, not the filesystem root; leaving '${norm_raw_path}' unexpanded${NC}" >&2
       printf '%s\t%s\n' "$lineno" "$line"
       continue
     fi
-
-    # The last pattern component names the directory itself, so it is matched with
-    # -name, which never crosses '/'. -path alone would not do: its * spans slashes,
-    # so once the depth bounds widen for "**" a trailing "build*" would also swallow
-    # "build/CMakeFiles" and every path below it.
-    leaf="${raw_path##*/}"
 
     # Stop at unfiltered matches. When "**" widens the search depth or a filter is
     # active, find must walk through rejected parents so a candidate rejected by
     # glob_components_match or the filter cannot prune a valid deeper match;
     # descendants of accepted matches are suppressed in bash below.
-    #
-    # A pattern that matches nothing emits no target and is not an error, matching
-    # the existing status of a configured path that does not exist.
-    # A filter: token in CUSTOM_ACTION (field 7) constrains which expanded matches
-    # become targets. Every accepted directory must still match the path pattern.
     prune_args=(-prune)
     [[ "$target_filter" == "filter:cxx_build" || "$has_globstar" == true ]] && prune_args=()
     accepted_matches=()
-    while IFS= read -r -d '' match; do
-      [[ -z "$match" ]] && continue
-      trim_to trimmed_match "$match"
-      # Config records are line/pipe-delimited and consumers trim and expand the
-      # path again. Refuse a match whose identity would change in that transport.
-      if ! expand_path_safe "$match" match_expanded \
-         || [[ "$match" == *'|'* || "$match" == *[[:cntrl:]]* || "$match" == *\\* || "$match" != "$trimmed_match" || "$match" != "$match_expanded" ]]; then
-        printf 'Warning: %s:%s: skipping wildcard match that cannot be represented safely: %q\n' \
-          "$CONFIG_FILE" "$lineno" "$match" >&2
-        continue
+    if [[ "$has_globstar" == true && "${globstar_prefix_counts[$prefix]:-0}" -gt 1 ]]; then
+      if [[ -z "${globstar_cache_start[$prefix]+set}" ]]; then
+        p_min="${globstar_prefix_min[$prefix]}"
+        p_max="${globstar_prefix_max[$prefix]}"
+        cache_start="${#globstar_dirs[@]}"
+        while IFS= read -r -d '' match; do
+          [[ -z "$match" ]] && continue
+          globstar_dirs+=("$match")
+        done < <(find "$prefix" -mindepth "$p_min" -maxdepth "$p_max" -type d -print0 2>/dev/null | sort -z)
+        globstar_cache_start["$prefix"]="$cache_start"
+        globstar_cache_len["$prefix"]=$(( ${#globstar_dirs[@]} - cache_start ))
       fi
-      glob_components_match "${match#"$prefix"/}" "$tail_part" || continue
-      if [[ "${#prune_args[@]}" -eq 0 ]]; then
-        ancestor="${match%/*}"
-        while [[ "$ancestor" == "$prefix"/* ]]; do
-          [[ -n "${accepted_matches[$ancestor]:-}" ]] && continue 2
-          ancestor="${ancestor%/*}"
-        done
-      fi
-      if [[ "$target_filter" == "filter:cxx_build" ]]; then
-        is_cxx_build_dir "$match" || continue
-      fi
-      [[ "${#prune_args[@]}" -eq 0 ]] && accepted_matches["$match"]=1
-      printf '%s\t%s|%s|%s|%s\n' "$lineno" "$f1" "$f2" "$match" "$frest"
-    done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
-                  -type d -name "$leaf" -path "$raw_path" "${prune_args[@]}" -print0 2>/dev/null | sort -z)
-  done < "$CONFIG_FILE"
+      cache_start="${globstar_cache_start[$prefix]}"
+      cache_len="${globstar_cache_len[$prefix]}"
+      cache_end=$(( cache_start + cache_len ))
+      for (( cache_idx = cache_start; cache_idx < cache_end; cache_idx++ )); do
+        _expand_glob_accept_match "${globstar_dirs[$cache_idx]}" true
+      done
+    else
+      while IFS= read -r -d '' match; do
+        _expand_glob_accept_match "$match" false
+      done < <(find "$prefix" -mindepth "$depth" -maxdepth "$max_depth" \
+                    -type d -name "$leaf" -path "$norm_raw_path" "${prune_args[@]}" -print0 2>/dev/null | sort -z)
+    fi
+  done
 }
 
 # Resolve a user-supplied log path (--log / LINUX_CLEANER_LOG) with the same
