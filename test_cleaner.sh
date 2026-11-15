@@ -18811,6 +18811,55 @@ try:
         assert not list(a6.glob("sub.pre-restore-*"))
     finally:
         os.chmod(q6_deep, 0o755)
+
+    # 7. Root aged_root_backup rolls back atomically on zero-file failure and stays intact on partial restore.
+    h7, env7 = make_env("case7")
+    a7 = h7 / ".cache/bc_aged_root_rb"
+    (a7 / "sub").mkdir(parents=True)
+    f7 = a7 / "sub/item.txt"
+    f7.write_text("aged-root-rb\n", encoding="utf-8")
+    os.utime(f7, (old_ts, old_ts))
+    cfg7 = tmp / "case7.conf"
+    cfg7.write_text(f"safe|AgedRootRB|{a7}|arrb|7||\n", encoding="utf-8")
+    assert run_cli(env7, ["--config", str(cfg7), "--clean", "--trash", "--force"]).returncode == 0
+    shutil.rmtree(a7)
+    a7.write_text("ROOT_ORIG\n", encoding="utf-8")
+    q7_sub = next(p for p in (h7 / ".cache/linux-cleaner/quarantine").rglob("sub") if p.is_dir())
+    os.chmod(q7_sub, 0o555)
+    try:
+        r7 = run_cli(env7, ["--restore", "latest", "--backup-conflicts"])
+        assert r7.returncode == 1, (r7.returncode, r7.stdout, r7.stderr)
+        assert a7.is_file() and not a7.is_dir()
+        assert a7.read_text(encoding="utf-8") == "ROOT_ORIG\n"
+        assert not list((h7 / ".cache").glob("bc_aged_root_rb.pre-restore-*"))
+    finally:
+        os.chmod(q7_sub, 0o755)
+
+    h8, env8 = make_env("case8")
+    a8 = h8 / ".cache/bc_aged_partial"
+    (a8 / "sub_fail").mkdir(parents=True)
+    f8_ok = a8 / "a_ok.txt"
+    f8_fail = a8 / "sub_fail/fail.txt"
+    f8_ok.write_text("keep-me\n", encoding="utf-8")
+    f8_fail.write_text("cannot-move\n", encoding="utf-8")
+    os.utime(f8_ok, (old_ts, old_ts))
+    os.utime(f8_fail, (old_ts, old_ts))
+    cfg8 = tmp / "case8.conf"
+    cfg8.write_text(f"safe|AgedRootPartial|{a8}|arp|7||\n", encoding="utf-8")
+    assert run_cli(env8, ["--config", str(cfg8), "--clean", "--trash", "--force"]).returncode == 0
+    shutil.rmtree(a8)
+    a8.write_text("ROOT_ORIG_8\n", encoding="utf-8")
+    q8_sub = next(p for p in (h8 / ".cache/linux-cleaner/quarantine").rglob("sub_fail") if p.is_dir())
+    os.chmod(q8_sub, 0o555)
+    try:
+        r8 = run_cli(env8, ["--restore", "latest", "--backup-conflicts"])
+        assert r8.returncode == 1, (r8.returncode, r8.stdout, r8.stderr)
+        assert a8.is_dir() and (a8 / "a_ok.txt").read_text(encoding="utf-8") == "keep-me\n"
+        assert not (a8 / "sub_fail").exists()
+        baks8 = list((h8 / ".cache").glob("bc_aged_partial.pre-restore-*"))
+        assert len(baks8) == 1 and baks8[0].read_text(encoding="utf-8") == "ROOT_ORIG_8\n"
+    finally:
+        os.chmod(q8_sub, 0o755)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 BACKUP_CONF_PY

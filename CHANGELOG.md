@@ -43,6 +43,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `--restore --backup-conflicts` now rolls back a backed-up non-directory `aged` root collision (`aged_root_backup`) and prunes empty subdirectories when the per-file restore loop fails before placing any file in the destination directory, while preserving partially restored payloads and backups when sibling files succeeded.
 - `--log-max-size` now rejects missing trailing arguments and explicit empty strings (`--log-max-size ""`) with `Error: --log-max-size requires a size argument.` instead of aborting with a bash `set -u` `$2: unbound variable` error or silently clearing `LINUX_CLEANER_LOG_MAX_SIZE`.
 - `--restore --backup-conflicts` now rolls back backed-up intermediate `aged` directory collisions (`dir_backup`) and cleans empty newly created subdirectories when nested directory creation, leaf backup, or file restoration fails before populating that directory.
 - `log_operation` now suppresses bash input-redirection errors around `wc -c < "$target"` when `--log-max-size` inspects an unreadable append-only (`0200`) log file, avoiding leaked localized `Permission denied` diagnostics on stderr while continuing to append cleanly.

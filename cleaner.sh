@@ -4032,6 +4032,16 @@ restore_quarantine() {
             fi
           done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
           [[ "$stream_rc" == 0 ]] || success=false
+          if [[ "$success" == false && -n "$aged_root_backup" ]]; then
+            with_sudo "$use_sudo" find "$clean_aged_orig" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+            if with_sudo "$use_sudo" rmdir -- "$clean_aged_orig" 2>/dev/null; then
+              if with_sudo "$use_sudo" mv -T -- "$aged_root_backup" "$clean_aged_orig" 2>/dev/null; then
+                echo "Rolled back pre-restore backup '$aged_root_backup' to '$clean_aged_orig'." >&2
+              else
+                echo -e "${RED}Error: Failed to roll back pre-restore backup '$aged_root_backup' to '$clean_aged_orig'.${NC}" >&2
+              fi
+            fi
+          fi
         fi
       fi
     else
