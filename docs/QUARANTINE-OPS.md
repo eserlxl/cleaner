@@ -75,10 +75,9 @@ Message on no match includes: `No quarantine sessions older than`
 
 ## Restore workflows
 
-Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does not use `--force` for overwrite; conflicts skip.
+Full restore: `--list-sessions` → `--restore latest|TIMESTAMP`. Restore does not use `--force` for overwrite; conflicts skip unless `--backup-conflicts` is given to atomically rename colliding non-symlink destinations aside to `<path>.pre-restore-<session>` (suffixing `.1`, `.2`, ... without overwriting, and rolling back if the restore move fails; symlink conflicts are still refused).
 
-Preview first with `cleaner --restore latest --dry-run`, optionally adding `--only`
-or `--only-exact`. Each selected record prints `would restore`, `conflict`,
+Preview first with `cleaner --restore latest --dry-run`, optionally adding `--only`, `--only-exact`, or `--backup-conflicts`. Each selected record prints `would restore`, `would backup and restore` (with `--backup-conflicts` on non-symlink collisions), `conflict`,
 `already restored`, `missing`, `unknown type`, or `invalid record` (the last two are
 records the real restore skips as failed), followed by two spaces and its original path.
 An aged record reports `conflict` if any destination file or symlinked parent

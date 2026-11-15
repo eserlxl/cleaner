@@ -834,6 +834,32 @@ Cannot be mixed with
 in either order; repeating the same selector uses its last value.
 This option has no environment mirror.
 .TP
+.B \-\-backup\-conflicts
+Used with
+.BR \-\-restore :
+before restoring a record whose destination already exists as a non-symlink file
+or directory (or an aged record with a colliding non-symlink file or blocking
+regular file), atomically move the colliding destination aside to
+.IB path .pre\-restore\- SESSION
+(appending
+.BR .1 ", " .2 ", ..."
+if needed) instead of failing the restore, and roll back the moved backup if the
+subsequent restore fails. Symlink conflicts (including symlinked destinations and
+symlinked intermediate directories) are still refused and never moved or backed up.
+With
+.BR \-\-dry\-run ,
+non-symlink conflicts report
+.B "would backup and restore"
+(or
+.B would_backup_and_restore
+and
+.B backup_conflicts
+in
+.BR \-\-json ).
+Exits 1 without
+.BR \-\-restore .
+This option has no environment mirror.
+.TP
 .B \-\-only\-target \fIPATTERN\fR
 Used with cleanup or configured-target inventory: process only config targets whose
 .B NAME

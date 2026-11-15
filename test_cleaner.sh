@@ -18623,5 +18623,179 @@ then
 fi
 echo -e "${GREEN}PASS: excluded MIN_AGE_DAYS=0 directories report clean without eligible files and still clean zero-byte eligible files.${NC}"
 
+echo -e "\n${BOLD}Test Case: Restore Backup Conflicts Recovery${NC}"
+if ! python3 - "$CLEANER_SH" <<'BACKUP_CONF_PY'
+import json, os, pathlib, shutil, subprocess, tempfile, time, sys
+
+cleaner = sys.argv[1]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-backup-conflicts-"))
+try:
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+
+    def make_env(name):
+        h = tmp / name / "home"
+        s = tmp / name / "state"
+        h.mkdir(parents=True, exist_ok=True)
+        env = dict(base_env)
+        env.update(HOME=str(h), XDG_STATE_HOME=str(s), NO_COLOR="1")
+        return h, env
+
+    def run_cli(env, args):
+        return subprocess.run(["bash", cleaner] + args, env=env, capture_output=True, text=True, timeout=20)
+
+    # 1. --backup-conflicts requires --restore and fails pre-lock without mutating.
+    h1, env1 = make_env("case1")
+    t1 = h1 / ".cache/bc_req"
+    t1.mkdir(parents=True)
+    (t1 / "keep.txt").write_text("keep\n", encoding="utf-8")
+    cfg1 = tmp / "case1.conf"
+    cfg1.write_text(f"safe|Req|{t1}|req|0||\n", encoding="utf-8")
+    for bad_args in (["--backup-conflicts"], ["--config", str(cfg1), "--clean", "--force", "--backup-conflicts"]):
+        r = run_cli(env1, bad_args)
+        assert r.returncode == 1 and "--restore" in r.stderr, (bad_args, r.returncode, r.stderr)
+    assert (t1 / "keep.txt").read_text(encoding="utf-8") == "keep\n"
+    assert not (h1 / ".cache/linux-cleaner/cleaner.lock").exists()
+
+    # 2. Full target dry-run preview (with and without --backup-conflicts) + .pre-restore-<session>.1 collision safety.
+    h2, env2 = make_env("case2")
+    t2 = h2 / ".cache/bc_full"
+    t2.mkdir(parents=True)
+    (t2 / "old.txt").write_text("quarantined\n", encoding="utf-8")
+    cfg2 = tmp / "case2.conf"
+    cfg2.write_text(f"safe|FullTarget|{t2}|full|0||\n", encoding="utf-8")
+    r_tr = run_cli(env2, ["--config", str(cfg2), "--clean", "--trash", "--force"])
+    assert r_tr.returncode == 0, (r_tr.returncode, r_tr.stdout, r_tr.stderr)
+    qbase2 = h2 / ".cache/linux-cleaner/quarantine"
+    sess2 = sorted(p for p in qbase2.iterdir() if p.is_dir())[-1].name
+
+    # Recreate conflicting directory AND pre-populate base backup file to force .1 suffix.
+    t2.mkdir(parents=True)
+    (t2 / "live.txt").write_text("live-data\n", encoding="utf-8")
+    sentinel = h2 / f".cache/bc_full.pre-restore-{sess2}"
+    sentinel.write_text("prior-backup\n", encoding="utf-8")
+
+    # Baseline --dry-run --json without --backup-conflicts remains unchanged.
+    dj_base = json.loads(run_cli(env2, ["--restore", sess2, "--dry-run", "--json"]).stdout)
+    assert "backup_conflicts" not in dj_base and set(dj_base["counts"].keys()) == {
+        "would_restore", "already_restored", "missing", "unknown_type", "conflict", "invalid_record"
+    }, dj_base
+    assert dj_base["counts"]["conflict"] == 1 and dj_base["records"][0]["status"] == "conflict", dj_base
+
+    # Preview with --backup-conflicts reports would_backup_and_restore without mutating disk.
+    dt_bc = run_cli(env2, ["--restore", sess2, "--backup-conflicts", "--dry-run"])
+    assert dt_bc.returncode == 0 and f"would backup and restore  {t2}" in dt_bc.stdout, (dt_bc.returncode, dt_bc.stdout, dt_bc.stderr)
+    dj_bc = json.loads(run_cli(env2, ["--restore", sess2, "--backup-conflicts", "--dry-run", "--json"]).stdout)
+    assert dj_bc["backup_conflicts"] is True and dj_bc["counts"]["would_backup_and_restore"] == 1, dj_bc
+    assert dj_bc["records"][0]["status"] == "would_backup_and_restore", dj_bc
+    assert (t2 / "live.txt").read_text(encoding="utf-8") == "live-data\n"
+
+    # Mutating restore backs up to .1, preserves sentinel, restores quarantined content, and retires session.
+    r_bc = run_cli(env2, ["--restore", sess2, "--backup-conflicts"])
+    assert r_bc.returncode == 0, (r_bc.returncode, r_bc.stdout, r_bc.stderr)
+    assert (t2 / "old.txt").read_text(encoding="utf-8") == "quarantined\n"
+    assert not (t2 / "live.txt").exists()
+    assert sentinel.read_text(encoding="utf-8") == "prior-backup\n"
+    bak1 = h2 / f".cache/bc_full.pre-restore-{sess2}.1"
+    assert bak1.is_dir() and (bak1 / "live.txt").read_text(encoding="utf-8") == "live-data\n"
+    assert not (qbase2 / sess2).exists()
+
+    # 3. Post-backup rollback when the restore mv fails after moving the conflicting path aside.
+    h3, env3 = make_env("case3")
+    t3 = h3 / ".cache/bc_rollback"
+    t3.mkdir(parents=True)
+    (t3 / "old.txt").write_text("q-rb\n", encoding="utf-8")
+    cfg3 = tmp / "case3.conf"
+    cfg3.write_text(f"safe|RB|{t3}|rb|0||\n", encoding="utf-8")
+    assert run_cli(env3, ["--config", str(cfg3), "--clean", "--trash", "--force"]).returncode == 0
+    t3.mkdir(parents=True)
+    (t3 / "live_keep.txt").write_text("must-survive\n", encoding="utf-8")
+
+    wrapper_bin = tmp / "case3_bin"
+    wrapper_bin.mkdir()
+    real_mv = shutil.which("mv")
+    mv_wrap = wrapper_bin / "mv"
+    mv_wrap.write_text(
+        f"#!/usr/bin/env bash\n"
+        f"if [[ \"$1\" == *'/quarantine/'* ]]; then exit 1; fi\n"
+        f"exec {real_mv!r} \"$@\"\n",
+        encoding="utf-8",
+    )
+    mv_wrap.chmod(0o755)
+    env3_wrap = dict(env3)
+    env3_wrap["PATH"] = f"{wrapper_bin}:{env3['PATH']}"
+    r_rb = run_cli(env3_wrap, ["--restore", "latest", "--backup-conflicts"])
+    assert r_rb.returncode == 1, (r_rb.returncode, r_rb.stdout, r_rb.stderr)
+    assert "Rolled back pre-restore backup" in r_rb.stderr, r_rb.stderr
+    assert (t3 / "live_keep.txt").read_text(encoding="utf-8") == "must-survive\n"
+    assert not list((h3 / ".cache").glob("bc_rollback.pre-restore-*"))
+    assert len(list((h3 / ".cache/linux-cleaner/quarantine").iterdir())) == 1
+
+    # 4. Aged conflict backup (blocking regular file + leaf file collision) with --only composition.
+    h4, env4 = make_env("case4")
+    a4 = h4 / ".cache/bc_aged"
+    s4 = h4 / ".cache/bc_sib"
+    (a4 / "sub").mkdir(parents=True)
+    s4.mkdir(parents=True)
+    old_f1 = a4 / "sub/item.txt"
+    old_f2 = a4 / "leaf.txt"
+    old_f1.write_text("aged-sub\n", encoding="utf-8")
+    old_f2.write_text("aged-leaf\n", encoding="utf-8")
+    (s4 / "sib.txt").write_text("sib\n", encoding="utf-8")
+    old_ts = time.time() - 10 * 86400
+    os.utime(old_f1, (old_ts, old_ts))
+    os.utime(old_f2, (old_ts, old_ts))
+    cfg4 = tmp / "case4.conf"
+    cfg4.write_text(f"safe|Aged|{a4}|aged|7||\nsafe|Sib|{s4}|sib|0||\n", encoding="utf-8")
+    assert run_cli(env4, ["--config", str(cfg4), "--clean", "--trash", "--force"]).returncode == 0
+    (a4 / "sub").write_text("blocking-file\n", encoding="utf-8")
+    (a4 / "leaf.txt").write_text("live-leaf\n", encoding="utf-8")
+
+    r_a4 = run_cli(env4, ["--restore", "latest", "--only", "bc_aged", "--backup-conflicts"])
+    assert r_a4.returncode == 0, (r_a4.returncode, r_a4.stdout, r_a4.stderr)
+    assert (a4 / "sub/item.txt").read_text(encoding="utf-8") == "aged-sub\n"
+    assert (a4 / "leaf.txt").read_text(encoding="utf-8") == "aged-leaf\n"
+    assert list(a4.glob("sub.pre-restore-*")) and list(a4.glob("leaf.txt.pre-restore-*"))
+    assert not s4.exists()
+
+    # 5. Symlink conflicts stay refused (never backed up or modified) across full, aged subdir, and aged leaf.
+    h5, env5 = make_env("case5")
+    fsym = h5 / ".cache/bc_fsym"
+    asym = h5 / ".cache/bc_asym"
+    ext = h5 / "external_keep"
+    ext.mkdir(parents=True)
+    (ext / "keep.txt").write_text("untouched\n", encoding="utf-8")
+    fsym.mkdir(parents=True)
+    (fsym / "f.txt").write_text("qf\n", encoding="utf-8")
+    (asym / "dir").mkdir(parents=True)
+    af = asym / "dir/a.txt"
+    al = asym / "leaf.txt"
+    af.write_text("qa\n", encoding="utf-8")
+    al.write_text("ql\n", encoding="utf-8")
+    os.utime(af, (old_ts, old_ts))
+    os.utime(al, (old_ts, old_ts))
+    cfg5 = tmp / "case5.conf"
+    cfg5.write_text(f"safe|FSym|{fsym}|fs|0||\nsafe|ASym|{asym}|as|7||\n", encoding="utf-8")
+    assert run_cli(env5, ["--config", str(cfg5), "--clean", "--trash", "--force"]).returncode == 0
+    fsym.symlink_to(ext)
+    (asym / "dir").symlink_to(ext)
+    al.symlink_to(ext / "keep.txt")
+
+    dj5 = json.loads(run_cli(env5, ["--restore", "latest", "--backup-conflicts", "--dry-run", "--json"]).stdout)
+    assert dj5["counts"]["conflict"] == 2 and dj5["counts"]["would_backup_and_restore"] == 0, dj5
+    r5 = run_cli(env5, ["--restore", "latest", "--backup-conflicts"])
+    assert r5.returncode == 1, (r5.returncode, r5.stdout, r5.stderr)
+    assert fsym.is_symlink() and (asym / "dir").is_symlink() and al.is_symlink()
+    assert (ext / "keep.txt").read_text(encoding="utf-8") == "untouched\n"
+    assert not list((h5 / ".cache").glob("*.pre-restore-*"))
+    assert not list(asym.glob("*.pre-restore-*"))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+BACKUP_CONF_PY
+then
+  echo -e "${RED}FAIL: restore --backup-conflicts check failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --backup-conflicts backs up non-symlink conflicts safely, rolls back on restore failure, and still refuses symlinks.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

@@ -39,6 +39,7 @@ complete -c cleaner -l hold-session -x -a 'latest (__cleaner_sessions)' -d 'Prot
 complete -c cleaner -l release-session -x -a 'latest (__cleaner_sessions)' -d 'Remove a session hold so normal purge and retention apply again'
 complete -c cleaner -l only -x -d 'With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined'
 complete -c cleaner -l only-exact -x -d 'With --restore: match a literal original path from session inventory; excludes --only'
+complete -c cleaner -l backup-conflicts -d 'With --restore: move colliding non-symlink destinations to .pre-restore-<session> backups before restoring'
 complete -c cleaner -l only-target -x -d 'With cleanup or --list-targets: select config targets whose NAME contains PATTERN'
 complete -c cleaner -l only-target-exact -x -d 'With cleanup or --list-targets: select config targets whose NAME equals literal NAME'
 complete -c cleaner -l exclude-target -x -d 'With cleanup or --list-targets: skip config targets whose NAME contains PATTERN'

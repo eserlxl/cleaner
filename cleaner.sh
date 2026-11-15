@@ -67,6 +67,7 @@ Options:
   --release-session SESSION  Remove a session hold so normal purge and retention apply again.
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-exact PATH          With --restore: match a literal original path from session inventory; excludes --only.
+  --backup-conflicts         With --restore: move colliding non-symlink destinations to .pre-restore-<session> backups before restoring.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
   --only-target-exact NAME   With cleanup or --list-targets: select config targets whose NAME equals literal NAME.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
@@ -127,6 +128,7 @@ TARGET_EXCLUDE_ACTIVE=false
 RESTORE_TARGET=""
 RESTORE_ONLY=""
 RESTORE_ONLY_MODE="--only"
+BACKUP_CONFLICTS=false
 HOLD_TARGET=""
 RELEASE_TARGET=""
 ONLY_TARGET=""
@@ -488,6 +490,10 @@ while [[ $# -gt 0 ]]; do
       RESTORE_ONLY_MODE="$1"
       RESTORE_ONLY="$2"
       shift 2
+      ;;
+    --backup-conflicts)
+      BACKUP_CONFLICTS=true
+      shift
       ;;
     --only-target)
       if [[ -z "${2:-}" ]]; then
@@ -895,6 +901,10 @@ fi
 # let a user believe a cleanup or purge was narrowed when it was not.
 if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   echo -e "${RED}Error: ${RESTORE_ONLY_MODE} requires --restore (it filters which quarantined targets are restored).${NC}" >&2
+  exit 1
+fi
+if [[ "$BACKUP_CONFLICTS" == true && -z "$RESTORE_TARGET" ]]; then
+  echo -e "${RED}Error: --backup-conflicts requires --restore (it backs up colliding restore destinations).${NC}" >&2
   exit 1
 fi
 
@@ -3374,6 +3384,42 @@ validate_restore_record() {
   return 0
 }
 
+# Atomically move a colliding non-symlink restore destination aside to a unique
+# sibling backup path (<dest>.pre-restore-<session>[.N]). Returns 0 with
+# RESTORE_BACKUP_PATH set, 2 on symlink refusal (never followed or moved), or 1
+# on invalid path or move error.
+_backup_restore_conflict() {
+  local use_sudo="$1" dest="$2" session_name="$3"
+  local clean_dest base cand suffix=0
+  RESTORE_BACKUP_PATH=""
+  clean_dest=$(strip_trailing_slashes "$dest")
+  if [[ -z "$clean_dest" || "$clean_dest" == "/" ]]; then
+    echo -e "${RED}Error: Refusing to back up unsafe restore destination '$dest'.${NC}" >&2
+    return 1
+  fi
+  if with_sudo "$use_sudo" test -L "$clean_dest"; then
+    echo -e "${RED}Error: Restore destination '$clean_dest' is a symlink. Conflict detected, skipping.${NC}" >&2
+    return 2
+  fi
+  base="${clean_dest}.pre-restore-${session_name}"
+  cand="$base"
+  while path_present "$use_sudo" "$cand"; do
+    suffix=$((suffix + 1))
+    if [[ "$suffix" -gt 999 ]]; then
+      echo -e "${RED}Error: Too many existing pre-restore backups beside '$clean_dest'.${NC}" >&2
+      return 1
+    fi
+    cand="${base}.${suffix}"
+  done
+  if ! with_sudo "$use_sudo" mv -T -- "$clean_dest" "$cand"; then
+    echo -e "${RED}Error: Failed to back up existing restore conflict '$clean_dest' to '$cand'.${NC}" >&2
+    return 1
+  fi
+  RESTORE_BACKUP_PATH="$cand"
+  echo "Backed up existing restore conflict '$clean_dest' to '$cand'."
+  return 0
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1" stream_rc=""
@@ -3431,6 +3477,7 @@ restore_quarantine() {
   local matched_any=false
   local cnt_would_restore=0 cnt_already_restored=0 cnt_missing=0
   local cnt_unknown_type=0 cnt_conflict=0 cnt_invalid_record=0
+  local cnt_would_backup_and_restore=0
   local -a json_rec_types=() json_rec_origs=() json_rec_rels=() json_rec_sudos=() json_rec_statuses=()
   # rel_paths actually moved back out of quarantine. Under --only, the metadata is
   # rewritten from this so every remaining record still points at a file that is
@@ -3495,6 +3542,8 @@ restore_quarantine() {
     if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
       # Preview probes never elevate privileges or enter the mutating restore path.
       local preview_status="would restore" preview_file preview_dest preview_parent
+      local clean_prev_orig
+      clean_prev_orig=$(strip_trailing_slashes "$original_path")
       if [[ "$type" == aged-restored ]]; then
         preview_status="already restored"
       elif [[ ! -e "$src_path" ]]; then
@@ -3508,10 +3557,24 @@ restore_quarantine() {
         preview_status="unknown type"
       elif [[ "$type" == full ]]; then
         if path_present false "$original_path"; then
-          preview_status="conflict"
+          if [[ "$BACKUP_CONFLICTS" == true && ! -L "$clean_prev_orig" && -n "$clean_prev_orig" && "$clean_prev_orig" != "/" ]]; then
+            preview_status="would backup and restore"
+          else
+            preview_status="conflict"
+          fi
         fi
       elif [[ "$type" == aged ]]; then
-        if [[ -L "$original_path" || ( -e "$original_path" && ! -d "$original_path" ) ]]; then
+        local preview_hard_conflict=false preview_backup_conflict=false
+        if [[ -L "$clean_prev_orig" ]]; then
+          preview_hard_conflict=true
+        elif [[ -e "$clean_prev_orig" && ! -d "$clean_prev_orig" ]]; then
+          if [[ "$BACKUP_CONFLICTS" == true && -n "$clean_prev_orig" && "$clean_prev_orig" != "/" ]]; then
+            preview_backup_conflict=true
+          else
+            preview_hard_conflict=true
+          fi
+        fi
+        if [[ "$preview_hard_conflict" == true ]]; then
           preview_status="conflict"
         else
           stream_rc=""
@@ -3520,19 +3583,37 @@ restore_quarantine() {
               IFS= read -r -d '' stream_rc
               break
             fi
-            preview_dest="$original_path/${preview_file#"$src_path"/}"
-            if path_present false "$preview_dest"; then
-              preview_status="conflict"
+            preview_dest="$clean_prev_orig/${preview_file#"$src_path"/}"
+            if [[ -L "$preview_dest" ]]; then
+              preview_hard_conflict=true
+            elif path_present false "$preview_dest"; then
+              if [[ "$BACKUP_CONFLICTS" == true ]]; then
+                preview_backup_conflict=true
+              else
+                preview_hard_conflict=true
+              fi
             fi
             preview_parent="${preview_dest%/*}"
-            while [[ "$preview_parent" != "$original_path" && "$preview_parent" != / ]]; do
-              if [[ -L "$preview_parent" || ( -e "$preview_parent" && ! -d "$preview_parent" ) ]]; then
-                preview_status="conflict"
+            while [[ "$preview_parent" != "$clean_prev_orig" && "$preview_parent" != / ]]; do
+              if [[ -L "$preview_parent" ]]; then
+                preview_hard_conflict=true
+              elif [[ -e "$preview_parent" && ! -d "$preview_parent" ]]; then
+                if [[ "$BACKUP_CONFLICTS" == true ]]; then
+                  preview_backup_conflict=true
+                else
+                  preview_hard_conflict=true
+                fi
               fi
               preview_parent="${preview_parent%/*}"
             done
           done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
-          [[ "$stream_rc" == 0 ]] || preview_status="missing"
+          if [[ "$stream_rc" != 0 ]]; then
+            preview_status="missing"
+          elif [[ "$preview_hard_conflict" == true ]]; then
+            preview_status="conflict"
+          elif [[ "$preview_backup_conflict" == true ]]; then
+            preview_status="would backup and restore"
+          fi
         fi
       fi
       if [[ "$JSON_OUTPUT" == true ]]; then
@@ -3541,6 +3622,10 @@ restore_quarantine() {
           "would restore")
             json_status="would_restore"
             cnt_would_restore=$((cnt_would_restore + 1))
+            ;;
+          "would backup and restore")
+            json_status="would_backup_and_restore"
+            cnt_would_backup_and_restore=$((cnt_would_backup_and_restore + 1))
             ;;
           "already restored")
             json_status="already_restored"
@@ -3625,11 +3710,39 @@ restore_quarantine() {
       continue
     fi
     if [[ "$type" == "full" ]]; then
+      local full_backup="" RESTORE_BACKUP_PATH="" clean_full_orig=""
+      clean_full_orig=$(strip_trailing_slashes "$original_path")
       if path_present "$use_sudo" "$original_path"; then
-        echo -e "${RED}Error: Restore destination '$original_path' already exists. Conflict detected, skipping.${NC}" >&2
-        overall_success=false
-        log_restore_outcome "$restore_dir" "$original_path" conflict
-        continue
+        if [[ "$BACKUP_CONFLICTS" != true ]]; then
+          echo -e "${RED}Error: Restore destination '$original_path' already exists. Conflict detected, skipping.${NC}" >&2
+          overall_success=false
+          log_restore_outcome "$restore_dir" "$original_path" conflict
+          continue
+        fi
+        if with_sudo "$use_sudo" test -L "$clean_full_orig"; then
+          echo -e "${RED}Error: Restore destination '$original_path' is a symlink. Conflict detected, skipping.${NC}" >&2
+          overall_success=false
+          log_restore_outcome "$restore_dir" "$original_path" conflict
+          continue
+        fi
+        if ! move_has_room "$src_path" "$use_sudo" "$(dirname "$clean_full_orig")" "$use_sudo" ""; then
+          echo -e "${RED}Error: Not enough free space to restore '$original_path' (needs $(format_bytes "$MOVE_NEED_BYTES"), $(format_bytes "$MOVE_AVAIL_BYTES") free); kept in quarantine.${NC}" >&2
+          overall_success=false
+          log_restore_outcome "$restore_dir" "$original_path" failed
+          continue
+        fi
+        local backup_rc=0
+        _backup_restore_conflict "$use_sudo" "$clean_full_orig" "$session_name" || backup_rc=$?
+        if [[ "$backup_rc" -ne 0 ]]; then
+          overall_success=false
+          if [[ "$backup_rc" -eq 2 ]]; then
+            log_restore_outcome "$restore_dir" "$original_path" conflict
+          else
+            log_restore_outcome "$restore_dir" "$original_path" failed
+          fi
+          continue
+        fi
+        full_backup="$RESTORE_BACKUP_PATH"
       fi
 
       # A failed mkdir must reach the reconciliation below, not abort under set -e.
@@ -3647,25 +3760,66 @@ restore_quarantine() {
           success=false
         fi
       fi
+      if [[ "$success" == false && -n "$full_backup" ]] && ! path_present "$use_sudo" "$clean_full_orig"; then
+        if with_sudo "$use_sudo" mv -T -- "$full_backup" "$clean_full_orig" 2>/dev/null; then
+          echo "Rolled back pre-restore backup '$full_backup' to '$clean_full_orig'." >&2
+        else
+          echo -e "${RED}Error: Failed to roll back pre-restore backup '$full_backup' to '$clean_full_orig'.${NC}" >&2
+        fi
+      fi
     elif [[ "$type" == "aged" ]]; then
-      if with_sudo "$use_sudo" test -L "$original_path"; then
+      local clean_aged_orig="" aged_root_backup="" RESTORE_BACKUP_PATH=""
+      clean_aged_orig=$(strip_trailing_slashes "$original_path")
+      if with_sudo "$use_sudo" test -L "$clean_aged_orig"; then
         echo -e "${RED}Error: Restore destination '$original_path' is a symlink. Conflict detected, skipping.${NC}" >&2
         overall_success=false
         log_restore_outcome "$restore_dir" "$original_path" conflict
         continue
-      elif with_sudo "$use_sudo" test -e "$original_path" && ! with_sudo "$use_sudo" test -d "$original_path"; then
-        echo -e "${RED}Error: Restore destination '$original_path' exists and is not a directory. Conflict detected, skipping.${NC}" >&2
-        overall_success=false
-        log_restore_outcome "$restore_dir" "$original_path" conflict
-        continue
+      elif with_sudo "$use_sudo" test -e "$clean_aged_orig" && ! with_sudo "$use_sudo" test -d "$clean_aged_orig"; then
+        if [[ "$BACKUP_CONFLICTS" != true ]]; then
+          echo -e "${RED}Error: Restore destination '$original_path' exists and is not a directory. Conflict detected, skipping.${NC}" >&2
+          overall_success=false
+          log_restore_outcome "$restore_dir" "$original_path" conflict
+          continue
+        fi
+        if ! move_has_room "$src_path" "$use_sudo" "$(dirname "$clean_aged_orig")" "$use_sudo" ""; then
+          echo -e "${RED}Error: Not enough free space to restore '$original_path' (needs $(format_bytes "$MOVE_NEED_BYTES"), $(format_bytes "$MOVE_AVAIL_BYTES") free); kept in quarantine.${NC}" >&2
+          overall_success=false
+          log_restore_outcome "$restore_dir" "$original_path" failed
+          continue
+        fi
+        local root_backup_rc=0
+        _backup_restore_conflict "$use_sudo" "$clean_aged_orig" "$session_name" || root_backup_rc=$?
+        if [[ "$root_backup_rc" -ne 0 ]]; then
+          overall_success=false
+          if [[ "$root_backup_rc" -eq 2 ]]; then
+            log_restore_outcome "$restore_dir" "$original_path" conflict
+          else
+            log_restore_outcome "$restore_dir" "$original_path" failed
+          fi
+          continue
+        fi
+        aged_root_backup="$RESTORE_BACKUP_PATH"
       fi
       # shellcheck disable=SC2016
-      if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$original_path"; then
+      if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$clean_aged_orig"; then
         success=false
+        if [[ -n "$aged_root_backup" ]] && ! path_present "$use_sudo" "$clean_aged_orig"; then
+          if with_sudo "$use_sudo" mv -T -- "$aged_root_backup" "$clean_aged_orig" 2>/dev/null; then
+            echo "Rolled back pre-restore backup '$aged_root_backup' to '$clean_aged_orig'." >&2
+          else
+            echo -e "${RED}Error: Failed to roll back pre-restore backup '$aged_root_backup' to '$clean_aged_orig'.${NC}" >&2
+          fi
+        fi
       else
-        if ! move_has_room "$src_path" "$use_sudo" "$original_path" "$use_sudo" ""; then
+        if ! move_has_room "$src_path" "$use_sudo" "$clean_aged_orig" "$use_sudo" ""; then
           echo -e "${RED}Error: Not enough free space to restore '$original_path' (needs $(format_bytes "$MOVE_NEED_BYTES"), $(format_bytes "$MOVE_AVAIL_BYTES") free); kept in quarantine.${NC}" >&2
           success=false
+          if [[ -n "$aged_root_backup" ]] \
+             && with_sudo "$use_sudo" rmdir -- "$clean_aged_orig" 2>/dev/null \
+             && with_sudo "$use_sudo" mv -T -- "$aged_root_backup" "$clean_aged_orig" 2>/dev/null; then
+            echo "Rolled back pre-restore backup '$aged_root_backup' to '$clean_aged_orig'." >&2
+          fi
         else
           stream_rc=""
           while IFS= read -r -d '' file; do
@@ -3674,10 +3828,11 @@ restore_quarantine() {
               break
             fi
             local file_rel="${file#"$src_path"/}"
-            local dest_file="$original_path/$file_rel"
-            local dest_parent check_dir="$original_path" rel_dir part path_conflict=false
+            local dest_file="$clean_aged_orig/$file_rel"
+            local dest_parent check_dir="$clean_aged_orig" rel_dir part path_conflict=false
+            local leaf_backup="" dir_backup="" dir_backup_rc=0 leaf_backup_rc=0
             dest_parent=$(dirname "$dest_file")
-            if [[ "$dest_parent" != "$original_path" ]]; then
+            if [[ "$dest_parent" != "$clean_aged_orig" ]]; then
               rel_dir="${file_rel%/*}"
               while [[ -n "$rel_dir" ]]; do
                 part="${rel_dir%%/*}"
@@ -3687,9 +3842,25 @@ restore_quarantine() {
                   path_conflict=true
                   break
                 elif with_sudo "$use_sudo" test -e "$check_dir" && ! with_sudo "$use_sudo" test -d "$check_dir"; then
-                  echo -e "${RED}Error: Restore destination path '$check_dir' exists and is not a directory. Conflict detected, skipping '$dest_file'.${NC}" >&2
-                  path_conflict=true
-                  break
+                  if [[ "$BACKUP_CONFLICTS" == true ]]; then
+                    dir_backup_rc=0
+                    _backup_restore_conflict "$use_sudo" "$check_dir" "$session_name" || dir_backup_rc=$?
+                    if [[ "$dir_backup_rc" -ne 0 ]]; then
+                      path_conflict=true
+                      break
+                    fi
+                    dir_backup="$RESTORE_BACKUP_PATH"
+                    # shellcheck disable=SC2016
+                    if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$check_dir"; then
+                      with_sudo "$use_sudo" mv -T -- "$dir_backup" "$check_dir" 2>/dev/null || true
+                      path_conflict=true
+                      break
+                    fi
+                  else
+                    echo -e "${RED}Error: Restore destination path '$check_dir' exists and is not a directory. Conflict detected, skipping '$dest_file'.${NC}" >&2
+                    path_conflict=true
+                    break
+                  fi
                 fi
                 [[ "$rel_dir" == "$part" ]] && break
                 rel_dir="${rel_dir#*/}"
@@ -3700,21 +3871,44 @@ restore_quarantine() {
               had_conflict=true
               continue
             fi
-            if path_present "$use_sudo" "$dest_file"; then
-              echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
-              success=false
-              had_conflict=true
-              continue
-            fi
             # shellcheck disable=SC2016
             if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$dest_parent"; then
               success=false
               continue
             fi
+            if path_present "$use_sudo" "$dest_file"; then
+              if [[ "$BACKUP_CONFLICTS" != true ]]; then
+                echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
+                success=false
+                had_conflict=true
+                continue
+              fi
+              if with_sudo "$use_sudo" test -L "$dest_file"; then
+                echo -e "${RED}Error: Restore destination file '$dest_file' is a symlink. Conflict detected, skipping.${NC}" >&2
+                success=false
+                had_conflict=true
+                continue
+              fi
+              leaf_backup_rc=0
+              _backup_restore_conflict "$use_sudo" "$dest_file" "$session_name" || leaf_backup_rc=$?
+              if [[ "$leaf_backup_rc" -ne 0 ]]; then
+                success=false
+                [[ "$leaf_backup_rc" -eq 2 ]] && had_conflict=true
+                continue
+              fi
+              leaf_backup="$RESTORE_BACKUP_PATH"
+            fi
             if with_sudo "$use_sudo" mv "$file" "$dest_file"; then
               with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
             else
               success=false
+              if [[ -n "$leaf_backup" ]] && ! path_present "$use_sudo" "$dest_file"; then
+                if with_sudo "$use_sudo" mv -T -- "$leaf_backup" "$dest_file" 2>/dev/null; then
+                  echo "Rolled back pre-restore backup '$leaf_backup' to '$dest_file'." >&2
+                else
+                  echo -e "${RED}Error: Failed to roll back pre-restore backup '$leaf_backup' to '$dest_file'.${NC}" >&2
+                fi
+              fi
             fi
           done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
           [[ "$stream_rc" == 0 ]] || success=false
@@ -3774,12 +3968,16 @@ restore_quarantine() {
         has_sel=true
         sel_mode_val="$RESTORE_ONLY_MODE"
       fi
-      printf '{"session":"%s","session_mtime":%s,"held":%s,"selector":%s,"selector_mode":%s,"records":[' \
+      printf '{"session":"%s","session_mtime":%s,"held":%s,"selector":%s,"selector_mode":%s' \
         "$(json_escape "$session_name")" \
         "$mtime_json" \
         "$held_json" \
         "$(_json_str_or_null "$has_sel" "${RESTORE_ONLY:-}")" \
         "$(_json_str_or_null "$has_sel" "$sel_mode_val")"
+      if [[ "$BACKUP_CONFLICTS" == true ]]; then
+        printf ',"backup_conflicts":true'
+      fi
+      printf ',"records":['
       for rec_idx in "${!json_rec_statuses[@]}"; do
         [[ "$rec_idx" -eq 0 ]] || printf ','
         printf '{"type":"%s","original_path":"%s","relative_path":"%s","use_sudo":%s,"status":"%s"}' \
@@ -3789,8 +3987,12 @@ restore_quarantine() {
           "${json_rec_sudos[$rec_idx]}" \
           "${json_rec_statuses[$rec_idx]}"
       done
-      printf '],"counts":{"would_restore":%d,"already_restored":%d,"missing":%d,"unknown_type":%d,"conflict":%d,"invalid_record":%d}}\n' \
+      printf '],"counts":{"would_restore":%d,"already_restored":%d,"missing":%d,"unknown_type":%d,"conflict":%d,"invalid_record":%d' \
         "$cnt_would_restore" "$cnt_already_restored" "$cnt_missing" "$cnt_unknown_type" "$cnt_conflict" "$cnt_invalid_record"
+      if [[ "$BACKUP_CONFLICTS" == true ]]; then
+        printf ',"would_backup_and_restore":%d' "$cnt_would_backup_and_restore"
+      fi
+      printf '}}\n'
     else
       echo "Dry-run: nothing restored."
     fi

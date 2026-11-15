@@ -33,6 +33,7 @@ _cleaner() {
     '--release-session[Remove a session hold so normal purge and retention apply again]:session:{compadd -- latest "${sessions[@]}"}' \
     '--only[With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined]:pattern:' \
     '--only-exact[With --restore: match a literal original path from session inventory; excludes --only]:path:' \
+    '--backup-conflicts[With --restore: move colliding non-symlink destinations to .pre-restore-<session> backups before restoring]' \
     '--only-target[With cleanup or --list-targets: select config targets whose NAME contains PATTERN]:pattern:' \
     '--only-target-exact[With cleanup or --list-targets: select config targets whose NAME equals literal NAME]:name:' \
     '--exclude-target[With cleanup or --list-targets: skip config targets whose NAME contains PATTERN]:pattern:' \

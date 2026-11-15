@@ -127,6 +127,7 @@ _cleaner() {
       --release-session
       --only
       --only-exact
+      --backup-conflicts
       --only-target
       --only-target-exact
       --exclude-target
