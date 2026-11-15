@@ -63,7 +63,7 @@ Options:
   --init-env                 Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (add --trash for 30d quarantine; never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
-  --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention.
+  --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge, --trash-keep-days, and --trash-max-size retention.
   --release-session SESSION  Remove a session hold so normal purge and retention apply again.
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-exact PATH          With --restore: match a literal original path from session inventory; excludes --only.
@@ -82,6 +82,7 @@ Options:
   --min-age DAYS             With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE).
   --action-timeout SECONDS   With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT).
   --trash-keep-days DAYS     With cleanup: purge quarantine sessions older than DAYS days after cleaning.
+  --trash-max-size SIZE      With cleanup: purge oldest quarantine sessions beyond SIZE total after cleaning (env: LINUX_CLEANER_TRASH_MAX_SIZE).
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
@@ -151,6 +152,7 @@ MIN_FREE_PATH=""
 MIN_AGE_OVERRIDE=""
 ACTION_TIMEOUT=""
 TRASH_KEEP_DAYS=""
+TRASH_MAX_SIZE=""
 LOCK_WAIT="${LINUX_CLEANER_LOCK_WAIT:-0}"
 PURGE_TARGET=""
 LIST_SESSIONS=false
@@ -247,6 +249,9 @@ if [[ -n "${LINUX_CLEANER_ACTION_TIMEOUT:-}" ]]; then
 fi
 if [[ -n "${LINUX_CLEANER_TRASH_KEEP_DAYS:-}" ]]; then
   TRASH_KEEP_DAYS="$LINUX_CLEANER_TRASH_KEEP_DAYS"
+fi
+if [[ -n "${LINUX_CLEANER_TRASH_MAX_SIZE:-}" ]]; then
+  TRASH_MAX_SIZE="$LINUX_CLEANER_TRASH_MAX_SIZE"
 fi
 if [[ -n "${LINUX_CLEANER_RISK:-}" ]]; then
   MAX_RISK="$LINUX_CLEANER_RISK"
@@ -644,6 +649,15 @@ while [[ $# -gt 0 ]]; do
       TRASH_KEEP_DAYS="$2"
       shift 2
       ;;
+    --trash-max-size)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --trash-max-size requires a size argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      TRASH_MAX_SIZE="$2"
+      shift 2
+      ;;
     --purge-sessions)
       if [[ -z "${2:-}" ]]; then
         echo -e "${RED}Error: --purge-sessions requires a session argument (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp).${NC}" >&2
@@ -872,15 +886,27 @@ if [[ -n "$TRASH_KEEP_DAYS" ]]; then
   fi
 fi
 
+if [[ -n "$TRASH_MAX_SIZE" ]]; then
+  trash_max_size_rc=0
+  parse_size_bytes "$TRASH_MAX_SIZE" >/dev/null || trash_max_size_rc=$?
+  if [[ "$trash_max_size_rc" -eq 1 ]]; then
+    echo -e "${RED}Error: --trash-max-size expects a size such as 500M or 10G, got '${TRASH_MAX_SIZE}'.${NC}" >&2
+    exit 1
+  elif [[ "$trash_max_size_rc" -ne 0 ]]; then
+    echo -e "${RED}Error: --trash-max-size '${TRASH_MAX_SIZE}' is too large.${NC}" >&2
+    exit 1
+  fi
+fi
+
 # A hold only flips one session's marker: refuse every other mode, filter, preview,
 # or JSON request so nobody believes it also cleaned, restored, or narrowed something.
 if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true \
-        || "$EXCLUDE_FROM_CLI" == true || "$SKIP_ACTIONS_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
+        || "$EXCLUDE_FROM_CLI" == true || "$SKIP_ACTIONS_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" || -n "$TRASH_MAX_SIZE" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, --doctor, --exclude-from, --skip-actions, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, --doctor, --exclude-from, --skip-actions, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --trash-max-size, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -943,8 +969,8 @@ if [[ -n "$EXCLUDE_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TA
   exit 1
 fi
 
-if [[ -n "$ONLY_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true || -n "$TRASH_KEEP_DAYS" ) ]]; then
-  echo "Error: --only-path applies only to cleanup runs or --list-targets and cannot be combined with --trash-keep-days." >&2
+if [[ -n "$ONLY_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true || -n "$TRASH_KEEP_DAYS" || -n "$TRASH_MAX_SIZE" ) ]]; then
+  echo "Error: --only-path applies only to cleanup runs or --list-targets and cannot be combined with --trash-keep-days or --trash-max-size." >&2
   exit 1
 fi
 
@@ -987,6 +1013,11 @@ fi
 
 if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$TRASH_MAX_SIZE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --trash-max-size applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -3134,16 +3165,26 @@ purge_quarantine_sessions() {
   return "$purge_status"
 }
 
-# --trash-keep-days: retire old quarantine sessions at the end of every cleanup
-# run, including one that had nothing to clean, so a skipped day still purges.
-# A failed purge sets OPERATION_FAILED like any other failed operation.
-apply_trash_keep_days() {
-  if [[ -n "$TRASH_KEEP_DAYS" ]]; then
+# --trash-keep-days and --trash-max-size: retire old or over-budget quarantine
+# sessions at the end of every cleanup run, including one that had nothing to clean,
+# so a skipped day still purges. Age runs first so expired sessions leave before
+# budget sizing counts remaining sessions. A failed purge sets OPERATION_FAILED.
+apply_trash_retention() {
+  if [[ -n "$TRASH_KEEP_DAYS" || -n "$TRASH_MAX_SIZE" ]]; then
     local failed=false
-    if ! purge_quarantine_sessions "older-than:$TRASH_KEEP_DAYS"; then
-      failed=true
-      OPERATION_FAILED=true
-      RETENTION_FAILED=true
+    if [[ -n "$TRASH_KEEP_DAYS" ]]; then
+      if ! purge_quarantine_sessions "older-than:$TRASH_KEEP_DAYS"; then
+        failed=true
+        OPERATION_FAILED=true
+        RETENTION_FAILED=true
+      fi
+    fi
+    if [[ -n "$TRASH_MAX_SIZE" ]]; then
+      if ! purge_quarantine_sessions "max-size:$TRASH_MAX_SIZE"; then
+        failed=true
+        OPERATION_FAILED=true
+        RETENTION_FAILED=true
+      fi
     fi
     RESULT_REPORT_TEXT+=$'\n'"Retention failed: $failed"
     printf 'Retention failed: %s\n' "$failed"
@@ -3299,8 +3340,8 @@ reset_session_mtime() {
 }
 
 # --hold-session / --release-session (ACTION is hold or release): create or remove
-# the private .hold marker that purge and --trash-keep-days retention honor. The
-# session's mtime is put back, so a hold never changes its retention age.
+# the private .hold marker that purge, --trash-keep-days, and --trash-max-size
+# retention honor. The session's mtime is put back, so a hold never changes its age.
 set_session_hold() {
   local action="$1" target="$2" dir session_mtime
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
@@ -3344,7 +3385,7 @@ set_session_hold() {
       exit 1
     fi
     reset_session_mtime "$dir" "$session_mtime"
-    echo -e "${GREEN}Held session $name; purges and --trash-keep-days retention skip it until --release-session $name.${NC}"
+    echo -e "${GREEN}Held session $name; purges, --trash-keep-days, and --trash-max-size retention skip it until --release-session $name.${NC}"
     return 0
   fi
 
@@ -5497,7 +5538,7 @@ run_doctor() {
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
-  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" mon_only="" mon_keep=""
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" env_max_size="" mon_only="" mon_keep="" mon_max_size=""
   local timer_env_source="no env file" timer_deletion=permanent
   local ret_warn=false mon_present=false mon_readable=false mon_status="absent"
   local plan_status="ok" plan_has_env=false plan_env_readable=true
@@ -5508,10 +5549,12 @@ run_doctor() {
     [LINUX_CLEANER_ONLY_PATH]=""
     [LINUX_CLEANER_TRASH]=""
     [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
+    [LINUX_CLEANER_TRASH_MAX_SIZE]=""
   )
   local -A doc_mon_vars=(
     [LINUX_CLEANER_ONLY_PATH]=""
     [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
+    [LINUX_CLEANER_TRASH_MAX_SIZE]=""
   )
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     timer_env_source="$timer_env"
@@ -5522,10 +5565,15 @@ run_doctor() {
     env_only="${doc_timer_vars[LINUX_CLEANER_ONLY_PATH]}"
     env_trash="${doc_timer_vars[LINUX_CLEANER_TRASH]}"
     env_keep="${doc_timer_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
+    env_max_size="${doc_timer_vars[LINUX_CLEANER_TRASH_MAX_SIZE]}"
+    local env_max_size_valid=false
+    if [[ -n "$env_max_size" ]] && parse_size_bytes "$env_max_size" >/dev/null 2>&1; then
+      env_max_size_valid=true
+    fi
     case "$env_trash" in
       1|true|TRUE|yes|YES)
         timer_deletion=quarantine
-        if [[ -z "$env_keep" && "$retention_timer" != enabled ]]; then
+        if [[ -z "$env_keep" && "$env_max_size_valid" != true && "$retention_timer" != enabled ]]; then
           ret_warn=true
           doc_warnings+=("quarantine retention: $timer_env enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine")
           [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: quarantine retention: %s enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine\n' "$timer_env"
@@ -5542,12 +5590,12 @@ run_doctor() {
     doc_warnings+=("daily timer plan: env file not readable ($timer_env)")
     [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: daily timer plan: env file not readable (%s)\n' "$timer_env"
   elif [[ "$clean_timer" == enabled ]]; then
-    local plan_level=INFO plan_config="" plan_problems=""
+    local plan_level=INFO plan_config="" plan_max_size="" plan_problems=""
     case "$(risk_lower "$env_risk")" in
       ""|safe|medium|danger|dangerous) ;;
       *) plan_level=WARN; plan_problems+="; invalid risk"; plan_problem_list+=("invalid risk") ;;
     esac
-    # The clean run refuses --only-path together with --trash-keep-days.
+    # The clean run refuses --only-path together with --trash-keep-days or --trash-max-size.
     if [[ -n "$env_only" && -n "$env_keep" ]]; then
       plan_level=WARN
       plan_problems+="; only-path with keep-days"
@@ -5557,6 +5605,19 @@ run_doctor() {
       plan_level=WARN
       plan_problems+="; invalid keep-days"
       plan_problem_list+=("invalid keep-days")
+    fi
+    if [[ -n "$env_max_size" ]]; then
+      plan_max_size=" max-size=$env_max_size"
+      if [[ -n "$env_only" ]]; then
+        plan_level=WARN
+        plan_problems+="; only-path with trash-max-size"
+        plan_problem_list+=("only-path with trash-max-size")
+      fi
+      if ! parse_size_bytes "$env_max_size" >/dev/null 2>&1; then
+        plan_level=WARN
+        plan_problems+="; invalid trash-max-size"
+        plan_problem_list+=("invalid trash-max-size")
+      fi
     fi
     if [[ -n "$env_config" ]]; then
       plan_config=" config=$env_config"
@@ -5575,9 +5636,9 @@ run_doctor() {
     fi
     if [[ "$plan_level" == WARN ]]; then
       plan_status="warn"
-      doc_warnings+=("daily timer plan: risk=${env_risk:-safe} deletion=${timer_deletion} keep-days=${env_keep:-none}${plan_config} (${timer_env_source})${plan_problems}")
+      doc_warnings+=("daily timer plan: risk=${env_risk:-safe} deletion=${timer_deletion} keep-days=${env_keep:-none}${plan_max_size}${plan_config} (${timer_env_source})${plan_problems}")
     fi
-    [[ "$JSON_OUTPUT" == true ]] || printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_config" "$timer_env_source" "$plan_problems"
+    [[ "$JSON_OUTPUT" == true ]] || printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_max_size" "$plan_config" "$timer_env_source" "$plan_problems"
   fi
   if [[ -f "$monitor_env" && -r "$monitor_env" ]]; then
     mon_present=true
@@ -5586,10 +5647,16 @@ run_doctor() {
     read_systemd_env_file "$monitor_env" doc_mon_vars
     mon_only="${doc_mon_vars[LINUX_CLEANER_ONLY_PATH]}"
     mon_keep="${doc_mon_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
+    mon_max_size="${doc_mon_vars[LINUX_CLEANER_TRASH_MAX_SIZE]}"
     if [[ -n "$mon_only" && -n "$mon_keep" ]]; then
       mon_status="conflict"
       doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS")
       [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
+    fi
+    if [[ -n "$mon_only" && -n "$mon_max_size" ]]; then
+      mon_status="conflict"
+      doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE")
+      [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_MAX_SIZE\n' "$monitor_env"
     fi
   elif [[ -e "$monitor_env" ]]; then
     mon_present=true
@@ -6323,6 +6390,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ -n "$MIN_FREE_PATH" ]] && next_args+=(--min-free-path "$MIN_FREE_PATH")
     [[ -n "$MIN_AGE_OVERRIDE" ]] && next_args+=(--min-age "$MIN_AGE_OVERRIDE")
     [[ -n "$TRASH_KEEP_DAYS" ]] && next_args+=(--trash-keep-days "$TRASH_KEEP_DAYS")
+    [[ -n "$TRASH_MAX_SIZE" ]] && next_args+=(--trash-max-size "$TRASH_MAX_SIZE")
     [[ "$FAIL_FAST" == true ]] && next_args+=(--fail-fast)
     [[ "$SKIP_ACTIONS" == true ]] && next_args+=(--skip-actions)
     # An explicit 0 must survive replay over an inherited LINUX_CLEANER_ACTION_TIMEOUT.
@@ -6378,7 +6446,7 @@ handle_cleanup_signal() {
 run_retention_trapped() {
   trap 'handle_cleanup_signal SIGINT 130 "during quarantine retention"' INT
   trap 'handle_cleanup_signal SIGTERM 143 "during quarantine retention"' TERM
-  apply_trash_keep_days
+  apply_trash_retention
   trap - INT TERM
 }
 

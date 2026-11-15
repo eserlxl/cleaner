@@ -16,7 +16,7 @@ _cleaner() {
   if [[ "${COMP_WORDBREAKS:-}" == *:* ]]; then
     if [[ "$cur" =~ ^:+$ && $idx -ge 2 ]]; then
       case "${COMP_WORDS[idx - 1]}" in
-        -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--log)
+        -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--trash-max-size|--log)
           if (( idx > 2 )) && [[ "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
             cur="${COMP_WORDS[idx - 1]}${cur}"
             idx=$((idx - 1))
@@ -33,7 +33,7 @@ _cleaner() {
       idx=$((idx - 1))
       if (( idx >= 2 )); then
         case "${COMP_WORDS[idx - 1]}" in
-          -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--log)
+          -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--trash-max-size|--log)
             if (( idx == 2 )) || [[ ! "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
               break
             fi
@@ -94,7 +94,7 @@ _cleaner() {
       compopt -o filenames 2>/dev/null || true
       mapfile -t COMPREPLY < <(compgen -f -- "$cur")
       ;;
-    -e|--exclude|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--lock-wait|--check-health|--min-reclaim|--min-free|--trash-keep-days|--min-age|--action-timeout)
+    -e|--exclude|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--lock-wait|--check-health|--min-reclaim|--min-free|--trash-keep-days|--trash-max-size|--min-age|--action-timeout)
       ;;
     *)
       handled=false
@@ -142,6 +142,7 @@ _cleaner() {
       --min-age
       --action-timeout
       --trash-keep-days
+      --trash-max-size
       --purge-sessions
       --allow-outside-home
       --log

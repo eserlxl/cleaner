@@ -82,6 +82,7 @@ a non-default or environment-overridden
 .BR \-\-min\-free\-path ,
 .BR \-\-min\-age ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-fail\-fast ,
 or
 .B \-\-action\-timeout
@@ -493,6 +494,7 @@ Cannot be combined with
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
@@ -625,6 +627,7 @@ combined with
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 or
@@ -703,6 +706,7 @@ Cannot be combined with
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 or
@@ -722,10 +726,10 @@ non-interactive
 .BR notify\-send ;
 .B "systemctl \-\-user is\-enabled"
 for the clean, retention, and monitor timers; the last cleanup outcome; a WARN when the enabled clean
-timer's env file sets LINUX_CLEANER_TRASH without LINUX_CLEANER_TRASH_KEEP_DAYS or
+timer's env file sets LINUX_CLEANER_TRASH without LINUX_CLEANER_TRASH_KEEP_DAYS, valid LINUX_CLEANER_TRASH_MAX_SIZE, or
 an enabled retention timer; a WARN when
 .I ~/.config/linux\-cleaner/monitor.env
-is unreadable or sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS;
+is unreadable or sets LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS or LINUX_CLEANER_TRASH_MAX_SIZE;
 and the quarantine session count).
 After the timer states, prints
 .B "INFO: last cleanup: <Saved> <Result>"
@@ -742,10 +746,11 @@ more than two days old. An unreadable report prints
 .BR "WARN: last cleanup: report not readable" .
 These warnings do not change the exit status.
 When the clean timer is enabled, also prints
-.B "INFO: daily timer plan: risk=<value|safe> deletion=<quarantine|permanent> keep-days=<N|none> [config=<path>] (<env path|no env file>)"
+.B "INFO: daily timer plan: risk=<value|safe> deletion=<quarantine|permanent> keep-days=<N|none> [max-size=<SIZE>] [config=<path>] (<env path|no env file>)"
 from
 .IR ~/.config/linux\-cleaner/env .
 Without an env file, the plan is risk=safe, deletion=permanent, keep-days=none.
+max-size= appears when the env file sets LINUX_CLEANER_TRASH_MAX_SIZE, and
 config= appears when the env file sets LINUX_CLEANER_CONFIG.
 The line uses WARN and appends
 .B "; invalid risk"
@@ -753,11 +758,15 @@ or
 .B "; config not readable"
 when the env risk is not safe, medium, danger or dangerous (in any case), or that config is not a readable file;
 .B "; invalid keep-days"
-when LINUX_CLEANER_TRASH_KEEP_DAYS is not a non-negative integer; and
+when LINUX_CLEANER_TRASH_KEEP_DAYS is not a non-negative integer;
+.B "; invalid trash-max-size"
+when LINUX_CLEANER_TRASH_MAX_SIZE is not a valid size;
 .B "; config invalid"
-when that config fails the schema check; and
+when that config fails the schema check;
 .B "; only-path with keep-days"
-when the file sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS, which the clean run refuses.
+when the file sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS; and
+.B "; only-path with trash-max-size"
+when it sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_MAX_SIZE, which the clean run refuses.
 A relative LINUX_CLEANER_CONFIG is checked under HOME, where the user service starts.
 Values are trimmed of surrounding whitespace, as systemd does.
 An env file that exists but cannot be read prints
@@ -798,6 +807,7 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-notify ,
 or
 .BR \-\-fail\-fast .
@@ -991,9 +1001,10 @@ without analysis. Cannot be combined with
 .BR \-\-init\-config ,
 .BR \-\-init\-env ,
 .BR \-\-doctor ,
+.BR \-\-trash\-keep\-days ,
 or
-.BR \-\-trash\-keep\-days
-(including its environment mirror).
+.BR \-\-trash\-max\-size
+(including their environment mirrors).
 .TP
 .B \-\-exclude\-path \fIPATH\fR
 With cleanup or configured-target inventory, skip targets whose resolved physical
@@ -1025,7 +1036,7 @@ With cleanup or configured-target inventory, exclude every
 target while retaining ordinary paths (including
 .B filter:cxx_build
 rows) and global quarantine retention
-.RB ( \-\-trash\-keep\-days ).
+.RB ( \-\-trash\-keep\-days ", " \-\-trash\-max\-size ).
 Applies before risk-hiding counts and root/command probes, so skipped actions
 are omitted from
 .B hidden_by_risk
@@ -1241,6 +1252,42 @@ or if any session purge fails. Cannot be combined with
 or
 .BR \-\-doctor .
 .TP
+.B \-\-trash\-max\-size \fISIZE\fR
+Used with cleanup: purge the oldest quarantine sessions beyond a total byte
+budget of
+.IR SIZE
+(an integer with an optional
+.BR K ", " M ", " G ", or " T
+1024-based unit, as for
+.BR \-\-min\-reclaim )
+at the end of a non-dry-run cleanup via
+.BI max\-size: SIZE
+retention (running after
+.B \-\-trash\-keep\-days
+when both are set; confirming unless
+.B \-\-force
+is set, and exiting 0 when within budget). Held sessions still count toward
+.I SIZE
+and are skipped. A dry-run purges nothing. CLI flags override
+.BR LINUX_CLEANER_TRASH_MAX_SIZE .
+Exits 1 on a malformed or overflowing
+.IR SIZE
+or if any session purge fails. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-only\-path ,
+.BR \-\-init\-config ,
+.BR \-\-init\-env ,
+or
+.BR \-\-doctor .
+.TP
 .B \-\-restore \fISESSION\fR
 Restore files from a quarantine session (latest or a timestamp).
 Add an explicit
@@ -1375,15 +1422,19 @@ marker into it, under the same lock as other mutating runs. The session's
 modification time is left unchanged, so its retention age is not reset.
 Bulk purge selectors
 .RI ( all ", " older\-than:DAYS ", " max\-size:SIZE ", " keep\-latest:N )
+,
+.BR \-\-trash\-keep\-days ,
 and
-.B \-\-trash\-keep\-days
+.B \-\-trash\-max\-size
 retention skip a held session with a
 .B Skipping held session
 note, even with
 .BR \-\-force ;
 a held session still counts toward the
 .I max\-size
-budget and the
+budget (including
+.BR \-\-trash\-max\-size )
+and the
 .I keep\-latest
 count. A purge of a held
 .I latest
@@ -1419,6 +1470,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
@@ -1460,6 +1512,7 @@ Cannot be combined with
 .BR \-\-min\-age ,
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-max\-size ,
 .BR \-\-notify ,
 .BR \-\-fail\-fast ,
 .BR \-\-show\-matches ,
@@ -1487,7 +1540,7 @@ Value-taking options
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
 .BR \-\-check\-health ,
 .BR \-\-min\-free ", " \-\-min\-free\-path ", " \-\-min\-age ", " \-\-action\-timeout ,
-.BR \-\-trash\-keep\-days ,
+.BR \-\-trash\-keep\-days ", " \-\-trash\-max\-size ,
 and
 .BR \-\-purge\-sessions )
 refuse a following long option
@@ -1675,6 +1728,11 @@ CLI flags override this variable.
 .B LINUX_CLEANER_TRASH_KEEP_DAYS
 When set to a non-empty non-negative integer day count, enables
 .BR \-\-trash\-keep\-days .
+CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_TRASH_MAX_SIZE
+When set to a non-empty size budget (e.g. 500M or 10G), enables
+.BR \-\-trash\-max\-size .
 CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_RISK
@@ -2106,6 +2164,8 @@ run (the retention unit), including a lock timeout or an invalid selector,
 names its selector and exit status. A failed dry run (the monitor unit) says the run stopped
 before cleaning. A failed
 .B \-\-trash\-keep\-days
+or
+.B \-\-trash\-max\-size
 purge after a skipped cleanup says so, and after a finished cleanup the summary
 ends with
 .BR retention_failed=true .

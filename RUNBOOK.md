@@ -14,7 +14,7 @@ Scheduling examples live in this `RUNBOOK.md` plus `examples/systemd/` and `exam
 
 ## Unattended operations contract
 
-Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `--purge-sessions older-than:DAYS` (or `max-size:SIZE` for a disk budget), or let the cleanup run retire old sessions itself with `--trash-keep-days DAYS`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
+Scheduler-safe defaults: use `--force` for non-interactive purge; pair `--trash` cleans with `--purge-sessions older-than:DAYS` (or `max-size:SIZE` for a disk budget), or let the cleanup run enforce retention itself with `--trash-keep-days DAYS` and/or `--trash-max-size SIZE`. Danger tier requires explicit `--yes-danger` / `LINUX_CLEANER_YES_DANGER=1` and must never be default-scheduled.
 
 Config resolution: `-c` / `LINUX_CLEANER_CONFIG`, XDG user config, `/etc/linux-cleaner/cleaner.conf`, script-adjacent `cleaner.conf`.
 
@@ -97,7 +97,7 @@ To select one existing project, set `LINUX_CLEANER_ONLY_PATH="/absolute/project 
 in `~/.config/linux-cleaner/env`, optionally with a NAME filter such as
 `LINUX_CLEANER_ONLY_TARGET="C++ Build"`. The path is literal (no `$HOME`, tilde,
 or glob expansion), must be absolute and contain no line feeds, and excludes
-all `action:*` targets. Leave `LINUX_CLEANER_TRASH_KEEP_DAYS` unset when scoping;
+all `action:*` targets. Leave `LINUX_CLEANER_TRASH_KEEP_DAYS` and `LINUX_CLEANER_TRASH_MAX_SIZE` unset when scoping;
 use the separate retention timer for global quarantine retention. Unset or empty
 `LINUX_CLEANER_ONLY_PATH` preserves unscoped cleanup; CLI `--only-path` overrides it.
 Preview the same scope before enabling the timer:
@@ -133,7 +133,7 @@ when no separate monitor profile exists, run
 `LINUX_CLEANER_JSON=0` cannot enable cleanup or disable JSON. Trash, logging,
 minimum-reclaim, minimum-free and retention settings remain preview-only; no retention runs.
 Existing invalid settings still error, including path scope combined with
-`LINUX_CLEANER_TRASH_KEEP_DAYS`. The retention service never reads either profile.
+`LINUX_CLEANER_TRASH_KEEP_DAYS` or `LINUX_CLEANER_TRASH_MAX_SIZE`. The retention service never reads either profile.
 
 User linger may be required for timers without an active session.
 

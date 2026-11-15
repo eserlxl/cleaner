@@ -35,7 +35,7 @@ complete -c cleaner -l overlay -d 'With --init-config: write a minimal include| 
 complete -c cleaner -l init-env -d 'Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (never overwrites)'
 complete -c cleaner -l doctor -d 'Check the runtime environment a cleanup depends on (read-only; supports --json) and exit'
 complete -c cleaner -l restore -x -a 'latest (__cleaner_sessions)' -d 'Restore files from quarantine session (latest or timestamp); --dry-run previews'
-complete -c cleaner -l hold-session -x -a 'latest (__cleaner_sessions)' -d 'Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention'
+complete -c cleaner -l hold-session -x -a 'latest (__cleaner_sessions)' -d 'Protect a quarantine session (latest or timestamp) from every purge, --trash-keep-days, and --trash-max-size retention'
 complete -c cleaner -l release-session -x -a 'latest (__cleaner_sessions)' -d 'Remove a session hold so normal purge and retention apply again'
 complete -c cleaner -l only -x -d 'With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined'
 complete -c cleaner -l only-exact -x -d 'With --restore: match a literal original path from session inventory; excludes --only'
@@ -54,6 +54,7 @@ complete -c cleaner -l min-free-path -r -F -d 'Measure this absolute existing pa
 complete -c cleaner -l min-age -x -d "With cleanup: raise every ordinary target's age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)"
 complete -c cleaner -l action-timeout -x -d 'With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT)'
 complete -c cleaner -l trash-keep-days -x -d 'With cleanup: purge quarantine sessions older than DAYS days after cleaning'
+complete -c cleaner -l trash-max-size -x -d 'With cleanup: purge oldest quarantine sessions beyond SIZE total after cleaning (env: LINUX_CLEANER_TRASH_MAX_SIZE)'
 complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size: keep-latest: (__cleaner_sessions)' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible'
 complete -c cleaner -l allow-outside-home -d 'Deprecated no-op; targets outside HOME are always allowed'
 complete -c cleaner -l log -r -F -d 'Append an operation log (opt-in, off by default; kept under your HOME)'

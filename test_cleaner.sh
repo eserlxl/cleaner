@@ -3248,7 +3248,7 @@ vt_expected=$(printf '%s\n' \
   --config --risk --exclude --exclude-from --restore --only --only-exact --only-target \
   --only-target-exact --exclude-target --exclude-target-exact --only-path \
   --exclude-path --lock-wait --check-health --min-reclaim \
-  --min-free --min-free-path --min-age --action-timeout --trash-keep-days --purge-sessions \
+  --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --purge-sessions \
   --hold-session --release-session | sort)
 vt_parser=$(awk '
   function emit(    n, i, p) {
@@ -8759,7 +8759,7 @@ fi
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 : > "$TEST_ENV_DIR/mx_empty.excl"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
-  --init-config --init-env --doctor --exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
+  --init-config --init-env --doctor --exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -8775,10 +8775,11 @@ mx_args() {
     --action-timeout) echo "--action-timeout 60" ;;
     --check-health) echo "--check-health 60 --report" ;;
     --trash-keep-days) echo "--trash-keep-days 3" ;;
+    --trash-max-size) echo "--trash-max-size 1M" ;;
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
+mx_subjects=(--exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --notify --fail-fast --list-targets
   --check-config --init-config --init-env --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -14570,7 +14571,7 @@ if command -v fish > /dev/null 2>&1; then
   echo -e "${GREEN}PASS: fish completes only immediate quarantine directories and preserves selectors with no quarantine directory.${NC}"
   fish_comp_failed=""
   for fcase in --exclude --only --only-exact --only-target --only-target-exact --exclude-target --exclude-target-exact --lock-wait \
-               --min-reclaim --min-free --min-age --action-timeout --trash-keep-days; do
+               --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --trash-max-size; do
     if [[ -n "$(cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
                  fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $fcase '" 2>&1)" ]]; then
       fish_comp_failed+=" $fcase"
@@ -18796,6 +18797,202 @@ then
   exit 1
 fi
 echo -e "${GREEN}PASS: --backup-conflicts backs up non-symlink conflicts safely, rolls back on restore failure, and still refuses symlinks.${NC}"
+
+# --- U-177: --trash-max-size and LINUX_CLEANER_TRASH_MAX_SIZE inline quarantine size-budget retention ---
+echo -e "\n${BOLD}Test Case: TrashMaxSizeRetention${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" "$SCRIPT_DIR/completions/cleaner.bash" <<'TRASH_MAX_PY'
+import json, os, pathlib, re, shutil, stat, subprocess, sys, tempfile, time
+
+cleaner, bash_comp = sys.argv[1:]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-tmax-"))
+try:
+    def base_env(home, state):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+        env["HOME"] = str(home)
+        env["XDG_STATE_HOME"] = str(state)
+        env["NO_COLOR"] = "1"
+        return env
+
+    def run_cli(env, args):
+        return subprocess.run(
+            ["bash", cleaner] + args,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def make_session(qbase, name, size_bytes, age_days=0, hold=False):
+        sdir = qbase / name / "t"
+        sdir.mkdir(parents=True, exist_ok=True)
+        payload = sdir / "blob.bin"
+        with open(payload, "wb") as f:
+            f.truncate(size_bytes)
+        if hold:
+            (qbase / name / ".hold").write_text("", encoding="utf-8")
+        if age_days > 0:
+            ts = time.time() - age_days * 86400
+            os.utime(qbase / name, (ts, ts))
+        return qbase / name
+
+    # 1. Dry-run purges nothing, replays --trash-max-size in Next:, and held sessions count toward budget while staying skipped.
+    h1 = tmp / "h1"
+    s1 = tmp / "s1"
+    tgt1 = h1 / "cache1"
+    tgt1.mkdir(parents=True)
+    with open(tgt1 / "cur.bin", "wb") as f:
+        f.truncate(2048)
+    q1 = h1 / ".cache/linux-cleaner/quarantine"
+    old_s = make_session(q1, "2026-01-01_00-00-00", 8192)
+    held_s = make_session(q1, "2026-01-02_00-00-00", 8192, hold=True)
+    new_s = make_session(q1, "2026-01-03_00-00-00", 8192)
+    cfg1 = tmp / "c1.conf"
+    cfg1.write_text(f"safe|C1|{tgt1}|cache|0||\n", encoding="utf-8")
+    env1 = base_env(h1, s1)
+
+    dr1 = run_cli(env1, ["--config", str(cfg1), "--dry-run", "--trash", "--trash-max-size", "16K"])
+    assert dr1.returncode == 0, dr1
+    assert "--trash-max-size 16K" in dr1.stdout, dr1.stdout
+    assert old_s.is_dir() and held_s.is_dir() and new_s.is_dir()
+
+    # After cleaning C1 (~2K quarantined, total ~26K across 4 sessions), 16K budget must purge old_s + held_s (skipped -> kept)
+    # Wait: total of new_sess + new_s <= 16K, held_s skipped with note, old_s purged!
+    met1 = tmp / "metrics1.prom"
+    res1 = run_cli(env1 | {"LINUX_CLEANER_METRICS_FILE": str(met1)},
+                   ["--config", str(cfg1), "--clean", "--force", "--trash", "--trash-max-size", "16K"])
+    assert res1.returncode == 0, res1
+    assert "Retention failed: false" in res1.stdout, res1.stdout
+    assert "Skipping held session 2026-01-02_00-00-00" in res1.stdout, res1.stdout
+    assert not old_s.exists()
+    assert held_s.is_dir() and new_s.is_dir()
+    rep1 = (s1 / "linux-cleaner/last-report.txt").read_text(encoding="utf-8")
+    assert "\nRetention failed: false" in rep1, rep1
+    mtxt = met1.read_text(encoding="utf-8")
+    mq = re.search(r"^linux_cleaner_quarantine_bytes (\d+)$", mtxt, re.M)
+    assert mq and int(mq.group(1)) > 0, mtxt
+
+    # 2. Composition with --trash-keep-days and nothing-to-clean skipped cleanup path + LINUX_CLEANER_TRASH_MAX_SIZE + CLI override.
+    h2 = tmp / "h2"
+    s2 = tmp / "s2"
+    tgt2 = h2 / "empty_tgt"
+    tgt2.mkdir(parents=True)
+    q2 = h2 / ".cache/linux-cleaner/quarantine"
+    expired = make_session(q2, "2026-01-01_00-00-00", 8192, age_days=10)
+    mid = make_session(q2, "2026-01-02_00-00-00", 8192, age_days=1)
+    fresh = make_session(q2, "2026-01-03_00-00-00", 8192, age_days=0)
+    cfg2 = tmp / "c2.conf"
+    cfg2.write_text(f"safe|Empty|{tgt2}|empty|0||\n", encoding="utf-8")
+    env2 = base_env(h2, s2)
+    # Invalid ambient env must be overridden cleanly by valid CLI --trash-max-size 12K.
+    res2 = run_cli(env2 | {"LINUX_CLEANER_TRASH_MAX_SIZE": "bogus"},
+                   ["--config", str(cfg2), "--clean", "--force", "--trash-keep-days", "5", "--trash-max-size", "12K"])
+    assert res2.returncode == 0, res2
+    assert not expired.exists() and not mid.exists() and fresh.is_dir()
+    assert res2.stdout.count("Retention failed: false") == 1, res2.stdout
+
+    # Min-reclaim skip must also invoke env retention.
+    (tgt2 / "small.txt").write_text("hi\n", encoding="utf-8")
+    extra_old = make_session(q2, "2026-01-01_00-00-00", 16384)
+    res2_skip = run_cli(env2 | {"LINUX_CLEANER_TRASH_MAX_SIZE": "16K"},
+                        ["--config", str(cfg2), "--clean", "--force", "--min-reclaim", "1G"])
+    assert res2_skip.returncode == 0, res2_skip
+    assert not extra_old.exists() and fresh.is_dir()
+    assert (tgt2 / "small.txt").is_file()
+
+    # Fail-fast must skip inline --trash-max-size retention when cleanup fails.
+    h3 = tmp / "h3"
+    s3 = tmp / "s3"
+    (h3 / "bin").mkdir(parents=True)
+    uv_dir = h3 / ".cache/uv"
+    uv_dir.mkdir(parents=True)
+    fail_bin = h3 / "bin/uv"
+    fail_bin.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    os.chmod(fail_bin, 0o755)
+    q3 = h3 / ".cache/linux-cleaner/quarantine"
+    q3_sess = make_session(q3, "2026-01-01_00-00-00", 16384)
+    cfg3 = tmp / "c3.conf"
+    cfg3.write_text(f"safe|Fail|{uv_dir}|fail|0||action:uv_cache_prune\n", encoding="utf-8")
+    env3 = base_env(h3, s3)
+    env3["PATH"] = f"{h3 / 'bin'}:{env3['PATH']}"
+    res3 = run_cli(env3, ["--config", str(cfg3), "--clean", "--force", "--fail-fast", "--trash-max-size", "0"])
+    assert res3.returncode == 1, res3
+    assert q3_sess.is_dir(), "fail-fast must skip inline --trash-max-size retention"
+
+    # 3. Validation, Turkish locale non-ASCII digit rejection, --only-path / mode exclusions.
+    bad_empty = run_cli(env1, ["--config", str(cfg1), "--trash-max-size"])
+    assert bad_empty.returncode == 1
+    bad_val = run_cli(env1, ["--config", str(cfg1), "--trash-max-size", "bad"])
+    assert bad_val.returncode == 1 and "--trash-max-size expects a size" in bad_val.stderr
+    bad_ovf = run_cli(env1, ["--config", str(cfg1), "--trash-max-size", "99999999999T"])
+    assert bad_ovf.returncode == 1 and "is too large" in bad_ovf.stderr
+    bad_only_path = run_cli(env1, ["--config", str(cfg1), "--only-path", str(h1), "--trash-max-size", "1G"])
+    assert bad_only_path.returncode == 1 and "--only-path applies only" in bad_only_path.stderr
+    bad_env_only = run_cli(env1 | {"LINUX_CLEANER_ONLY_PATH": str(h1), "LINUX_CLEANER_TRASH_MAX_SIZE": "1G"},
+                           ["--config", str(cfg1), "--dry-run"])
+    assert bad_env_only.returncode == 1 and "--only-path applies only" in bad_env_only.stderr
+
+    # Turkish locale check when available.
+    locales = subprocess.run(["locale", "-a"], capture_output=True, text=True).stdout
+    if re.search(r"tr_TR\.utf8", locales, re.I):
+        tr_res = run_cli(env1 | {"LC_ALL": "tr_TR.UTF-8"},
+                         ["--config", str(cfg1), "--trash-max-size", "\u0661M", "--dry-run"])
+        assert tr_res.returncode == 1 and "--trash-max-size expects a size" in tr_res.stderr
+
+    # 4. --doctor awareness: valid LINUX_CLEANER_TRASH_MAX_SIZE satisfies quarantine retention without false WARN;
+    # invalid or --only-path-combined values warn cleanly in env and monitor.env.
+    h4 = tmp / "h4"
+    s4 = tmp / "s4"
+    (h4 / "bin").mkdir(parents=True)
+    doc_env_dir = h4 / ".config/linux-cleaner"
+    doc_env_dir.mkdir(parents=True)
+    sc4 = h4 / "bin/systemctl"
+    sc4.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == \"--user\" && \"${2:-}\" == \"is-enabled\" ]]; then\n"
+        "  case \"${3:-}\" in\n"
+        "    linux-cleaner-clean.timer) echo enabled; exit 0 ;;\n"
+        "    *) echo disabled; exit 1 ;;\n"
+        "  esac\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    os.chmod(sc4, 0o755)
+    env4 = base_env(h4, s4)
+    env4["PATH"] = f"{h4 / 'bin'}:{env4['PATH']}"
+
+    (doc_env_dir / "env").write_text("LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_MAX_SIZE=10G\n", encoding="utf-8")
+    d4_ok = run_cli(env4, ["--config", str(cfg1), "--doctor", "--json"])
+    assert d4_ok.returncode == 0, d4_ok
+    j4_ok = json.loads(d4_ok.stdout)
+    assert j4_ok["quarantine_retention"]["warn"] is False, j4_ok
+    assert j4_ok["daily_timer_plan"]["status"] == "ok", j4_ok
+
+    (doc_env_dir / "env").write_text("LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_ONLY_PATH=/tmp\nLINUX_CLEANER_TRASH_MAX_SIZE=bad\n", encoding="utf-8")
+    (doc_env_dir / "monitor.env").write_text("LINUX_CLEANER_ONLY_PATH=/tmp\nLINUX_CLEANER_TRASH_MAX_SIZE=5G\n", encoding="utf-8")
+    d4_bad = run_cli(env4, ["--config", str(cfg1), "--doctor", "--json"])
+    assert d4_bad.returncode == 0, d4_bad
+    j4_bad = json.loads(d4_bad.stdout)
+    assert j4_bad["quarantine_retention"]["warn"] is True, j4_bad
+    assert set(j4_bad["daily_timer_plan"]["problems"]) == {"only-path with trash-max-size", "invalid trash-max-size"}, j4_bad
+    assert j4_bad["monitor_env"]["status"] == "conflict", j4_bad
+
+    # 5. Bash completion does not treat --trash-max-size values as filenames.
+    comp_check = subprocess.run(
+        ["bash", "-c", f'source "{bash_comp}"; compopt() {{ compopt_calls+=("$*"); }}; compopt_calls=(); COMP_WORDS=(cleaner --trash-max-size ""); COMP_CWORD=2; _cleaner; [[ " ${{compopt_calls[*]}} " != *"filenames"* && ${{#COMPREPLY[@]}} -eq 0 ]]'],
+        capture_output=True, text=True, timeout=15
+    )
+    assert comp_check.returncode == 0, comp_check
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+TRASH_MAX_PY
+then
+  echo -e "${RED}FAIL: --trash-max-size retention check failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --trash-max-size and LINUX_CLEANER_TRASH_MAX_SIZE enforce quarantine size-budget retention, parity, and doctor diagnostics.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
