@@ -23,10 +23,10 @@ _cleaner() {
     '--report[Print the saved last cleanup report and exit]' \
     '--check-health[With --report: exit 0 for a successful report at most this many seconds old]:seconds:' \
     '--list-targets[List configured cleanup targets (read-only) and exit]' \
-    '--check-config[Validate the configuration file and exit (no disk analysis)]' \
+    '--check-config[Validate the configuration file (supports --json) and exit (no disk analysis)]' \
     '--init-config[Copy the active config to your user config path (never overwrites)]' \
     '--doctor[Check the runtime environment a cleanup depends on (read-only; supports --json) and exit]' \
-    '--restore[Restore files from quarantine session (latest or timestamp)]:session:{compadd -- latest "${sessions[@]}"}' \
+    '--restore[Restore files from quarantine session (latest or timestamp); --dry-run previews]:session:{compadd -- latest "${sessions[@]}"}' \
     '--hold-session[Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention]:session:{compadd -- latest "${sessions[@]}"}' \
     '--release-session[Remove a session hold so normal purge and retention apply again]:session:{compadd -- latest "${sessions[@]}"}' \
     '--only[With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined]:pattern:' \
@@ -45,7 +45,7 @@ _cleaner() {
     '--min-age[With cleanup: raise every ordinary target'\''s age threshold to at least DAYS days; skips action:* rows (env: LINUX_CLEANER_MIN_AGE)]:days:' \
     '--action-timeout[With cleanup: stop each action:* command after SECONDS seconds and count it failed (0: no limit; env: LINUX_CLEANER_ACTION_TIMEOUT)]:seconds:' \
     '--trash-keep-days[With cleanup: purge quarantine sessions older than DAYS days after cleaning]:days:' \
-    '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp). Irreversible]:session:{compadd -- latest all "${sessions[@]}"; compadd -S "" -- older-than\: max-size\: keep-latest\:}' \
+    '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible]:session:{compadd -- latest all "${sessions[@]}"; compadd -S "" -- older-than\: max-size\: keep-latest\:}' \
     '--allow-outside-home[Deprecated no-op; targets outside HOME are always allowed]' \
     '--log[Append an operation log (opt-in, off by default; kept under your HOME)]::file:_files' \
     '(-q --quiet)'{-q,--quiet}'[Suppress per-target status lines; keep errors, totals, and final summary]' \
