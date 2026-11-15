@@ -19,6 +19,7 @@
 | U-150 | `--doctor` preserves trailing newlines in `XDG_STATE_HOME` when reading `last-report.txt`, reporting the recorded cleanup summary instead of `none recorded` | Doctor Trailing-Newline XDG_STATE_HOME Preservation |
 | U-151 | `parse_size_bytes` accepts zero-padded sizes longer than 18 characters (`0000000000000000001G`, `000000000000000000000`, `max-size:0000000000000000001K`) while rejecting real 64-bit overflows (`99999999999T`) | Parse Size Bytes Zero-Padded Inputs |
 | U-152 | Shared `/**` config rows under one prefix reuse a single cached `find` directory traversal while preserving `filter:cxx_build`, ancestor deduplication, component matching, depth bounds, and symlink refusal | Shared Globstar Prefix List Targets |
+| U-153 | Associative reference lookup in `quarantine_unrecorded_entry_count` and `restore_quarantine` keeps 300-target `--list-sessions --json` under `0.80s` while preserving unrecorded counts and partial-restore leftover metadata reconciliation | Associative Quarantine Reference Lookup Scale And Partial Restore |
 
 ## 1.6.0 shipped feature inventory
 

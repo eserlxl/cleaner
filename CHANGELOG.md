@@ -18,6 +18,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ### Changed
 
 - `expand_config_globs` now pre-scans and caches shared `/**` directory traversals by prefix root so multiple recursive wildcard rows sharing one base directory (such as the five `/opt/**` rows in the default config) reuse a single `find` walk instead of repeating identical directory scans.
+- `quarantine_unrecorded_entry_count` and `restore_quarantine` now index quarantine metadata references with associative arrays and in-process `trim_to`, replacing `O(N*M)` nested array scans while preserving unrecorded-entry counts and partial-restore metadata reconciliation.
 
 ### Fixed
 

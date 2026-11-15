@@ -16121,5 +16121,69 @@ then
 fi
 echo -e "${GREEN}PASS: shared /** rows reuse one cached directory walk and preserve filtering, pruning, and symlink refusal.${NC}"
 
+echo -e "\n${BOLD}Test Case: Associative Quarantine Reference Lookup Scale And Partial Restore${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" "$MOCK_HOME" "$TEST_ENV_DIR" <<'QUAR_INDEX_PY'
+import json, pathlib, subprocess, sys, time
+
+cleaner, mock_home, test_dir = sys.argv[1:]
+home = pathlib.Path(mock_home)
+qbase = home / ".cache" / "linux-cleaner" / "quarantine"
+state_dir = pathlib.Path(test_dir) / "quar_index_state"
+state_dir.mkdir(parents=True, exist_ok=True)
+env = {"PATH": f"{test_dir}/bin:/usr/bin:/bin", "HOME": mock_home, "XDG_STATE_HOME": str(state_dir), "NO_COLOR": "1"}
+
+# 1. 300 full targets + 1 aged nested target + 1 unrecorded entry must complete quickly and count 1 unrecorded.
+sess = qbase / "2026-01-01_00-00-00"
+sess.mkdir(parents=True, exist_ok=True)
+meta_lines = []
+for i in range(1, 301):
+    (sess / f"{i}_t").mkdir()
+    meta_lines.append(f"full|{i}_t|{home}/.cache/t_{i}|false|1000|1000\n")
+(sess / "aged_dir" / "nested").mkdir(parents=True)
+(sess / "aged_dir" / "nested" / "old.txt").write_text("old\n", encoding="utf-8")
+meta_lines.append(f"aged|aged_dir/nested/old.txt|{home}/.cache/aged_dir|false|0|0\n")
+(sess / "extra_unrec").mkdir()
+(sess / "quarantine.meta").write_text("".join(meta_lines), encoding="utf-8")
+
+t0 = time.monotonic()
+proc = subprocess.run([cleaner, "--list-sessions", "--json"], env=env, capture_output=True, text=True, check=True)
+dt = time.monotonic() - t0
+data = json.loads(proc.stdout)
+assert len(data["sessions"]) == 1, data
+assert data["sessions"][0]["unrecorded_entry_count"] == 1, data["sessions"][0]
+assert len(data["sessions"][0]["targets"]) == 301, len(data["sessions"][0]["targets"])
+assert dt < 0.80, f"--list-sessions --json too slow for 300+ targets: {dt:.3f}s"
+
+# 2. Partial restore with 200 records keeps only conflicted leftover record in quarantine.meta.
+sess2 = qbase / "2026-01-02_00-00-00"
+sess2.mkdir(parents=True, exist_ok=True)
+meta2_lines = []
+for i in range(1, 201):
+    (sess2 / f"r_{i}").mkdir()
+    (sess2 / f"r_{i}" / "f.txt").write_text("data\n", encoding="utf-8")
+    meta2_lines.append(f"full|r_{i}|{home}/.cache/restore_dest_{i}|false|1000|1000\n")
+(sess2 / "quarantine.meta").write_text("".join(meta2_lines), encoding="utf-8")
+conflict = home / ".cache" / "restore_dest_200"
+conflict.mkdir(parents=True, exist_ok=True)
+(conflict / "keep.txt").write_text("keep\n", encoding="utf-8")
+
+rproc = subprocess.run([cleaner, "--restore", "2026-01-02_00-00-00"], env=env, input="n\n", capture_output=True, text=True)
+assert rproc.returncode == 1, (rproc.returncode, rproc.stdout, rproc.stderr)
+remaining_meta = [ln for ln in (sess2 / "quarantine.meta").read_text(encoding="utf-8").splitlines() if ln]
+assert len(remaining_meta) == 1 and remaining_meta[0].startswith("full|r_200|"), remaining_meta
+assert (home / ".cache" / "restore_dest_1" / "f.txt").is_file()
+assert (home / ".cache" / "restore_dest_199" / "f.txt").is_file()
+assert (conflict / "keep.txt").is_file()
+lproc = subprocess.run([cleaner, "--list-sessions", "--json"], env=env, capture_output=True, text=True, check=True)
+ldata = {s["timestamp"]: s for s in json.loads(lproc.stdout)["sessions"]}
+assert ldata["2026-01-02_00-00-00"]["unrecorded_entry_count"] == 0, ldata
+QUAR_INDEX_PY
+then
+  echo -e "${RED}FAIL: quarantine associative reference indexing scale or partial restore test failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: associative quarantine reference lookup stays fast on 300+ entries and reconciles partial restores accurately.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

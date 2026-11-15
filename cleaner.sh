@@ -1977,8 +1977,8 @@ session_is_held() {
 
 # Count immediate entries not referenced by active metadata; no integrity claim.
 quarantine_unrecorded_entry_count() {
-  local session="$1" meta="$1/quarantine.meta" records="" entry mtype rel accounted count=0
-  local -a references=()
+  local session="$1" meta="$1/quarantine.meta" records="" entry mtype rel top_rel count=0
+  local -A ref_seen=()
   if [[ -f "$meta" ]]; then
     if ! records=$(cat -- "$meta" && printf '.'); then
       echo "Error: Failed to read quarantine metadata '$meta'." >&2
@@ -1987,9 +1987,11 @@ quarantine_unrecorded_entry_count() {
     records=${records%.}
   fi
   while IFS='|' read -r mtype rel _ || [[ -n "$mtype" ]]; do
-    mtype=$(trim "$mtype")
+    trim_to mtype "$mtype"
     [[ -z "$mtype" || "$mtype" == \#* ]] && continue
-    references+=("$(trim "$rel")")
+    trim_to rel "$rel"
+    top_rel="${rel%%/*}"
+    [[ -n "$top_rel" ]] && ref_seen["$top_rel"]=1
   done <<< "$records"
   local stream_rc=""
   while IFS= read -r -d '' entry; do
@@ -1997,14 +1999,7 @@ quarantine_unrecorded_entry_count() {
       IFS= read -r -d '' stream_rc
       break
     fi
-    accounted=false
-    for rel in "${references[@]}"; do
-      if [[ "$rel" == "$entry" || "$rel" == "$entry/"* ]]; then
-        accounted=true
-        break
-      fi
-    done
-    [[ "$accounted" == true ]] || count=$((count + 1))
+    [[ -n "${ref_seen[$entry]+set}" ]] || count=$((count + 1))
   done < <(print0_with_status find "$session" -mindepth 1 -maxdepth 1 ! -name quarantine.meta ! -name .hold -printf '%f\0' 2>/dev/null)
   if [[ "$stream_rc" != 0 ]]; then
     echo "Error: Failed to enumerate quarantine entries in '$session'." >&2
@@ -2061,7 +2056,7 @@ quarantine_size_bytes() {
 emit_list_sessions_json() {
   local quarantine_base="$HOME/.cache/linux-cleaner/quarantine"
   local -a sessions=() session_sizes=() session_unrecorded=()
-  local s session idx ts size_bytes size_human mdate meta mtype morig unrecorded held
+  local s session idx ts size_bytes size_human mdate meta mtype morig jmtype jmorig unrecorded held
   local sess_first=true tgt_first
 
   if [[ -d "$quarantine_base" ]]; then
@@ -2104,17 +2099,18 @@ emit_list_sessions_json() {
     meta="$session/quarantine.meta"
     if [[ -f "$meta" ]]; then
       while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
-        mtype=$(trim "$mtype")
+        trim_to mtype "$mtype"
         [[ "$mtype" == aged-restored ]] && mtype=aged
         [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
-        morig=$(trim "${morig:-}")
+        trim_to morig "${morig:-}"
+        json_escape "$mtype" jmtype
+        json_escape "$morig" jmorig
         if [[ "$tgt_first" == true ]]; then
           tgt_first=false
         else
           printf ','
         fi
-        printf '{"type":"%s","path":"%s"}' \
-          "$(json_escape "$mtype")" "$(json_escape "$morig")"
+        printf '{"type":"%s","path":"%s"}' "$jmtype" "$jmorig"
       done < "$meta"
     fi
     printf ']}'
@@ -2995,19 +2991,23 @@ restore_quarantine() {
   # already moved out and must not poison a later retry as missing sources.
   local -a retained=()
   if [[ ( "$overall_success" != true || -n "${RESTORE_ONLY:-}" ) && ${#restored_rels[@]} -gt 0 ]]; then
-    local line rp r keep
+    local -A restored_seen=()
+    local restored_empty=false line rp r
+    for r in "${restored_rels[@]}"; do
+      if [[ -z "$r" ]]; then
+        restored_empty=true
+      else
+        restored_seen["$r"]=1
+      fi
+    done
     while IFS= read -r line || [[ -n "$line" ]]; do
       [[ -z "$line" ]] && continue
       IFS='|' read -r _ rp _ <<< "$line"
-      rp=$(trim "$rp")
-      keep=true
-      for r in "${restored_rels[@]}"; do
-        if [[ "$r" == "$rp" ]]; then
-          keep=false
-          break
-        fi
-      done
-      [[ "$keep" == true ]] && retained+=("$line")
+      trim_to rp "$rp"
+      if [[ ( -z "$rp" && "$restored_empty" == true ) || ( -n "$rp" && -n "${restored_seen[$rp]+set}" ) ]]; then
+        continue
+      fi
+      retained+=("$line")
     done < "$meta_file"
 
     if ! write_quarantine_metadata "$meta_file" "${retained[@]}"; then
