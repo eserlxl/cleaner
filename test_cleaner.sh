@@ -3245,7 +3245,7 @@ fi
 # Value-taking options named by require_non_option_value, cleaner.1, and docs/cli-reference.md.
 echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
 vt_expected=$(printf '%s\n' \
-  --config --risk --exclude --restore --only --only-exact --only-target \
+  --config --risk --exclude --exclude-from --restore --only --only-exact --only-target \
   --only-target-exact --exclude-target --exclude-target-exact --only-path \
   --exclude-path --lock-wait --check-health --min-reclaim \
   --min-free --min-free-path --min-age --action-timeout --trash-keep-days --purge-sessions \
@@ -7865,13 +7865,15 @@ fi
 # shortcut: --json is left out of the pair matrix (its gate depends on the mode, not on
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
+: > "$TEST_ENV_DIR/mx_empty.excl"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
-  --init-config --doctor --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
+  --init-config --doctor --exclude-from --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
     --hold-session|--release-session) echo "$1 20200101_000000" ;;
     --purge-sessions) echo "--purge-sessions all" ;;
+    --exclude-from) echo "--exclude-from $TEST_ENV_DIR/mx_empty.excl" ;;
     --only-target|--only-target-exact|--exclude-target|--exclude-target-exact) echo "$1 NPM" ;;
     --only-path|--exclude-path) echo "$1 $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
@@ -7884,7 +7886,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
+mx_subjects=(--exclude-from --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
   --check-config --init-config --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -13251,7 +13253,7 @@ if ! (
   # directory gets a trailing slash and special characters are quoted.
   # shellcheck disable=SC2329  # invoked indirectly by _cleaner
   compopt() { compopt_calls+=("$*"); }
-  for file_option in -c --config --log --only-path --exclude-path --min-free-path; do
+  for file_option in -c --config --exclude-from --log --only-path --exclude-path --min-free-path; do
     compopt_calls=()
     COMP_WORDS=(cleaner "$file_option" "$comp_file")
     COMP_CWORD=2
@@ -13385,7 +13387,7 @@ if command -v fish > /dev/null 2>&1; then
       | grep -q 'comp_file.txt'; then
     fish_comp_failed+=" bare-argument(file offered)"
   fi
-  for file_option in --config --log --min-free-path; do
+  for file_option in --config --exclude-from --log --min-free-path; do
     if ! (cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
             fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $file_option '") \
           | grep -qx 'comp_file.txt'; then
@@ -16770,6 +16772,166 @@ EXACT_TARGET_PY
   exit 1
 fi
 echo -e "${GREEN}PASS: Exact target selection disambiguates names, preserves commas/globs, honors env/CLI overrides, and replays Next: safely.${NC}"
+
+echo -e "\n${BOLD}Test Case: Exclude-From Pattern File And Parity${NC}"
+if ! python3 - "$CLEANER_SH" <<'EXCLUDE_FROM_PY'; then
+import json, os, pathlib, shutil, stat, subprocess, tempfile
+
+cleaner = os.sys.argv[1]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-excl-from-"))
+try:
+    home = tmp / "home"
+    cache = home / ".cache/ex"
+    cxx = home / "projects/build"
+    (cache / "sub,v1").mkdir(parents=True)
+    (cache / "slash,dir/deep").mkdir(parents=True)
+    cxx.mkdir(parents=True)
+
+    # Fixture files for permanent, trash, and composition tests.
+    (cache / "keep,comma.txt").write_bytes(b"1234567")
+    (cache / "sub,v1/inside.bin").write_bytes(b"12345678901")
+    (cache / "slash,dir/deep/keep.dat").write_bytes(b"1234567890123")
+    (cache / "row.keep").write_bytes(b"12345")
+    (cache / "cli.tmp").write_bytes(b"123456")
+    (cache / "drop.bin").write_bytes(b"drop!")
+    # Recent excluded file in filter:cxx_build must NOT block idle-dir cleanup.
+    (cxx / "CMakeCache.txt").write_text("cmake\n", encoding="utf-8")
+    (cxx / "recent,ignored.o").write_bytes(b"obj")
+    (cxx / "old.o").write_bytes(b"123456789")
+    old_ts = 1700000000
+    os.utime(cxx / "CMakeCache.txt", (old_ts, old_ts))
+    os.utime(cxx / "old.o", (old_ts, old_ts))
+    os.utime(cxx, (old_ts, old_ts))
+
+    pat_dir = tmp / "space dir"
+    pat_dir.mkdir()
+    pat_file = pat_dir / "global.exclude"
+    pat_file.write_text(
+        "# Global exclusion rules\n"
+        "   # indented comment\n"
+        "\n"
+        "  keep,comma.txt  \n"
+        "\tsub,v1/nested.missing\n"
+        "  sub,v1/inside.bin\t\n"
+        "slash,dir///\n"
+        "recent,ignored.o\n"
+        "*/\n",
+        encoding="utf-8",
+    )
+    comments_only = pat_dir / "comments_only.exclude"
+    comments_only.write_text("# only comments\n\n   \t \n", encoding="utf-8")
+
+    cfg = tmp / "cleaner.conf"
+    cfg.write_text(
+        "safe|Ex Tree|$HOME/.cache/ex|exclusion composition|0||exclude:row.keep\n"
+        "safe|Cxx Build|$HOME/projects/build|cxx build tree|7||filter:cxx_build\n",
+        encoding="utf-8",
+    )
+
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    base_env.update(HOME=str(home), XDG_CONFIG_HOME=str(tmp / "xdg_cfg"), XDG_STATE_HOME=str(tmp / "xdg_state"), NO_COLOR="1")
+
+    def run_cli(args, extra_env=None, check=False):
+        env = base_env | (extra_env or {})
+        return subprocess.run(["bash", cleaner, "--config", str(cfg)] + args, env=env, capture_output=True, text=True, check=check)
+
+    # Dry-run JSON & show-matches honor --exclude-from + --exclude + row exclude: and filter:cxx_build.
+    r_json = json.loads(run_cli(["--exclude-from", str(pat_file), "--exclude", "*.tmp", "--dry-run", "--json"], check=True).stdout)
+    by_name = {t["name"]: t for t in r_json["targets"]}
+    assert by_name["Ex Tree"]["bytes"] == 5 and by_name["Ex Tree"]["status"] == "found", by_name
+    assert by_name["Cxx Build"]["bytes"] > 0 and by_name["Cxx Build"]["status"] == "found", by_name
+
+    r_show = run_cli(["--exclude-from", str(pat_file), "--exclude", "*.tmp", "--dry-run", "--show-matches"], check=True)
+    assert "drop.bin" in r_show.stdout and "keep,comma.txt" not in r_show.stdout and "row.keep" not in r_show.stdout and "cli.tmp" not in r_show.stdout and "keep.dat" not in r_show.stdout, r_show.stdout
+    assert "Next: run 'cleaner --clean' to apply this plan" in r_show.stdout and "--exclude-from" in r_show.stdout and "global.exclude" in r_show.stdout, r_show.stdout
+
+    # Comments-only pattern file excludes nothing and replays in Next:.
+    r_empty_pat = run_cli(["--exclude-from", str(comments_only), "--dry-run", "--json"], check=True)
+    by_empty = {t["name"]: t for t in json.loads(r_empty_pat.stdout)["targets"]}
+    assert by_empty["Ex Tree"]["bytes"] >= 7 + 11 + 13 + 6 + 5, by_empty
+
+    # Env mirror + Next: replay + last-CLI overrides bad env.
+    r_env_dry = run_cli(["--dry-run"], extra_env={"LINUX_CLEANER_EXCLUDE_FROM": str(pat_file)}, check=True)
+    assert "--exclude-from" in r_env_dry.stdout, r_env_dry.stdout
+    pat_other = tmp / "other.exclude"
+    pat_other.write_text("drop.bin\n", encoding="utf-8")
+    r_last = json.loads(run_cli(
+        ["--exclude-from", str(pat_other), "--exclude-from", str(pat_file), "--exclude", "*.tmp", "--dry-run", "--json"],
+        extra_env={"LINUX_CLEANER_EXCLUDE_FROM": str(tmp / "nonexistent.excl")},
+        check=True,
+    ).stdout)
+    assert next(t for t in r_last["targets"] if t["name"] == "Ex Tree")["bytes"] == 5, r_last
+
+    # Non-cleanup modes ignore invalid LINUX_CLEANER_EXCLUDE_FROM, while CLI flag is refused.
+    bad_env = {"LINUX_CLEANER_EXCLUDE_FROM": str(tmp / "nonexistent.excl")}
+    for mode_args in [["--list-targets"], ["--check-config"], ["--list-sessions"]]:
+        r_ok = run_cli(mode_args, extra_env=bad_env)
+        assert r_ok.returncode == 0, (mode_args, r_ok.returncode, r_ok.stderr)
+    for bad_mode in ["--list-targets", "--check-config", "--report", "--list-sessions", "--init-config", "--doctor"]:
+        r_mx = run_cli(["--exclude-from", str(pat_file), bad_mode])
+        assert r_mx.returncode == 1, (bad_mode, r_mx.returncode, r_mx.stderr)
+
+    # Pre-lock invalid pattern file errors leave existing metrics file untouched.
+    metrics = tmp / "metrics.prom"
+    metrics.write_text("sentinel\n", encoding="utf-8")
+    fifo = tmp / "pipe.exclude"
+    os.mkfifo(fifo)
+    cr_pat = tmp / "cr.exclude"
+    cr_pat.write_bytes(b"keep.txt\r\n")
+    cr_comment = tmp / "cr_comment.exclude"
+    cr_comment.write_bytes(b"# cr\r\nkeep.txt\n")
+    bad_inputs = [
+        tmp / "missing.exclude",
+        pat_dir,
+        fifo,
+        cr_pat,
+        cr_comment,
+    ]
+    for bi in bad_inputs:
+        r_fail = run_cli(["--exclude-from", str(bi), "--clean", "--force"], extra_env={"LINUX_CLEANER_METRICS_FILE": str(metrics)})
+        assert r_fail.returncode == 1, (bi, r_fail.returncode, r_fail.stderr)
+        assert metrics.read_text(encoding="utf-8") == "sentinel\n"
+    if os.geteuid() != 0:
+        unreadable = tmp / "unreadable.exclude"
+        unreadable.write_text("x\n", encoding="utf-8")
+        unreadable.chmod(0o000)
+        try:
+            r_unr = run_cli(["--exclude-from", str(unreadable), "--dry-run"], extra_env={"LINUX_CLEANER_METRICS_FILE": str(metrics)})
+            assert r_unr.returncode == 1 and metrics.read_text(encoding="utf-8") == "sentinel\n", r_unr
+        finally:
+            unreadable.chmod(0o600)
+    for cli_bad in [["--exclude-from", ""], ["--exclude-from"], ["--exclude-from", "--clean"], ["--exclude-from", "-d"], ["--exclude-from", "bad\nline"]]:
+        r_cb = run_cli(cli_bad)
+        assert r_cb.returncode == 1, (cli_bad, r_cb.returncode, r_cb.stderr)
+
+    # Quarantine sweep (--trash --clean --force) moves drop.bin and preserves excluded patterns, then restores drop.bin.
+    run_cli(["--exclude-from", str(pat_file), "--exclude", "*.tmp", "--trash", "--clean", "--force"], check=True)
+    assert not (cache / "drop.bin").exists()
+    assert (cache / "keep,comma.txt").exists()
+    assert (cache / "sub,v1/inside.bin").exists()
+    assert (cache / "slash,dir/deep/keep.dat").exists()
+    assert (cache / "row.keep").exists()
+    assert (cache / "cli.tmp").exists()
+    assert not (cxx / "old.o").exists() and (cxx / "recent,ignored.o").exists()
+
+    run_cli(["--restore", "latest", "--force"], check=True)
+    assert (cache / "drop.bin").exists()
+
+    # Permanent sweep (--clean --force) deletes drop.bin cleanly while preserving all excluded entries.
+    run_cli(["--exclude-from", str(pat_file), "--exclude", "*.tmp", "--clean", "--force"], check=True)
+    assert not (cache / "drop.bin").exists()
+    assert (cache / "keep,comma.txt").exists()
+    assert (cache / "sub,v1/inside.bin").exists()
+    assert (cache / "slash,dir/deep/keep.dat").exists()
+    assert (cache / "row.keep").exists()
+    assert (cache / "cli.tmp").exists()
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+EXCLUDE_FROM_PY
+  echo -e "${RED}FAIL: --exclude-from tests failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --exclude-from pattern files preserve commas/comments/trailing slashes across dry-run, trash, permanent cleanup, and parity checks.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

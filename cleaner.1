@@ -69,6 +69,7 @@ a non-default or environment-overridden
 .BR \-\-risk ,
 .BR \-\-trash ,
 .BR \-\-exclude ,
+.BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
@@ -144,6 +145,37 @@ Maximum risk level to clean: safe, medium, or danger (default: safe).
 .TP
 .BR \-e ", " \-\-exclude " " \fIPATTERNS\fR
 Comma-separated glob patterns to exclude from cleanup.
+.TP
+.B \-\-exclude\-from \fIFILE\fR
+Read literal glob patterns to exclude from cleanup, one per line
+(trimming surrounding horizontal whitespace and skipping blank lines and
+lines whose trimmed text begins with
+.BR # ).
+Lines are treated literally without splitting on commas, trailing slashes on
+directory patterns are normalized like
+.BR \-\-exclude ,
+and the file adds to
+.BR \-e / \-\-exclude
+and per-target
+.B exclude:
+rows. Repeatable; the last occurrence wins and overrides
+.BR LINUX_CLEANER_EXCLUDE_FROM .
+Validates that the file is a readable regular file without carriage returns
+before taking the mutation lock on cleanup runs, and ignores inherited
+.B LINUX_CLEANER_EXCLUDE_FROM
+in non-cleanup modes. Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
 .TP
 .B \-\-allow\-outside\-home
 Deprecated no-op. Targets outside
@@ -399,6 +431,7 @@ Cannot be combined with
 .BR \-\-check\-config ,
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
+.BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
@@ -519,6 +552,7 @@ combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-doctor ,
+.BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
@@ -609,6 +643,7 @@ the checklist. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
@@ -1136,6 +1171,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
+.BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
@@ -1174,6 +1210,7 @@ Cannot be combined with
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
+.BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
@@ -1206,6 +1243,7 @@ Value-taking options
 .RB ( \-c / \-\-config ,
 .BR \-r / \-\-risk ,
 .BR \-e / \-\-exclude ,
+.BR \-\-exclude\-from ,
 .BR \-\-restore ", " \-\-hold\-session ", " \-\-release\-session ,
 .BR \-\-only ", " \-\-only\-exact ,
 .BR \-\-only\-target ", " \-\-only\-target\-exact ", " \-\-exclude\-target ", " \-\-exclude\-target\-exact ", " \-\-only\-path ,
@@ -1404,6 +1442,13 @@ enables
 When set to a non-empty comma-separated glob list, enables
 .BR \-\-exclude .
 CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_EXCLUDE_FROM
+When set to a non-empty file path, enables
+.BR \-\-exclude\-from
+for cleanup runs (non-cleanup modes ignore it). CLI
+.B \-\-exclude\-from
+overrides this variable.
 .TP
 .B LINUX_CLEANER_FORCE
 When set to

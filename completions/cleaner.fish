@@ -24,6 +24,7 @@ complete -c cleaner -l yes-danger -d 'Bypass manual confirmation prompt for dang
 complete -c cleaner -s t -l trash -d 'Move files to quarantine instead of permanent deletion'
 complete -c cleaner -s r -l risk -x -a 'safe medium danger' -d 'Max risk level to clean: safe, medium, danger (default: safe)'
 complete -c cleaner -s e -l exclude -x -d 'Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything)'
+complete -c cleaner -l exclude-from -r -F -d 'File of literal glob patterns to exclude, one per line (# comments and blank lines ignored; env: LINUX_CLEANER_EXCLUDE_FROM)'
 complete -c cleaner -l list-sessions -d 'List quarantine sessions (read-only) and exit'
 complete -c cleaner -l report -d 'Print the saved last cleanup report and exit'
 complete -c cleaner -l check-health -x -d 'With --report: exit 0 for a successful report at most this many seconds old'

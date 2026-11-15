@@ -18,6 +18,7 @@ _cleaner() {
     '(-t --trash)'{-t,--trash}'[Move files to quarantine instead of permanent deletion]' \
     '(-r --risk)'{-r,--risk}'[Max risk level to clean: safe, medium, danger (default: safe)]:risk level:(safe medium danger)' \
     '(-e --exclude)'{-e,--exclude}'[Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything)]:patterns:' \
+    '--exclude-from[File of literal glob patterns to exclude, one per line (# comments and blank lines ignored; env: LINUX_CLEANER_EXCLUDE_FROM)]:file:_files' \
     '--list-sessions[List quarantine sessions (read-only) and exit]' \
     '--report[Print the saved last cleanup report and exit]' \
     '--check-health[With --report: exit 0 for a successful report at most this many seconds old]:seconds:' \

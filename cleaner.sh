@@ -52,6 +52,7 @@ Options:
   -t, --trash                Move files to quarantine instead of permanent deletion.
   -r, --risk LEVEL           Max risk level to clean: safe, medium, danger (default: safe).
   -e, --exclude PATTERNS     Comma-separated glob patterns to exclude (Warning: Incorrect patterns can affect deletion semantics or exclude everything).
+  --exclude-from FILE        File of literal glob patterns to exclude, one per line (# comments and blank lines ignored; env: LINUX_CLEANER_EXCLUDE_FROM).
   --list-sessions            List quarantine sessions (read-only) and exit.
   --report                   Print the saved last cleanup report and exit.
   --check-health SECONDS     With --report: exit 0 only for a successful report at most SECONDS old (skips succeed).
@@ -113,6 +114,10 @@ JSON_OUTPUT=false
 TRASH_MODE=false
 MAX_RISK="safe"
 EXCLUDE_PATTERNS=""
+EXCLUDE_FROM=""
+EXCLUDE_FROM_CLI=false
+EXCLUDE_FROM_PATTERNS=()
+TARGET_EXCLUDE_ACTIVE=false
 RESTORE_TARGET=""
 RESTORE_ONLY=""
 RESTORE_ONLY_MODE="--only"
@@ -238,6 +243,9 @@ case "${LINUX_CLEANER_TRASH:-}" in
 esac
 if [[ -n "${LINUX_CLEANER_EXCLUDE:-}" ]]; then
   EXCLUDE_PATTERNS="$LINUX_CLEANER_EXCLUDE"
+fi
+if [[ -n "${LINUX_CLEANER_EXCLUDE_FROM:-}" ]]; then
+  EXCLUDE_FROM="$LINUX_CLEANER_EXCLUDE_FROM"
 fi
 case "${LINUX_CLEANER_FORCE:-}" in
   1|true|TRUE|yes|YES) FORCE=true; DRY_RUN=false ;;
@@ -406,6 +414,16 @@ while [[ $# -gt 0 ]]; do
       fi
       require_non_option_value "$1" "$2"
       EXCLUDE_PATTERNS="$2"
+      shift 2
+      ;;
+    --exclude-from)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --exclude-from requires a file path argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      EXCLUDE_FROM="$2"
+      EXCLUDE_FROM_CLI=true
       shift 2
       ;;
     --restore)
@@ -820,9 +838,9 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
-        || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
+        || "$EXCLUDE_FROM_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --exclude-from, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -883,6 +901,11 @@ fi
 
 if [[ -n "$EXCLUDE_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo "Error: --exclude-path applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor)." >&2
+  exit 1
+fi
+
+if [[ "$EXCLUDE_FROM_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-from applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -1959,23 +1982,70 @@ canonicalize_physical() {
 
 # Build find arguments using the same patterns for global and per-target exclusions.
 EXCLUDE_FIND_ARGS=()
+load_exclude_from_file() {
+  EXCLUDE_FROM_PATTERNS=()
+  local raw_path="${EXCLUDE_FROM:-}" line excl_trimmed line_no=0
+  [[ -n "$raw_path" ]] || return 0
+  if [[ "$raw_path" == *$'\n'* ]]; then
+    echo -e "${RED}Error: --exclude-from path cannot contain line feeds.${NC}" >&2
+    return 1
+  fi
+  if [[ -d "$raw_path" ]]; then
+    echo -e "${RED}Error: --exclude-from path '$raw_path' is a directory, expected a regular file.${NC}" >&2
+    return 1
+  fi
+  if [[ ! -e "$raw_path" ]]; then
+    echo -e "${RED}Error: --exclude-from file '$raw_path' does not exist.${NC}" >&2
+    return 1
+  fi
+  if [[ ! -f "$raw_path" ]]; then
+    echo -e "${RED}Error: --exclude-from path '$raw_path' must be a regular file.${NC}" >&2
+    return 1
+  fi
+  if [[ ! -r "$raw_path" ]]; then
+    echo -e "${RED}Error: --exclude-from file '$raw_path' is not readable.${NC}" >&2
+    return 1
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_no=$((line_no + 1))
+    if [[ "$line" == *$'\r'* ]]; then
+      echo -e "${RED}Error: --exclude-from file '$raw_path' line $line_no contains a carriage return (CR).${NC}" >&2
+      return 1
+    fi
+    trim_to excl_trimmed "$line"
+    if [[ -z "$excl_trimmed" || "$excl_trimmed" == \#* ]]; then
+      continue
+    fi
+    EXCLUDE_FROM_PATTERNS+=("$excl_trimmed")
+  done < "$raw_path"
+  return 0
+}
+
 build_exclude_find_args() {
   local patterns="${1-${EXCLUDE_PATTERNS:-}}"
   EXCLUDE_FIND_ARGS=()
-  if [[ -z "$patterns" ]]; then
-    return
+  TARGET_EXCLUDE_ACTIVE=false
+  if [[ -n "$patterns" || ${#EXCLUDE_FROM_PATTERNS[@]} -gt 0 ]]; then
+    TARGET_EXCLUDE_ACTIVE=true
+  else
+    return 0
   fi
-  
-  local rest="$patterns"
+
   local -a pats=()
-  while [[ "$rest" == *,* ]]; do
-    pats+=("${rest%%,*}")
-    rest="${rest#*,}"
-  done
-  pats+=("$rest")
-  
+  if [[ -n "$patterns" ]]; then
+    local rest="$patterns"
+    while [[ "$rest" == *,* ]]; do
+      pats+=("${rest%%,*}")
+      rest="${rest#*,}"
+    done
+    pats+=("$rest")
+  fi
+  if [[ ${#EXCLUDE_FROM_PATTERNS[@]} -gt 0 ]]; then
+    pats+=("${EXCLUDE_FROM_PATTERNS[@]}")
+  fi
+
   if [[ ${#pats[@]} -eq 0 ]]; then
-    return
+    return 0
   fi
   
   local -a clauses=()
@@ -3435,7 +3505,7 @@ has_matching_files() {
   local use_sudo="${3:-false}"
 
   # Check if the target itself is excluded
-  if [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+  if [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; then
     if [[ -z $(with_sudo "$use_sudo" find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       return 1
     fi
@@ -3465,7 +3535,7 @@ print_matching_paths() {
     mtime_args=(-mtime "+$age_days")
   fi
   {
-    if path_is_real_dir "$use_sudo" "$target_path" && { has_positive_age "$age_days" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; then
+    if path_is_real_dir "$use_sudo" "$target_path" && { has_positive_age "$age_days" || [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; }; then
       # An unreadable subdirectory makes find exit non-zero; under pipefail that
       # would end the whole preview, so list what is readable and carry on.
       with_sudo "$use_sudo" find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${mtime_args[@]}" -print0 2>/dev/null || true
@@ -3504,7 +3574,7 @@ get_size_bytes() {
   fi
   
   # Check if the target itself is excluded
-  if [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+  if [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; then
     if [[ -z $(with_sudo "$use_sudo" find "$target_path" "${EXCLUDE_FIND_ARGS[@]}" -print -quit 2>/dev/null) ]]; then
       echo 0
       return
@@ -3514,7 +3584,7 @@ get_size_bytes() {
   if path_is_real_dir "$use_sudo" "$target_path"; then
     # Sum size of files/symlinks older than age_days within the directory
     # Exclusions require file-by-file handling even when age_days is 0.
-    if [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+    if [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; then
       local find_mtime_args=()
       if has_positive_age "$age_days"; then
         find_mtime_args+=("-mtime" "+$age_days")
@@ -3543,11 +3613,11 @@ get_size_bytes() {
 
 # Print "<bytes> <true|false>": the get_size_bytes count, and whether the same
 # should_clean rule as a found target holds. The caller has already rejected
-# actions, missing paths, and idle-recent trees. Exclusions are TARGET_EXCLUDE_PATTERNS.
+# actions, missing paths, and idle-recent trees. Exclusions are active when TARGET_EXCLUDE_ACTIVE is true.
 measure_eligible_size() {
   local target_path="$1" age_days="$2" use_sudo="$3" size_bytes should_clean=false
   size_bytes=$(get_size_bytes "$target_path" "$age_days" "$use_sudo")
-  if has_positive_age "$age_days" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+  if has_positive_age "$age_days" || [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; then
     if has_matching_files "$target_path" "$age_days" "$use_sudo"; then
       should_clean=true
     fi
@@ -4735,6 +4805,12 @@ if [[ "$CHECK_CONFIG" == true ]]; then
   exit 0
 fi
 
+# Load cleanup-only pattern file pre-lock (non-cleanup modes have exited or skip cleanup).
+if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" ]]; then
+  load_exclude_from_file || exit 1
+  build_exclude_find_args
+fi
+
 # Only a cleanup run with a positive limit wraps actions in timeout(1).
 if [[ "$DRY_RUN" != true && -n "$ACTION_TIMEOUT" && "$ACTION_TIMEOUT" != 0 ]] && ! command -v timeout >/dev/null 2>&1; then
   echo "Error: --action-timeout requires timeout(1) for cleanup runs." >&2
@@ -5066,10 +5142,10 @@ while IFS= read -r -d '' config_src_file && IFS= read -r -d '' config_lineno && 
            [[ -e "$path" && ( ! -r "$path" || ( -d "$path" && ! -x "$path" ) ) ]] || \
            { [[ "$custom_clean_cmd" != action:* ]] && path_lookup_blocked "$path"; } || \
            { [[ "$custom_clean_cmd" != action:* && "$safety_status" -eq 2 ]] && path_present false "$path" && \
-             { { { [[ ! -d "$path" ]] || { ! has_positive_age "$effective_age" && [[ -z "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; } && \
+             { { { [[ ! -d "$path" ]] || { ! has_positive_age "$effective_age" && [[ "$TARGET_EXCLUDE_ACTIVE" != true ]]; }; } && \
                  [[ ! -w "$(dirname "$path" 2>/dev/null || echo /)" ]]; } || \
                { [[ -d "$path" && ! -w "$path" ]] && \
-                 { has_positive_age "$effective_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; }; }; }; then
+                 { has_positive_age "$effective_age" || [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; }; }; }; }; then
           requires_sudo=true
           # A readable filter:cxx_build tree with a recent non-excluded file is active
           # regardless of root visibility, so skip root elevation and [ROOT] reporting.
@@ -5294,6 +5370,7 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ "$MAX_RISK" != safe || -n "${LINUX_CLEANER_RISK:-}" ]] && next_args+=(--risk "$MAX_RISK")
     [[ "$TRASH_MODE" == true ]] && next_args+=(--trash)
     [[ -n "$EXCLUDE_PATTERNS" ]] && next_args+=(--exclude "$EXCLUDE_PATTERNS")
+    [[ -n "$EXCLUDE_FROM" ]] && next_args+=(--exclude-from "$EXCLUDE_FROM")
     [[ -n "$ONLY_TARGET" ]] && next_args+=(--only-target "$ONLY_TARGET")
     [[ -n "$ONLY_TARGET_EXACT" ]] && next_args+=(--only-target-exact "$ONLY_TARGET_EXACT")
     [[ -n "$EXCLUDE_TARGET" ]] && next_args+=(--exclude-target "$EXCLUDE_TARGET")
@@ -5730,7 +5807,7 @@ for i in "${!parsed_names[@]}"; do
     [[ "$use_sudo" = true ]] && owner_fallback="0|0"
     owner_info=$(with_sudo "$use_sudo" stat -c '%u|%g' "$path" 2>/dev/null || echo "$owner_fallback")
 
-    if has_positive_age "$age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+    if has_positive_age "$age" || [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; then
       # File-by-file quarantine
       if path_is_real_dir "$use_sudo" "$path"; then
         find_mtime_args=()
@@ -5791,7 +5868,7 @@ for i in "${!parsed_names[@]}"; do
     
   else
     # Permanent Deletion Mode
-    if has_positive_age "$age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; then
+    if has_positive_age "$age" || [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; then
       if path_is_real_dir "$use_sudo" "$path"; then
         find_mtime_args=()
         if has_positive_age "$age"; then
