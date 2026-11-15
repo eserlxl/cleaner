@@ -3549,20 +3549,23 @@ has_matching_files() {
     fi
   fi
 
-  if ! has_positive_age "$age_days"; then
-    path_present "$use_sudo" "$target_path"
-    return
+  local -a mtime_args=()
+  if has_positive_age "$age_days"; then
+    mtime_args=(-mtime "+$age_days")
   fi
-  
-  if path_is_real_dir "$use_sudo" "$target_path"; then
-    # Check if there is any file or symlink inside older than age_days
-    # find -print -quit exits 0 if a match is found
-    [[ -n $(with_sudo "$use_sudo" find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
-  else
+
+  if path_is_real_dir "$use_sudo" "$target_path" && { has_positive_age "$age_days" || [[ "$TARGET_EXCLUDE_ACTIVE" == true ]]; }; then
+    # Exclusions switch MIN_AGE_DAYS=0 directories to file-by-file cleanup, so only
+    # eligible files or symlinks inside make the target cleanable.
+    [[ -n $(with_sudo "$use_sudo" find "$target_path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" \( -type f -o -type l \) "${mtime_args[@]}" -print -quit 2>/dev/null) ]] && return 0
+    return 1
+  elif has_positive_age "$age_days"; then
     # Single file or symlink
     [[ -n $(with_sudo "$use_sudo" find "$target_path" -mtime +"$age_days" -print -quit 2>/dev/null) ]] && return 0
+    return 1
   fi
-  return 1
+
+  path_present "$use_sudo" "$target_path"
 }
 
 # List the same eligible files/symlinks as has_matching_files; whole targets stay compact.

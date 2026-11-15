@@ -17152,5 +17152,73 @@ then
 fi
 echo -e "${GREEN}PASS: timed-out actions and notify-send helpers do not inherit cleaner.lock fd 9.${NC}"
 
+echo -e "\n${BOLD}Test Case: Excluded Age-Zero Directory Targets Report Clean Without Eligible Files${NC}"
+if ! python3 - "$CLEANER_SH" <<'EXCL_AGE0_PY'
+import json, os, pathlib, shutil, subprocess, sys, tempfile
+
+cleaner = sys.argv[1]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-excl-age0-"))
+try:
+    home = tmp / "home"
+    target = home / ".cache/foo"
+    empty_sub = target / "only_dir"
+    empty_sub.mkdir(parents=True)
+    log_file = target / "keep.log"
+    log_file.write_text("keep\n", encoding="utf-8")
+
+    excl_file = tmp / "excl.patterns"
+    excl_file.write_text("*.log\n", encoding="utf-8")
+
+    row_cfg = tmp / "row.conf"
+    row_cfg.write_text(f"safe|Foo|{target}|desc|0||exclude:*.log\n", encoding="utf-8")
+    plain_cfg = tmp / "plain.conf"
+    plain_cfg.write_text(f"safe|Foo|{target}|desc|0||\n", encoding="utf-8")
+
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    base_env.update(HOME=str(home), XDG_STATE_HOME=str(tmp / "state"), NO_COLOR="1")
+
+    def run_cli(cfg, args):
+        return subprocess.run(["bash", cleaner, "--config", str(cfg)] + args, env=base_env, capture_output=True, text=True, timeout=20)
+
+    # 1. All-excluded MIN_AGE_DAYS=0 directory across row exclude:, --exclude, and --exclude-from
+    for cfg, extra in (
+        (row_cfg, []),
+        (plain_cfg, ["--exclude", "*.log"]),
+        (plain_cfg, ["--exclude-from", str(excl_file)]),
+    ):
+        rj = run_cli(cfg, ["--dry-run", "--json", "--exit-code"] + extra)
+        assert rj.returncode == 0, (cfg, extra, rj.returncode, rj.stdout, rj.stderr)
+        data = json.loads(rj.stdout)
+        assert data["would_skip"] == "nothing_to_clean", data
+        assert data["targets"][0]["status"] == "clean", data
+
+        rt = run_cli(cfg, ["--trash", "--clean", "--force"] + extra)
+        assert rt.returncode == 0 and "No files need cleaning. Everything is already clean!" in rt.stdout, (rt.returncode, rt.stdout, rt.stderr)
+        rr = run_cli(cfg, ["--report"])
+        assert rr.returncode == 0 and "Result: nothing to clean" in rr.stdout, (rr.returncode, rr.stdout, rr.stderr)
+        q_base = home / ".cache/linux-cleaner/quarantine"
+        assert not q_base.exists() or list(q_base.iterdir()) == [], list(q_base.iterdir())
+        assert log_file.read_text(encoding="utf-8") == "keep\n"
+
+    # 2. Positive control: 0-byte eligible file alongside excluded file still cleans and keeps keep.log
+    zero_file = target / "empty.tmp"
+    zero_file.write_bytes(b"")
+    re = run_cli(row_cfg, ["--dry-run", "--json", "--exit-code"])
+    assert re.returncode == 2, (re.returncode, re.stdout, re.stderr)
+    data_pos = json.loads(re.stdout)
+    assert data_pos["would_skip"] is None and data_pos["targets"][0]["status"] == "found", data_pos
+
+    rc = run_cli(row_cfg, ["--clean", "--force"])
+    assert rc.returncode == 0 and "cleaned=1" in rc.stdout, (rc.returncode, rc.stdout, rc.stderr)
+    assert not zero_file.exists() and log_file.read_text(encoding="utf-8") == "keep\n"
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+EXCL_AGE0_PY
+then
+  echo -e "${RED}FAIL: excluded age-0 directory target check failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: excluded MIN_AGE_DAYS=0 directories report clean without eligible files and still clean zero-byte eligible files.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
