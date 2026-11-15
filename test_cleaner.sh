@@ -8197,15 +8197,15 @@ with tempfile.TemporaryDirectory(prefix="cleaner-xdg-storage-", dir="/tmp") as d
         # Inject a failing stdout helper only around the actual consumers, keeping
         # failure propagation observable without changing the executable under test.
         failure = '_xdg_dir() { printf "%s" "$HOME/partial\\n"; return 23; }\n'
-        discovery_start = source.index('if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then')
-        discovery = source[discovery_start:source.index("\n# Trim whitespace", discovery_start)]
+        discovery_start = source.index('# Check if config file exists')
+        discovery = source[discovery_start:source.index("\nname_matches_any()", discovery_start)]
         for label, code, status in (("init helper failure", body("init_user_config") + "\ninit_user_config", 1),
                                     ("reader helper failure", body("show_last_report") + "\nshow_last_report", 1),
                                     ("writer helper failure best effort", body("write_cleanup_metrics") + "\n" + body("write_last_report_file") + "\n" + body("save_last_cleanup_report") + "\nsave_last_cleanup_report", 0),
                                     ("discovery helper failure", body("set_default_config_candidates") + "\n" + discovery, 1),
                                     ("explicit config skips discovery helper", body("set_default_config_candidates") + '\nCONFIG_FILE="$EXPLICIT"\n' + discovery, 0)):
             probe = root / "helper-failure.sh"
-            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nHOLD_TARGET=""\nRELEASE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\nDOCTOR=false\n' + failure + code + "\n")
+            probe.write_text('#!/bin/bash\nset -euo pipefail\nCONFIG_FILE=""\nSCRIPT_DIR="$HOME"\nRESTORE_TARGET=""\nPURGE_TARGET=""\nHOLD_TARGET=""\nRELEASE_TARGET=""\nLIST_SESSIONS=false\nREPORT=false\nDOCTOR=false\nINIT_ENV=false\nCHECK_CONFIG=false\nJSON_OUTPUT=false\n' + failure + code + "\n")
             before = snapshot()
             print("Test Case: XDG Storage " + label, flush=True)
             result = subprocess.run(["bash", str(probe)], env=env | {"EXPLICIT": str(explicit)}, capture_output=True, text=True, timeout=20)
