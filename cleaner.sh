@@ -3341,27 +3341,42 @@ blocked_in_use_bytes() {
   fi
 }
 
-# Format bytes to human readable format
+# Format bytes to human readable format using pure-bash arithmetic (no awk forks;
+# extracted standalone by tests via awk '/^format_bytes\(\)/,/^\}/').
 format_bytes() {
-  local bytes=$1
+  local bytes="${1:-}"
   if [[ -z "$bytes" || "$bytes" -eq 0 ]]; then
     echo "0 B"
     return
   fi
-  
+
   local -a units=("B" "KB" "MB" "GB" "TB")
-  local unit_idx=0
-  local size=$bytes
-  
-  # Use awk to handle comparison and division with float precision
-  while [[ $(awk "BEGIN {print ($size >= 1024 ? 1 : 0)}") -eq 1 && $unit_idx -lt 4 ]]; do
-    size=$(awk "BEGIN {printf \"%.2f\", $size / 1024}")
+  local unit_idx=0 whole=$bytes frac=0 q r num rem
+
+  while (( whole >= 1024 && unit_idx < 4 )); do
+    q=$((whole / 1024))
+    r=$((whole % 1024))
+    num=$((r * 100 + frac))
+    frac=$((num / 1024))
+    rem=$((num % 1024))
+    if (( rem > 512 || (rem == 512 && (frac % 2) == 1) )); then
+      frac=$((frac + 1))
+      if (( frac >= 100 )); then
+        frac=$((frac - 100))
+        q=$((q + 1))
+      fi
+    fi
+    whole=$q
     unit_idx=$((unit_idx + 1))
   done
-  
-  # Strip unnecessary trailing .00
-  size=${size%.00}
-  echo "$size ${units[$unit_idx]}"
+
+  if (( unit_idx == 0 || frac == 0 )); then
+    printf '%s %s\n' "$whole" "${units[$unit_idx]}"
+  elif (( frac < 10 )); then
+    printf '%s.0%s %s\n' "$whole" "$frac" "${units[$unit_idx]}"
+  else
+    printf '%s.%s %s\n' "$whole" "$frac" "${units[$unit_idx]}"
+  fi
 }
 
 # Compact plan after the savings total. Plain printf (no color, ignores --quiet);

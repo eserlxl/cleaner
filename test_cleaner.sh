@@ -16185,5 +16185,48 @@ then
 fi
 echo -e "${GREEN}PASS: associative quarantine reference lookup stays fast on 300+ entries and reconciles partial restores accurately.${NC}"
 
+echo -e "\n${BOLD}Test Case: Pure Bash format_bytes Compatibility And Performance${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" <<'FORMAT_BYTES_PY'
+import pathlib, re, subprocess, sys, time
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+m = re.search(r"^format_bytes\(\)\s*\{.*?^\}", text, re.M | re.S)
+assert m is not None, "could not extract format_bytes"
+fn_body = m.group(0)
+
+cases = [
+    ("0", "0 B"),
+    ("1023", "1023 B"),
+    ("1024", "1 KB"),
+    ("1152", "1.12 KB"),
+    ("1408", "1.38 KB"),
+    ("1536", "1.50 KB"),
+    ("1048570", "1023.99 KB"),
+    ("1048571", "1 MB"),
+    ("1048575", "1 MB"),
+    ("1048576", "1 MB"),
+    ("2147483648", "2 GB"),
+    ("2199023255552", "2 TB"),
+    ("9223372036854775807", "8388608 TB"),
+]
+script = fn_body + "\nPATH=\"\"\n" + "\n".join(f'printf "%s\\n" "$(format_bytes {val})"' for val, _ in cases)
+proc = subprocess.run(["bash", "-euo", "pipefail", "-c", script], capture_output=True, text=True, check=True)
+got = proc.stdout.splitlines()
+expected = [exp for _, exp in cases]
+assert got == expected, (got, expected)
+
+perf_script = fn_body + '\nPATH=""\ni=0\nwhile (( i < 200 )); do\n  format_bytes 2199023255552 >/dev/null\n  i=$((i + 1))\ndone\n'
+t0 = time.monotonic()
+subprocess.run(["bash", "-euo", "pipefail", "-c", perf_script], check=True)
+dt = time.monotonic() - t0
+assert dt < 0.25, f"200 format_bytes calls took too long: {dt:.3f}s"
+FORMAT_BYTES_PY
+then
+  echo -e "${RED}FAIL: pure bash format_bytes compatibility or performance check failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: standalone pure-bash format_bytes matches exact outputs with PATH='' and runs 200 calls in <0.25s.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

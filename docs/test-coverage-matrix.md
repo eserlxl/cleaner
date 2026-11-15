@@ -20,6 +20,7 @@
 | U-151 | `parse_size_bytes` accepts zero-padded sizes longer than 18 characters (`0000000000000000001G`, `000000000000000000000`, `max-size:0000000000000000001K`) while rejecting real 64-bit overflows (`99999999999T`) | Parse Size Bytes Zero-Padded Inputs |
 | U-152 | Shared `/**` config rows under one prefix reuse a single cached `find` directory traversal while preserving `filter:cxx_build`, ancestor deduplication, component matching, depth bounds, and symlink refusal | Shared Globstar Prefix List Targets |
 | U-153 | Associative reference lookup in `quarantine_unrecorded_entry_count` and `restore_quarantine` keeps 300-target `--list-sessions --json` under `0.80s` while preserving unrecorded counts and partial-restore leftover metadata reconciliation | Associative Quarantine Reference Lookup Scale And Partial Restore |
+| U-154 | Standalone pure-bash `format_bytes` matches `B`/`KB`/`MB`/`GB`/`TB` rounding (including `1048575 -> 1 MB`, `1536 -> 1.50 KB`, and `9223372036854775807` without 64-bit overflow) with `PATH=""` and finishes 200 calls in `<0.25s` | Pure Bash format_bytes Compatibility And Performance |
 
 ## 1.6.0 shipped feature inventory
 
