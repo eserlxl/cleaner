@@ -62,6 +62,7 @@ Options:
   --overlay                  With --init-config: write a minimal include| overlay layered over the active config.
   --init-env                 Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (add --trash for 30d quarantine; never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
+  --strict                   With --doctor: exit 1 if any diagnostic warning is present.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
   --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge, --trash-keep-days, and --trash-max-size retention.
   --release-session SESSION  Remove a session hold so normal purge and retention apply again.
@@ -163,6 +164,7 @@ INIT_CONFIG=false
 INIT_OVERLAY=false
 INIT_ENV=false
 DOCTOR=false
+DOCTOR_STRICT=false
 CONFIG_DISCOVERED=false
 CONFIG_EXPLICIT=false
 REPORT=false
@@ -741,6 +743,10 @@ while [[ $# -gt 0 ]]; do
       DOCTOR=true
       shift
       ;;
+    --strict)
+      DOCTOR_STRICT=true
+      shift
+      ;;
     -h|--help)
       show_usage
       exit 0
@@ -967,6 +973,11 @@ fi
 
 if [[ "$INIT_OVERLAY" == true && "$INIT_CONFIG" != true ]]; then
   echo -e "${RED}Error: --overlay requires --init-config.${NC}" >&2
+  exit 1
+fi
+
+if [[ "$DOCTOR_STRICT" == true && "$DOCTOR" != true ]]; then
+  echo -e "${RED}Error: --strict applies only to --doctor.${NC}" >&2
   exit 1
 fi
 
@@ -5840,6 +5851,10 @@ run_doctor() {
     [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: quarantine: cannot enumerate sessions (%s)\n' "$quarantine_base"
   else
     [[ "$JSON_OUTPUT" == true ]] || printf 'INFO: quarantine: %d session(s) (%s)\n' "${#session_dots}" "$quarantine_base"
+  fi
+
+  if [[ "$DOCTOR_STRICT" == true && ${#doc_warnings[@]} -gt 0 ]]; then
+    doctor_rc=1
   fi
 
   if [[ "$JSON_OUTPUT" == true ]]; then

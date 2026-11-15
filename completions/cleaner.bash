@@ -122,6 +122,7 @@ _cleaner() {
       --overlay
       --init-env
       --doctor
+      --strict
       --restore
       --hold-session
       --release-session

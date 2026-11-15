@@ -28,6 +28,7 @@ _cleaner() {
     '--overlay[With --init-config: write a minimal include| overlay layered over the active config]' \
     '--init-env[Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (never overwrites)]' \
     '--doctor[Check the runtime environment a cleanup depends on (read-only; supports --json) and exit]' \
+    '--strict[With --doctor: exit 1 if any diagnostic warning is present]' \
     '--restore[Restore files from quarantine session (latest or timestamp); --dry-run previews]:session:{compadd -- latest "${sessions[@]}"}' \
     '--hold-session[Protect a quarantine session (latest or timestamp) from every purge, --trash-keep-days, and --trash-max-size retention]:session:{compadd -- latest "${sessions[@]}"}' \
     '--release-session[Remove a session hold so normal purge and retention apply again]:session:{compadd -- latest "${sessions[@]}"}' \

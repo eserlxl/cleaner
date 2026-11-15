@@ -34,6 +34,7 @@ complete -c cleaner -l init-config -d 'Copy the active config to your user confi
 complete -c cleaner -l overlay -d 'With --init-config: write a minimal include| overlay layered over the active config'
 complete -c cleaner -l init-env -d 'Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (never overwrites)'
 complete -c cleaner -l doctor -d 'Check the runtime environment a cleanup depends on (read-only; supports --json) and exit'
+complete -c cleaner -l strict -d 'With --doctor: exit 1 if any diagnostic warning is present'
 complete -c cleaner -l restore -x -a 'latest (__cleaner_sessions)' -d 'Restore files from quarantine session (latest or timestamp); --dry-run previews'
 complete -c cleaner -l hold-session -x -a 'latest (__cleaner_sessions)' -d 'Protect a quarantine session (latest or timestamp) from every purge, --trash-keep-days, and --trash-max-size retention'
 complete -c cleaner -l release-session -x -a 'latest (__cleaner_sessions)' -d 'Remove a session hold so normal purge and retention apply again'

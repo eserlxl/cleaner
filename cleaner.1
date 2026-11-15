@@ -811,8 +811,12 @@ The retention warning and exit status are unchanged.
 A readable file is schema-checked; an invalid file prints
 .B "WARN: config: path (source, error)"
 and the rest of the checklist still prints.
-Exit 0 when cleanup can run or 1 when the configuration file is missing,
-unreadable, or invalid, or GNU userland is missing. Requires no configuration file to print
+Exit 0 when cleanup can run (and, with
+.BR \-\-strict ,
+no diagnostic warnings are present) or 1 when the configuration file is missing,
+unreadable, or invalid, GNU userland is missing, or
+.B \-\-strict
+finds one or more warnings. Requires no configuration file to print
 the checklist. With
 .BR \-\-json ,
 emit a machine-readable JSON summary instead of plain text. Cannot be combined with
@@ -845,6 +849,25 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-notify ,
 or
 .BR \-\-fail\-fast .
+.TP
+.B \-\-strict
+With
+.BR \-\-doctor :
+treat any emitted diagnostic warning (such as unbounded quarantine retention, daily timer or
+.I monitor.env
+configuration problems, failed/interrupted/stale last cleanup reports, missing helper binaries like
+.BR pgrep / flock / git ,
+or an unreadable/symlinked quarantine directory) as fatal by exiting
+.B 1
+(and reporting
+.B ready: false
+and
+.B exit_code: 1
+under
+.BR \-\-json ).
+Exits 1 if given without
+.BR \-\-doctor .
+CLI-only, with no environment mirror.
 .TP
 .B \-\-only \fIPATTERN\fR
 Used with

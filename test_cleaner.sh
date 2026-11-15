@@ -19539,5 +19539,91 @@ with tempfile.TemporaryDirectory() as td:
 PY
 echo -e "${GREEN}PASS: --doctor validates startup-fatal scheduler env settings in daily timer plan.${NC}"
 
+# U-183: --strict fails with exit 1 (and JSON ready: false, exit_code: 1) whenever --doctor emits any warning.
+echo -e "\n${BOLD}Test Case: Doctor Strict Mode${NC}"
+if ! python3 - "$CLEANER_SH" <<'PY'; then
+import json, os, pathlib, subprocess, sys, tempfile
+
+cleaner = sys.argv[1]
+with tempfile.TemporaryDirectory() as td:
+    root = pathlib.Path(td)
+    bin_dir = root / "bin"
+    cfg_dir = root / ".config" / "linux-cleaner"
+    state_dir = root / ".local" / "state" / "linux-cleaner"
+    work = root / "work"
+    for p in (bin_dir, cfg_dir, state_dir, work):
+        p.mkdir(parents=True)
+    cfg = root / "c.conf"
+    cfg.write_text(f"safe|T|{work}|desc|0||\n", encoding="utf-8")
+
+    for cmd in ("pgrep", "flock", "git"):
+        exe = bin_dir / cmd
+        exe.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        os.chmod(exe, 0o755)
+    # Minimal systemctl reporting disabled timers; omit notify-send and keep sudo -n failing to prove INFO notes stay non-fatal.
+    sc = bin_dir / "systemctl"
+    sc.write_text("#!/usr/bin/env bash\necho disabled\nexit 1\n", encoding="utf-8")
+    os.chmod(sc, 0o755)
+    sudo_shim = bin_dir / "sudo"
+    sudo_shim.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    os.chmod(sudo_shim, 0o755)
+
+    # Provide only POSIX/coreutils on PATH so optional notify-send absence does not trigger warnings.
+    clean_path = f"{bin_dir}:{os.environ['PATH']}"
+    env = {
+        "HOME": str(root),
+        "XDG_CONFIG_HOME": str(root / ".config"),
+        "XDG_STATE_HOME": str(root / ".local" / "state"),
+        "PATH": clean_path,
+        "NO_COLOR": "1",
+    }
+
+    def run_cmd(*args):
+        return subprocess.run([cleaner, *args], env=env, capture_output=True, text=True, check=False)
+
+    # 1. --strict without --doctor fails closed before lock/cleanup across invocations.
+    for bad_args in (["--strict"], ["--config", str(cfg), "--strict", "--clean"], ["--strict", "--report"], ["--strict", "--restore", "2026-01-01_00-00-00"]):
+        r_bad = run_cmd(*bad_args)
+        assert r_bad.returncode == 1 and "--strict applies only to --doctor" in r_bad.stderr, (bad_args, r_bad)
+
+    # 2. Zero warnings -> --doctor --strict [--json] exits 0 with ready=True and exit_code=0.
+    r_ok_txt = run_cmd("--config", str(cfg), "--doctor", "--strict")
+    assert r_ok_txt.returncode == 0, r_ok_txt
+    r_ok_json = run_cmd("--config", str(cfg), "--doctor", "--strict", "--json")
+    assert r_ok_json.returncode == 0, r_ok_json
+    d_ok = json.loads(r_ok_json.stdout)
+    assert d_ok["warnings"] == [] and d_ok["ready"] is True and d_ok["exit_code"] == 0, d_ok
+
+    # 3. Any warning (quarantine_retention, daily_timer_plan, monitor_env, last_cleanup, symlinked quarantine)
+    # makes --doctor --strict exit 1 with ready=False, exit_code=1 while plain --doctor keeps exit 0.
+    (cfg_dir / "monitor.env").write_text("LINUX_CLEANER_ONLY_PATH=/tmp\nLINUX_CLEANER_TRASH_KEEP_DAYS=7\n", encoding="utf-8")
+    r_warn_plain = run_cmd("--config", str(cfg), "--doctor", "--json")
+    assert r_warn_plain.returncode == 0, r_warn_plain
+    dw_plain = json.loads(r_warn_plain.stdout)
+    assert len(dw_plain["warnings"]) >= 1 and dw_plain["ready"] is True and dw_plain["exit_code"] == 0, dw_plain
+
+    r_warn_strict = run_cmd("--config", str(cfg), "--doctor", "--strict", "--json")
+    assert r_warn_strict.returncode == 1, r_warn_strict
+    dw_strict = json.loads(r_warn_strict.stdout)
+    assert dw_strict["warnings"] == dw_plain["warnings"] and dw_strict["ready"] is False and dw_strict["exit_code"] == 1, dw_strict
+
+    r_warn_strict_txt = run_cmd("--config", str(cfg), "--doctor", "--strict")
+    assert r_warn_strict_txt.returncode == 1 and "WARN: monitor env:" in r_warn_strict_txt.stdout, r_warn_strict_txt
+
+    # 4. Also verify symlinked quarantine directory fails --strict cleanly on its own.
+    (cfg_dir / "monitor.env").unlink()
+    q_parent = root / ".cache" / "linux-cleaner"
+    q_parent.mkdir(parents=True)
+    (q_parent / "quarantine").symlink_to("/tmp/nonexistent-q")
+    r_q_strict = run_cmd("--config", str(cfg), "--doctor", "--strict", "--json")
+    assert r_q_strict.returncode == 1, r_q_strict
+    dq = json.loads(r_q_strict.stdout)
+    assert dq["ready"] is False and dq["exit_code"] == 1 and any("symlinked quarantine" in w for w in dq["warnings"]), dq
+PY
+  echo -e "${RED}FAIL: Doctor Strict Mode checks failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor --strict fails closed on diagnostic warnings while preserving default --doctor behavior.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
