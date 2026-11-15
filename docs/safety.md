@@ -36,7 +36,7 @@ Per-artifact default paths, overrides, `$HOME` confinement, runtime permissions,
 | Operation | Privilege |
 |---|---|
 | System package-cache actions (`action:paccache_keep1`, `action:paccache_keep2`, `action:paccache_keep3`, `action:pacman_clean`, `action:apt_clean`, `action:dnf_clean`, `action:zypper_clean`, `action:apk_clean`) | May use `sudo` |
-| User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`, `action:nix_store_gc`) | Always run as the invoking user, never `sudo`; no `action:*` command is quarantined |
+| User-level prune actions (`action:uv_cache_prune`, `action:pnpm_store_prune`, `action:hf_cache_prune`, `action:nix_store_gc`, `action:flatpak_unused`) | Always run as the invoking user, never `sudo`; no `action:*` command is quarantined |
 | Root-owned ordinary targets (unreadable paths, or outside-`$HOME` targets under an unwritable parent) | May use `sudo` for deletion |
 | Quarantine move of a privileged ordinary target (`--trash`) | `sudo mv`, then `sudo chown -R` to the invoking user; the record stores `use_sudo=true` in `quarantine.meta` |
 | Restore of a `use_sudo=true` record | Uses `sudo`; ownership goes back to the recorded `uid:gid` on a best-effort basis |

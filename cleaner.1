@@ -1788,6 +1788,9 @@ runs \fBhf cache prune \-\-yes \-\-cache\-dir\fR against the target's configured
 .IP \(bu 3
 .BR action:nix_store_gc
 runs \fBnix\-store \-\-gc\fR as the invoking user
+.IP \(bu 3
+.BR action:flatpak_unused
+runs \fBflatpak uninstall \-\-user \-\-unused \-\-assumeyes \-\-noninteractive\fR as the invoking user
 .RE
 .SH SAFETY
 Deletions are blocked for the filesystem root, system directories

@@ -149,9 +149,9 @@ EOF
     chmod +x "$TEST_ENV_DIR/bin/$_mgr"
   done
 
-  # User-level prune action mocks (uv, pnpm, hf, nix-store)
+  # User-level prune action mocks (uv, pnpm, hf, nix-store, flatpak)
   local _uact
-  for _uact in uv pnpm hf nix-store; do
+  for _uact in uv pnpm hf nix-store flatpak; do
     cat > "$TEST_ENV_DIR/bin/$_uact" << EOF
 #!/usr/bin/env bash
 # Mock $_uact command
@@ -3733,6 +3733,7 @@ arb_ok=true
 [[ "$(arb action:pnpm_store_prune)" == "pnpm" ]] || arb_ok=false
 [[ "$(arb action:hf_cache_prune)" == "hf" ]] || arb_ok=false
 [[ "$(arb action:nix_store_gc)" == "nix-store" ]] || arb_ok=false
+[[ "$(arb action:flatpak_unused)" == "flatpak" ]] || arb_ok=false
 [[ -z "$(arb action:bogus)" ]] || arb_ok=false
 if [[ "$arb_ok" == true ]]; then
   echo -e "${GREEN}PASS: paccache actions require 'paccache' (not 'pacman'); apt/dnf/zypper/apk map to their real binaries.${NC}"
@@ -10921,6 +10922,142 @@ if ! run_test_case "System Action Still Uses Sudo Alongside User Action" 0 "mixe
 fi
 unset MOCK_SUDO_LOG MOCK_USER_ACTION_LOG
 echo -e "${GREEN}PASS: system action still routes through sudo while user action runs directly as the user.${NC}"
+
+echo -e "\n${BOLD}Test Case: Flatpak Unused Action${NC}"
+setup_mock_env
+mkdir -p "$MOCK_HOME/.local/share/flatpak"
+chmod 555 "$MOCK_HOME/.local/share"
+cat > "$TEST_ENV_DIR/bin/sudo" <<'FAIL_FLATPAK_SUDO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_ENV_DIR/flatpak_sudo.calls"
+exit 1
+FAIL_FLATPAK_SUDO
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+export MOCK_USER_ACTION_LOG="$TEST_ENV_DIR/flatpak_action.calls"
+: > "$MOCK_USER_ACTION_LOG"
+rm -f "$TEST_ENV_DIR/flatpak_sudo.calls"
+flatpak_clean_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" XDG_DATA_HOME="$MOCK_HOME/.local/share" "$CLEANER_SH" \
+  --config "$SCRIPT_DIR/cleaner.conf" --only-target-exact "Flatpak Unused Runtimes" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/flatpak_clean.log" 2>&1 || flatpak_clean_ec=$?
+if [[ "$flatpak_clean_ec" -ne 0 ]] \
+   || [[ -e "$TEST_ENV_DIR/flatpak_sudo.calls" ]] \
+   || grep -qi "requires root" "$TEST_ENV_DIR/flatpak_clean.log" \
+   || ! cmp -s "$MOCK_USER_ACTION_LOG" <(printf 'flatpak uninstall --user --unused --assumeyes --noninteractive\n') \
+   || ! grep -q '^Result: cleaned=1 skipped=0 failed=0 ' "$TEST_ENV_DIR/flatpak_clean.log"; then
+  chmod 755 "$MOCK_HOME/.local/share" 2>/dev/null || true
+  unset MOCK_USER_ACTION_LOG
+  echo -e "${RED}FAIL: shipped Flatpak Unused Runtimes row failed or invoked sudo (ec=$flatpak_clean_ec).${NC}"
+  cat "$TEST_ENV_DIR/flatpak_clean.log" "$MOCK_USER_ACTION_LOG" "$TEST_ENV_DIR/flatpak_sudo.calls" 2>/dev/null || true
+  exit 1
+fi
+chmod 755 "$MOCK_HOME/.local/share"
+
+# Custom XDG_DATA_HOME resolves the shipped Flatpak row without mutating $HOME/.local/share.
+custom_fp_xdg="$TEST_ENV_DIR/custom_xdg_data"
+mkdir -p "$custom_fp_xdg/flatpak"
+: > "$MOCK_USER_ACTION_LOG"
+flatpak_dry_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" XDG_DATA_HOME="$custom_fp_xdg" "$CLEANER_SH" \
+  --config "$SCRIPT_DIR/cleaner.conf" --only-target-exact "Flatpak Unused Runtimes" --dry-run --debug \
+  < /dev/null > "$TEST_ENV_DIR/flatpak_dry_debug.log" 2>&1 || flatpak_dry_ec=$?
+flatpak_dry_json_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" XDG_DATA_HOME="$custom_fp_xdg" "$CLEANER_SH" \
+  --config "$SCRIPT_DIR/cleaner.conf" --only-target-exact "Flatpak Unused Runtimes" --dry-run --json \
+  < /dev/null > "$TEST_ENV_DIR/flatpak_dry.json" 2>&1 || flatpak_dry_json_ec=$?
+if [[ "$flatpak_dry_ec" -ne 0 || "$flatpak_dry_json_ec" -ne 0 ]] \
+   || [[ -s "$MOCK_USER_ACTION_LOG" ]] \
+   || ! grep -qF "[FOUND] Flatpak Unused Runtimes: size measured at run time (flatpak uninstall --user --unused --assumeyes --noninteractive)" "$TEST_ENV_DIR/flatpak_dry_debug.log" \
+   || ! python3 - "$TEST_ENV_DIR/flatpak_dry.json" "$custom_fp_xdg/flatpak" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+t = [x for x in d.get("targets", []) if x.get("name") == "Flatpak Unused Runtimes"]
+assert len(t) == 1, d
+item = t[0]
+assert item["path"] == sys.argv[2], item
+assert item["status"] == "found" and item["size_at_run_time"] is True and item["size_human"] == "size at run time" and item["bytes"] == 0, item
+PY
+then
+  unset MOCK_USER_ACTION_LOG
+  echo -e "${RED}FAIL: custom XDG_DATA_HOME or --dry-run JSON failed for action:flatpak_unused.${NC}"
+  cat "$TEST_ENV_DIR/flatpak_dry_debug.log" "$TEST_ENV_DIR/flatpak_dry.json" 2>/dev/null || true
+  exit 1
+fi
+
+# Missing flatpak binary skips cleanly (exit 0, no sudo).
+fp_missing_bin="$TEST_ENV_DIR/fp_missing_bin"
+mkdir -p "$fp_missing_bin"
+for fp_tool in bash basename cat chmod dirname realpath sed du df awk tr id sort find stat date rm mktemp mkdir grep mv; do
+  ln -s "$(command -v "$fp_tool")" "$fp_missing_bin/$fp_tool"
+done
+ln -s "$TEST_ENV_DIR/bin/pgrep" "$fp_missing_bin/pgrep"
+cp "$TEST_ENV_DIR/bin/sudo" "$fp_missing_bin/sudo"
+chmod +x "$fp_missing_bin/sudo"
+: > "$MOCK_USER_ACTION_LOG"
+fp_missing_ec=0
+PATH="$fp_missing_bin" HOME="$MOCK_HOME" XDG_DATA_HOME="$MOCK_HOME/.local/share" "$CLEANER_SH" \
+  --config "$SCRIPT_DIR/cleaner.conf" --only-target-exact "Flatpak Unused Runtimes" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/flatpak_missing.log" 2>&1 || fp_missing_ec=$?
+if [[ "$fp_missing_ec" -ne 0 ]] \
+   || [[ -e "$TEST_ENV_DIR/flatpak_sudo.calls" ]] \
+   || ! grep -q "Flatpak Unused Runtimes: skipped: 'flatpak' not available on this platform." "$TEST_ENV_DIR/flatpak_missing.log" \
+   || ! grep -q '^Targets: found=0 .* skipped=1 ' "$TEST_ENV_DIR/flatpak_missing.log" \
+   || ! grep -q '^No files need cleaning\. Everything is already clean!$' "$TEST_ENV_DIR/flatpak_missing.log"; then
+  unset MOCK_USER_ACTION_LOG
+  echo -e "${RED}FAIL: missing flatpak binary did not skip cleanly (ec=$fp_missing_ec).${NC}"
+  cat "$TEST_ENV_DIR/flatpak_missing.log" 2>/dev/null || true
+  exit 1
+fi
+
+# Active flatpak process blocks execution cleanly.
+cat > "$TEST_ENV_DIR/bin/pgrep" <<'PGREP_FLATPAK'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-x" && "${2:-}" == "flatpak" ]]; then
+  exit 0
+fi
+exit 1
+PGREP_FLATPAK
+chmod +x "$TEST_ENV_DIR/bin/pgrep"
+: > "$MOCK_USER_ACTION_LOG"
+fp_blocked_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" XDG_DATA_HOME="$MOCK_HOME/.local/share" "$CLEANER_SH" \
+  --config "$SCRIPT_DIR/cleaner.conf" --only-target-exact "Flatpak Unused Runtimes" --clean --force \
+  < /dev/null > "$TEST_ENV_DIR/flatpak_blocked.log" 2>&1 || fp_blocked_ec=$?
+if [[ "$fp_blocked_ec" -ne 0 ]] \
+   || [[ -s "$MOCK_USER_ACTION_LOG" ]] \
+   || ! grep -q "BLOCKED.*Flatpak Unused Runtimes: Skip cleanup because process 'flatpak' is active." "$TEST_ENV_DIR/flatpak_blocked.log" \
+   || ! grep -q '^Targets: found=0 .* blocked=1 ' "$TEST_ENV_DIR/flatpak_blocked.log"; then
+  unset MOCK_USER_ACTION_LOG
+  echo -e "${RED}FAIL: active flatpak process did not block action:flatpak_unused.${NC}"
+  cat "$TEST_ENV_DIR/flatpak_blocked.log" 2>/dev/null || true
+  exit 1
+fi
+unset MOCK_USER_ACTION_LOG
+
+# --only-path refuses action:flatpak_unused, --skip-actions excludes it, and MIN_AGE_DAYS>0 fails check-config.
+cat > "$TEST_ENV_DIR/flatpak_pos_age.conf" <<'EOF'
+safe|Flatpak Unused Runtimes|$XDG_DATA_HOME/flatpak|Flatpak unused|1|flatpak|action:flatpak_unused
+EOF
+if ! run_test_case "Flatpak Refused By --only-path" 1 "flatpak_only_path.log" \
+       --config "$SCRIPT_DIR/cleaner.conf" --only-target-exact "Flatpak Unused Runtimes" --only-path "$MOCK_HOME/.local/share" --dry-run \
+   || ! grep -qF "Error: No eligible config target resolves at or below '--only-path $MOCK_HOME/.local/share'." "$TEST_ENV_DIR/flatpak_only_path.log" \
+   || ! run_test_case "Flatpak Excluded By --skip-actions" 0 "flatpak_skip_actions.log" \
+       --config "$SCRIPT_DIR/cleaner.conf" --skip-actions --list-targets --json \
+   || ! python3 - "$TEST_ENV_DIR/flatpak_skip_actions.log" <<'PY'; then
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert all(t.get("name") != "Flatpak Unused Runtimes" for t in d.get("targets", [])), d
+PY
+  echo -e "${RED}FAIL: action:flatpak_unused failed --only-path or --skip-actions check.${NC}"
+  exit 1
+fi
+if ! run_test_case "Flatpak Positive Min Age Rejected" 1 "flatpak_pos_age.log" \
+       --config "$TEST_ENV_DIR/flatpak_pos_age.conf" --check-config \
+   || ! grep -qF "MIN_AGE_DAYS must be 0 for action:flatpak_unused" "$TEST_ENV_DIR/flatpak_pos_age.log"; then
+  echo -e "${RED}FAIL: action:flatpak_unused did not reject MIN_AGE_DAYS > 0 in --check-config.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: action:flatpak_unused runs without sudo, honors XDG_DATA_HOME/dry-run/guards, and skips/blocks cleanly.${NC}"
 
 # 6b. A package-cache action credits only what left its directory, not the planned
 # cache size: paccache -rk1 keeps the newest packages, and may remove nothing.

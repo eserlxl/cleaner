@@ -2285,7 +2285,7 @@ validate_config_file() {
             exit 1
           fi
           ;;
-        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc|filter:cxx_build)
+        action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc|action:flatpak_unused|filter:cxx_build)
           ;;
         *)
           printf '%b%s:%s: Error: Unknown action '\''%s'\'' in target '\''%s'\''.%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$name" "$NC" >&2
@@ -4484,6 +4484,7 @@ action_required_binary() {
     pnpm_store_prune) echo "pnpm" ;;
     hf_cache_prune) echo "hf" ;;
     nix_store_gc) echo "nix-store" ;;
+    flatpak_unused) echo "flatpak" ;;
     *) echo "" ;;
   esac
 }
@@ -4492,7 +4493,7 @@ action_required_binary() {
 # measures reclaimed bytes from filesystem free-space delta at run time.
 action_is_user_level() {
   case "${1:-}" in
-    action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc) return 0 ;;
+    action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc|action:flatpak_unused) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -4544,6 +4545,7 @@ action_display_command() {
     action:pnpm_store_prune) echo "pnpm store prune" ;;
     action:hf_cache_prune) echo "hf cache prune --yes" ;;
     action:nix_store_gc) echo "nix-store --gc" ;;
+    action:flatpak_unused) echo "flatpak uninstall --user --unused --assumeyes --noninteractive" ;;
     *) echo "" ;;
   esac
 }
@@ -5908,6 +5910,11 @@ for i in "${!parsed_names[@]}"; do
         ;;
       action:nix_store_gc)
         if run_action nix-store --gc; then
+          action_success=true
+        fi
+        ;;
+      action:flatpak_unused)
+        if run_action flatpak uninstall --user --unused --assumeyes --noninteractive; then
           action_success=true
         fi
         ;;
