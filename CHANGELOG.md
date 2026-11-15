@@ -43,6 +43,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `--doctor` now validates `LINUX_CLEANER_TRASH_KEEP_DAYS` as ASCII digits before exempting `quarantine_retention` (and when reporting `invalid keep-days`, including under `tr_TR.UTF-8`), exposes additive `daily_timer_plan.max_size` in `--doctor --json` matching human `max-size=` output, and `docs/configuration.md` now notes both `--trash-keep-days` and `--trash-max-size` alongside `--only-path`.
 - `--restore --backup-conflicts` now rolls back a backed-up non-directory `aged` root collision (`aged_root_backup`) and prunes empty subdirectories when the per-file restore loop fails before placing any file in the destination directory, while preserving partially restored payloads and backups when sibling files succeeded.
 - `--log-max-size` now rejects missing trailing arguments and explicit empty strings (`--log-max-size ""`) with `Error: --log-max-size requires a size argument.` instead of aborting with a bash `set -u` `$2: unbound variable` error or silently clearing `LINUX_CLEANER_LOG_MAX_SIZE`.
 - `--restore --backup-conflicts` now rolls back backed-up intermediate `aged` directory collisions (`dir_backup`) and cleans empty newly created subdirectories when nested directory creation, leaf backup, or file restoration fails before populating that directory.

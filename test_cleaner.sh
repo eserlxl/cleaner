@@ -19287,5 +19287,103 @@ then
 fi
 echo -e "${GREEN}PASS: --log-max-size and LINUX_CLEANER_LOG_MAX_SIZE rotate logs safely under \$HOME, refuse symlinks, and pass parity.${NC}"
 
+echo -e "\n${BOLD}Test Case: Doctor Quarantine Retention Keep-Days Validation And Daily Timer Plan Max-Size JSON${NC}"
+python3 - "$CLEANER_SH" <<'PY'
+import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+cleaner = os.path.abspath(os.sys.argv[1])
+has_tr_locale = "tr_TR.utf8" in subprocess.run(
+    ["locale", "-a"], capture_output=True, text=True, check=False
+).stdout.lower()
+
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    bin_dir = root / "bin"
+    env_dir = root / ".config/linux-cleaner"
+    work_dir = root / "work"
+    bin_dir.mkdir()
+    env_dir.mkdir(parents=True)
+    work_dir.mkdir()
+    cfg = root / "doc.conf"
+    cfg.write_text(f"safe|Target|{work_dir}|desc|0||\n", encoding="utf-8")
+    sc = bin_dir / "systemctl"
+    sc.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == --user && \"${2:-}\" == is-enabled && \"${3:-}\" == linux-cleaner-clean.timer ]]; then\n"
+        "  echo enabled; exit 0\n"
+        "fi\n"
+        "echo disabled; exit 1\n",
+        encoding="utf-8",
+    )
+    os.chmod(sc, 0o755)
+    base_env = {
+        "HOME": str(root),
+        "XDG_CONFIG_HOME": str(root / ".config"),
+        "XDG_STATE_HOME": str(root / ".local/state"),
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+    }
+    env_path = env_dir / "env"
+
+    def run_doc(*extra, locale=None):
+        env = dict(base_env)
+        if locale:
+            env["LC_ALL"] = locale
+        return subprocess.run(
+            [cleaner, "--config", str(cfg), "--doctor", *extra],
+            env=env, capture_output=True, check=False,
+        )
+
+    # 1. Invalid LINUX_CLEANER_TRASH_KEEP_DAYS with LINUX_CLEANER_TRASH=1 must still warn on quarantine_retention.
+    env_path.write_text("LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=weekly\n", encoding="utf-8")
+    r_text = run_doc()
+    assert r_text.returncode == 0, r_text
+    text_out = r_text.stdout.decode("utf-8", errors="replace")
+    assert "WARN: quarantine retention:" in text_out, text_out
+    assert "WARN: daily timer plan:" in text_out and "; invalid keep-days" in text_out, text_out
+
+    r_json = run_doc("--json")
+    assert r_json.returncode == 0, r_json
+    d_bad_kd = json.loads(r_json.stdout.decode("utf-8"))
+    assert d_bad_kd["quarantine_retention"] == {"warn": True, "env_file": str(env_path)}, d_bad_kd
+    assert d_bad_kd["daily_timer_plan"]["max_size"] is None, d_bad_kd
+    assert "invalid keep-days" in d_bad_kd["daily_timer_plan"]["problems"], d_bad_kd
+
+    # 2. Non-ASCII Arabic-Indic digit under tr_TR.UTF-8 must be rejected for keep-days and still warn on retention.
+    if has_tr_locale:
+        env_path.write_bytes(b"LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=\xd9\xa1\n")
+        r_tr = run_doc("--json", locale="tr_TR.UTF-8")
+        assert r_tr.returncode == 0, r_tr
+        d_tr = json.loads(r_tr.stdout.decode("utf-8"))
+        assert d_tr["quarantine_retention"] == {"warn": True, "env_file": str(env_path)}, d_tr
+        assert "invalid keep-days" in d_tr["daily_timer_plan"]["problems"], d_tr
+
+    # 3. Valid keep-days and max-size expose daily_timer_plan.max_size and clear quarantine_retention warning.
+    env_path.write_text("LINUX_CLEANER_TRASH=1\nLINUX_CLEANER_TRASH_KEEP_DAYS=14\nLINUX_CLEANER_TRASH_MAX_SIZE=10G\n", encoding="utf-8")
+    r_ok = run_doc("--json")
+    assert r_ok.returncode == 0, r_ok
+    d_ok = json.loads(r_ok.stdout.decode("utf-8"))
+    assert d_ok["quarantine_retention"] == {"warn": False, "env_file": None}, d_ok
+    assert d_ok["daily_timer_plan"]["keep_days"] == "14", d_ok
+    assert d_ok["daily_timer_plan"]["max_size"] == "10G", d_ok
+    assert d_ok["daily_timer_plan"]["problems"] == [], d_ok
+
+    # 4. Unreadable env file sets daily_timer_plan.max_size to null (when non-root).
+    if os.geteuid() != 0:
+        os.chmod(env_path, 0o000)
+        try:
+            r_unr = run_doc("--json")
+            assert r_unr.returncode == 0, r_unr
+            d_unr = json.loads(r_unr.stdout.decode("utf-8"))
+            assert d_unr["daily_timer_plan"]["readable"] is False, d_unr
+            assert d_unr["daily_timer_plan"]["max_size"] is None, d_unr
+        finally:
+            os.chmod(env_path, 0o600)
+PY
+echo -e "${GREEN}PASS: --doctor validates LINUX_CLEANER_TRASH_KEEP_DAYS before skipping quarantine_retention warning and exposes daily_timer_plan.max_size.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

@@ -5630,7 +5630,7 @@ run_doctor() {
   local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" env_max_size="" mon_only="" mon_keep="" mon_max_size=""
   local timer_env_source="no env file" timer_deletion=permanent
   local ret_warn=false mon_present=false mon_readable=false mon_status="absent"
-  local plan_status="ok" plan_has_env=false plan_env_readable=true
+  local plan_status="ok" plan_has_env=false plan_env_readable=true env_keep_valid=false env_max_size_valid=false
   local -a plan_problem_list=()
   local -A doc_timer_vars=(
     [LINUX_CLEANER_RISK]=""
@@ -5655,14 +5655,16 @@ run_doctor() {
     env_trash="${doc_timer_vars[LINUX_CLEANER_TRASH]}"
     env_keep="${doc_timer_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
     env_max_size="${doc_timer_vars[LINUX_CLEANER_TRASH_MAX_SIZE]}"
-    local env_max_size_valid=false
+    if [[ -n "$env_keep" && "$env_keep" =~ ^[0123456789]+$ ]]; then
+      env_keep_valid=true
+    fi
     if [[ -n "$env_max_size" ]] && parse_size_bytes "$env_max_size" >/dev/null 2>&1; then
       env_max_size_valid=true
     fi
     case "$env_trash" in
       1|true|TRUE|yes|YES)
         timer_deletion=quarantine
-        if [[ -z "$env_keep" && "$env_max_size_valid" != true && "$retention_timer" != enabled ]]; then
+        if [[ "$env_keep_valid" != true && "$env_max_size_valid" != true && "$retention_timer" != enabled ]]; then
           ret_warn=true
           doc_warnings+=("quarantine retention: $timer_env enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine")
           [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: quarantine retention: %s enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine\n' "$timer_env"
@@ -5690,7 +5692,7 @@ run_doctor() {
       plan_problems+="; only-path with keep-days"
       plan_problem_list+=("only-path with keep-days")
     fi
-    if [[ -n "$env_keep" && "$env_keep" == *[![:digit:]]* ]]; then
+    if [[ -n "$env_keep" && "$env_keep_valid" != true ]]; then
       plan_level=WARN
       plan_problems+="; invalid keep-days"
       plan_problem_list+=("invalid keep-days")
@@ -5796,23 +5798,25 @@ run_doctor() {
     if [[ "$clean_timer" != enabled ]]; then
       printf '"daily_timer_plan":null,'
     else
-      local plan_read_json="null" plan_has_risk=false plan_has_del=false plan_has_keep=false plan_has_cfg=false
+      local plan_read_json="null" plan_has_risk=false plan_has_del=false plan_has_keep=false plan_has_max_size=false plan_has_cfg=false
       if [[ "$plan_env_readable" == true ]]; then
         [[ "$plan_has_env" == true ]] && plan_read_json="true"
         plan_has_risk=true
         plan_has_del=true
         [[ -n "$env_keep" ]] && plan_has_keep=true
+        [[ -n "$env_max_size" ]] && plan_has_max_size=true
         [[ -n "$env_config" ]] && plan_has_cfg=true
       else
         plan_read_json="false"
       fi
-      printf '"daily_timer_plan":{"status":"%s","env_file":%s,"readable":%s,"risk":%s,"deletion":%s,"keep_days":%s,"config":%s,"problems":[' \
+      printf '"daily_timer_plan":{"status":"%s","env_file":%s,"readable":%s,"risk":%s,"deletion":%s,"keep_days":%s,"max_size":%s,"config":%s,"problems":[' \
         "$plan_status" \
         "$(_json_str_or_null "$plan_has_env" "$timer_env")" \
         "$plan_read_json" \
         "$(_json_str_or_null "$plan_has_risk" "${env_risk:-safe}")" \
         "$(_json_str_or_null "$plan_has_del" "$timer_deletion")" \
         "$(_json_str_or_null "$plan_has_keep" "$env_keep")" \
+        "$(_json_str_or_null "$plan_has_max_size" "$env_max_size")" \
         "$(_json_str_or_null "$plan_has_cfg" "$env_config")"
       first=true
       for p in "${plan_problem_list[@]}"; do

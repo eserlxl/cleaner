@@ -109,8 +109,8 @@ also aborts before cleanup if expansion fails. Unused environment values contain
 line feeds do not invalidate an otherwise safe path. Inventory preserves configured paths and all risk levels; cleanup
 still applies its risk, age, process, protection, and symlink guards. Existing
 NAME-selection errors take precedence over no eligible PATH matches. Global
-`--trash-keep-days` retention, including its environment mirror, cannot be combined
-with a path scope.
+`--trash-keep-days` and `--trash-max-size` retention options, including their
+environment mirrors, cannot be combined with a path scope.
 
 ## Protecting directories
 
