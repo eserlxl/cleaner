@@ -16,6 +16,7 @@
 | U-147 | Outside-`$HOME` aged/excluded single files under `0555` parents and aged/excluded `0555` directories require `sudo` (skipping cleanly as `requires root` without privileges and preserving files), while user-writable `0755` directories under `0555` parents still clean file-by-file without `sudo` | Outside HOME Filtered Sudo Requirements Without Privileges |
 | U-148 | Lock contention, invalid `--only-path` / missing-config pre-lock failures, and failed `--purge-sessions --force` / `--restore` runs leave `LINUX_CLEANER_METRICS_FILE` untouched while post-lock cleanup failures still record `linux_cleaner_last_run_success 0` | Prometheus Metrics Pre-Lock And Non-Cleanup Preservation |
 | U-149 | Systemd `EnvironmentFile` parsing in `print_timer_note` and `--doctor` strips at most one matching outer quote pair while preserving embedded quotes (`'`, `"`) and trimming quoted whitespace (`"   "`, `'   '`) | Systemd EnvironmentFile Outer Quote Preservation / Timer Note Embedded Quote Preserved |
+| U-150 | `--doctor` preserves trailing newlines in `XDG_STATE_HOME` when reading `last-report.txt`, reporting the recorded cleanup summary instead of `none recorded` | Doctor Trailing-Newline XDG_STATE_HOME Preservation |
 
 ## 1.6.0 shipped feature inventory
 

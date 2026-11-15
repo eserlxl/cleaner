@@ -4247,7 +4247,8 @@ run_doctor() {
   printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
 
   local state_dir report_file report_line saved="" result="" last_level=INFO report_mtime now retention_note=""
-  state_dir="$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state")/linux-cleaner"
+  state_dir=$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state" && printf '.') || return 1
+  state_dir="${state_dir%.}/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
     printf 'INFO: last cleanup: none recorded\n'

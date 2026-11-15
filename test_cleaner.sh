@@ -16027,5 +16027,21 @@ fi
 rm -f "$envq_env_dir/env" "$TEST_ENV_DIR/bin/systemctl"
 echo -e "${GREEN}PASS: systemd EnvironmentFile outer quotes are stripped without corrupting embedded quotes.${NC}"
 
+echo -e "\n${BOLD}Test Case: Doctor Trailing-Newline XDG_STATE_HOME Preservation${NC}"
+setup_mock_env
+doc_nl_xdg="$TEST_ENV_DIR/doc_state"$'\n\n'
+mkdir -p "$doc_nl_xdg/linux-cleaner"
+printf 'Saved: 2026-01-01T00:00:00\nResult: cleaned=1 skipped=0 failed=0 elapsed=1s\n' > "$doc_nl_xdg/linux-cleaner/last-report.txt"
+doc_nl_ec=0
+XDG_STATE_HOME="$doc_nl_xdg" PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" < /dev/null > "$TEST_ENV_DIR/doc_nl.log" 2>&1 || doc_nl_ec=$?
+if [[ $doc_nl_ec -ne 0 ]] \
+   || ! grep -qxF "INFO: last cleanup: 2026-01-01T00:00:00 cleaned=1 skipped=0 failed=0 elapsed=1s" "$TEST_ENV_DIR/doc_nl.log"; then
+  echo -e "${RED}FAIL: --doctor missed last-report.txt when XDG_STATE_HOME ended in trailing newlines (ec=$doc_nl_ec).${NC}"
+  cat "$TEST_ENV_DIR/doc_nl.log" 2>/dev/null || true
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor preserves trailing newlines in XDG_STATE_HOME when reading last-report.txt.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
