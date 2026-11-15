@@ -59,7 +59,7 @@ Options:
   --list-targets             List configured cleanup targets (read-only) and exit.
   --check-config             Validate the configuration file and exit (no disk analysis).
   --init-config              Copy the active config to your user config path (never overwrites).
-  --doctor                   Check the runtime environment a cleanup depends on (read-only) and exit.
+  --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
   --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention.
   --release-session SESSION  Remove a session hold so normal purge and retention apply again.
@@ -88,7 +88,7 @@ Options:
   --exit-code                Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --fail-fast                With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST).
-  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, or --report summary).
+  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, --report summary, or --doctor checklist).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -1003,10 +1003,10 @@ if [[ "$session_mode_count" -gt 1 ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true || \
-      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true ) \
+      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true || \
+      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ) \
     ) ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, --list-sessions, or --report.${NC}" >&2
+  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, --list-sessions, --report, or --doctor.${NC}" >&2
   exit 1
 fi
 
@@ -4574,13 +4574,29 @@ check_gnu_userland() {
   return "$ok"
 }
 
+_json_str_or_null() {
+  local present="$1" val="$2" esc=""
+  if [[ "$present" != true ]]; then
+    printf 'null'
+  else
+    json_escape "$val" esc
+    printf '"%s"' "$esc"
+  fi
+}
+
 # Read-only environment checklist: explain config resolution, GNU userland,
 # optional helper binaries, user timer states, last cleanup, and quarantine count.
 # Exits 0 when cleanup can run, or 1 when the config is missing, unreadable,
 # or invalid, or GNU userland is missing.
 run_doctor() {
   local doctor_rc=0 cfg_path="$CONFIG_FILE" cfg_source="explicit" bin_path i cfg_err="" cfg_rc=0
-  local -a cfg_labels=(XDG /etc checkout)
+  local -a cfg_labels=(XDG /etc checkout) doc_warnings=()
+  local cfg_status="ok" cfg_has_err=false
+  local gnu_ok=true gnu_detail="GNU userland available (du -sb, stat -c, find -print0/-quit, realpath)"
+  local pgrep_avail=false pgrep_path="" flock_avail=false flock_path=""
+  local git_avail=false git_path="" notify_avail=false notify_path=""
+  local sudo_avail=false
+
   set_default_config_candidates || return 1
   if [[ -z "$cfg_path" ]]; then
     # Same fallback as discovery: the checkout path when no candidate exists.
@@ -4599,10 +4615,18 @@ run_doctor() {
     done
   fi
   if [[ ! -f "$cfg_path" ]]; then
-    printf 'WARN: config: %s (%s, not found)\n' "$cfg_path" "$cfg_source"
+    cfg_status="not_found"
+    cfg_has_err=true
+    cfg_err="not found"
+    doc_warnings+=("config: $cfg_path ($cfg_source, not found)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: config: %s (%s, not found)\n' "$cfg_path" "$cfg_source"
     doctor_rc=1
   elif [[ ! -r "$cfg_path" ]]; then
-    printf 'WARN: config: %s (%s, not readable)\n' "$cfg_path" "$cfg_source"
+    cfg_status="not_readable"
+    cfg_has_err=true
+    cfg_err="not readable"
+    doc_warnings+=("config: $cfg_path ($cfg_source, not readable)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: config: %s (%s, not readable)\n' "$cfg_path" "$cfg_source"
     doctor_rc=1
   else
     # Subshell: validate_config_file exits 1, and the checklist must continue.
@@ -4612,48 +4636,66 @@ run_doctor() {
       cfg_err=$(printf '%s' "$cfg_err" | sed $'s/\033\\[[0-9;]*m//g')
       cfg_err="${cfg_err//$'\n'/ }"
       trim_to cfg_err "$cfg_err"
-      printf 'WARN: config: %s (%s, %s)\n' "$cfg_path" "$cfg_source" "$cfg_err"
+      cfg_status="invalid"
+      cfg_has_err=true
+      doc_warnings+=("config: $cfg_path ($cfg_source, $cfg_err)")
+      [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: config: %s (%s, %s)\n' "$cfg_path" "$cfg_source" "$cfg_err"
       doctor_rc=1
     else
-      printf 'OK: config: %s (%s)\n' "$cfg_path" "$cfg_source"
+      [[ "$JSON_OUTPUT" == true ]] || printf 'OK: config: %s (%s)\n' "$cfg_path" "$cfg_source"
     fi
   fi
 
   if check_gnu_userland; then
-    printf 'OK: check_gnu_userland: GNU userland available (du -sb, stat -c, find -print0/-quit, realpath)\n'
+    [[ "$JSON_OUTPUT" == true ]] || printf 'OK: check_gnu_userland: %s\n' "$gnu_detail"
   else
-    printf 'WARN: check_gnu_userland: missing required GNU userland support (du -sb, stat -c, find -print0/-quit, realpath)\n'
+    gnu_ok=false
+    gnu_detail="missing required GNU userland support (du -sb, stat -c, find -print0/-quit, realpath)"
+    doc_warnings+=("check_gnu_userland: $gnu_detail")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: check_gnu_userland: %s\n' "$gnu_detail"
     doctor_rc=1
   fi
 
   if bin_path=$(command -v pgrep 2>/dev/null); then
-    printf 'OK: pgrep: %s\n' "$bin_path"
+    pgrep_avail=true
+    pgrep_path="$bin_path"
+    [[ "$JSON_OUTPUT" == true ]] || printf 'OK: pgrep: %s\n' "$bin_path"
   else
-    printf 'WARN: pgrep: not found (CHECK_PROCESSES rows will fail process check and be skipped)\n'
+    doc_warnings+=("pgrep: not found (CHECK_PROCESSES rows will fail process check and be skipped)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: pgrep: not found (CHECK_PROCESSES rows will fail process check and be skipped)\n'
   fi
 
   if bin_path=$(command -v flock 2>/dev/null); then
-    printf 'OK: flock: %s\n' "$bin_path"
+    flock_avail=true
+    flock_path="$bin_path"
+    [[ "$JSON_OUTPUT" == true ]] || printf 'OK: flock: %s\n' "$bin_path"
   else
-    printf 'WARN: flock: not found (mutating runs will not be serialized)\n'
+    doc_warnings+=("flock: not found (mutating runs will not be serialized)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: flock: not found (mutating runs will not be serialized)\n'
   fi
 
   if bin_path=$(command -v git 2>/dev/null); then
-    printf 'OK: git: %s\n' "$bin_path"
+    git_avail=true
+    git_path="$bin_path"
+    [[ "$JSON_OUTPUT" == true ]] || printf 'OK: git: %s\n' "$bin_path"
   else
-    printf 'WARN: git: not found (git-tracked file guard disabled)\n'
+    doc_warnings+=("git: not found (git-tracked file guard disabled)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: git: not found (git-tracked file guard disabled)\n'
   fi
 
   if command -v sudo >/dev/null 2>&1 && sudo -n true </dev/null >/dev/null 2>&1; then
-    printf 'OK: sudo -n: non-interactive sudo available\n'
+    sudo_avail=true
+    [[ "$JSON_OUTPUT" == true ]] || printf 'OK: sudo -n: non-interactive sudo available\n'
   else
-    printf 'INFO: sudo -n: non-interactive sudo unavailable (root targets will prompt or be skipped)\n'
+    [[ "$JSON_OUTPUT" == true ]] || printf 'INFO: sudo -n: non-interactive sudo unavailable (root targets will prompt or be skipped)\n'
   fi
 
   if bin_path=$(command -v notify-send 2>/dev/null); then
-    printf 'OK: notify-send: %s\n' "$bin_path"
+    notify_avail=true
+    notify_path="$bin_path"
+    [[ "$JSON_OUTPUT" == true ]] || printf 'OK: notify-send: %s\n' "$bin_path"
   else
-    printf 'INFO: notify-send: not found (--notify unavailable)\n'
+    [[ "$JSON_OUTPUT" == true ]] || printf 'INFO: notify-send: not found (--notify unavailable)\n'
   fi
 
   local clean_timer="unavailable" retention_timer="unavailable" monitor_timer="unavailable" t_unit t_state
@@ -4668,23 +4710,28 @@ run_doctor() {
       esac
     done
   fi
-  printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
+  [[ "$JSON_OUTPUT" == true ]] || printf 'INFO: timers (systemctl --user is-enabled): clean=%s retention=%s monitor=%s\n' "$clean_timer" "$retention_timer" "$monitor_timer"
 
   local state_dir report_file report_line saved="" result="" last_level=INFO report_mtime now retention_note=""
+  local last_status="none_recorded" last_has_fields=false last_interrupted=false last_retention_failed=false last_stale=false
   state_dir=$(_xdg_dir XDG_STATE_HOME "$HOME/.local/state" && printf '.') || return 1
   state_dir="${state_dir%.}/linux-cleaner"
   report_file="${state_dir}/last-report.txt"
   if [[ -L "$state_dir" || -L "$report_file" || ! -f "$report_file" ]]; then
-    printf 'INFO: last cleanup: none recorded\n'
+    [[ "$JSON_OUTPUT" == true ]] || printf 'INFO: last cleanup: none recorded\n'
   elif [[ ! -r "$report_file" ]]; then
-    printf 'WARN: last cleanup: report not readable\n'
+    last_status="unreadable"
+    doc_warnings+=("last cleanup: report not readable")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: last cleanup: report not readable\n'
   else
+    last_has_fields=true
+    last_status="ok"
     while IFS= read -r report_line || [[ -n "$report_line" ]]; do
       case "$report_line" in
         "Saved: "*) saved="${report_line#Saved: }" ;;
         "Result: "*) result="${report_line#Result: }" ;;
-        Interrupted:*) last_level=WARN ;;
-        "Retention failed: true") last_level=WARN; retention_note="; retention failed" ;;
+        Interrupted:*) last_level=WARN; last_interrupted=true ;;
+        "Retention failed: true") last_level=WARN; last_retention_failed=true; retention_note="; retention failed" ;;
       esac
     done < "$report_file"
     if [[ "$result" =~ (^|[[:space:]])failed=0*[123456789][[:digit:]]*($|[[:space:]]) ]]; then
@@ -4695,14 +4742,22 @@ run_doctor() {
        && now=$(date +%s) \
        && (( now - report_mtime > 2 * 24 * 60 * 60 )); then
       last_level=WARN
+      last_stale=true
     fi
-    printf '%s: last cleanup: %s %s%s\n' "$last_level" "$saved" "$result" "$retention_note"
+    if [[ "$last_level" == WARN ]]; then
+      last_status="warn"
+      doc_warnings+=("last cleanup: ${saved} ${result}${retention_note}")
+    fi
+    [[ "$JSON_OUTPUT" == true ]] || printf '%s: last cleanup: %s %s%s\n' "$last_level" "$saved" "$result" "$retention_note"
   fi
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
   local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" mon_only="" mon_keep=""
   local timer_env_source="no env file" timer_deletion=permanent
+  local ret_warn=false mon_present=false mon_readable=false mon_status="absent"
+  local plan_status="ok" plan_has_env=false plan_env_readable=true
+  local -a plan_problem_list=()
   local -A doc_timer_vars=(
     [LINUX_CLEANER_RISK]=""
     [LINUX_CLEANER_CONFIG]=""
@@ -4716,6 +4771,7 @@ run_doctor() {
   )
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     timer_env_source="$timer_env"
+    plan_has_env=true
     read_systemd_env_file "$timer_env" doc_timer_vars
     env_risk="${doc_timer_vars[LINUX_CLEANER_RISK]}"
     env_config="${doc_timer_vars[LINUX_CLEANER_CONFIG]}"
@@ -4726,28 +4782,37 @@ run_doctor() {
       1|true|TRUE|yes|YES)
         timer_deletion=quarantine
         if [[ -z "$env_keep" && "$retention_timer" != enabled ]]; then
-          printf 'WARN: quarantine retention: %s enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine\n' "$timer_env"
+          ret_warn=true
+          doc_warnings+=("quarantine retention: $timer_env enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine")
+          [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: quarantine retention: %s enables LINUX_CLEANER_TRASH for the daily timer but neither LINUX_CLEANER_TRASH_KEEP_DAYS nor linux-cleaner-retention.timer bounds the quarantine\n' "$timer_env"
         fi
         ;;
     esac
   fi
   if [[ "$clean_timer" == enabled && -e "$timer_env" && "$timer_env_source" == "no env file" ]]; then
     # systemd's EnvironmentFile=- skips only a missing file, so every timer run fails.
-    printf 'WARN: daily timer plan: env file not readable (%s)\n' "$timer_env"
+    plan_status="warn"
+    plan_has_env=true
+    plan_env_readable=false
+    plan_problem_list+=("env file not readable")
+    doc_warnings+=("daily timer plan: env file not readable ($timer_env)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: daily timer plan: env file not readable (%s)\n' "$timer_env"
   elif [[ "$clean_timer" == enabled ]]; then
     local plan_level=INFO plan_config="" plan_problems=""
     case "$(risk_lower "$env_risk")" in
       ""|safe|medium|danger|dangerous) ;;
-      *) plan_level=WARN; plan_problems+="; invalid risk" ;;
+      *) plan_level=WARN; plan_problems+="; invalid risk"; plan_problem_list+=("invalid risk") ;;
     esac
     # The clean run refuses --only-path together with --trash-keep-days.
     if [[ -n "$env_only" && -n "$env_keep" ]]; then
       plan_level=WARN
       plan_problems+="; only-path with keep-days"
+      plan_problem_list+=("only-path with keep-days")
     fi
     if [[ -n "$env_keep" && "$env_keep" == *[![:digit:]]* ]]; then
       plan_level=WARN
       plan_problems+="; invalid keep-days"
+      plan_problem_list+=("invalid keep-days")
     fi
     if [[ -n "$env_config" ]]; then
       plan_config=" config=$env_config"
@@ -4757,32 +4822,126 @@ run_doctor() {
       if [[ ! -f "$plan_config_path" || ! -r "$plan_config_path" ]]; then
         plan_level=WARN
         plan_problems+="; config not readable"
+        plan_problem_list+=("config not readable")
       elif ! (CONFIG_FILE="$plan_config_path" validate_config_file >/dev/null 2>&1); then
         plan_level=WARN
         plan_problems+="; config invalid"
+        plan_problem_list+=("config invalid")
       fi
     fi
-    printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_config" "$timer_env_source" "$plan_problems"
+    if [[ "$plan_level" == WARN ]]; then
+      plan_status="warn"
+      doc_warnings+=("daily timer plan: risk=${env_risk:-safe} deletion=${timer_deletion} keep-days=${env_keep:-none}${plan_config} (${timer_env_source})${plan_problems}")
+    fi
+    [[ "$JSON_OUTPUT" == true ]] || printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_config" "$timer_env_source" "$plan_problems"
   fi
   if [[ -f "$monitor_env" && -r "$monitor_env" ]]; then
+    mon_present=true
+    mon_readable=true
+    mon_status="ok"
     read_systemd_env_file "$monitor_env" doc_mon_vars
     mon_only="${doc_mon_vars[LINUX_CLEANER_ONLY_PATH]}"
     mon_keep="${doc_mon_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
     if [[ -n "$mon_only" && -n "$mon_keep" ]]; then
-      printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
+      mon_status="conflict"
+      doc_warnings+=("monitor env: $monitor_env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS")
+      [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
     fi
   elif [[ -e "$monitor_env" ]]; then
-    printf 'WARN: monitor env: %s (not readable)\n' "$monitor_env"
+    mon_present=true
+    mon_readable=false
+    mon_status="unreadable"
+    doc_warnings+=("monitor env: $monitor_env (not readable)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: monitor env: %s (not readable)\n' "$monitor_env"
   fi
 
-  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_dots=""
+  local quarantine_base="$HOME/.cache/linux-cleaner/quarantine" session_dots="" q_status="ok" q_has_count=true
   if [[ -L "$quarantine_base" ]]; then
-    printf 'WARN: quarantine: symlinked quarantine directory refused (%s)\n' "$quarantine_base"
+    q_status="symlinked"
+    q_has_count=false
+    doc_warnings+=("quarantine: symlinked quarantine directory refused ($quarantine_base)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: quarantine: symlinked quarantine directory refused (%s)\n' "$quarantine_base"
   elif [[ -d "$quarantine_base" && ! -L "$quarantine_base" ]] && \
      ! session_dots=$(find "$quarantine_base" -mindepth 1 -maxdepth 1 -type d -printf '.' 2>/dev/null); then
-    printf 'WARN: quarantine: cannot enumerate sessions (%s)\n' "$quarantine_base"
+    q_status="unreadable"
+    q_has_count=false
+    doc_warnings+=("quarantine: cannot enumerate sessions ($quarantine_base)")
+    [[ "$JSON_OUTPUT" == true ]] || printf 'WARN: quarantine: cannot enumerate sessions (%s)\n' "$quarantine_base"
   else
-    printf 'INFO: quarantine: %d session(s) (%s)\n' "${#session_dots}" "$quarantine_base"
+    [[ "$JSON_OUTPUT" == true ]] || printf 'INFO: quarantine: %d session(s) (%s)\n' "${#session_dots}" "$quarantine_base"
+  fi
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    local ready_json="true" esc="" first=true p=""
+    [[ "$doctor_rc" -eq 0 ]] || ready_json="false"
+    printf '{"ready":%s,"exit_code":%d,' "$ready_json" "$doctor_rc"
+    printf '"config":{"path":"%s","source":"%s","status":"%s","error":%s},' \
+      "$(json_escape "$cfg_path")" "$(json_escape "$cfg_source")" "$cfg_status" \
+      "$(_json_str_or_null "$cfg_has_err" "$cfg_err")"
+    printf '"gnu_userland":{"ok":%s,"detail":"%s"},' \
+      "$gnu_ok" "$(json_escape "$gnu_detail")"
+    printf '"tools":{"pgrep":{"available":%s,"path":%s},"flock":{"available":%s,"path":%s},"git":{"available":%s,"path":%s},"notify_send":{"available":%s,"path":%s}},' \
+      "$pgrep_avail" "$(_json_str_or_null "$pgrep_avail" "$pgrep_path")" \
+      "$flock_avail" "$(_json_str_or_null "$flock_avail" "$flock_path")" \
+      "$git_avail" "$(_json_str_or_null "$git_avail" "$git_path")" \
+      "$notify_avail" "$(_json_str_or_null "$notify_avail" "$notify_path")"
+    printf '"sudo_non_interactive":{"available":%s},' "$sudo_avail"
+    printf '"timers":{"clean":"%s","retention":"%s","monitor":"%s"},' \
+      "$(json_escape "$clean_timer")" "$(json_escape "$retention_timer")" "$(json_escape "$monitor_timer")"
+    printf '"last_cleanup":{"status":"%s","saved":%s,"result":%s,"interrupted":%s,"retention_failed":%s,"stale":%s},' \
+      "$last_status" \
+      "$(_json_str_or_null "$last_has_fields" "$saved")" \
+      "$(_json_str_or_null "$last_has_fields" "$result")" \
+      "$last_interrupted" "$last_retention_failed" "$last_stale"
+    if [[ "$clean_timer" != enabled ]]; then
+      printf '"daily_timer_plan":null,'
+    else
+      local plan_read_json="null" plan_has_risk=false plan_has_del=false plan_has_keep=false plan_has_cfg=false
+      if [[ "$plan_env_readable" == true ]]; then
+        [[ "$plan_has_env" == true ]] && plan_read_json="true"
+        plan_has_risk=true
+        plan_has_del=true
+        [[ -n "$env_keep" ]] && plan_has_keep=true
+        [[ -n "$env_config" ]] && plan_has_cfg=true
+      else
+        plan_read_json="false"
+      fi
+      printf '"daily_timer_plan":{"status":"%s","env_file":%s,"readable":%s,"risk":%s,"deletion":%s,"keep_days":%s,"config":%s,"problems":[' \
+        "$plan_status" \
+        "$(_json_str_or_null "$plan_has_env" "$timer_env")" \
+        "$plan_read_json" \
+        "$(_json_str_or_null "$plan_has_risk" "${env_risk:-safe}")" \
+        "$(_json_str_or_null "$plan_has_del" "$timer_deletion")" \
+        "$(_json_str_or_null "$plan_has_keep" "$env_keep")" \
+        "$(_json_str_or_null "$plan_has_cfg" "$env_config")"
+      first=true
+      for p in "${plan_problem_list[@]}"; do
+        [[ "$first" == true ]] || printf ','
+        first=false
+        json_escape "$p" esc
+        printf '"%s"' "$esc"
+      done
+      printf ']},'
+    fi
+    printf '"quarantine_retention":{"warn":%s,"env_file":%s},' \
+      "$ret_warn" "$(_json_str_or_null "$ret_warn" "$timer_env")"
+    local mon_read_json="null"
+    [[ "$mon_present" == true ]] && mon_read_json="$mon_readable"
+    printf '"monitor_env":{"present":%s,"path":"%s","readable":%s,"status":"%s"},' \
+      "$mon_present" "$(json_escape "$monitor_env")" "$mon_read_json" "$mon_status"
+    local q_cnt_json="null"
+    [[ "$q_has_count" == true ]] && q_cnt_json="${#session_dots}"
+    printf '"quarantine":{"path":"%s","status":"%s","session_count":%s},' \
+      "$(json_escape "$quarantine_base")" "$q_status" "$q_cnt_json"
+    printf '"warnings":['
+    first=true
+    for p in "${doc_warnings[@]}"; do
+      [[ "$first" == true ]] || printf ','
+      first=false
+      json_escape "$p" esc
+      printf '"%s"' "$esc"
+    done
+    printf ']}\n'
   fi
   return "$doctor_rc"
 }

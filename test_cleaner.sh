@@ -15188,11 +15188,218 @@ echo -e "${GREEN}PASS: --doctor exits 1 when check_gnu_userland fails.${NC}"
 
 if ! run_test_case "Doctor With List Targets Rejected" 1 "doctor_mx_list.log" --doctor --list-targets \
    || ! run_test_case "Doctor With Only Target Rejected" 1 "doctor_mx_only.log" --doctor --only-target NPM \
-   || ! run_test_case "Doctor With JSON Rejected" 1 "doctor_mx_json.log" --doctor --json; then
-  echo -e "${RED}FAIL: --doctor did not reject incompatible mode, filter, or --json flags.${NC}"
+   || ! run_test_case "Doctor JSON With List Targets Rejected" 1 "doctor_mx_json_list.log" --doctor --json --list-targets \
+   || ! run_test_case "Doctor JSON With Only Target Rejected" 1 "doctor_mx_json_only.log" --doctor --json --only-target NPM \
+   || ! run_test_case "Init Config With JSON Rejected" 1 "init_mx_json.log" --init-config --json; then
+  echo -e "${RED}FAIL: --doctor or --init-config did not reject incompatible mode, filter, or --json flags.${NC}"
   exit 1
 fi
-echo -e "${GREEN}PASS: --doctor rejects other modes, filter flags, and --json.${NC}"
+echo -e "${GREEN}PASS: --doctor rejects other modes and filter flags, and --init-config rejects --json.${NC}"
+
+echo -e "\n${BOLD}Test Case: Doctor JSON Output${NC}"
+setup_mock_env
+doc_json_xdg="$TEST_ENV_DIR/doctor_json_xdg"
+mkdir -p "$doc_json_xdg/linux-cleaner" \
+         "$MOCK_HOME/.cache/linux-cleaner/quarantine/20260101_000000" \
+         "$MOCK_HOME/.cache/linux-cleaner/quarantine/20260102_000000"
+cp "$TEST_ENV_DIR/test_cleaner.conf" "$doc_json_xdg/linux-cleaner/cleaner.conf"
+for doc_bin in pgrep flock git notify-send; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$TEST_ENV_DIR/bin/$doc_bin"
+  chmod +x "$TEST_ENV_DIR/bin/$doc_bin"
+done
+cat > "$TEST_ENV_DIR/bin/sudo" <<'DOC_JSON_SUDO_EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-n" && "${2:-}" == "true" ]] && exit 0
+exit 1
+DOC_JSON_SUDO_EOF
+chmod +x "$TEST_ENV_DIR/bin/sudo"
+cat > "$TEST_ENV_DIR/bin/systemctl" <<'DOC_JSON_SYSTEMCTL_EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--user" && "${2:-}" == "is-enabled" ]]; then
+  case "${3:-}" in
+    linux-cleaner-clean.timer) echo "disabled"; exit 1 ;;
+    linux-cleaner-retention.timer) echo "disabled"; exit 1 ;;
+    linux-cleaner-monitor.timer) echo "enabled"; exit 0 ;;
+  esac
+fi
+exit 1
+DOC_JSON_SYSTEMCTL_EOF
+chmod +x "$TEST_ENV_DIR/bin/systemctl"
+doc_json_state="$MOCK_HOME/doctor-json-state"
+if ! python3 - "$CLEANER_SH" "$TEST_ENV_DIR" "$MOCK_HOME" "$doc_json_xdg" "$doc_json_state" <<'DOC_JSON_PY'
+import json, os, pathlib, shutil, subprocess, sys
+
+cleaner, test_env, home, xdg_cfg, state_dir = sys.argv[1:]
+test_env_p = pathlib.Path(test_env)
+home_p = pathlib.Path(home)
+state_p = pathlib.Path(state_dir)
+base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+base_env.update(
+    HOME=home,
+    XDG_CONFIG_HOME=xdg_cfg,
+    XDG_STATE_HOME=state_dir,
+    PATH=f"{test_env}/bin:{base_env.get('PATH', '')}",
+)
+
+def run_doc(args, extra_env=None):
+    env = dict(base_env)
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        ["bash", cleaner, "--doctor"] + args,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+# 1. All-present readiness (--doctor --json and LINUX_CLEANER_JSON=1) without creating lock or state dir.
+for mode_args, extra in (
+    (["--json"], None),
+    ([], {"LINUX_CLEANER_JSON": "1"}),
+):
+    res = run_doc(mode_args, extra)
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
+    assert res.stderr == "", res.stderr
+    d = json.loads(res.stdout)
+    assert d["ready"] is True and d["exit_code"] == 0, d
+    assert d["config"] == {
+        "path": f"{xdg_cfg}/linux-cleaner/cleaner.conf",
+        "source": "XDG",
+        "status": "ok",
+        "error": None,
+    }, d["config"]
+    assert d["gnu_userland"]["ok"] is True, d["gnu_userland"]
+    for tool in ("pgrep", "flock", "git", "notify_send"):
+        assert d["tools"][tool]["available"] is True and d["tools"][tool]["path"], (tool, d["tools"][tool])
+    assert d["sudo_non_interactive"]["available"] is True, d["sudo_non_interactive"]
+    assert d["timers"] == {"clean": "disabled", "retention": "disabled", "monitor": "enabled"}, d["timers"]
+    assert d["last_cleanup"]["status"] == "none_recorded" and d["last_cleanup"]["saved"] is None, d["last_cleanup"]
+    assert d["daily_timer_plan"] is None, d["daily_timer_plan"]
+    assert d["quarantine_retention"] == {"warn": False, "env_file": None}, d["quarantine_retention"]
+    assert d["monitor_env"]["status"] == "absent" and d["monitor_env"]["present"] is False, d["monitor_env"]
+    assert d["quarantine"]["status"] == "ok" and d["quarantine"]["session_count"] == 2, d["quarantine"]
+    assert d["warnings"] == [], d["warnings"]
+    assert not (home_p / ".cache/linux-cleaner/cleaner.lock").exists()
+    assert not state_p.exists()
+
+# 2. Warnings: enabled clean timer, bad env values, retention unbounded, conflicting monitor.env, stale failed report, symlinked quarantine.
+doc_env_dir = home_p / ".config/linux-cleaner"
+doc_env_dir.mkdir(parents=True, exist_ok=True)
+env_file = doc_env_dir / "env"
+env_file.write_text(
+    "LINUX_CLEANER_RISK=bogus\n"
+    "LINUX_CLEANER_TRASH=1\n"
+    "LINUX_CLEANER_CONFIG=missing-rel.conf\n",
+    encoding="utf-8",
+)
+mon_file = doc_env_dir / "monitor.env"
+mon_file.write_text("LINUX_CLEANER_ONLY_PATH=/tmp\nLINUX_CLEANER_TRASH_KEEP_DAYS=7\n", encoding="utf-8")
+
+(test_env_p / "bin/systemctl").write_text(
+    "#!/usr/bin/env bash\n"
+    "if [[ \"${1:-}\" == \"--user\" && \"${2:-}\" == \"is-enabled\" ]]; then\n"
+    "  case \"${3:-}\" in\n"
+    "    linux-cleaner-clean.timer) echo enabled; exit 0 ;;\n"
+    "    linux-cleaner-retention.timer) echo disabled; exit 1 ;;\n"
+    "    linux-cleaner-monitor.timer) echo disabled; exit 1 ;;\n"
+    "  esac\n"
+    "fi\n"
+    "exit 1\n",
+    encoding="utf-8",
+)
+os.chmod(test_env_p / "bin/systemctl", 0o755)
+
+report_dir = state_p / "linux-cleaner"
+report_dir.mkdir(parents=True, exist_ok=True)
+report_file = report_dir / "last-report.txt"
+report_file.write_text(
+    "Saved: 2026-01-01T00:00:00\n"
+    "Result: cleaned=0 skipped=0 failed=2 elapsed=1s\n"
+    "Interrupted: TERM before all targets finished\n"
+    "Retention failed: true\n",
+    encoding="utf-8",
+)
+old_ts = 1577836800
+os.utime(report_file, (old_ts, old_ts))
+
+q_dir = home_p / ".cache/linux-cleaner/quarantine"
+q_real = test_env_p / "doctor_json_q_target"
+q_real.mkdir(parents=True, exist_ok=True)
+shutil.rmtree(q_dir)
+q_dir.symlink_to(q_real)
+
+res_warn = run_doc(["--json"])
+assert res_warn.returncode == 0, (res_warn.returncode, res_warn.stdout, res_warn.stderr)
+dw = json.loads(res_warn.stdout)
+assert dw["ready"] is True and dw["exit_code"] == 0, dw
+assert dw["last_cleanup"]["status"] == "warn"
+assert dw["last_cleanup"]["interrupted"] is True
+assert dw["last_cleanup"]["retention_failed"] is True
+assert dw["last_cleanup"]["stale"] is True
+assert dw["daily_timer_plan"]["status"] == "warn"
+assert set(dw["daily_timer_plan"]["problems"]) == {
+    "invalid risk",
+    "config not readable",
+}, dw["daily_timer_plan"]
+assert dw["quarantine_retention"] == {"warn": True, "env_file": str(env_file)}, dw["quarantine_retention"]
+assert dw["monitor_env"]["status"] == "conflict", dw["monitor_env"]
+assert dw["quarantine"]["status"] == "symlinked" and dw["quarantine"]["session_count"] is None, dw["quarantine"]
+assert len(dw["warnings"]) == 5, dw["warnings"]
+
+# Check only-path + invalid keep-days warnings when LINUX_CLEANER_TRASH_KEEP_DAYS is set.
+env_file.write_text(
+    "LINUX_CLEANER_ONLY_PATH=/tmp\n"
+    "LINUX_CLEANER_TRASH_KEEP_DAYS=abc\n",
+    encoding="utf-8",
+)
+res_kd = run_doc(["--json"])
+assert res_kd.returncode == 0, (res_kd.returncode, res_kd.stdout, res_kd.stderr)
+dkd = json.loads(res_kd.stdout)
+assert set(dkd["daily_timer_plan"]["problems"]) == {
+    "only-path with keep-days",
+    "invalid keep-days",
+}, dkd["daily_timer_plan"]
+
+# Restore normal quarantine and clean env for exit-1 tests
+q_dir.unlink()
+env_file.unlink()
+mon_file.unlink()
+
+# 3. Missing config and schema-invalid config exit 1 while emitting single valid JSON doc on stdout.
+res_miss = run_doc(["--config", f"{test_env}/missing_doc.conf", "--json"])
+assert res_miss.returncode == 1, (res_miss.returncode, res_miss.stdout, res_miss.stderr)
+assert res_miss.stderr == "", res_miss.stderr
+dm = json.loads(res_miss.stdout)
+assert dm["ready"] is False and dm["exit_code"] == 1
+assert dm["config"]["status"] == "not_found" and dm["config"]["error"] == "not found"
+
+bad_cfg = test_env_p / "doctor_json_bad.conf"
+bad_cfg.write_text('safe|Bad "Name"|/tmp/x|desc|0||action:bogus\n', encoding="utf-8")
+res_bad = run_doc(["--config", str(bad_cfg), "--json"])
+assert res_bad.returncode == 1, (res_bad.returncode, res_bad.stdout, res_bad.stderr)
+assert res_bad.stderr == "", res_bad.stderr
+db = json.loads(res_bad.stdout)
+assert db["ready"] is False and db["exit_code"] == 1
+assert db["config"]["status"] == "invalid" and "Unknown action" in db["config"]["error"], db["config"]
+
+# 4. Failing GNU probe exits 1 and marks gnu_userland.ok false in JSON.
+bad_stat = test_env_p / "bin/stat"
+bad_stat.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+os.chmod(bad_stat, 0o755)
+try:
+    res_gnu = run_doc(["--json"])
+finally:
+    bad_stat.unlink()
+assert res_gnu.returncode == 1, (res_gnu.returncode, res_gnu.stdout, res_gnu.stderr)
+dg = json.loads(res_gnu.stdout)
+assert dg["ready"] is False and dg["exit_code"] == 1 and dg["gnu_userland"]["ok"] is False, dg
+DOC_JSON_PY
+then
+  echo -e "${RED}FAIL: --doctor --json failed schema or readiness assertions.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor --json emits structured readiness, warning, and failure JSON while remaining read-only.${NC}"
 
 # A discovery miss names every searched location and points at --doctor; the
 # /etc candidate is redirected in a copy so the host's own install cannot hide the miss.

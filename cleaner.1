@@ -388,6 +388,12 @@ credit free-space deltas; both deltas are clamped at zero. These estimates do no
 physically freed blocks. Interrupted runs include only already-credited work;
 retention purge volume is excluded. Cancelling cleanup before work preserves
 the previous report.
+With
+.BR \-\-doctor ,
+emit a machine-readable JSON readiness and environment checklist instead of plain text
+.RB ( ready ", " exit_code ", " config ", " gnu_userland ", " tools ,
+.BR sudo_non_interactive ", " timers ", " last_cleanup ", " daily_timer_plan ,
+.BR quarantine_retention ", " monitor_env ", " quarantine ", and " warnings ).
 Implies
 .BR \-\-quiet .
 .TP
@@ -637,7 +643,9 @@ A readable file is schema-checked; an invalid file prints
 and the rest of the checklist still prints.
 Exit 0 when cleanup can run or 1 when the configuration file is missing,
 unreadable, or invalid, or GNU userland is missing. Requires no configuration file to print
-the checklist. Cannot be combined with
+the checklist. With
+.BR \-\-json ,
+emit a machine-readable JSON summary instead of plain text. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
@@ -663,9 +671,8 @@ the checklist. Cannot be combined with
 .BR \-\-action\-timeout ,
 .BR \-\-trash\-keep\-days ,
 .BR \-\-notify ,
-.BR \-\-fail\-fast ,
 or
-.BR \-\-json .
+.BR \-\-fail\-fast .
 .TP
 .B \-\-only \fIPATTERN\fR
 Used with
