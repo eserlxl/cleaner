@@ -52,6 +52,7 @@ _cleaner() {
     '--purge-sessions[Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible]:session:{compadd -- latest all "${sessions[@]}"; compadd -S "" -- older-than\: max-size\: keep-latest\:}' \
     '--allow-outside-home[Deprecated no-op; targets outside HOME are always allowed]' \
     '--log[Append an operation log (opt-in, off by default; kept under your HOME)]::file:_files' \
+    '--log-max-size[With --log: rotate log to <log>.1 at SIZE bytes (0 disables; env: LINUX_CLEANER_LOG_MAX_SIZE)]:size:' \
     '(-q --quiet)'{-q,--quiet}'[Suppress per-target status lines; keep errors, totals, and final summary]' \
     '--debug[Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)]' \
     '--show-matches[List eligible paths under each ordinary target in a text dry run (overridden by --quiet)]' \

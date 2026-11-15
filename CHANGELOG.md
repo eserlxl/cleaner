@@ -17,6 +17,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Added
 
+- Added `--log-max-size SIZE` (`LINUX_CLEANER_LOG_MAX_SIZE`) to bound opt-in operation logs (`--log` / `LINUX_CLEANER_LOG`) with single-generation `<log>.1` rotation before appending while preserving `$HOME` confinement, symlink refusal on both active and `.1` log paths, `0` to disable rotation, and standalone extracted test compatibility.
 - Added `--trash-max-size SIZE` (`LINUX_CLEANER_TRASH_MAX_SIZE`) inline quarantine retention to cap total quarantine storage after cleanups (including nothing-to-clean, `--min-reclaim`, and `--min-free` skips unless `--fail-fast` stopped cleanup early) via `max-size:SIZE` purge ordering after any `--trash-keep-days` pass, honoring `.hold` markers while counting held sessions toward the budget, replaying in `Next:` dry-run output, integrating with `--doctor` timer and `monitor.env` checks, and enforcing `--only-path` and non-cleanup mode exclusions.
 
 - Configuration files now support the `include|PATH` two-field directive to layer a thin user config over packaged defaults (such as `include|/etc/linux-cleaner/cleaner.conf`) while keeping custom `protect|PATH` rules and targets in `~/.config/linux-cleaner/cleaner.conf`; includes expand placeholders safely, preserve source `file:lineno:` diagnostics and shared `/**` prefix caching, and fail closed on missing, unreadable, non-regular, glob-bearing, relative, cyclic, or over-depth (`>8`) files.

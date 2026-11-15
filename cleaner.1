@@ -200,6 +200,22 @@ and
 .BR \-\-purge\-sessions ,
 one line per restored target or purged session.
 .TP
+.BI \-\-log\-max\-size " SIZE"
+With
+.B \-\-log
+or
+.BR LINUX_CLEANER_LOG ,
+rotate the operation log to
+.I <log>.1
+before appending once the active file reaches
+.I SIZE
+bytes (suffixes
+.BR K ", " M ", " G ", " T ", or " 0
+to disable rotation). Symlinked active or
+.I .1
+paths are never rotated. Mirrors
+.BR LINUX_CLEANER_LOG_MAX_SIZE .
+.TP
 .BR \-q ", " \-\-quiet
 Suppress per-target status lines and the decorative header; errors, total
 savings, and the final summary still print.
@@ -1540,7 +1556,7 @@ Value-taking options
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
 .BR \-\-check\-health ,
 .BR \-\-min\-free ", " \-\-min\-free\-path ", " \-\-min\-age ", " \-\-action\-timeout ,
-.BR \-\-trash\-keep\-days ", " \-\-trash\-max\-size ,
+.BR \-\-trash\-keep\-days ", " \-\-trash\-max\-size ", " \-\-log\-max\-size ,
 and
 .BR \-\-purge\-sessions )
 refuse a following long option
@@ -1579,6 +1595,25 @@ and
 placeholders as configuration targets. A path outside
 .BR $HOME
 is refused and logging is disabled.
+.TP
+.B LINUX_CLEANER_LOG_MAX_SIZE
+Non-empty byte size (e.g.,
+.B 1M
+or
+.BR 10M ;
+.B 0
+disables rotation) enabling
+.B \-\-log\-max\-size
+when
+.B \-\-log
+or
+.B LINUX_CLEANER_LOG
+is active (overridden by CLI
+.BR \-\-log\-max\-size ).
+Setting
+.B LINUX_CLEANER_LOG_MAX_SIZE
+without enabling logging exits
+.BR 1 .
 .TP
 .B LINUX_CLEANER_QUIET
 When set to

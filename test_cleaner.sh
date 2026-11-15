@@ -3248,7 +3248,7 @@ vt_expected=$(printf '%s\n' \
   --config --risk --exclude --exclude-from --restore --only --only-exact --only-target \
   --only-target-exact --exclude-target --exclude-target-exact --only-path \
   --exclude-path --lock-wait --check-health --min-reclaim \
-  --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --purge-sessions \
+  --min-free --min-free-path --min-age --action-timeout --trash-keep-days --trash-max-size --log-max-size --purge-sessions \
   --hold-session --release-session | sort)
 vt_parser=$(awk '
   function emit(    n, i, p) {
@@ -14571,7 +14571,7 @@ if command -v fish > /dev/null 2>&1; then
   echo -e "${GREEN}PASS: fish completes only immediate quarantine directories and preserves selectors with no quarantine directory.${NC}"
   fish_comp_failed=""
   for fcase in --exclude --only --only-exact --only-target --only-target-exact --exclude-target --exclude-target-exact --lock-wait \
-               --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --trash-max-size; do
+               --min-reclaim --min-free --min-age --action-timeout --trash-keep-days --trash-max-size --log-max-size; do
     if [[ -n "$(cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
                  fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $fcase '" 2>&1)" ]]; then
       fish_comp_failed+=" $fcase"
@@ -18993,6 +18993,182 @@ then
   exit 1
 fi
 echo -e "${GREEN}PASS: --trash-max-size and LINUX_CLEANER_TRASH_MAX_SIZE enforce quarantine size-budget retention, parity, and doctor diagnostics.${NC}"
+
+echo -e "\n${BOLD}Test Case: LogMaxSizeRotation${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" "$SCRIPT_DIR/completions/cleaner.bash" <<'LOG_MAX_PY'
+import os, pathlib, re, shutil, subprocess, sys, tempfile
+
+cleaner, bash_comp = sys.argv[1:]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-lmax-"))
+try:
+    def base_env(home, state):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+        env["HOME"] = str(home)
+        env["XDG_STATE_HOME"] = str(state)
+        env["NO_COLOR"] = "1"
+        return env
+
+    def run_cli(env, args):
+        return subprocess.run(
+            ["bash", cleaner] + args,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    # 1. Rotation threshold (wc -c >= SIZE), multi-rollover replacement of .1 without .2, and active log growth bound.
+    h1 = tmp / "h1"
+    s1 = tmp / "s1"
+    t1 = h1 / "cache1"
+    t2 = h1 / "cache2"
+    t1.mkdir(parents=True)
+    t2.mkdir(parents=True)
+    (t1 / "a.bin").write_text("a" * 32, encoding="utf-8")
+    (t2 / "b.bin").write_text("b" * 32, encoding="utf-8")
+    cfg1 = tmp / "c1.conf"
+    cfg1.write_text(f"safe|T1|{t1}|t1|0||\nsafe|T2|{t2}|t2|0||\n", encoding="utf-8")
+    env1 = base_env(h1, s1)
+    log1 = h1 / "ops.log"
+    log1.write_text("GEN0 " + ("x" * 300) + "\n", encoding="utf-8")
+
+    r1 = run_cli(env1, ["--config", str(cfg1), "--clean", "--force", "--log", str(log1), "--log-max-size", "256"])
+    assert r1.returncode == 0, r1
+    assert (h1 / "ops.log.1").is_file()
+    assert "GEN0" in (h1 / "ops.log.1").read_text(encoding="utf-8")
+    cur1 = log1.read_text(encoding="utf-8")
+    assert "GEN0" not in cur1 and cur1.count("mode=delete") == 2
+    assert len(cur1.encode("utf-8")) < 512
+
+    # Subsequent run exceeding threshold replaces .1 cleanly without creating .2.
+    t1.mkdir(parents=True, exist_ok=True)
+    (t1 / "c.bin").write_text("c" * 32, encoding="utf-8")
+    log1_prev = log1.read_text(encoding="utf-8") + ("y" * 200) + "\n"
+    log1.write_text(log1_prev, encoding="utf-8")
+    r1b = run_cli(env1, ["--config", str(cfg1), "--clean", "--force", "--log", str(log1), "--log-max-size", "256"])
+    assert r1b.returncode == 0, r1b
+    assert not (h1 / "ops.log.2").exists()
+    bak1 = (h1 / "ops.log.1").read_text(encoding="utf-8")
+    assert "GEN0" not in bak1 and "y" * 200 in bak1
+
+    # 2. Size 0 disables rotation even when log is huge; LINUX_CLEANER_LOG + LINUX_CLEANER_LOG_MAX_SIZE + CLI override.
+    t1.mkdir(parents=True, exist_ok=True)
+    (t1 / "d.bin").write_text("d" * 32, encoding="utf-8")
+    log2 = h1 / ".cache/linux-cleaner/operations.log"
+    log2.parent.mkdir(parents=True, exist_ok=True)
+    log2.write_text("KEEP0 " + ("z" * 600) + "\n", encoding="utf-8")
+    r2_zero = run_cli(
+        env1 | {"LINUX_CLEANER_LOG": str(log2), "LINUX_CLEANER_LOG_MAX_SIZE": "0"},
+        ["--config", str(cfg1), "--clean", "--force"],
+    )
+    assert r2_zero.returncode == 0, r2_zero
+    assert not (h1 / ".cache/linux-cleaner/operations.log.1").exists()
+    assert "KEEP0" in log2.read_text(encoding="utf-8")
+
+    # CLI overrides bogus ambient LINUX_CLEANER_LOG_MAX_SIZE cleanly and rotates default LINUX_CLEANER_LOG target.
+    t1.mkdir(parents=True, exist_ok=True)
+    (t1 / "e.bin").write_text("e" * 32, encoding="utf-8")
+    r2_ovr = run_cli(
+        env1 | {"LINUX_CLEANER_LOG": str(log2), "LINUX_CLEANER_LOG_MAX_SIZE": "bogus"},
+        ["--config", str(cfg1), "--clean", "--force", "--log-max-size", "128"],
+    )
+    assert r2_ovr.returncode == 0, r2_ovr
+    assert (h1 / ".cache/linux-cleaner/operations.log.1").is_file()
+    assert "KEEP0" in (h1 / ".cache/linux-cleaner/operations.log.1").read_text(encoding="utf-8")
+
+    # 3. Rotation also works under --restore and --purge-sessions.
+    h3 = tmp / "h3"
+    s3 = tmp / "s3"
+    t3 = h3 / "trash_tgt"
+    t3.mkdir(parents=True)
+    (t3 / "keep.txt").write_text("hello", encoding="utf-8")
+    cfg3 = tmp / "c3.conf"
+    cfg3.write_text(f"safe|Q|{t3}|q|0||\n", encoding="utf-8")
+    env3 = base_env(h3, s3)
+    log3 = h3 / "restore.log"
+    assert run_cli(env3, ["--config", str(cfg3), "--clean", "--force", "--trash"]).returncode == 0
+    log3.write_text("PRE_RESTORE " + ("r" * 300) + "\n", encoding="utf-8")
+    rr = run_cli(env3, ["--restore", "latest", "--log", str(log3), "--log-max-size", "128"])
+    assert rr.returncode == 0, rr
+    assert (h3 / "restore.log.1").is_file() and "PRE_RESTORE" in (h3 / "restore.log.1").read_text(encoding="utf-8")
+    assert "mode=restore" in log3.read_text(encoding="utf-8")
+
+    t3.mkdir(parents=True, exist_ok=True)
+    (t3 / "keep2.txt").write_text("world", encoding="utf-8")
+    assert run_cli(env3, ["--config", str(cfg3), "--clean", "--force", "--trash"]).returncode == 0
+    log3.write_text("PRE_PURGE " + ("p" * 300) + "\n", encoding="utf-8")
+    rp = run_cli(env3, ["--purge-sessions", "latest", "--force", "--log", str(log3), "--log-max-size", "128"])
+    assert rp.returncode == 0, rp
+    assert "PRE_PURGE" in (h3 / "restore.log.1").read_text(encoding="utf-8")
+    assert "mode=purge" in log3.read_text(encoding="utf-8")
+
+    # 4. Symlink refusal on both active log and .1 backup target (including directory at .1), non-fatal warning.
+    h4 = tmp / "h4"
+    s4 = tmp / "s4"
+    t4 = h4 / "sym_tgt"
+    t4.mkdir(parents=True)
+    (t4 / "f.bin").write_text("x", encoding="utf-8")
+    cfg4 = tmp / "c4.conf"
+    cfg4.write_text(f"safe|S|{t4}|s|0||\n", encoding="utf-8")
+    env4 = base_env(h4, s4)
+
+    real_in_home = h4 / "real.log"
+    real_in_home.write_text("ORIG " + ("s" * 300) + "\n", encoding="utf-8")
+    sym_active = h4 / "active.log"
+    sym_active.symlink_to(real_in_home)
+    rs1 = run_cli(env4, ["--config", str(cfg4), "--clean", "--force", "--log", str(sym_active), "--log-max-size", "64"])
+    assert rs1.returncode == 0, rs1
+    assert "refusing to rotate symlinked log" in rs1.stderr
+    assert sym_active.is_symlink() and not (h4 / "active.log.1").exists()
+    assert "mode=delete" in real_in_home.read_text(encoding="utf-8")
+
+    t4.mkdir(parents=True, exist_ok=True)
+    (t4 / "f2.bin").write_text("y", encoding="utf-8")
+    outside = tmp / "outside_sentinel.txt"
+    outside.write_text("DO_NOT_OVERWRITE\n", encoding="utf-8")
+    plain_log = h4 / "plain.log"
+    plain_log.write_text("PLAIN " + ("q" * 300) + "\n", encoding="utf-8")
+    (h4 / "plain.log.1").symlink_to(outside)
+    rs2 = run_cli(env4, ["--config", str(cfg4), "--clean", "--force", "--log", str(plain_log), "--log-max-size", "64"])
+    assert rs2.returncode == 0, rs2
+    assert "refusing to rotate log to unsafe backup path" in rs2.stderr
+    assert (h4 / "plain.log.1").is_symlink()
+    assert outside.read_text(encoding="utf-8") == "DO_NOT_OVERWRITE\n"
+    assert "mode=delete" in plain_log.read_text(encoding="utf-8")
+
+    # 5. Validation errors: missing value, missing --log/LINUX_CLEANER_LOG, invalid size, overflow, tr_TR.UTF-8 digit.
+    assert run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size"]).returncode == 1
+    no_log = run_cli(env1, ["--config", str(cfg1), "--log-max-size", "1M"])
+    assert no_log.returncode == 1 and "--log-max-size requires --log" in no_log.stderr
+    bad_env_only = run_cli(env1 | {"LINUX_CLEANER_LOG_MAX_SIZE": "1M"}, ["--config", str(cfg1), "--dry-run"])
+    assert bad_env_only.returncode == 1 and "--log-max-size requires --log" in bad_env_only.stderr
+    bad_sz = run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size", "bad"])
+    assert bad_sz.returncode == 1 and "--log-max-size expects a size" in bad_sz.stderr
+    ovf_sz = run_cli(env1, ["--config", str(cfg1), "--log", "--log-max-size", "99999999999T"])
+    assert ovf_sz.returncode == 1 and "is too large" in ovf_sz.stderr
+
+    locales = subprocess.run(["locale", "-a"], capture_output=True, text=True).stdout
+    if re.search(r"tr_TR\.utf8", locales, re.I):
+        tr_res = run_cli(env1 | {"LC_ALL": "tr_TR.UTF-8"},
+                         ["--config", str(cfg1), "--log", "--log-max-size", "\u0661M", "--dry-run"])
+        assert tr_res.returncode == 1 and "--log-max-size expects a size" in tr_res.stderr
+
+    # 6. Bash completion does not treat --log-max-size values as filenames.
+    comp_check = subprocess.run(
+        ["bash", "-c", f'source "{bash_comp}"; compopt() {{ compopt_calls+=("$*"); }}; compopt_calls=(); COMP_WORDS=(cleaner --log-max-size ""); COMP_CWORD=2; _cleaner; [[ " ${{compopt_calls[*]}} " != *"filenames"* && ${{#COMPREPLY[@]}} -eq 0 ]]'],
+        capture_output=True, text=True, timeout=15
+    )
+    assert comp_check.returncode == 0, comp_check
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+LOG_MAX_PY
+then
+  echo -e "${RED}FAIL: --log-max-size rotation check failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --log-max-size and LINUX_CLEANER_LOG_MAX_SIZE rotate logs safely under \$HOME, refuse symlinks, and pass parity.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

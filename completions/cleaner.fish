@@ -58,6 +58,7 @@ complete -c cleaner -l trash-max-size -x -d 'With cleanup: purge oldest quaranti
 complete -c cleaner -l purge-sessions -x -a 'latest all older-than: max-size: keep-latest: (__cleaner_sessions)' -d 'Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible'
 complete -c cleaner -l allow-outside-home -d 'Deprecated no-op; targets outside HOME are always allowed'
 complete -c cleaner -l log -r -F -d 'Append an operation log (opt-in, off by default; kept under your HOME)'
+complete -c cleaner -l log-max-size -x -d 'With --log: rotate the log to <log>.1 once it reaches SIZE bytes (0 disables; env: LINUX_CLEANER_LOG_MAX_SIZE)'
 complete -c cleaner -s q -l quiet -d 'Suppress per-target status lines; keep errors, totals, and final summary'
 complete -c cleaner -l debug -d 'Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet)'
 complete -c cleaner -l show-matches -d 'List eligible paths under each ordinary target in a text dry run (overridden by --quiet)'

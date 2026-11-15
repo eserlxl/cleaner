@@ -86,6 +86,7 @@ Options:
   --purge-sessions SESSION   Permanently delete quarantine session(s) to reclaim space (latest, all, older-than:DAYS, max-size:SIZE, keep-latest:N, or timestamp); --dry-run previews. Irreversible.
   --allow-outside-home       Deprecated no-op; targets outside HOME are always allowed.
   --log [FILE]               Append an operation log (opt-in, off by default; kept under your HOME).
+  --log-max-size SIZE        With --log: rotate the log to <log>.1 once it reaches SIZE bytes (0 disables; env: LINUX_CLEANER_LOG_MAX_SIZE).
   -q, --quiet                Suppress per-target status lines; keep errors, totals, and final summary.
   --debug                    Show per-target FOUND, CLEAN and PROTECTED lines (suppressed by default; overridden by --quiet).
   --show-matches             List eligible paths under each ordinary target in a text dry run (overridden by --quiet).
@@ -191,6 +192,8 @@ if [[ -n "${LINUX_CLEANER_LOG:-}" ]]; then
   LOG_ENABLED=true
   LOG_FILE="$LINUX_CLEANER_LOG"
 fi
+LOG_MAX_SIZE="${LINUX_CLEANER_LOG_MAX_SIZE:-}"
+LOG_MAX_SIZE_BYTES=0
 
 # Env mirrors for automation (same truthy set as common shell tools).
 if [[ -n "${LINUX_CLEANER_CONFIG:-}" ]]; then
@@ -684,6 +687,11 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       ;;
+    --log-max-size)
+      require_non_option_value "$1" "${2:-}"
+      LOG_MAX_SIZE="$2"
+      shift 2
+      ;;
     -V|--version)
       echo "$(basename "$0") $VERSION"
       exit 0
@@ -894,6 +902,22 @@ if [[ -n "$TRASH_MAX_SIZE" ]]; then
     exit 1
   elif [[ "$trash_max_size_rc" -ne 0 ]]; then
     echo -e "${RED}Error: --trash-max-size '${TRASH_MAX_SIZE}' is too large.${NC}" >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "$LOG_MAX_SIZE" ]]; then
+  if [[ "$LOG_ENABLED" != true ]]; then
+    echo -e "${RED}Error: --log-max-size requires --log or LINUX_CLEANER_LOG.${NC}" >&2
+    exit 1
+  fi
+  log_max_size_rc=0
+  LOG_MAX_SIZE_BYTES=$(parse_size_bytes "$LOG_MAX_SIZE") || log_max_size_rc=$?
+  if [[ "$log_max_size_rc" -eq 1 ]]; then
+    echo -e "${RED}Error: --log-max-size expects a size such as 1M or 10M (0 disables rotation), got '${LOG_MAX_SIZE}'.${NC}" >&2
+    exit 1
+  elif [[ "$log_max_size_rc" -ne 0 ]]; then
+    echo -e "${RED}Error: --log-max-size '${LOG_MAX_SIZE}' is too large.${NC}" >&2
     exit 1
   fi
 fi
@@ -2445,12 +2469,33 @@ log_operation() {
     return 0
   fi
   if [[ "$resolved_target" != "$resolved_home" && "$resolved_target" != "$resolved_home"/* ]]; then
-    echo -e "  [${YELLOW}LOG${NC}] Refusing to write log outside \$HOME ('$target'); logging disabled." >&2
+    echo -e "  [${YELLOW:-}LOG${NC:-}] Refusing to write log outside \$HOME ('$target'); logging disabled." >&2
     LOG_ENABLED=false
     return 0
   fi
+  # Guard against standalone extracted unit tests (set -u without LOG_MAX_SIZE_BYTES).
+  local max_bytes="${LOG_MAX_SIZE_BYTES:-0}"
+  if [[ "$max_bytes" =~ ^[[:digit:]]+$ ]] && (( max_bytes > 0 )); then
+    local log_bytes=0 rotated="${target}.1" resolved_rotated=""
+    if [[ -L "$target" ]]; then
+      echo -e "  [${YELLOW:-}LOG${NC:-}] Warning: refusing to rotate symlinked log '$target'." >&2
+    elif [[ -f "$target" ]]; then
+      log_bytes=$(wc -c < "$target" 2>/dev/null || printf 0)
+      log_bytes=${log_bytes//[[:space:]]/}
+      if [[ "$log_bytes" =~ ^[[:digit:]]+$ ]] && (( log_bytes > 0 && log_bytes >= max_bytes )); then
+        if [[ -L "$rotated" || -d "$rotated" ]]; then
+          echo -e "  [${YELLOW:-}LOG${NC:-}] Warning: refusing to rotate log to unsafe backup path '$rotated'." >&2
+        elif ! resolved_rotated=$(canonicalize_physical "$rotated") || \
+             { [[ "$resolved_rotated" != "$resolved_home" && "$resolved_rotated" != "$resolved_home"/* ]]; }; then
+          echo -e "  [${YELLOW:-}LOG${NC:-}] Warning: refusing to rotate log outside \$HOME ('$rotated')." >&2
+        elif ! mv -f -- "$target" "$rotated" 2>/dev/null; then
+          echo -e "  [${YELLOW:-}LOG${NC:-}] Warning: could not rotate log '$target' to '$rotated'." >&2
+        fi
+      fi
+    fi
+  fi
   if ! { mkdir -p "$literal_dir" && printf '%s\n' "$message" >> "$target"; } 2>/dev/null; then
-    echo -e "  [${YELLOW}LOG${NC}] Warning: could not write to log '$target'." >&2
+    echo -e "  [${YELLOW:-}LOG${NC:-}] Warning: could not write to log '$target'." >&2
   fi
 }
 
