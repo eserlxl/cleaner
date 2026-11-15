@@ -38,6 +38,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - Systemd `EnvironmentFile` parsing in `print_timer_note` and `--doctor` now shares `unquote_env_value` / `read_systemd_env_file` to trim surrounding whitespace and strip only one matching outer single- or double-quote pair, preserving embedded quotes in paths and values.
 - `--doctor` now preserves trailing newlines in `XDG_STATE_HOME` when resolving `last-report.txt`, preventing saved cleanup summaries under newline-terminated `XDG_STATE_HOME` directories from being missed as `none recorded`.
 - `parse_size_bytes` now strips leading zeros before checking 64-bit digit length and overflow bounds, so zero-padded valid sizes such as `0000000000000000001G`, `000000000000000000000`, and `max-size:0000000000000000001K` parse cleanly while real overflows like `99999999999T` still fail.
+- Shared `/**` prefix walks in `expand_config_globs` now verify full `glob_components_match` (splitting on `/` without truncating on newlines) before checking unsafe transport characters in `_expand_glob_accept_match`, preventing spurious safety warnings on unrelated non-matching directories while still warning accurately on matching newline-containing paths.
 
 ## [1.9.1] - 2026-10-27
 

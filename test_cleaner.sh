@@ -16317,5 +16317,53 @@ then
 fi
 echo -e "${GREEN}PASS: config validation, target listing, protection, and filtering trim in-process cleanly and quickly.${NC}"
 
+echo -e "\n${BOLD}Test Case: Shared Globstar Prefix Skips Unrelated Unsafe Matches${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" "$MOCK_HOME" "$TEST_ENV_DIR" "$OUTSIDE_DIR" <<'GLOB_SHARED_WARN_PY'
+import json, pathlib, subprocess, sys
+
+cleaner, mock_home, test_dir, outside_dir = sys.argv[1:]
+opt_root = pathlib.Path(outside_dir) / "shared_glob_opt"
+valid_gemini = opt_root / "a" / ".gemini" / "model_debug_logs"
+unrelated_pipe = opt_root / "bad|pipe" / "sub" / "model_debug_logs"
+matching_nl = opt_root / "bad\nnl" / ".gemini" / "model_debug_logs"
+unrelated_nl = opt_root / "other\nnl" / "sub" / "logs"
+for p in (valid_gemini, unrelated_pipe, matching_nl, unrelated_nl):
+    p.mkdir(parents=True, exist_ok=True)
+
+state_dir = pathlib.Path(test_dir) / "glob_warn_state"
+state_dir.mkdir(parents=True, exist_ok=True)
+cfg = pathlib.Path(test_dir) / "shared_glob_warn.conf"
+cfg.write_text(
+    f"safe|Gemini|{opt_root}/**/.gemini/model_debug_logs|gemini logs|0||\n"
+    f"safe|Codex|{opt_root}/**/.codex/logs|codex logs|0||\n",
+    encoding="utf-8",
+)
+env = {
+    "PATH": f"{test_dir}/bin:/usr/bin:/bin",
+    "HOME": mock_home,
+    "XDG_STATE_HOME": str(state_dir),
+    "NO_COLOR": "1",
+}
+proc = subprocess.run(
+    [cleaner, "--config", str(cfg), "--list-targets", "--json"],
+    env=env,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+data = json.loads(proc.stdout)
+assert [t["path"] for t in data["targets"]] == [str(valid_gemini)], (data, proc.stderr)
+assert "bad\\|pipe" not in proc.stderr, proc.stderr
+assert "other" not in proc.stderr, proc.stderr
+assert f"{cfg}:1: skipping wildcard match that cannot be represented safely" in proc.stderr, proc.stderr
+assert f"{cfg}:2:" not in proc.stderr, proc.stderr
+GLOB_SHARED_WARN_PY
+then
+  echo -e "${RED}FAIL: shared globstar prefix emitted spurious safety warnings or mis-matched newline paths.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: shared globstar expansion skips unrelated unsafe directories and still warns accurately on matching newline paths.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

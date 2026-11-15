@@ -1436,10 +1436,21 @@ _glob_parts_match() {
 }
 
 glob_components_match() {
-  local rel_cand="$1" rel_pat="$2"
+  local rel_cand="$1" rel_pat="$2" _gcm_rest
   local -a cand_parts=() pat_parts=()
-  IFS='/' read -r -a cand_parts <<< "$rel_cand"
-  IFS='/' read -r -a pat_parts <<< "$rel_pat"
+  # Split on '/' without read -a so paths containing newlines are not truncated.
+  _gcm_rest="$rel_cand"
+  while [[ "$_gcm_rest" == */* ]]; do
+    cand_parts+=("${_gcm_rest%%/*}")
+    _gcm_rest="${_gcm_rest#*/}"
+  done
+  [[ -n "$_gcm_rest" ]] && cand_parts+=("$_gcm_rest")
+  _gcm_rest="$rel_pat"
+  while [[ "$_gcm_rest" == */* ]]; do
+    pat_parts+=("${_gcm_rest%%/*}")
+    _gcm_rest="${_gcm_rest#*/}"
+  done
+  [[ -n "$_gcm_rest" ]] && pat_parts+=("$_gcm_rest")
   _glob_parts_match 0 0
 }
 
@@ -1486,6 +1497,7 @@ _expand_glob_accept_match() {
     c_depth=$(( ${#c_slashes} + 1 ))
     (( c_depth >= depth && c_depth <= max_depth )) || return 0
   fi
+  glob_components_match "${cand#"$prefix"/}" "$tail_part" || return 0
   trim_to c_trimmed "$cand"
   # Config records are line/pipe-delimited and consumers trim and expand the
   # path again. Refuse a match whose identity would change in that transport.
@@ -1495,7 +1507,6 @@ _expand_glob_accept_match() {
       "$CONFIG_FILE" "$lineno" "$cand" >&2
     return 0
   fi
-  glob_components_match "${cand#"$prefix"/}" "$tail_part" || return 0
   if [[ "${#prune_args[@]}" -eq 0 ]]; then
     c_anc="${cand%/*}"
     while [[ "$c_anc" == "$prefix"/* ]]; do
