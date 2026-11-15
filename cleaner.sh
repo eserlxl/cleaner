@@ -1176,8 +1176,12 @@ trim() {
 
 trim_to() {
   local trimmed="$2"
-  trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
-  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  if [[ "$trimmed" == [[:space:]]* ]]; then
+    trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+  fi
+  if [[ "$trimmed" == *[[:space:]] ]]; then
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  fi
   printf -v "$1" '%s' "$trimmed"
 }
 
@@ -1736,23 +1740,25 @@ debug_echo() {
 
 json_escape() {
   local s="$1" code octal control escaped
-  s=${s//\\/\\\\}
-  s=${s//\"/\\\"}
-  s=${s//$'\b'/\\b}
-  s=${s//$'\f'/\\f}
-  s=${s//$'\n'/\\n}
-  s=${s//$'\r'/\\r}
-  s=${s//$'\t'/\\t}
+  if [[ "$s" == *[\\\"[:cntrl:]]* ]]; then
+    s=${s//\\/\\\\}
+    s=${s//\"/\\\"}
+    s=${s//$'\b'/\\b}
+    s=${s//$'\f'/\\f}
+    s=${s//$'\n'/\\n}
+    s=${s//$'\r'/\\r}
+    s=${s//$'\t'/\\t}
 
-  if [[ "$s" == *[[:cntrl:]]* ]]; then
-    # Bash strings cannot contain NUL; encode every other representable C0 byte.
-    for ((code = 1; code < 32; code++)); do
-      case "$code" in 8|9|10|12|13) continue ;; esac
-      printf -v octal '%03o' "$code"
-      printf -v control '%b' "\\$octal"
-      printf -v escaped '\\u%04x' "$code"
-      s=${s//"$control"/"$escaped"}
-    done
+    if [[ "$s" == *[[:cntrl:]]* ]]; then
+      # Bash strings cannot contain NUL; encode every other representable C0 byte.
+      for ((code = 1; code < 32; code++)); do
+        case "$code" in 8|9|10|12|13) continue ;; esac
+        printf -v octal '%03o' "$code"
+        printf -v control '%b' "\\$octal"
+        printf -v escaped '\\u%04x' "$code"
+        s=${s//"$control"/"$escaped"}
+      done
+    fi
   fi
   if [[ "$#" -gt 1 ]]; then
     printf -v "$2" '%s' "$s"
@@ -1805,29 +1811,49 @@ emit_list_targets_json() {
   local risk name raw_path desc min_age check_procs custom_clean_cmd
   local i first=true
 
-  load_config_lines || return 1
-  while IFS= read -r -d '' _ && IFS= read -r -d '' _ && IFS= read -r -d '' config_line; do
-    # validate_config_file already rejected malformed records before this runs.
-    IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-    trim_to risk "$risk"
-    [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-    trim_to name "$name"
-    select_target_name "$name" || continue
-    trim_to raw_path "$raw_path"
-    trim_to desc "$desc"
-    trim_to min_age "$min_age"
-    trim_to check_procs "${check_procs:-}"
-    trim_to custom_clean_cmd "${custom_clean_cmd:-}"
-    select_target_path "$raw_path" "$custom_clean_cmd" || continue
-    select_target_action "$custom_clean_cmd" || continue
-    lt_names+=("$name")
-    lt_risks+=("$risk")
-    lt_paths+=("$raw_path")
-    lt_descs+=("$desc")
-    lt_min_ages+=("$min_age")
-    lt_procs+=("$check_procs")
-    lt_actions+=("$custom_clean_cmd")
-  done < <(expand_config_globs)
+  if [[ "${_CFG_VALIDATED:-false}" == true && "${_CFG_VALIDATED_CONFIG:-}" == "$CONFIG_FILE" && "${_CFG_HAS_EXPANDABLE:-false}" != true ]]; then
+    for i in "${!CFG_TGT_NAMES[@]}"; do
+      name="${CFG_TGT_NAMES[$i]}"
+      select_target_name "$name" || continue
+      raw_path="${CFG_TGT_PATHS[$i]}"
+      custom_clean_cmd="${CFG_TGT_ACTIONS[$i]}"
+      select_target_path "$raw_path" "$custom_clean_cmd" || continue
+      select_target_action "$custom_clean_cmd" || continue
+      lt_names+=("$name")
+      lt_risks+=("${CFG_TGT_RISKS[$i]}")
+      lt_paths+=("$raw_path")
+      lt_descs+=("${CFG_TGT_DESCS[$i]}")
+      lt_min_ages+=("${CFG_TGT_MIN_AGES[$i]}")
+      lt_procs+=("${CFG_TGT_PROCS[$i]}")
+      lt_actions+=("$custom_clean_cmd")
+    done
+  else
+    if [[ "${_CFG_REC_LOADED:-false}" != true || "${_CFG_REC_LOADED_CONFIG:-}" != "$CONFIG_FILE" ]]; then
+      load_config_lines || return 1
+    fi
+    while IFS= read -r -d '' _ && IFS= read -r -d '' _ && IFS= read -r -d '' config_line; do
+      # validate_config_file already rejected malformed records before this runs.
+      IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
+      trim_to risk "$risk"
+      [[ -z "$risk" || "$risk" =~ ^# ]] && continue
+      trim_to name "$name"
+      select_target_name "$name" || continue
+      trim_to raw_path "$raw_path"
+      trim_to desc "$desc"
+      trim_to min_age "$min_age"
+      trim_to check_procs "${check_procs:-}"
+      trim_to custom_clean_cmd "${custom_clean_cmd:-}"
+      select_target_path "$raw_path" "$custom_clean_cmd" || continue
+      select_target_action "$custom_clean_cmd" || continue
+      lt_names+=("$name")
+      lt_risks+=("$risk")
+      lt_paths+=("$raw_path")
+      lt_descs+=("$desc")
+      lt_min_ages+=("$min_age")
+      lt_procs+=("$check_procs")
+      lt_actions+=("$custom_clean_cmd")
+    done < <(expand_config_globs)
+  fi
 
   check_target_selection || return 1
   printf '{'
@@ -2012,6 +2038,17 @@ _CFG_LAST_ERROR_LINE=""
 _CFG_LAST_TARGET_COUNT=0
 _CFG_LAST_PROTECT_COUNT=0
 _CFG_REC_LOADED=false
+_CFG_REC_LOADED_CONFIG=""
+_CFG_VALIDATED=false
+_CFG_VALIDATED_CONFIG=""
+_CFG_HAS_EXPANDABLE=false
+CFG_TGT_RISKS=()
+CFG_TGT_NAMES=()
+CFG_TGT_PATHS=()
+CFG_TGT_DESCS=()
+CFG_TGT_MIN_AGES=()
+CFG_TGT_PROCS=()
+CFG_TGT_ACTIONS=()
 
 _cfg_report_error() {
   local err_file="$1" err_line="$2" use_red="$3" err_msg="$4"
@@ -2151,6 +2188,17 @@ _collect_config_lines_walk() {
 
 load_config_lines() {
   _CFG_REC_LOADED=false
+  _CFG_REC_LOADED_CONFIG=""
+  _CFG_VALIDATED=false
+  _CFG_VALIDATED_CONFIG=""
+  _CFG_HAS_EXPANDABLE=false
+  CFG_TGT_RISKS=()
+  CFG_TGT_NAMES=()
+  CFG_TGT_PATHS=()
+  CFG_TGT_DESCS=()
+  CFG_TGT_MIN_AGES=()
+  CFG_TGT_PROCS=()
+  CFG_TGT_ACTIONS=()
   CFG_REC_FILES=()
   CFG_REC_LINENOS=()
   CFG_REC_LINES=()
@@ -2162,6 +2210,7 @@ load_config_lines() {
   _CFG_LAST_ERROR_LINE=""
   _collect_config_lines_walk "$CONFIG_FILE" 0 || return 1
   _CFG_REC_LOADED=true
+  _CFG_REC_LOADED_CONFIG="$CONFIG_FILE"
 }
 
 # Stream the configuration file with wildcard PATH_EXPRESSION lines expanded into
@@ -2178,7 +2227,7 @@ expand_config_globs() {
   local -a prune_args globstar_dirs=()
   local -A accepted_matches globstar_prefix_counts=() globstar_prefix_min=() globstar_prefix_max=() globstar_cache_start=() globstar_cache_len=()
 
-  if [[ "${_CFG_REC_LOADED:-false}" != true ]]; then
+  if [[ "${_CFG_REC_LOADED:-false}" != true || "${_CFG_REC_LOADED_CONFIG:-}" != "$CONFIG_FILE" ]]; then
     load_config_lines || return 1
   fi
 
@@ -2537,6 +2586,7 @@ log_operation() {
 list_config_targets() {
   local config_line
   local risk name raw_path desc min_age check_procs custom_clean_cmd
+  local i
 
   if [[ "$JSON_OUTPUT" == true ]]; then
     emit_list_targets_json
@@ -2547,21 +2597,35 @@ list_config_targets() {
   echo -e "Config file: ${YELLOW}$CONFIG_FILE${NC}"
   echo
 
-  load_config_lines || return 1
-  while IFS= read -r -d '' _ && IFS= read -r -d '' _ && IFS= read -r -d '' config_line; do
-    # validate_config_file already rejected malformed records before this runs.
-    IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-    trim_to risk "$risk"
-    [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-    trim_to name "$name"
-    select_target_name "$name" || continue
-    trim_to raw_path "$raw_path"
-    trim_to custom_clean_cmd "${custom_clean_cmd:-}"
-    select_target_path "$raw_path" "$custom_clean_cmd" || continue
-    select_target_action "$custom_clean_cmd" || continue
-    trim_to desc "$desc"
-    printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
-  done < <(expand_config_globs)
+  if [[ "${_CFG_VALIDATED:-false}" == true && "${_CFG_VALIDATED_CONFIG:-}" == "$CONFIG_FILE" && "${_CFG_HAS_EXPANDABLE:-false}" != true ]]; then
+    for i in "${!CFG_TGT_NAMES[@]}"; do
+      name="${CFG_TGT_NAMES[$i]}"
+      select_target_name "$name" || continue
+      raw_path="${CFG_TGT_PATHS[$i]}"
+      custom_clean_cmd="${CFG_TGT_ACTIONS[$i]}"
+      select_target_path "$raw_path" "$custom_clean_cmd" || continue
+      select_target_action "$custom_clean_cmd" || continue
+      printf '%s\t%s\t%s\t%s\n' "$name" "${CFG_TGT_RISKS[$i]}" "$raw_path" "${CFG_TGT_DESCS[$i]}"
+    done
+  else
+    if [[ "${_CFG_REC_LOADED:-false}" != true || "${_CFG_REC_LOADED_CONFIG:-}" != "$CONFIG_FILE" ]]; then
+      load_config_lines || return 1
+    fi
+    while IFS= read -r -d '' _ && IFS= read -r -d '' _ && IFS= read -r -d '' config_line; do
+      # validate_config_file already rejected malformed records before this runs.
+      IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
+      trim_to risk "$risk"
+      [[ -z "$risk" || "$risk" =~ ^# ]] && continue
+      trim_to name "$name"
+      select_target_name "$name" || continue
+      trim_to raw_path "$raw_path"
+      trim_to custom_clean_cmd "${custom_clean_cmd:-}"
+      select_target_path "$raw_path" "$custom_clean_cmd" || continue
+      select_target_action "$custom_clean_cmd" || continue
+      trim_to desc "$desc"
+      printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
+    done < <(expand_config_globs)
+  fi
   check_target_selection
 }
 
@@ -2605,7 +2669,7 @@ validate_config_file() {
         _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: protect PATH is empty"
         return 1
       fi
-      if ! name=$(expand_path_safe "$name"); then
+      if ! expand_path_safe "$name" name; then
         _cfg_report_error "$config_src" "$config_lineno" false "Error: ${config_src}:${config_lineno}: protect PATH has unsafe path expansion"
         return 1
       fi
@@ -2628,8 +2692,8 @@ validate_config_file() {
     trim_to raw_path "$raw_path"
     trim_to desc "$desc"
     trim_to min_age "$min_age"
-    trim_to check_procs "${check_procs:-}"
-    trim_to custom_clean_cmd "${custom_clean_cmd:-}"
+    if [[ -n "${check_procs:-}" ]]; then trim_to check_procs "$check_procs"; else check_procs=""; fi
+    if [[ -n "${custom_clean_cmd:-}" ]]; then trim_to custom_clean_cmd "$custom_clean_cmd"; else custom_clean_cmd=""; fi
     if [[ -z "$name" ]]; then
       _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: NAME (field 2) is empty"
       return 1
@@ -2671,7 +2735,8 @@ validate_config_file() {
           ;;
       esac
     fi
-    if ! risk_err=$(risk_to_int "$risk" "${config_src}:${config_lineno}: " 2>&1 >/dev/null); then
+    if ! _risk_to_int_to "" "$risk"; then
+      risk_err=$(risk_to_int "$risk" "${config_src}:${config_lineno}: " 2>&1 >/dev/null) || true
       risk_err_plain=$(printf '%s' "$risk_err" | sed $'s/\033\\[[0-9;]*m//g')
       _CFG_LAST_ERROR_FILE="$config_src"
       _CFG_LAST_ERROR_LINE="$config_lineno"
@@ -2689,9 +2754,32 @@ validate_config_file() {
       _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: MIN_AGE_DAYS must be 0 for ${custom_clean_cmd} (the action ignores file age)"
       return 1
     fi
+    if [[ "$raw_path" == *[*?]* || "$custom_clean_cmd" == "filter:cxx_build" ]]; then
+      _CFG_HAS_EXPANDABLE=true
+    elif [[ "$_CFG_HAS_EXPANDABLE" != true ]]; then
+      CFG_TGT_RISKS+=("$risk")
+      CFG_TGT_NAMES+=("$name")
+      CFG_TGT_PATHS+=("$raw_path")
+      CFG_TGT_DESCS+=("$desc")
+      CFG_TGT_MIN_AGES+=("$min_age")
+      CFG_TGT_PROCS+=("$check_procs")
+      CFG_TGT_ACTIONS+=("$custom_clean_cmd")
+    fi
     target_count=$((target_count + 1))
   done
 
+  if [[ "$_CFG_HAS_EXPANDABLE" != true ]]; then
+    _CFG_VALIDATED=true
+    _CFG_VALIDATED_CONFIG="$CONFIG_FILE"
+  else
+    CFG_TGT_RISKS=()
+    CFG_TGT_NAMES=()
+    CFG_TGT_PATHS=()
+    CFG_TGT_DESCS=()
+    CFG_TGT_MIN_AGES=()
+    CFG_TGT_PROCS=()
+    CFG_TGT_ACTIONS=()
+  fi
   _CFG_LAST_TARGET_COUNT="$target_count"
   _CFG_LAST_PROTECT_COUNT="$protect_count"
   printf 'OK: %s targets in %s\n' "$target_count" "$CONFIG_FILE"
@@ -4599,10 +4687,12 @@ print_plan_report() {
       root) root_n=$((root_n + 1)) ;;
     esac
     if [[ "$status" == found || "$status" == root ]]; then
-      case "$(risk_lower "${parsed_risks[$i]}")" in
-        safe) safe_b=$((safe_b + bytes)) ;;
-        medium) med_b=$((med_b + bytes)) ;;
-        danger|dangerous) dang_b=$((dang_b + bytes)) ;;
+      local _sum_risk=0
+      _risk_to_int_to _sum_risk "${parsed_risks[$i]}" || _sum_risk=0
+      case "$_sum_risk" in
+        1) safe_b=$((safe_b + bytes)) ;;
+        2) med_b=$((med_b + bytes)) ;;
+        3) dang_b=$((dang_b + bytes)) ;;
       esac
     fi
   done
@@ -5314,16 +5404,26 @@ risk_lower() {
   printf '%s' "${1,,}"
 }
 
-risk_to_int() {
-  case "$(risk_lower "$1")" in
-    safe) echo 1 ;;
-    medium) echo 2 ;;
-    danger|dangerous) echo 3 ;;
-    *)
-      echo -e "${RED}${2:-}Error: Unknown risk level '$1'. Valid levels are: safe, medium, danger.${NC}" >&2
-      exit 1
-      ;;
+# Map ASCII risk level (safe, medium, danger, dangerous) to 1..3 in-process
+# (tr_TR.UTF-8 safe: explicit ASCII brackets avoid dotted/dotless-I collation).
+# Pass an empty destination variable name to validate without assigning.
+_risk_to_int_to() {
+  case "$2" in
+    [sS][aA][fF][eE]) [[ -z "$1" ]] || printf -v "$1" '%s' 1 ;;
+    [mM][eE][dD][iI][uU][mM]) [[ -z "$1" ]] || printf -v "$1" '%s' 2 ;;
+    [dD][aA][nN][gG][eE][rR]|[dD][aA][nN][gG][eE][rR][oO][uU][sS]) [[ -z "$1" ]] || printf -v "$1" '%s' 3 ;;
+    *) return 1 ;;
   esac
+}
+
+risk_to_int() {
+  local _rti_val=""
+  if _risk_to_int_to _rti_val "$1"; then
+    printf '%s\n' "$_rti_val"
+    return 0
+  fi
+  echo -e "${RED}${2:-}Error: Unknown risk level '$1'. Valid levels are: safe, medium, danger.${NC}" >&2
+  exit 1
 }
 
 # Single source of truth: map each predefined action to the binary its execution
@@ -5553,10 +5653,9 @@ _collect_scheduler_env_problems() {
   local _action_timeout="${_sched_vars[LINUX_CLEANER_ACTION_TIMEOUT]:-}"
   local _lock_wait="${_sched_vars[LINUX_CLEANER_LOCK_WAIT]:-}"
 
-  case "$(risk_lower "$_risk")" in
-    ""|safe|medium|danger|dangerous) ;;
-    *) _out_problems+=("invalid risk") ;;
-  esac
+  if [[ -n "$_risk" ]] && ! _risk_to_int_to "" "$_risk"; then
+    _out_problems+=("invalid risk")
+  fi
   # The clean run refuses --only-path together with --trash-keep-days or --trash-max-size.
   if [[ -n "$_only" && -n "$_keep" ]]; then
     _out_problems+=("only-path with keep-days")
@@ -6008,7 +6107,10 @@ run_doctor() {
   return "$doctor_rc"
 }
 
-MAX_RISK_INT=$(risk_to_int "$MAX_RISK") || exit 1
+MAX_RISK_INT=0
+if ! _risk_to_int_to MAX_RISK_INT "$MAX_RISK"; then
+  risk_to_int "$MAX_RISK" || exit 1
+fi
 
 # Build exclude arguments for find
 build_exclude_find_args
@@ -6201,13 +6303,15 @@ PROTECTED_PATHS=()
 collect_protected_paths() {
   local line f1 f2 expanded stripped canonical
   PROTECTED_PATHS=()
-  load_config_lines || return 1
+  if [[ "${_CFG_REC_LOADED:-false}" != true || "${_CFG_REC_LOADED_CONFIG:-}" != "$CONFIG_FILE" ]]; then
+    load_config_lines || return 1
+  fi
   for line in "${CFG_REC_LINES[@]}"; do
     IFS='|' read -r f1 f2 _ <<< "$line"
     trim_to f1 "$f1"
     [[ "$f1" == "protect" ]] || continue
     trim_to f2 "$f2"
-    if ! expanded=$(expand_path_safe "$f2"); then
+    if ! expand_path_safe "$f2" expanded; then
       echo "Error: protect PATH has unsafe path expansion" >&2
       return 1
     fi
@@ -6266,7 +6370,10 @@ while IFS= read -r -d '' config_src_file && IFS= read -r -d '' config_lineno && 
   select_target_action "$custom_clean_cmd" || continue
 
   # Map risk levels
-  target_risk_int=$(risk_to_int "$risk" "${config_src_file}:${config_lineno}: ") || exit 1
+  target_risk_int=0
+  if ! _risk_to_int_to target_risk_int "$risk"; then
+    risk_to_int "$risk" "${config_src_file}:${config_lineno}: " || exit 1
+  fi
   if [[ $target_risk_int -gt $MAX_RISK_INT ]]; then
     case "$target_risk_int" in
       2) hidden_medium=$((hidden_medium + 1)) ;;
@@ -6808,7 +6915,9 @@ for i in "${!parsed_names[@]}"; do
 
   # Dangerous Confirmation Guard
   danger_prompted=false
-  if [[ "$(risk_lower "$risk_level")" =~ ^danger(ous)?$ && "$YES_DANGER" != true ]]; then
+  _danger_risk=0
+  _risk_to_int_to _danger_risk "$risk_level" || _danger_risk=0
+  if [[ "$_danger_risk" -eq 3 && "$YES_DANGER" != true ]]; then
     echo -n -e "${RED}Danger target '$name' ($path) requires explicit confirmation. Clean anyway? [y/N]: ${NC}"
     read -r reply || true
     if [[ ! "$reply" =~ ^[yY](es)?$ ]]; then

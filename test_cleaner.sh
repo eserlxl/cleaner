@@ -20081,5 +20081,90 @@ with tempfile.TemporaryDirectory() as td:
 PY
 echo -e "${GREEN}PASS: --doctor validates startup-fatal monitor.env settings cleanly via shared helper.${NC}"
 
+echo -e "\n${BOLD}Test Case: Large Config Validation And List Targets In-Process Fast Path${NC}"
+python3 - "$CLEANER_SH" <<'PY'
+import json
+import os
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+cleaner = os.path.abspath(os.sys.argv[1])
+has_tr_locale = "tr_TR.utf8" in subprocess.run(
+    ["locale", "-a"], capture_output=True, text=True, check=False
+).stdout.lower()
+
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    prot = root / ".cache/prot"
+    prot.mkdir(parents=True)
+    inc = root / "inc.conf"
+    inc.write_text(f"DANGEROUS|IncDanger|{root}/.cache/inc_danger|Included|0||\n", encoding="utf-8")
+    cfg = root / "fast300.conf"
+    risks = ["Safe", "MEDIUM", "Danger", "safe"]
+    rows = [f"include|{inc}\n", f"protect|{prot}\n"]
+    for i in range(300):
+        rows.append(f"{risks[i % len(risks)]}|T_{i:03d}|{root}/.cache/t_{i}|Desc {i}|0||\n")
+    cfg.write_text("".join(rows), encoding="utf-8")
+
+    # One target with real cleanable content per tier for dry-run / danger-guard verification.
+    tier_cfg = root / "tiers.conf"
+    for nm in ("s", "m", "d"):
+        (root / f".cache/{nm}").mkdir(parents=True, exist_ok=True)
+        (root / f".cache/{nm}/file.bin").write_bytes(b"x" * 64)
+    tier_cfg.write_text(
+        f"Safe|SafeT|{root}/.cache/s|safe|0||\n"
+        f"MEDIUM|MedT|{root}/.cache/m|med|0||\n"
+        f"DANGEROUS|DangT|{root}/.cache/d|dang|0||\n",
+        encoding="utf-8",
+    )
+
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(root),
+        "XDG_STATE_HOME": str(root / "state"),
+        "NO_COLOR": "1",
+    }
+    if has_tr_locale:
+        env["LC_ALL"] = "tr_TR.UTF-8"
+
+    t0 = time.monotonic()
+    r_chk = subprocess.run([cleaner, "--config", str(cfg), "--check-config", "--json"], env=env, capture_output=True, text=True, check=True)
+    dt_chk = time.monotonic() - t0
+    d_chk = json.loads(r_chk.stdout)
+    assert dt_chk < 1.0, f"300-target --check-config too slow: {dt_chk:.3f}s"
+    assert d_chk["targets_count"] == 301 and d_chk["protect_count"] == 1, d_chk
+
+    t1 = time.monotonic()
+    r_lt = subprocess.run([cleaner, "--config", str(cfg), "--list-targets", "--json"], env=env, capture_output=True, text=True, check=True)
+    dt_lt = time.monotonic() - t1
+    d_lt = json.loads(r_lt.stdout)
+    assert dt_lt < 1.0, f"300-target --list-targets --json too slow: {dt_lt:.3f}s"
+    assert len(d_lt["targets"]) == 301, len(d_lt["targets"])
+
+    # Dry-run summary and hidden_by_risk counts preserve mixed-case ASCII classification.
+    r_dry = subprocess.run([cleaner, "--config", str(tier_cfg), "--risk", "Safe", "--dry-run", "--json"], env=env, capture_output=True, text=True, check=True)
+    d_dry = json.loads(r_dry.stdout)
+    assert d_dry["hidden_by_risk"]["medium"] == 1 and d_dry["hidden_by_risk"]["danger"] == 1, d_dry
+
+    # Danger confirmation guard still triggers without --yes-danger when risk is mixed/uppercase.
+    r_force = subprocess.run([cleaner, "--config", str(tier_cfg), "--risk", "DANGER", "--force"], input="n\n", env=env, capture_output=True, text=True, check=True)
+    assert "requires explicit confirmation" in r_force.stdout, r_force.stdout
+    assert (root / ".cache/d/file.bin").exists(), "danger file should survive declined confirmation"
+
+    # Invalid risks (including Turkish non-ASCII dotted/dotless-I variants) fail with exact file:line diagnostics.
+    bad_cfg = root / "bad_risk.conf"
+    bad_tok = "MEDİUM" if has_tr_locale else "BOGUS"
+    bad_cfg.write_text(f"Safe|Ok|{root}/.cache/s|ok|0||\n{bad_tok}|Bad|{root}/.cache/m|bad|0||\n", encoding="utf-8")
+    r_bad_txt = subprocess.run([cleaner, "--config", str(bad_cfg), "--check-config"], env=env, capture_output=True, text=True, check=False)
+    assert r_bad_txt.returncode == 1 and f"{bad_cfg}:2: " in r_bad_txt.stderr and f"Unknown risk level '{bad_tok}'" in r_bad_txt.stderr, r_bad_txt.stderr
+    r_bad_json = subprocess.run([cleaner, "--config", str(bad_cfg), "--check-config", "--json"], env=env, capture_output=True, text=True, check=False)
+    assert r_bad_json.returncode == 1, r_bad_json
+    d_bad = json.loads(r_bad_json.stdout)
+    assert d_bad["valid"] is False and d_bad["error_file"] == str(bad_cfg) and d_bad["error_line"] == 2, d_bad
+PY
+echo -e "${GREEN}PASS: large config validation and target listing run in-process without risk/reload overhead.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
