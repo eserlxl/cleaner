@@ -3955,7 +3955,7 @@ else
   cat "$home_log"
   exit 1
 fi
-# (b2) Relative or CR/LF-bearing HOME: must be rejected cleanly before target or
+# (b2) Relative HOME: must be rejected cleanly before target or
 #      XDG user-file resolution.
 home_probe_dir="$TEST_ENV_DIR/home_boundary_probe"
 rm -rf "$home_probe_dir"
@@ -3964,11 +3964,9 @@ printf 'keep\n' > "$home_probe_dir/relhome/.cache/x/f"
 home_probe_conf="$home_probe_dir/probe.conf"
 # shellcheck disable=SC2016  # literal $HOME is intentional: the cleaner expands it, not the shell
 printf 'safe|Home Probe|$HOME/.cache/x|d|0||\n' > "$home_probe_conf"
-home_lf=$'/tmp/cleaner_lf_home\nsegment'
-home_cr=$'/tmp/cleaner_cr_home\rsegment'
 home_boundary_ok=true
-for home_case_val in "relhome" "$home_lf" "$home_cr"; do
-  for home_case_flag in "--dry-run" "--clean --force" "--doctor" "--init-env"; do
+for home_case_val in "relhome" "." "./relhome"; do
+  for home_case_flag in "--dry-run" "--clean --force" "--doctor" "--init-config" "--init-env"; do
     home_case_log="$TEST_ENV_DIR/robust_home_invalid.log"
     home_case_ec=0
     if [[ "$home_case_flag" == "--init-env" ]]; then
@@ -3976,6 +3974,12 @@ for home_case_val in "relhome" "$home_lf" "$home_cr"; do
         cd "$home_probe_dir" || exit 99
         env -u XDG_CONFIG_HOME HOME="$home_case_val" PATH="$TEST_ENV_DIR/bin:$PATH" \
           "$CLEANER_SH" --init-env < /dev/null > "$home_case_log" 2>&1
+      ) || home_case_ec=$?
+    elif [[ "$home_case_flag" == "--init-config" ]]; then
+      (
+        cd "$home_probe_dir" || exit 99
+        env -u XDG_CONFIG_HOME HOME="$home_case_val" PATH="$TEST_ENV_DIR/bin:$PATH" \
+          "$CLEANER_SH" --init-config -c "$home_probe_conf" < /dev/null > "$home_case_log" 2>&1
       ) || home_case_ec=$?
     else
       read -r -a home_case_args <<< "$home_case_flag"
@@ -3985,7 +3989,7 @@ for home_case_val in "relhome" "$home_lf" "$home_cr"; do
           "$CLEANER_SH" --config "$home_probe_conf" "${home_case_args[@]}" < /dev/null > "$home_case_log" 2>&1
       ) || home_case_ec=$?
     fi
-    if [[ $home_case_ec -ne 1 ]] || ! grep -qi "absolute path without CR or LF" "$home_case_log"; then
+    if [[ $home_case_ec -ne 1 ]] || ! grep -qi "HOME must be an absolute path" "$home_case_log"; then
       echo -e "${RED}FAIL: invalid HOME boundary not rejected (ec=$home_case_ec, flags='$home_case_flag').${NC}"
       cat "$home_case_log"
       home_boundary_ok=false
@@ -3995,13 +3999,14 @@ for home_case_val in "relhome" "$home_lf" "$home_cr"; do
 done
 if [[ "$home_boundary_ok" != true ]] \
    || [[ ! -f "$home_probe_dir/relhome/.cache/x/f" ]] \
-   || [[ -e "$home_probe_dir/relhome/.config" ]]; then
-  echo -e "${RED}FAIL: relative or CR/LF HOME regression guard failed or touched $PWD paths.${NC}"
+   || [[ -e "$home_probe_dir/relhome/.config" ]] \
+   || [[ -e "$home_probe_dir/.config" ]]; then
+  echo -e "${RED}FAIL: relative HOME regression guard failed or touched $PWD paths.${NC}"
   rm -rf "$home_probe_dir"
   exit 1
 fi
 rm -rf "$home_probe_dir"
-echo -e "${GREEN}PASS: relative and CR/LF HOME boundaries are refused with exit 1 across cleanup, doctor, and init-env.${NC}"
+echo -e "${GREEN}PASS: relative HOME boundaries are refused with exit 1 across cleanup, doctor, init-config, and init-env.${NC}"
 
 # 48. Test Case: a failed quarantine move must not be recorded in quarantine.meta
 # (a record for a file that never moved made every later --restore of that
