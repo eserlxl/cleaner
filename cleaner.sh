@@ -782,19 +782,22 @@ if [[ -n "$EXCLUDE_PATH" && ( "$EXCLUDE_PATH" != /* || "$EXCLUDE_PATH" == *$'\n'
   exit 1
 fi
 
+is_valid_lock_wait() {
+  local val="$1"
+  [[ "$val" =~ ^[0123456789]+$ ]] || return 1
+  val=${val#"${val%%[!0]*}"}
+  val=${val:-0}
+  # Decimal text fits in signed 64-bit once length <= 10.
+  [[ ${#val} -le 10 ]] && (( 10#$val <= 2147483647 ))
+}
+
 # Validate only the effective value, so CLI can replace malformed inherited input.
-if [[ ! "$LOCK_WAIT" =~ ^[[:digit:]]+$ ]]; then
+if ! is_valid_lock_wait "$LOCK_WAIT"; then
   echo "Error: --lock-wait must be an integer from 0 to 2147483647 seconds." >&2
   exit 1
 fi
 LOCK_WAIT=${LOCK_WAIT#"${LOCK_WAIT%%[!0]*}"}
 LOCK_WAIT=${LOCK_WAIT:-0}
-# Compare normalized decimal text before any numeric conversion.
-# shellcheck disable=SC2071
-if [[ ${#LOCK_WAIT} -gt 10 || ( ${#LOCK_WAIT} -eq 10 && "$LOCK_WAIT" > 2147483647 ) ]]; then
-  echo "Error: --lock-wait must be an integer from 0 to 2147483647 seconds." >&2
-  exit 1
-fi
 
 # HOME is the tool's entire safety boundary: every target path is expanded,
 # canonicalized, and bounded against it. Refuse to run without it -- a bare $HOME
@@ -5628,6 +5631,7 @@ run_doctor() {
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
   local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" env_max_size="" mon_only="" mon_keep="" mon_max_size=""
+  local env_log="" env_log_max_size="" env_min_reclaim="" env_min_free="" env_min_free_path="" env_min_age="" env_action_timeout="" env_lock_wait=""
   local timer_env_source="no env file" timer_deletion=permanent
   local ret_warn=false mon_present=false mon_readable=false mon_status="absent"
   local plan_status="ok" plan_has_env=false plan_env_readable=true env_keep_valid=false env_max_size_valid=false
@@ -5639,6 +5643,14 @@ run_doctor() {
     [LINUX_CLEANER_TRASH]=""
     [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
     [LINUX_CLEANER_TRASH_MAX_SIZE]=""
+    [LINUX_CLEANER_LOG]=""
+    [LINUX_CLEANER_LOG_MAX_SIZE]=""
+    [LINUX_CLEANER_MIN_RECLAIM]=""
+    [LINUX_CLEANER_MIN_FREE]=""
+    [LINUX_CLEANER_MIN_FREE_PATH]=""
+    [LINUX_CLEANER_MIN_AGE]=""
+    [LINUX_CLEANER_ACTION_TIMEOUT]=""
+    [LINUX_CLEANER_LOCK_WAIT]=""
   )
   local -A doc_mon_vars=(
     [LINUX_CLEANER_ONLY_PATH]=""
@@ -5655,6 +5667,14 @@ run_doctor() {
     env_trash="${doc_timer_vars[LINUX_CLEANER_TRASH]}"
     env_keep="${doc_timer_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
     env_max_size="${doc_timer_vars[LINUX_CLEANER_TRASH_MAX_SIZE]}"
+    env_log="${doc_timer_vars[LINUX_CLEANER_LOG]}"
+    env_log_max_size="${doc_timer_vars[LINUX_CLEANER_LOG_MAX_SIZE]}"
+    env_min_reclaim="${doc_timer_vars[LINUX_CLEANER_MIN_RECLAIM]}"
+    env_min_free="${doc_timer_vars[LINUX_CLEANER_MIN_FREE]}"
+    env_min_free_path="${doc_timer_vars[LINUX_CLEANER_MIN_FREE_PATH]}"
+    env_min_age="${doc_timer_vars[LINUX_CLEANER_MIN_AGE]}"
+    env_action_timeout="${doc_timer_vars[LINUX_CLEANER_ACTION_TIMEOUT]}"
+    env_lock_wait="${doc_timer_vars[LINUX_CLEANER_LOCK_WAIT]}"
     if [[ -n "$env_keep" && "$env_keep" =~ ^[0123456789]+$ ]]; then
       env_keep_valid=true
     fi
@@ -5723,6 +5743,55 @@ run_doctor() {
         plan_level=WARN
         plan_problems+="; config invalid"
         plan_problem_list+=("config invalid")
+      fi
+    fi
+    if [[ -n "$env_min_reclaim" ]] && ! parse_size_bytes "$env_min_reclaim" >/dev/null 2>&1; then
+      plan_level=WARN
+      plan_problems+="; invalid min-reclaim"
+      plan_problem_list+=("invalid min-reclaim")
+    fi
+    if [[ -n "$env_min_free" ]] && ! parse_size_bytes "$env_min_free" >/dev/null 2>&1; then
+      plan_level=WARN
+      plan_problems+="; invalid min-free"
+      plan_problem_list+=("invalid min-free")
+    fi
+    if [[ -n "$env_min_free_path" ]]; then
+      if [[ -z "$env_min_free" ]]; then
+        plan_level=WARN
+        plan_problems+="; min-free-path without min-free"
+        plan_problem_list+=("min-free-path without min-free")
+      fi
+      if [[ "$env_min_free_path" != /* || "$env_min_free_path" == *$'\n'* ]]; then
+        plan_level=WARN
+        plan_problems+="; invalid min-free-path"
+        plan_problem_list+=("invalid min-free-path")
+      fi
+    fi
+    if [[ -n "$env_min_age" && ! "$env_min_age" =~ ^[0123456789]+$ ]]; then
+      plan_level=WARN
+      plan_problems+="; invalid min-age"
+      plan_problem_list+=("invalid min-age")
+    fi
+    if [[ -n "$env_action_timeout" && ! "$env_action_timeout" =~ ^[0123456789]+$ ]]; then
+      plan_level=WARN
+      plan_problems+="; invalid action-timeout"
+      plan_problem_list+=("invalid action-timeout")
+    fi
+    if [[ -n "$env_lock_wait" ]] && ! is_valid_lock_wait "$env_lock_wait"; then
+      plan_level=WARN
+      plan_problems+="; invalid lock-wait"
+      plan_problem_list+=("invalid lock-wait")
+    fi
+    if [[ -n "$env_log_max_size" ]]; then
+      if [[ -z "$env_log" ]]; then
+        plan_level=WARN
+        plan_problems+="; log-max-size without log"
+        plan_problem_list+=("log-max-size without log")
+      fi
+      if ! parse_size_bytes "$env_log_max_size" >/dev/null 2>&1; then
+        plan_level=WARN
+        plan_problems+="; invalid log-max-size"
+        plan_problem_list+=("invalid log-max-size")
       fi
     fi
     if [[ "$plan_level" == WARN ]]; then

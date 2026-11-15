@@ -780,9 +780,27 @@ when LINUX_CLEANER_TRASH_MAX_SIZE is not a valid size;
 .B "; config invalid"
 when that config fails the schema check;
 .B "; only-path with keep-days"
-when the file sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS; and
+when the file sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS;
 .B "; only-path with trash-max-size"
-when it sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_MAX_SIZE, which the clean run refuses.
+when it sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_MAX_SIZE, which the clean run refuses;
+.B "; invalid min-reclaim"
+when LINUX_CLEANER_MIN_RECLAIM is not a valid size;
+.B "; invalid min-free"
+when LINUX_CLEANER_MIN_FREE is not a valid size;
+.B "; min-free-path without min-free"
+when LINUX_CLEANER_MIN_FREE_PATH is set without LINUX_CLEANER_MIN_FREE;
+.B "; invalid min-free-path"
+when LINUX_CLEANER_MIN_FREE_PATH is not a literal absolute path without line feeds;
+.B "; invalid min-age"
+when LINUX_CLEANER_MIN_AGE is not a non-negative integer;
+.B "; invalid action-timeout"
+when LINUX_CLEANER_ACTION_TIMEOUT is not a non-negative integer;
+.B "; invalid lock-wait"
+when LINUX_CLEANER_LOCK_WAIT is not an integer from 0 to 2147483647;
+.B "; log-max-size without log"
+when LINUX_CLEANER_LOG_MAX_SIZE is set without LINUX_CLEANER_LOG; and
+.B "; invalid log-max-size"
+when LINUX_CLEANER_LOG_MAX_SIZE is not a valid size.
 A relative LINUX_CLEANER_CONFIG is checked under HOME, where the user service starts.
 Values are trimmed of surrounding whitespace, as systemd does.
 An env file that exists but cannot be read prints

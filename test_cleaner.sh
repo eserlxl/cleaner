@@ -19385,5 +19385,159 @@ with tempfile.TemporaryDirectory() as td:
 PY
 echo -e "${GREEN}PASS: --doctor validates LINUX_CLEANER_TRASH_KEEP_DAYS before skipping quarantine_retention warning and exposes daily_timer_plan.max_size.${NC}"
 
+echo -e "\n${BOLD}Test Case: Doctor Validates Startup-Fatal Scheduler Env Settings${NC}"
+python3 - "$CLEANER_SH" <<'PY'
+import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+cleaner = os.path.abspath(os.sys.argv[1])
+has_tr_locale = "tr_TR.utf8" in subprocess.run(
+    ["locale", "-a"], capture_output=True, text=True, check=False
+).stdout.lower()
+
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    bin_dir = root / "bin"
+    env_dir = root / ".config/linux-cleaner"
+    work_dir = root / "work"
+    bin_dir.mkdir()
+    env_dir.mkdir(parents=True)
+    work_dir.mkdir()
+    cfg = root / "doc.conf"
+    cfg.write_text(f"safe|Target|{work_dir}|desc|0||\n", encoding="utf-8")
+    sc = bin_dir / "systemctl"
+    sc.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == --user && \"${2:-}\" == is-enabled && \"${3:-}\" == linux-cleaner-clean.timer ]]; then\n"
+        "  echo enabled; exit 0\n"
+        "fi\n"
+        "echo disabled; exit 1\n",
+        encoding="utf-8",
+    )
+    os.chmod(sc, 0o755)
+    base_env = {
+        "HOME": str(root),
+        "XDG_CONFIG_HOME": str(root / ".config"),
+        "XDG_STATE_HOME": str(root / ".local/state"),
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+    }
+    env_path = env_dir / "env"
+
+    def run_doc(*extra, locale=None):
+        env = dict(base_env)
+        if locale:
+            env["LC_ALL"] = locale
+        return subprocess.run(
+            [cleaner, "--config", str(cfg), "--doctor", *extra],
+            env=env, capture_output=True, check=False,
+        )
+
+    # 1. Valid scheduler knobs keep status=ok and INFO daily timer plan unchanged.
+    env_path.write_text(
+        "LINUX_CLEANER_MIN_RECLAIM=500M\n"
+        "LINUX_CLEANER_MIN_FREE=10G\n"
+        "LINUX_CLEANER_MIN_FREE_PATH=/tmp\n"
+        "LINUX_CLEANER_MIN_AGE=0\n"
+        "LINUX_CLEANER_ACTION_TIMEOUT=0\n"
+        "LINUX_CLEANER_LOCK_WAIT=0002147483647\n"
+        "LINUX_CLEANER_LOG=$HOME/ops.log\n"
+        "LINUX_CLEANER_LOG_MAX_SIZE=1M\n",
+        encoding="utf-8",
+    )
+    r_ok_txt = run_doc()
+    assert r_ok_txt.returncode == 0, r_ok_txt
+    ok_line = [ln for ln in r_ok_txt.stdout.decode("utf-8").splitlines() if "daily timer plan:" in ln]
+    assert len(ok_line) == 1 and ok_line[0] == f"INFO: daily timer plan: risk=safe deletion=permanent keep-days=none ({env_path})", ok_line
+    r_ok_json = run_doc("--json")
+    assert r_ok_json.returncode == 0, r_ok_json
+    d_ok = json.loads(r_ok_json.stdout.decode("utf-8"))
+    assert d_ok["daily_timer_plan"]["status"] == "ok" and d_ok["daily_timer_plan"]["problems"] == [], d_ok
+    assert d_ok["warnings"] == [], d_ok
+
+    # 2. All invalid scheduler settings together warn with exact suffixes and JSON problems.
+    env_path.write_text(
+        "LINUX_CLEANER_MIN_RECLAIM=bad\n"
+        "LINUX_CLEANER_MIN_FREE=99999999999T\n"
+        "LINUX_CLEANER_MIN_FREE_PATH=$HOME/cache\n"
+        "LINUX_CLEANER_MIN_AGE=-1\n"
+        "LINUX_CLEANER_ACTION_TIMEOUT=30s\n"
+        "LINUX_CLEANER_LOCK_WAIT=2147483648\n"
+        "LINUX_CLEANER_LOG_MAX_SIZE=bad\n",
+        encoding="utf-8",
+    )
+    expected_problems = {
+        "invalid min-reclaim",
+        "invalid min-free",
+        "invalid min-free-path",
+        "invalid min-age",
+        "invalid action-timeout",
+        "invalid lock-wait",
+        "log-max-size without log",
+        "invalid log-max-size",
+    }
+    r_bad_txt = run_doc()
+    assert r_bad_txt.returncode == 0, r_bad_txt
+    bad_line = [ln for ln in r_bad_txt.stdout.decode("utf-8").splitlines() if "daily timer plan:" in ln]
+    assert len(bad_line) == 1 and bad_line[0].startswith("WARN: daily timer plan: "), bad_line
+    for prob in expected_problems:
+        assert f"; {prob}" in bad_line[0], (prob, bad_line[0])
+
+    r_bad_json = run_doc("--json")
+    assert r_bad_json.returncode == 0, r_bad_json
+    d_bad = json.loads(r_bad_json.stdout.decode("utf-8"))
+    assert d_bad["daily_timer_plan"]["status"] == "warn", d_bad
+    assert set(d_bad["daily_timer_plan"]["problems"]) == expected_problems, d_bad
+    assert any("daily timer plan:" in w and "; invalid lock-wait" in w for w in d_bad["warnings"]), d_bad
+
+    # 3. LINUX_CLEANER_MIN_FREE_PATH without LINUX_CLEANER_MIN_FREE warns with exact suffix.
+    env_path.write_text("LINUX_CLEANER_MIN_FREE_PATH=/tmp\n", encoding="utf-8")
+    r_mfp = run_doc("--json")
+    assert r_mfp.returncode == 0, r_mfp
+    d_mfp = json.loads(r_mfp.stdout.decode("utf-8"))
+    assert d_mfp["daily_timer_plan"]["problems"] == ["min-free-path without min-free"], d_mfp
+
+    # 4. Non-ASCII Arabic-Indic digits under tr_TR.UTF-8 fail integer and size checks.
+    if has_tr_locale:
+        env_path.write_bytes(
+            b"LINUX_CLEANER_MIN_RECLAIM=\xd9\xa1G\n"
+            b"LINUX_CLEANER_MIN_FREE=\xd9\xa1G\n"
+            b"LINUX_CLEANER_MIN_AGE=\xd9\xa1\n"
+            b"LINUX_CLEANER_ACTION_TIMEOUT=\xd9\xa1\n"
+            b"LINUX_CLEANER_LOCK_WAIT=\xd9\xa1\n"
+            b"LINUX_CLEANER_LOG=/tmp/ops.log\n"
+            b"LINUX_CLEANER_LOG_MAX_SIZE=\xd9\xa1M\n"
+        )
+        r_tr = run_doc("--json", locale="tr_TR.UTF-8")
+        assert r_tr.returncode == 0, r_tr
+        d_tr = json.loads(r_tr.stdout.decode("utf-8"))
+        assert set(d_tr["daily_timer_plan"]["problems"]) == {
+            "invalid min-reclaim",
+            "invalid min-free",
+            "invalid min-age",
+            "invalid action-timeout",
+            "invalid lock-wait",
+            "invalid log-max-size",
+        }, d_tr
+
+    # 5. Disabled clean timer suppresses validation output regardless of env contents.
+    sc.write_text("#!/usr/bin/env bash\necho disabled; exit 1\n", encoding="utf-8")
+    os.chmod(sc, 0o755)
+    r_dis = run_doc("--json")
+    assert r_dis.returncode == 0, r_dis
+    assert json.loads(r_dis.stdout.decode("utf-8"))["daily_timer_plan"] is None
+
+    # 6. CLI --lock-wait boundary behavior matches shared is_valid_lock_wait helper.
+    for lw, exp_rc in [("0002147483647", 0), ("2147483648", 1)]:
+        r_cli = subprocess.run(
+            [cleaner, "--config", str(cfg), "--dry-run", "--lock-wait", lw],
+            env=base_env, capture_output=True, check=False,
+        )
+        assert r_cli.returncode == exp_rc, (lw, r_cli)
+PY
+echo -e "${GREEN}PASS: --doctor validates startup-fatal scheduler env settings in daily timer plan.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
