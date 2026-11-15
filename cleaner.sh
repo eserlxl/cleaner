@@ -3647,6 +3647,36 @@ user_unit_state() {
   trim "${state%%$'\n'*}"
 }
 
+# Parse a systemd EnvironmentFile value: trim outer whitespace and strip at most
+# one matching outer '...' or "..." pair while preserving embedded quotes.
+unquote_env_value() {
+  local _uenv_out="$1" _uenv_val
+  trim_to _uenv_val "$2"
+  if [[ ${#_uenv_val} -ge 2 ]]; then
+    if [[ ( "${_uenv_val:0:1}" == '"' && "${_uenv_val: -1}" == '"' ) \
+       || ( "${_uenv_val:0:1}" == "'" && "${_uenv_val: -1}" == "'" ) ]]; then
+      _uenv_val="${_uenv_val:1:${#_uenv_val}-2}"
+      trim_to _uenv_val "$_uenv_val"
+    fi
+  fi
+  printf -v "$_uenv_out" '%s' "$_uenv_val"
+}
+
+# Read requested LINUX_CLEANER_* entries from a systemd EnvironmentFile (last wins).
+read_systemd_env_file() {
+  local _rs_file="$1" _rs_line _rs_key _rs_val
+  local -n _rs_out="$2"
+  while IFS= read -r _rs_line || [[ -n "$_rs_line" ]]; do
+    trim_to _rs_line "$_rs_line"
+    [[ "$_rs_line" == *=* ]] || continue
+    _rs_key="${_rs_line%%=*}"
+    [[ "$_rs_key" =~ ^LINUX_CLEANER_[ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]+$ ]] || continue
+    [[ -n "${_rs_out[$_rs_key]+set}" ]] || continue
+    unquote_env_value _rs_val "${_rs_line#*=}"
+    _rs_out["$_rs_key"]="$_rs_val"
+  done < "$_rs_file"
+}
+
 # A manual run ignores the env file the daily timer reads, so its risk can differ
 # from the timer's; name the timer's state and risk. Units stay silent: systemd sets
 # JOURNAL_STREAM to the device:inode of a journal-bound stderr. Terminals inherit the
@@ -3657,7 +3687,8 @@ print_timer_note() {
      && [[ "$(stat -L -c '%d:%i' "/proc/$$/fd/2" 2>/dev/null || true)" == "$JOURNAL_STREAM" ]]; then
     return 0
   fi
-  local state env_file="$HOME/.config/linux-cleaner/env" env_line risk=safe env_label
+  local state env_file="$HOME/.config/linux-cleaner/env" risk=safe env_label
+  local -A timer_note_vars=([LINUX_CLEANER_RISK]="")
   state=$(user_unit_state linux-cleaner-clean.timer)
   [[ -z "$state" || "$state" == not-found ]] && return 0
   if [[ ! -e "$env_file" ]]; then
@@ -3668,11 +3699,8 @@ print_timer_note() {
   else
     env_label="$env_file"
     # Like systemd's EnvironmentFile, the last assignment wins.
-    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
-      env_line=$(trim "$env_line")
-      [[ "$env_line" == LINUX_CLEANER_RISK=* ]] && risk="${env_line#*=}"
-    done < "$env_file"
-    risk=$(trim "${risk//[\"\']/}")
+    read_systemd_env_file "$env_file" timer_note_vars
+    risk="${timer_note_vars[LINUX_CLEANER_RISK]}"
     [[ -z "$risk" ]] && risk=safe
   fi
   printf '%s\n\n' "Daily timer: ${state} risk=${risk} env=${env_label}"
@@ -4248,31 +4276,27 @@ run_doctor() {
 
   # The clean unit reads this env file; trash mode there needs a retention bound.
   # The monitor unit reads monitor.env beside it, under $HOME even when XDG_CONFIG_HOME differs.
-  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_line env_risk="" env_config="" env_only="" env_trash="" env_keep="" mon_only="" mon_keep=""
+  local timer_env="$HOME/.config/linux-cleaner/env" monitor_env="$HOME/.config/linux-cleaner/monitor.env" env_risk="" env_config="" env_only="" env_trash="" env_keep="" mon_only="" mon_keep=""
   local timer_env_source="no env file" timer_deletion=permanent
+  local -A doc_timer_vars=(
+    [LINUX_CLEANER_RISK]=""
+    [LINUX_CLEANER_CONFIG]=""
+    [LINUX_CLEANER_ONLY_PATH]=""
+    [LINUX_CLEANER_TRASH]=""
+    [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
+  )
+  local -A doc_mon_vars=(
+    [LINUX_CLEANER_ONLY_PATH]=""
+    [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
+  )
   if [[ "$clean_timer" == enabled && -f "$timer_env" && -r "$timer_env" ]]; then
     timer_env_source="$timer_env"
-    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
-      env_line=$(trim "$env_line")
-      case "$env_line" in
-        LINUX_CLEANER_RISK=*) env_risk="${env_line#*=}" ;;
-        LINUX_CLEANER_CONFIG=*) env_config="${env_line#*=}" ;;
-        LINUX_CLEANER_ONLY_PATH=*) env_only="${env_line#*=}" ;;
-        LINUX_CLEANER_TRASH=*) env_trash="${env_line#*=}" ;;
-        LINUX_CLEANER_TRASH_KEEP_DAYS=*) env_keep="${env_line#*=}" ;;
-      esac
-    done < "$timer_env"
-    env_risk="${env_risk//[\"\']/}"
-    env_config="${env_config//[\"\']/}"
-    env_only="${env_only//[\"\']/}"
-    env_trash="${env_trash//[\"\']/}"
-    env_keep="${env_keep//[\"\']/}"
-    # systemd strips whitespace around EnvironmentFile values.
-    env_risk=$(trim "$env_risk")
-    env_config=$(trim "$env_config")
-    env_only=$(trim "$env_only")
-    env_trash=$(trim "$env_trash")
-    env_keep=$(trim "$env_keep")
+    read_systemd_env_file "$timer_env" doc_timer_vars
+    env_risk="${doc_timer_vars[LINUX_CLEANER_RISK]}"
+    env_config="${doc_timer_vars[LINUX_CLEANER_CONFIG]}"
+    env_only="${doc_timer_vars[LINUX_CLEANER_ONLY_PATH]}"
+    env_trash="${doc_timer_vars[LINUX_CLEANER_TRASH]}"
+    env_keep="${doc_timer_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
     case "$env_trash" in
       1|true|TRUE|yes|YES)
         timer_deletion=quarantine
@@ -4316,17 +4340,9 @@ run_doctor() {
     printf '%s: daily timer plan: risk=%s deletion=%s keep-days=%s%s (%s)%s\n' "$plan_level" "${env_risk:-safe}" "$timer_deletion" "${env_keep:-none}" "$plan_config" "$timer_env_source" "$plan_problems"
   fi
   if [[ -f "$monitor_env" && -r "$monitor_env" ]]; then
-    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
-      env_line=$(trim "$env_line")
-      case "$env_line" in
-        LINUX_CLEANER_ONLY_PATH=*) mon_only="${env_line#*=}" ;;
-        LINUX_CLEANER_TRASH_KEEP_DAYS=*) mon_keep="${env_line#*=}" ;;
-      esac
-    done < "$monitor_env"
-    mon_only="${mon_only//[\"\']/}"
-    mon_keep="${mon_keep//[\"\']/}"
-    mon_only=$(trim "$mon_only")
-    mon_keep=$(trim "$mon_keep")
+    read_systemd_env_file "$monitor_env" doc_mon_vars
+    mon_only="${doc_mon_vars[LINUX_CLEANER_ONLY_PATH]}"
+    mon_keep="${doc_mon_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]}"
     if [[ -n "$mon_only" && -n "$mon_keep" ]]; then
       printf 'WARN: monitor env: %s combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS\n' "$monitor_env"
     fi

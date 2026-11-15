@@ -15973,5 +15973,59 @@ fi
 rm -f "$MOCK_HOME/.cache/linux-cleaner/quarantine"
 echo -e "${GREEN}PASS: pre-lock failures and failed purge/restore leave metrics untouched while post-lock cleanup failures export success 0.${NC}"
 
+echo -e "\n${BOLD}Test Case: Systemd EnvironmentFile Outer Quote Preservation${NC}"
+setup_mock_env
+envq_cfg_dir="$TEST_ENV_DIR/env'quoted"
+envq_dquote_dir="$TEST_ENV_DIR/env\"quoted"
+envq_env_dir="$MOCK_HOME/.config/linux-cleaner"
+mkdir -p "$envq_cfg_dir" "$envq_dquote_dir" "$envq_env_dir"
+printf 'safe|Quoted Path|%s/.cache/q|Quoted env test|0||\n' "$MOCK_HOME" > "$envq_cfg_dir/c.conf"
+printf 'safe|Double Quoted Path|%s/.cache/q|Double quoted env test|0||\n' "$MOCK_HOME" > "$envq_dquote_dir/c.conf"
+cat > "$TEST_ENV_DIR/bin/systemctl" <<'ENVQ_SYSTEMCTL'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --user && "${2:-}" == is-enabled ]]; then
+  echo enabled
+  exit 0
+fi
+exit 1
+ENVQ_SYSTEMCTL
+chmod +x "$TEST_ENV_DIR/bin/systemctl"
+
+printf 'LINUX_CLEANER_CONFIG=" %s/c.conf "\nLINUX_CLEANER_RISK='\''danger'\''\n' "$envq_cfg_dir" > "$envq_env_dir/env"
+printf 'LINUX_CLEANER_ONLY_PATH="/tmp/quoted'\''path"\nLINUX_CLEANER_TRASH_KEEP_DAYS="7"\n' > "$envq_env_dir/monitor.env"
+envq_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" < /dev/null > "$TEST_ENV_DIR/envq_doctor1.log" 2>&1 || envq_ec=$?
+if [[ $envq_ec -ne 0 ]] \
+   || ! grep -qF "INFO: daily timer plan: risk=danger deletion=permanent keep-days=none config=$envq_cfg_dir/c.conf ($envq_env_dir/env)" "$TEST_ENV_DIR/envq_doctor1.log" \
+   || ! grep -qxF "WARN: monitor env: $envq_env_dir/monitor.env combines LINUX_CLEANER_ONLY_PATH with LINUX_CLEANER_TRASH_KEEP_DAYS" "$TEST_ENV_DIR/envq_doctor1.log"; then
+  echo -e "${RED}FAIL: --doctor corrupted embedded quotes in double-quoted env or monitor.env (ec=$envq_ec).${NC}"
+  cat "$TEST_ENV_DIR/envq_doctor1.log" 2>/dev/null || true
+  exit 1
+fi
+
+printf "LINUX_CLEANER_CONFIG='%s/c.conf'\nLINUX_CLEANER_RISK=medium\n" "$envq_dquote_dir" > "$envq_env_dir/env"
+rm -f "$envq_env_dir/monitor.env"
+envq_ec=0
+PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+  --doctor --config "$TEST_ENV_DIR/test_cleaner.conf" < /dev/null > "$TEST_ENV_DIR/envq_doctor2.log" 2>&1 || envq_ec=$?
+if [[ $envq_ec -ne 0 ]] \
+   || ! grep -qF "INFO: daily timer plan: risk=medium deletion=permanent keep-days=none config=$envq_dquote_dir/c.conf ($envq_env_dir/env)" "$TEST_ENV_DIR/envq_doctor2.log"; then
+  echo -e "${RED}FAIL: --doctor corrupted embedded double quotes in single-quoted LINUX_CLEANER_CONFIG (ec=$envq_ec).${NC}"
+  cat "$TEST_ENV_DIR/envq_doctor2.log" 2>/dev/null || true
+  exit 1
+fi
+
+printf 'LINUX_CLEANER_RISK="safe'\''risk"\n' > "$envq_env_dir/env"
+if ! run_test_case "Timer Note Embedded Quote Preserved" 0 "envq_timer_note.log" \
+     --config "$TEST_ENV_DIR/test_cleaner.conf" --dry-run \
+   || ! grep -qxF "Daily timer: enabled risk=safe'risk env=$envq_env_dir/env" "$TEST_ENV_DIR/envq_timer_note.log"; then
+  echo -e "${RED}FAIL: print_timer_note stripped embedded quote from outer-quoted LINUX_CLEANER_RISK.${NC}"
+  cat "$TEST_ENV_DIR/envq_timer_note.log" 2>/dev/null || true
+  exit 1
+fi
+rm -f "$envq_env_dir/env" "$TEST_ENV_DIR/bin/systemctl"
+echo -e "${GREEN}PASS: systemd EnvironmentFile outer quotes are stripped without corrupting embedded quotes.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

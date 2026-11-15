@@ -28,6 +28,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `-i/--interactive` and `-f/--force` now mutually clear each other so the last flag wins (including `-i` overriding `LINUX_CLEANER_FORCE=1`), while `--clean` continues to preserve either flag.
 - Outside-`$HOME` single files under unwritable (`0555`) parents and existing `0555` directories now require `sudo` (and skip as `requires root` when unavailable) even when `MIN_AGE_DAYS > 0` or exclusions are active, while user-writable `0755` directories under `0555` parents still clean file-by-file without `sudo`.
 - Exit-trap Prometheus metrics export (`LINUX_CLEANER_METRICS_FILE`) now runs only after pre-lock validation, non-cleanup mode dispatch, and `cleaner.lock` acquisition succeed on the cleanup path, so lock contention, invalid `--only-path` / missing-config pre-lock failures, and failed `--purge-sessions --force` or `--restore` runs leave any existing metrics file untouched while post-lock cleanup failures still record `linux_cleaner_last_run_success 0`.
+- Systemd `EnvironmentFile` parsing in `print_timer_note` and `--doctor` now shares `unquote_env_value` / `read_systemd_env_file` to trim surrounding whitespace and strip only one matching outer single- or double-quote pair, preserving embedded quotes in paths and values.
 
 ## [1.9.1] - 2026-10-27
 
