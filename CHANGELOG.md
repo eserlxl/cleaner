@@ -18,6 +18,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 ### Added
 
 - Configuration files now support the `include|PATH` two-field directive to layer a thin user config over packaged defaults (such as `include|/etc/linux-cleaner/cleaner.conf`) while keeping custom `protect|PATH` rules and targets in `~/.config/linux-cleaner/cleaner.conf`; includes expand placeholders safely, preserve source `file:lineno:` diagnostics and shared `/**` prefix caching, and fail closed on missing, unreadable, non-regular, glob-bearing, relative, cyclic, or over-depth (`>8`) files.
+- Added `--only-target-exact NAME` (`LINUX_CLEANER_ONLY_TARGET_EXACT`) and `--exclude-target-exact NAME` (`LINUX_CLEANER_EXCLUDE_TARGET_EXACT`) to match config target `NAME` fields literally without comma splitting or substring hits on neighboring targets (for instance `NPM Cache` without `PNPM Store`), honoring last-flag wins, CLI-over-env precedence, mode/pair mutexes, and `Next:` dry-run replay.
 
 ### Changed
 

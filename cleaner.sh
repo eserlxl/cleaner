@@ -65,7 +65,9 @@ Options:
   --only PATTERN             With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined.
   --only-exact PATH          With --restore: match a literal original path from session inventory; excludes --only.
   --only-target PATTERN      With cleanup or --list-targets: select config targets whose NAME contains PATTERN.
+  --only-target-exact NAME   With cleanup or --list-targets: select config targets whose NAME equals literal NAME.
   --exclude-target PATTERN   With cleanup or --list-targets: skip config targets whose NAME contains PATTERN.
+  --exclude-target-exact NAME With cleanup or --list-targets: skip config targets whose NAME equals literal NAME.
   --only-path PATH           With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH).
   --exclude-path PATH        With cleanup or --list-targets: skip targets at, below, or containing an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH).
   --lock-wait SECONDS        With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT).
@@ -117,7 +119,13 @@ RESTORE_ONLY_MODE="--only"
 HOLD_TARGET=""
 RELEASE_TARGET=""
 ONLY_TARGET=""
+ONLY_TARGET_EXACT=""
 EXCLUDE_TARGET=""
+EXCLUDE_TARGET_EXACT=""
+ONLY_TARGET_CLI=false
+ONLY_TARGET_EXACT_CLI=false
+EXCLUDE_TARGET_CLI=false
+EXCLUDE_TARGET_EXACT_CLI=false
 ONLY_PATH=""
 ONLY_PATH_CANONICAL=""
 EXCLUDE_PATH=""
@@ -189,8 +197,14 @@ esac
 if [[ -n "${LINUX_CLEANER_ONLY_TARGET:-}" ]]; then
   ONLY_TARGET="$LINUX_CLEANER_ONLY_TARGET"
 fi
+if [[ -n "${LINUX_CLEANER_ONLY_TARGET_EXACT:-}" ]]; then
+  ONLY_TARGET_EXACT="$LINUX_CLEANER_ONLY_TARGET_EXACT"
+fi
 if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET:-}" ]]; then
   EXCLUDE_TARGET="$LINUX_CLEANER_EXCLUDE_TARGET"
+fi
+if [[ -n "${LINUX_CLEANER_EXCLUDE_TARGET_EXACT:-}" ]]; then
+  EXCLUDE_TARGET_EXACT="$LINUX_CLEANER_EXCLUDE_TARGET_EXACT"
 fi
 if [[ -n "${LINUX_CLEANER_ONLY_PATH:-}" ]]; then
   ONLY_PATH="$LINUX_CLEANER_ONLY_PATH"
@@ -440,7 +454,28 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       require_non_option_value "$1" "$2"
+      if [[ "$ONLY_TARGET_EXACT_CLI" == true ]]; then
+        echo -e "${RED}Error: --only-target and --only-target-exact cannot be combined.${NC}" >&2
+        exit 1
+      fi
+      ONLY_TARGET_CLI=true
       ONLY_TARGET="$2"
+      ONLY_TARGET_EXACT=""
+      shift 2
+      ;;
+    --only-target-exact)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --only-target-exact requires a target name argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      if [[ "$ONLY_TARGET_CLI" == true ]]; then
+        echo -e "${RED}Error: --only-target and --only-target-exact cannot be combined.${NC}" >&2
+        exit 1
+      fi
+      ONLY_TARGET_EXACT_CLI=true
+      ONLY_TARGET_EXACT="$2"
+      ONLY_TARGET=""
       shift 2
       ;;
     --exclude-target)
@@ -449,7 +484,28 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       require_non_option_value "$1" "$2"
+      if [[ "$EXCLUDE_TARGET_EXACT_CLI" == true ]]; then
+        echo -e "${RED}Error: --exclude-target and --exclude-target-exact cannot be combined.${NC}" >&2
+        exit 1
+      fi
+      EXCLUDE_TARGET_CLI=true
       EXCLUDE_TARGET="$2"
+      EXCLUDE_TARGET_EXACT=""
+      shift 2
+      ;;
+    --exclude-target-exact)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --exclude-target-exact requires a target name argument.${NC}" >&2
+        exit 1
+      fi
+      require_non_option_value "$1" "$2"
+      if [[ "$EXCLUDE_TARGET_CLI" == true ]]; then
+        echo -e "${RED}Error: --exclude-target and --exclude-target-exact cannot be combined.${NC}" >&2
+        exit 1
+      fi
+      EXCLUDE_TARGET_EXACT_CLI=true
+      EXCLUDE_TARGET_EXACT="$2"
+      EXCLUDE_TARGET=""
       shift 2
       ;;
     --only-path)
@@ -764,9 +820,9 @@ if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
   if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
-        || -n "$ONLY_TARGET" || -n "$EXCLUDE_TARGET" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
+        || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --only-target, --exclude-target, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
@@ -790,13 +846,33 @@ if [[ -n "$RESTORE_ONLY" && -z "$RESTORE_TARGET" ]]; then
   exit 1
 fi
 
+if [[ -n "$ONLY_TARGET" && -n "$ONLY_TARGET_EXACT" ]]; then
+  echo -e "${RED}Error: --only-target and --only-target-exact cannot be combined.${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_TARGET" && -n "$EXCLUDE_TARGET_EXACT" ]]; then
+  echo -e "${RED}Error: --exclude-target and --exclude-target-exact cannot be combined.${NC}" >&2
+  exit 1
+fi
+
 if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
+if [[ -n "$ONLY_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --only-target-exact applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+  exit 1
+fi
+
 if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
   echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target-exact applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
   exit 1
 fi
 
@@ -1093,13 +1169,34 @@ exclude_path_kept=false
 age_filter_matched=false
 SELECTED_TARGET_PATH=""
 
-select_target_name() {
+target_name_included() {
   local name="$1"
   if [[ -n "$ONLY_TARGET" ]]; then
     name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}" || return 1
+  elif [[ -n "$ONLY_TARGET_EXACT" ]]; then
+    [[ "$name" == "$ONLY_TARGET_EXACT" ]] || return 1
+  fi
+  return 0
+}
+
+target_name_excluded() {
+  local name="$1"
+  if [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; then
+    return 0
+  fi
+  if [[ -n "$EXCLUDE_TARGET_EXACT" && "$name" == "$EXCLUDE_TARGET_EXACT" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+select_target_name() {
+  local name="$1"
+  if [[ -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" ]]; then
+    target_name_included "$name" || return 1
     only_target_matched=true
   fi
-  if [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; then
+  if target_name_excluded "$name"; then
     return 1
   fi
   name_filter_kept=true
@@ -1151,8 +1248,16 @@ check_target_selection() {
     echo -e "${RED}Error: No config target NAME matches '--only-target ${ONLY_TARGET}'.${NC}" >&2
     return 1
   fi
+  if [[ -n "$ONLY_TARGET_EXACT" && "$only_target_matched" != true ]]; then
+    echo -e "${RED}Error: No config target NAME matches '--only-target-exact ${ONLY_TARGET_EXACT}'.${NC}" >&2
+    return 1
+  fi
   if [[ -n "$EXCLUDE_TARGET" && "$name_filter_kept" != true ]]; then
     echo -e "${RED}Error: --exclude-target ${EXCLUDE_TARGET} left no config targets to process.${NC}" >&2
+    return 1
+  fi
+  if [[ -n "$EXCLUDE_TARGET_EXACT" && "$name_filter_kept" != true ]]; then
+    echo -e "${RED}Error: --exclude-target-exact ${EXCLUDE_TARGET_EXACT} left no config targets to process.${NC}" >&2
     return 1
   fi
   if [[ -n "$ONLY_PATH" && "$path_filter_matched" != true ]]; then
@@ -1661,8 +1766,7 @@ expand_config_globs() {
     trim_to raw_path "$f3"
     [[ "$raw_path" == *[*?]* ]] || continue
     trim_to name "$f2"
-    if { [[ -n "$ONLY_TARGET" ]] && ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; } \
-       || { [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; }; then
+    if ! target_name_included "$name" || target_name_excluded "$name"; then
       continue
     fi
     expand_path_safe "$raw_path" expanded_glob_path || continue
@@ -1709,8 +1813,7 @@ expand_config_globs() {
     fi
 
     trim_to name "$f2"
-    if { [[ -n "$ONLY_TARGET" ]] && ! name_matches_any "$name" "${ONLY_TARGET_PATTERNS[@]}"; } \
-       || { [[ -n "$EXCLUDE_TARGET" ]] && name_matches_any "$name" "${EXCLUDE_TARGET_PATTERNS[@]}"; }; then
+    if ! target_name_included "$name" || target_name_excluded "$name"; then
       printf '%s\0%s\0%s\0' "$src_file" "$lineno" "$line"
       continue
     fi
@@ -5178,7 +5281,9 @@ if [[ "$DRY_RUN" = true ]]; then
     [[ "$TRASH_MODE" == true ]] && next_args+=(--trash)
     [[ -n "$EXCLUDE_PATTERNS" ]] && next_args+=(--exclude "$EXCLUDE_PATTERNS")
     [[ -n "$ONLY_TARGET" ]] && next_args+=(--only-target "$ONLY_TARGET")
+    [[ -n "$ONLY_TARGET_EXACT" ]] && next_args+=(--only-target-exact "$ONLY_TARGET_EXACT")
     [[ -n "$EXCLUDE_TARGET" ]] && next_args+=(--exclude-target "$EXCLUDE_TARGET")
+    [[ -n "$EXCLUDE_TARGET_EXACT" ]] && next_args+=(--exclude-target-exact "$EXCLUDE_TARGET_EXACT")
     [[ -n "$ONLY_PATH" ]] && next_args+=(--only-path "$ONLY_PATH")
     [[ -n "$EXCLUDE_PATH" ]] && next_args+=(--exclude-path "$EXCLUDE_PATH")
     [[ -n "$MIN_RECLAIM" ]] && next_args+=(--min-reclaim "$MIN_RECLAIM")

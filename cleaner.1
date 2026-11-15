@@ -70,7 +70,9 @@ a non-default or environment-overridden
 .BR \-\-trash ,
 .BR \-\-exclude ,
 .BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
@@ -398,7 +400,9 @@ Cannot be combined with
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
@@ -457,9 +461,11 @@ or
 List targets defined in the configuration file
 .RB ( NAME ", " risk ", " path ", " description )
 without analyzing disk usage or modifying anything. NAME selection with
-.BR \-\-only\-target
+.BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
+.BR \-\-exclude\-target ,
 and
-.BR \-\-exclude\-target
+.BR \-\-exclude\-target\-exact
 uses the same matching and empty-selection errors as cleanup.
 .B \-\-only\-path
 and
@@ -514,7 +520,9 @@ combined with
 .BR \-\-check\-health ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
@@ -602,7 +610,9 @@ the checklist. Cannot be combined with
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
 .BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
@@ -659,6 +669,32 @@ may be a comma-separated list: a target matches when its
 .B NAME
 contains any listed substring, and empty entries are rejected). Other targets are skipped. Exits 1 if no target name matches.
 Cannot be combined with
+.BR \-\-only\-target\-exact ,
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
+.B \-\-only\-target\-exact \fINAME\fR
+Used with cleanup or configured-target inventory: process only config targets whose
+.B NAME
+literally equals
+.IR NAME
+(case-sensitive literal equality with no comma splitting or glob matching;
+the last occurrence wins and overrides both
+.B LINUX_CLEANER_ONLY_TARGET_EXACT
+and
+.BR LINUX_CLEANER_ONLY_TARGET ).
+Other targets are skipped. Exits 1 if no target name matches.
+Cannot be combined with
+.BR \-\-only\-target ,
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
@@ -684,6 +720,32 @@ contains any listed substring, and empty entries are rejected). Combined with
 .B \-\-only\-target ,
 both filters apply. Exits 1 if the filters leave no targets to process.
 Cannot be combined with
+.BR \-\-exclude\-target\-exact ,
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-init\-config ,
+or
+.BR \-\-doctor .
+.TP
+.B \-\-exclude\-target\-exact \fINAME\fR
+Used with cleanup or configured-target inventory: skip config targets whose
+.B NAME
+literally equals
+.IR NAME
+(case-sensitive literal equality with no comma splitting or glob matching;
+the last occurrence wins and overrides both
+.B LINUX_CLEANER_EXCLUDE_TARGET_EXACT
+and
+.BR LINUX_CLEANER_EXCLUDE_TARGET ).
+Exits 1 if the filters leave no targets to process.
+Cannot be combined with
+.BR \-\-exclude\-target ,
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
@@ -1075,7 +1137,9 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
@@ -1111,7 +1175,9 @@ Cannot be combined with
 .BR \-\-init\-config ,
 .BR \-\-doctor ,
 .BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
 .BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
 .BR \-\-only\-path ,
 .BR \-\-exclude\-path ,
 .BR \-\-min\-reclaim ,
@@ -1142,7 +1208,7 @@ Value-taking options
 .BR \-e / \-\-exclude ,
 .BR \-\-restore ", " \-\-hold\-session ", " \-\-release\-session ,
 .BR \-\-only ", " \-\-only\-exact ,
-.BR \-\-only\-target ", " \-\-exclude\-target ", " \-\-only\-path ,
+.BR \-\-only\-target ", " \-\-only\-target\-exact ", " \-\-exclude\-target ", " \-\-exclude\-target\-exact ", " \-\-only\-path ,
 .BR \-\-exclude\-path ", " \-\-lock\-wait ", " \-\-min\-reclaim ,
 .BR \-\-check\-health ,
 .BR \-\-min\-free ", " \-\-min\-free\-path ", " \-\-min\-age ", " \-\-action\-timeout ,
@@ -1235,12 +1301,26 @@ When set to a non-empty pattern (or comma-separated list; empty entries are reje
 .BR NAME ).
 CLI flags override this variable.
 .TP
+.B LINUX_CLEANER_ONLY_TARGET_EXACT
+When set to a non-empty literal name, enables
+.BR \-\-only\-target\-exact
+(exact literal match on config target
+.BR NAME
+with no comma splitting). CLI flags override this variable.
+.TP
 .B LINUX_CLEANER_EXCLUDE_TARGET
 When set to a non-empty pattern (or comma-separated list; empty entries are rejected), enables
 .BR \-\-exclude\-target
 (substring match on config target
 .BR NAME ).
 CLI flags override this variable.
+.TP
+.B LINUX_CLEANER_EXCLUDE_TARGET_EXACT
+When set to a non-empty literal name, enables
+.BR \-\-exclude\-target\-exact
+(exact literal exclusion on config target
+.BR NAME
+with no comma splitting). CLI flags override this variable.
 .TP
 .B LINUX_CLEANER_ONLY_PATH
 When set to a non-empty existing absolute literal path without line feeds, enables

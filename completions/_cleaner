@@ -31,7 +31,9 @@ _cleaner() {
     '--only[With --restore: restore only targets whose original path contains PATTERN; the rest stay quarantined]:pattern:' \
     '--only-exact[With --restore: match a literal original path from session inventory; excludes --only]:path:' \
     '--only-target[With cleanup or --list-targets: select config targets whose NAME contains PATTERN]:pattern:' \
+    '--only-target-exact[With cleanup or --list-targets: select config targets whose NAME equals literal NAME]:name:' \
     '--exclude-target[With cleanup or --list-targets: skip config targets whose NAME contains PATTERN]:pattern:' \
+    '--exclude-target-exact[With cleanup or --list-targets: skip config targets whose NAME equals literal NAME]:name:' \
     '--only-path[With cleanup or --list-targets: select ordinary targets at/below an existing absolute path; excludes action:* rows (env: LINUX_CLEANER_ONLY_PATH)]:file:_files' \
     '--exclude-path[With cleanup or --list-targets: skip targets at, below, or containing an existing absolute path (env: LINUX_CLEANER_EXCLUDE_PATH)]:file:_files' \
     '--lock-wait[With mutating runs: wait up to 0..2147483647 seconds for the lock (default: 0; env: LINUX_CLEANER_LOCK_WAIT)]:seconds:' \

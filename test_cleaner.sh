@@ -3246,7 +3246,8 @@ fi
 echo -e "\n${BOLD}Test Case: Value-taking Options Doc Parity${NC}"
 vt_expected=$(printf '%s\n' \
   --config --risk --exclude --restore --only --only-exact --only-target \
-  --exclude-target --only-path --exclude-path --lock-wait --check-health --min-reclaim \
+  --only-target-exact --exclude-target --exclude-target-exact --only-path \
+  --exclude-path --lock-wait --check-health --min-reclaim \
   --min-free --min-free-path --min-age --action-timeout --trash-keep-days --purge-sessions \
   --hold-session --release-session | sort)
 vt_parser=$(awk '
@@ -7865,13 +7866,13 @@ fi
 # a partner); extend the matrix if a mode-specific --json rule needs pinning.
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
-  --init-config --doctor --only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
+  --init-config --doctor --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
     --hold-session|--release-session) echo "$1 20200101_000000" ;;
     --purge-sessions) echo "--purge-sessions all" ;;
-    --only-target|--exclude-target) echo "$1 NPM" ;;
+    --only-target|--only-target-exact|--exclude-target|--exclude-target-exact) echo "$1 NPM" ;;
     --only-path|--exclude-path) echo "$1 $MOCK_HOME" ;;
     --min-reclaim) echo "--min-reclaim 1G" ;;
     --min-free) echo "--min-free 1G" ;;
@@ -7883,7 +7884,7 @@ mx_args() {
     *) echo "$1" ;;
   esac
 }
-mx_subjects=(--only-target --exclude-target --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
+mx_subjects=(--only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
   --check-config --init-config --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
@@ -13371,7 +13372,7 @@ if command -v fish > /dev/null 2>&1; then
   done
   echo -e "${GREEN}PASS: fish completes only immediate quarantine directories and preserves selectors with no quarantine directory.${NC}"
   fish_comp_failed=""
-  for fcase in --exclude --only --only-exact --only-target --exclude-target --lock-wait \
+  for fcase in --exclude --only --only-exact --only-target --only-target-exact --exclude-target --exclude-target-exact --lock-wait \
                --min-reclaim --min-free --min-age --action-timeout --trash-keep-days; do
     if [[ -n "$(cd "$TEST_ENV_DIR/comp_work" && XDG_CONFIG_HOME="$TEST_ENV_DIR/fish_cfg" XDG_DATA_HOME="$TEST_ENV_DIR/fish_data" \
                  fish --no-config -c "set -p fish_complete_path $SCRIPT_DIR/completions; complete -C 'cleaner $fcase '" 2>&1)" ]]; then
@@ -16623,6 +16624,152 @@ INCLUDE_PY
   exit 1
 fi
 echo -e "${GREEN}PASS: Config include|PATH overlays shipped/base configs, preserves file:line attribution, and fails closed on invalid or cyclic includes.${NC}"
+
+echo -e "\n${BOLD}Test Case: Exact Target Selection And Mode Exclusion Parity${NC}"
+if ! python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'EXACT_TARGET_PY'; then
+import json, os, shutil, subprocess, tempfile
+from pathlib import Path
+import sys
+
+cleaner, test_env = sys.argv[1], sys.argv[2]
+tmp = Path(tempfile.mkdtemp(dir=test_env, prefix="exact_target_"))
+try:
+    home = tmp / "home"
+    for rel in [".npm/_cacache", ".local/share/pnpm", ".cache/lit", ".cache/globlit", ".cache/dashn"]:
+        d = home / rel
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "item.bin").write_text("payload")
+    cfg = tmp / "targets.conf"
+    cfg.write_text(
+        "safe|NPM Cache|$HOME/.npm/_cacache|npm|0||\n"
+        "safe|PNPM Store|$HOME/.local/share/pnpm|pnpm|0||\n"
+        "safe|Literal, Name|$HOME/.cache/lit|lit|0||\n"
+        "safe|*glob? [x]|$HOME/.cache/globlit|glob|0||\n"
+        "safe|-n|$HOME/.cache/dashn|dashn|0||\n"
+    )
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith("LINUX_CLEANER_")}
+    base_env.update({"HOME": str(home), "NO_COLOR": "1", "XDG_CONFIG_HOME": str(tmp / "xdg_cfg"), "XDG_STATE_HOME": str(tmp / "xdg_state"), "XDG_CACHE_HOME": str(tmp / "xdg_cache")})
+
+    def run_cli(args, extra_env=None, check=False):
+        env = dict(base_env)
+        if extra_env:
+            env.update(extra_env)
+        return subprocess.run(["bash", cleaner, "--config", str(cfg), *args], env=env, capture_output=True, text=True, check=check)
+
+    # Disambiguation: --only-target-exact "NPM Cache" must not hit PNPM Store.
+    r_only_json = json.loads(run_cli(["--only-target-exact", "NPM Cache", "--list-targets", "--json"], check=True).stdout)
+    assert [t["name"] for t in r_only_json["targets"]] == ["NPM Cache"], r_only_json
+    r_only_hum = run_cli(["--only-target-exact", "NPM Cache", "--list-targets"], check=True)
+    assert "NPM Cache" in r_only_hum.stdout and "PNPM Store" not in r_only_hum.stdout, r_only_hum.stdout
+
+    # Substring fragments and missing names fail closed.
+    r_sub = run_cli(["--only-target-exact", "NPM", "--list-targets"])
+    assert r_sub.returncode == 1 and "--only-target-exact NPM" in r_sub.stderr, (r_sub.returncode, r_sub.stderr)
+
+    # Literal commas, glob metacharacters, and '-n' are matched without splitting or globbing.
+    for exact_name in ["Literal, Name", "*glob? [x]", "-n"]:
+        j = json.loads(run_cli(["--only-target-exact", exact_name, "--dry-run", "--json"], check=True).stdout)
+        assert [t["name"] for t in j["targets"]] == [exact_name], (exact_name, j)
+    r_split = run_cli(["--only-target-exact", "Literal", "--dry-run"])
+    assert r_split.returncode == 1, r_split
+
+    # --exclude-target-exact skips only the literal exact NAME.
+    r_ex = json.loads(run_cli(["--exclude-target-exact", "PNPM Store", "--list-targets", "--json"], check=True).stdout)
+    assert [t["name"] for t in r_ex["targets"]] == ["NPM Cache", "Literal, Name", "*glob? [x]", "-n"], r_ex
+    r_ex_sub = json.loads(run_cli(["--exclude-target-exact", "NPM", "--list-targets", "--json"], check=True).stdout)
+    assert len(r_ex_sub["targets"]) == 5, r_ex_sub
+
+    # Last exact flag wins; composition with substring partner works; empty intersection fails.
+    r_last = json.loads(run_cli(["--only-target-exact", "PNPM Store", "--only-target-exact", "NPM Cache", "--list-targets", "--json"], check=True).stdout)
+    assert [t["name"] for t in r_last["targets"]] == ["NPM Cache"], r_last
+    r_empty = run_cli(["--only-target-exact", "NPM Cache", "--exclude-target-exact", "NPM Cache", "--list-targets"])
+    assert r_empty.returncode == 1 and "--exclude-target-exact NPM Cache left no config targets" in r_empty.stderr, (r_empty.returncode, r_empty.stderr)
+
+    # Value guards & pair mutexes (CLI + env).
+    for bad_args in [
+        ["--only-target-exact", ""],
+        ["--exclude-target-exact", ""],
+        ["--force", "--only-target-exact", "--dry-run"],
+        ["--force", "--only-target-exact", "-d"],
+        ["--force", "--exclude-target-exact", "--dry-run"],
+        ["--force", "--exclude-target-exact", "-d"],
+        ["--only-target", "NPM", "--only-target-exact", "NPM Cache"],
+        ["--only-target-exact", "NPM Cache", "--only-target", "NPM"],
+        ["--exclude-target", "NPM", "--exclude-target-exact", "PNPM Store"],
+        ["--exclude-target-exact", "PNPM Store", "--exclude-target", "NPM"],
+    ]:
+        rb = run_cli(bad_args)
+        assert rb.returncode == 1, (bad_args, rb.returncode, rb.stderr)
+
+    # Env mirrors and CLI overrides (even over comma-invalid inherited substring var).
+    r_env = json.loads(run_cli(["--list-targets", "--json"], extra_env={
+        "LINUX_CLEANER_ONLY_TARGET_EXACT": "Literal, Name",
+    }, check=True).stdout)
+    assert [t["name"] for t in r_env["targets"]] == ["Literal, Name"], r_env
+    r_ovr1 = json.loads(run_cli(["--only-target-exact", "NPM Cache", "--list-targets", "--json"], extra_env={
+        "LINUX_CLEANER_ONLY_TARGET": "PNPM,,bad",
+    }, check=True).stdout)
+    assert [t["name"] for t in r_ovr1["targets"]] == ["NPM Cache"], r_ovr1
+    r_ovr2 = json.loads(run_cli(["--only-target", "PNPM", "--list-targets", "--json"], extra_env={
+        "LINUX_CLEANER_ONLY_TARGET_EXACT": "NPM Cache",
+    }, check=True).stdout)
+    assert [t["name"] for t in r_ovr2["targets"]] == ["PNPM Store"], r_ovr2
+    r_ovr3 = json.loads(run_cli(["--exclude-target-exact", "PNPM Store", "--list-targets", "--json"], extra_env={
+        "LINUX_CLEANER_EXCLUDE_TARGET": "NPM,,bad",
+    }, check=True).stdout)
+    assert [t["name"] for t in r_ovr3["targets"]] == ["NPM Cache", "Literal, Name", "*glob? [x]", "-n"], r_ovr3
+    r_ovr4 = json.loads(run_cli(["--exclude-target", "Cache, Store, Name", "--list-targets", "--json"], extra_env={
+        "LINUX_CLEANER_EXCLUDE_TARGET_EXACT": "-n",
+    }, check=True).stdout)
+    assert [t["name"] for t in r_ovr4["targets"]] == ["*glob? [x]", "-n"], r_ovr4
+
+    # Inheriting both substring + exact in env without CLI override fails closed.
+    r_both_env1 = run_cli(["--list-targets"], extra_env={
+        "LINUX_CLEANER_ONLY_TARGET": "NPM",
+        "LINUX_CLEANER_ONLY_TARGET_EXACT": "NPM Cache",
+    })
+    assert r_both_env1.returncode == 1 and "cannot be combined" in r_both_env1.stderr, r_both_env1
+    r_both_env2 = run_cli(["--list-targets"], extra_env={
+        "LINUX_CLEANER_EXCLUDE_TARGET": "NPM",
+        "LINUX_CLEANER_EXCLUDE_TARGET_EXACT": "PNPM Store",
+    })
+    assert r_both_env2.returncode == 1 and "cannot be combined" in r_both_env2.stderr, r_both_env2
+
+    # Wildcard rows filtered out by exact selectors do not expand/fail on skipped wildcards.
+    glob_ok = home / "wg_keep" / "a" / "b"
+    glob_skip = home / "wg_skip" / "sub"
+    glob_ok.mkdir(parents=True, exist_ok=True)
+    glob_skip.mkdir(parents=True, exist_ok=True)
+    (glob_ok / "f.tmp").write_text("keep")
+    (glob_skip / "s.tmp").write_text("skip")
+    wcfg = tmp / "w.conf"
+    wcfg.write_text(
+        "safe|Keep Glob|$HOME/wg_keep/**/b|keep|0||\n"
+        "safe|Skip Glob|$HOME/wg_skip/**/sub|skip|0||\n"
+    )
+    rw = json.loads(subprocess.run(
+        ["bash", cleaner, "--config", str(wcfg), "--only-target-exact", "Keep Glob", "--list-targets", "--json"],
+        env=base_env, capture_output=True, text=True, check=True,
+    ).stdout)
+    assert [t["name"] for t in rw["targets"]] == ["Keep Glob"] and rw["targets"][0]["path"].endswith("/b"), rw
+
+    # Dry-run Next: replay quotes exact target names cleanly.
+    r_next = run_cli(["--only-target-exact", "NPM Cache", "--dry-run"], check=True)
+    assert "Next: run 'cleaner --clean' to apply this plan" in r_next.stdout and "--only-target-exact NPM\\ Cache" in r_next.stdout, r_next.stdout
+    r_next_ex = run_cli(["--dry-run"], extra_env={"LINUX_CLEANER_EXCLUDE_TARGET_EXACT": "PNPM Store"}, check=True)
+    assert "Next: run 'cleaner --clean' to apply this plan" in r_next_ex.stdout and "--exclude-target-exact PNPM\\ Store" in r_next_ex.stdout, r_next_ex.stdout
+
+    # Real cleanup with --only-target-exact deletes only NPM Cache and leaves PNPM Store untouched.
+    run_cli(["--only-target-exact", "NPM Cache", "--clean", "--force"], check=True)
+    assert not (home / ".npm/_cacache/item.bin").exists()
+    assert (home / ".local/share/pnpm/item.bin").exists()
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+EXACT_TARGET_PY
+  echo -e "${RED}FAIL: Exact target selection tests failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: Exact target selection disambiguates names, preserves commas/globs, honors env/CLI overrides, and replays Next: safely.${NC}"
 
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
