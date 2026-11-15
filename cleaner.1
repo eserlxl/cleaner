@@ -396,6 +396,11 @@ emit a machine-readable JSON readiness and environment checklist instead of plai
 .BR quarantine_retention ", " monitor_env ", " quarantine ", and " warnings ).
 Implies
 .BR \-\-quiet .
+With
+.BR \-\-check\-config ,
+emit a machine-readable JSON validation and include-graph summary instead of plain text
+.RB ( valid ", " status ", " config_file ", " source ", " targets_count ", " protect_count ,
+.BR include_files ", " searched ", " error ", " error_file ", and " error_line ).
 .TP
 .B \-\-report
 Print the saved last cleanup report and exit. Read-only; requires no
@@ -532,7 +537,11 @@ Validate the configuration file with the same structural checks as a cleanup
 run (field count, required fields, CHECK_PROCESSES shape, MIN_AGE_DAYS,
 known actions, known risks) and exit without disk analysis. Prints
 .B OK: N targets in <path>
-on success. Cannot be combined with
+on success. With
+.BR \-\-json ,
+emits one machine-readable JSON validation summary instead of plain text or
+stderr diagnostics while preserving exit 0 on valid configurations and exit 1
+on missing, unreadable, or invalid configurations. Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
 .BR \-\-list\-sessions ,
@@ -1380,8 +1389,10 @@ enables
 Valid with dry-run,
 .BR \-\-list\-targets ,
 .BR \-\-list\-sessions ,
+.BR \-\-report ,
+.BR \-\-doctor ,
 or
-.BR \-\-report ;
+.BR \-\-check\-config ;
 No CLI flag disables it; set it to 0 or unset it.
 .TP
 .B LINUX_CLEANER_ONLY_TARGET

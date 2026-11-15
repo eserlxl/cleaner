@@ -57,7 +57,7 @@ Options:
   --report                   Print the saved last cleanup report and exit.
   --check-health SECONDS     With --report: exit 0 only for a successful report at most SECONDS old (skips succeed).
   --list-targets             List configured cleanup targets (read-only) and exit.
-  --check-config             Validate the configuration file and exit (no disk analysis).
+  --check-config             Validate the configuration file (supports --json) and exit (no disk analysis).
   --init-config              Copy the active config to your user config path (never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
@@ -88,7 +88,7 @@ Options:
   --exit-code                Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --fail-fast                With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST).
-  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, --report summary, or --doctor checklist).
+  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -1003,10 +1003,10 @@ if [[ "$session_mode_count" -gt 1 ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true || \
-      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ) \
+      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$INIT_CONFIG" == true || \
+      ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true && "$CHECK_CONFIG" != true ) \
     ) ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, --list-sessions, --report, or --doctor.${NC}" >&2
+  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, --list-sessions, --report, --doctor, or --check-config.${NC}" >&2
   exit 1
 fi
 
@@ -1123,6 +1123,9 @@ if [[ "$INIT_CONFIG" == true ]]; then
   exit $?
 fi
 
+CHECK_CONFIG_PRE_STATUS=""
+CHECK_CONFIG_PRE_ERROR=""
+CHECK_CONFIG_SEARCHED=()
 # Check if config file exists (only if not restoring, purging, or listing sessions)
 if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given.
@@ -1131,6 +1134,7 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" &&
   if [[ -z "$CONFIG_FILE" ]]; then
     set_default_config_candidates || exit 1
     for candidate in "${CONFIG_CANDIDATES[@]}"; do
+      CHECK_CONFIG_SEARCHED+=("$candidate")
       if [[ -f "$candidate" ]]; then
         CONFIG_FILE="$candidate"
         break
@@ -1143,16 +1147,25 @@ if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" &&
     fi
   fi
   if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
-    if [[ ${#CONFIG_CANDIDATES[@]} -gt 0 ]]; then
-      printf '  searched: %s\n' "${CONFIG_CANDIDATES[@]}" >&2
-      echo "Run 'cleaner --doctor' to check the environment." >&2
+    if [[ "$CHECK_CONFIG" == true && "$JSON_OUTPUT" == true ]]; then
+      CHECK_CONFIG_PRE_STATUS="not_found"
+      CHECK_CONFIG_PRE_ERROR="Configuration file not found at '$CONFIG_FILE'"
+    else
+      echo -e "${RED}Error: Configuration file not found at '$CONFIG_FILE'${NC}" >&2
+      if [[ ${#CONFIG_CANDIDATES[@]} -gt 0 ]]; then
+        printf '  searched: %s\n' "${CONFIG_CANDIDATES[@]}" >&2
+        echo "Run 'cleaner --doctor' to check the environment." >&2
+      fi
+      exit 1
     fi
-    exit 1
-  fi
-  if [[ ! -r "$CONFIG_FILE" ]]; then
-    echo -e "${RED}Error: Configuration file '$CONFIG_FILE' is not readable${NC}" >&2
-    exit 1
+  elif [[ ! -r "$CONFIG_FILE" ]]; then
+    if [[ "$CHECK_CONFIG" == true && "$JSON_OUTPUT" == true ]]; then
+      CHECK_CONFIG_PRE_STATUS="not_readable"
+      CHECK_CONFIG_PRE_ERROR="Configuration file '$CONFIG_FILE' is not readable"
+    else
+      echo -e "${RED}Error: Configuration file '$CONFIG_FILE' is not readable${NC}" >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -1690,7 +1703,29 @@ CFG_REC_FILES=()
 CFG_REC_LINENOS=()
 CFG_REC_LINES=()
 _CFG_INCLUDE_STACK=()
+_CFG_WALKED_FILES=()
+_CFG_WALKED_CANON=()
+_CFG_SUPPRESS_STDERR=false
+_CFG_LAST_ERROR=""
+_CFG_LAST_ERROR_FILE=""
+_CFG_LAST_ERROR_LINE=""
+_CFG_LAST_TARGET_COUNT=0
+_CFG_LAST_PROTECT_COUNT=0
 _CFG_REC_LOADED=false
+
+_cfg_report_error() {
+  local err_file="$1" err_line="$2" use_red="$3" err_msg="$4"
+  _CFG_LAST_ERROR_FILE="$err_file"
+  _CFG_LAST_ERROR_LINE="$err_line"
+  _CFG_LAST_ERROR="${err_msg//$'\n'/ }"
+  if [[ "$_CFG_SUPPRESS_STDERR" != true ]]; then
+    if [[ "$use_red" == true ]]; then
+      printf '%b%s%b\n' "$RED" "$err_msg" "$NC" >&2
+    else
+      printf '%s\n' "$err_msg" >&2
+    fi
+  fi
+}
 
 # Resolve an existing config file physically while preserving valid internal or
 # trailing newlines in discovered XDG_CONFIG_HOME paths; emit with trailing '.' so
@@ -1707,27 +1742,40 @@ _config_file_identity() {
 _collect_config_lines_walk() {
   local src_file="$1" depth="$2"
   local canon_cur line lineno=0 pipes field_count risk inc_raw inc_exp inc_canon stack_item
+  local seen_canon walked_seen=false
+  local -a walk_lines=()
   if (( depth > CONFIG_INCLUDE_MAX_DEPTH )); then
-    printf '%bError: %s: include depth exceeds limit (%s)%b\n' "$RED" "$src_file" "$CONFIG_INCLUDE_MAX_DEPTH" "$NC" >&2
+    _cfg_report_error "$src_file" "" true "Error: ${src_file}: include depth exceeds limit (${CONFIG_INCLUDE_MAX_DEPTH})"
     return 1
   fi
   if [[ ! -f "$src_file" || ! -r "$src_file" ]]; then
-    printf '%bError: Configuration file '\''%s'\'' is not readable%b\n' "$RED" "$src_file" "$NC" >&2
+    _cfg_report_error "$src_file" "" true "Error: Configuration file '${src_file}' is not readable"
     return 1
   fi
   if ! canon_cur=$(_config_file_identity "$src_file"); then
-    printf '%bError: Could not resolve configuration file '\''%s'\''%b\n' "$RED" "$src_file" "$NC" >&2
+    _cfg_report_error "$src_file" "" true "Error: Could not resolve configuration file '${src_file}'"
     return 1
   fi
   canon_cur="${canon_cur%.}"
   for stack_item in "${_CFG_INCLUDE_STACK[@]}"; do
     if [[ "$stack_item" == "$canon_cur" ]]; then
-      printf '%bError: circular include detected for '\''%s'\''%b\n' "$RED" "$src_file" "$NC" >&2
+      _cfg_report_error "$src_file" "" true "Error: circular include detected for '${src_file}'"
       return 1
     fi
   done
+  for seen_canon in "${_CFG_WALKED_CANON[@]}"; do
+    if [[ "$seen_canon" == "$canon_cur" ]]; then
+      walked_seen=true
+      break
+    fi
+  done
+  if [[ "$walked_seen" != true ]]; then
+    _CFG_WALKED_CANON+=("$canon_cur")
+    _CFG_WALKED_FILES+=("$src_file")
+  fi
   _CFG_INCLUDE_STACK+=("$canon_cur")
-  while IFS= read -r line || [[ -n "$line" ]]; do
+  mapfile -t walk_lines < "$src_file"
+  for line in "${walk_lines[@]}"; do
     lineno=$((lineno + 1))
     pipes="${line//[^|]/}"
     field_count=$(( ${#pipes} + 1 ))
@@ -1735,56 +1783,56 @@ _collect_config_lines_walk() {
     trim_to risk "$risk"
     if [[ "$risk" == "include" ]]; then
       if [[ "$field_count" -ne 2 ]]; then
-        printf '%bError: %s:%s: include line requires 2 fields (include|PATH), found %s%b\n' "$RED" "$src_file" "$lineno" "$field_count" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: include line requires 2 fields (include|PATH), found ${field_count}"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       trim_to inc_raw "$inc_raw"
       if [[ -z "$inc_raw" ]]; then
-        printf '%bError: %s:%s: include PATH is empty%b\n' "$RED" "$src_file" "$lineno" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: include PATH is empty"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       if [[ "$inc_raw" == *$'\r'* ]] || ! expand_path_safe "$inc_raw" inc_exp || [[ "$inc_exp" == *$'\r'* ]]; then
-        printf 'Error: %s:%s: include PATH has unsafe path expansion\n' "$src_file" "$lineno" >&2
+        _cfg_report_error "$src_file" "$lineno" false "Error: ${src_file}:${lineno}: include PATH has unsafe path expansion"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       if [[ "$inc_exp" != /* ]]; then
-        printf '%bError: %s:%s: include PATH '\''%s'\'' must be absolute%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: include PATH '${inc_exp}' must be absolute"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       if [[ "$inc_exp" == *[*?\[]* ]]; then
-        printf '%bError: %s:%s: include PATH '\''%s'\'' cannot contain glob characters%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: include PATH '${inc_exp}' cannot contain glob characters"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       if [[ -d "$inc_exp" || ! -e "$inc_exp" || ! -f "$inc_exp" ]]; then
-        printf '%bError: %s:%s: included configuration file '\''%s'\'' does not exist or is not a regular file%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: included configuration file '${inc_exp}' does not exist or is not a regular file"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       if [[ ! -r "$inc_exp" ]]; then
-        printf '%bError: %s:%s: included configuration file '\''%s'\'' is not readable%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: included configuration file '${inc_exp}' is not readable"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       if ! inc_canon=$(_config_file_identity "$inc_exp"); then
-        printf '%bError: %s:%s: could not resolve included configuration file '\''%s'\''%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: could not resolve included configuration file '${inc_exp}'"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
       inc_canon="${inc_canon%.}"
       for stack_item in "${_CFG_INCLUDE_STACK[@]}"; do
         if [[ "$stack_item" == "$inc_canon" ]]; then
-          printf '%bError: %s:%s: circular include '\''%s'\''%b\n' "$RED" "$src_file" "$lineno" "$inc_exp" "$NC" >&2
+          _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: circular include '${inc_exp}'"
           unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
           return 1
         fi
       done
       if (( depth + 1 > CONFIG_INCLUDE_MAX_DEPTH )); then
-        printf '%bError: %s:%s: include depth exceeds limit (%s)%b\n' "$RED" "$src_file" "$lineno" "$CONFIG_INCLUDE_MAX_DEPTH" "$NC" >&2
+        _cfg_report_error "$src_file" "$lineno" true "Error: ${src_file}:${lineno}: include depth exceeds limit (${CONFIG_INCLUDE_MAX_DEPTH})"
         unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
         return 1
       fi
@@ -1797,7 +1845,7 @@ _collect_config_lines_walk() {
     CFG_REC_FILES+=("$src_file")
     CFG_REC_LINENOS+=("$lineno")
     CFG_REC_LINES+=("$line")
-  done < "$src_file"
+  done
   unset '_CFG_INCLUDE_STACK[${#_CFG_INCLUDE_STACK[@]}-1]'
 }
 
@@ -1807,6 +1855,11 @@ load_config_lines() {
   CFG_REC_LINENOS=()
   CFG_REC_LINES=()
   _CFG_INCLUDE_STACK=()
+  _CFG_WALKED_FILES=()
+  _CFG_WALKED_CANON=()
+  _CFG_LAST_ERROR=""
+  _CFG_LAST_ERROR_FILE=""
+  _CFG_LAST_ERROR_LINE=""
   _collect_config_lines_walk "$CONFIG_FILE" 0 || return 1
   _CFG_REC_LOADED=true
 }
@@ -2206,9 +2259,12 @@ print0_with_status() {
 validate_config_file() {
   local config_line config_src config_lineno=0 config_pipes field_count
   local risk name raw_path desc min_age check_procs custom_clean_cmd
-  local target_count=0 exclusion_patterns rec_idx
+  local target_count=0 protect_count=0 exclusion_patterns rec_idx
+  local risk_err="" risk_err_plain=""
 
-  load_config_lines || exit 1
+  _CFG_LAST_TARGET_COUNT=0
+  _CFG_LAST_PROTECT_COUNT=0
+  load_config_lines || return 1
   for rec_idx in "${!CFG_REC_LINES[@]}"; do
     config_src="${CFG_REC_FILES[$rec_idx]}"
     config_lineno="${CFG_REC_LINENOS[$rec_idx]}"
@@ -2220,31 +2276,32 @@ validate_config_file() {
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
     if [[ "$risk" == "protect" ]]; then
       if [[ "$field_count" -ne 2 ]]; then
-        printf '%bError: %s:%s: protect line requires 2 fields (protect|PATH), found %s%b\n' "$RED" "$config_src" "$config_lineno" "$field_count" "$NC" >&2
-        exit 1
+        _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: protect line requires 2 fields (protect|PATH), found ${field_count}"
+        return 1
       fi
       trim_to name "$name"
       if [[ -z "$name" ]]; then
-        printf '%bError: %s:%s: protect PATH is empty%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
-        exit 1
+        _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: protect PATH is empty"
+        return 1
       fi
       if ! name=$(expand_path_safe "$name"); then
-        printf 'Error: %s:%s: protect PATH has unsafe path expansion\n' "$config_src" "$config_lineno" >&2
-        exit 1
+        _cfg_report_error "$config_src" "$config_lineno" false "Error: ${config_src}:${config_lineno}: protect PATH has unsafe path expansion"
+        return 1
       fi
       if [[ "$name" != /* ]]; then
-        printf '%bError: %s:%s: protect PATH '\''%s'\'' must be absolute%b\n' "$RED" "$config_src" "$config_lineno" "$name" "$NC" >&2
-        exit 1
+        _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: protect PATH '${name}' must be absolute"
+        return 1
       fi
       if [[ "$name" == *[*?\[]* ]]; then
-        printf '%bError: %s:%s: protect PATH '\''%s'\'' cannot contain glob characters%b\n' "$RED" "$config_src" "$config_lineno" "$name" "$NC" >&2
-        exit 1
+        _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: protect PATH '${name}' cannot contain glob characters"
+        return 1
       fi
+      protect_count=$((protect_count + 1))
       continue
     fi
     if [[ "$field_count" -lt 5 || "$field_count" -gt 7 ]]; then
-      printf '%bError: %s:%s: expected 5-7 fields, found %s%b\n' "$RED" "$config_src" "$config_lineno" "$field_count" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: expected 5-7 fields, found ${field_count}"
+      return 1
     fi
     trim_to name "$name"
     trim_to raw_path "$raw_path"
@@ -2253,26 +2310,26 @@ validate_config_file() {
     trim_to check_procs "${check_procs:-}"
     trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     if [[ -z "$name" ]]; then
-      printf '%bError: %s:%s: NAME (field 2) is empty%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: NAME (field 2) is empty"
+      return 1
     fi
     if [[ -z "$raw_path" ]]; then
-      printf '%bError: %s:%s: PATH (field 3) is empty%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: PATH (field 3) is empty"
+      return 1
     fi
     if [[ ( "$raw_path" == *'*'* || "$raw_path" == *'?'* ) &&
           ( "$raw_path" == *'['* || "$raw_path" == *']'* ) ]]; then
-      printf '%bError: %s:%s: PATH cannot contain '\''['\'' or '\'']'\'' in a wildcard path%b\n' "$RED" "$config_src" "$config_lineno" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: PATH cannot contain '[' or ']' in a wildcard path"
+      return 1
     fi
     if [[ -n "$check_procs" && "$check_procs" =~ (^|,)[[:space:]]*(,|$) ]]; then
-      printf '%bError: %s:%s: malformed CHECK_PROCESSES '\''%s'\'' (empty or stray comma-separated token)%b\n' "$RED" "$config_src" "$config_lineno" "$check_procs" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty or stray comma-separated token)"
+      return 1
     fi
     # A cmdline: token with nothing after the prefix would match every process.
     if [[ "$check_procs" =~ (^|,)[[:space:]]*cmdline:[[:space:]]*(,|$) ]]; then
-      printf '%bError: %s:%s: malformed CHECK_PROCESSES '\''%s'\'' (empty pattern after '\''cmdline:'\'')%b\n' "$RED" "$config_src" "$config_lineno" "$check_procs" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: malformed CHECK_PROCESSES '${check_procs}' (empty pattern after 'cmdline:')"
+      return 1
     fi
     if [[ -n "$custom_clean_cmd" ]]; then
       case "$custom_clean_cmd" in
@@ -2281,32 +2338,41 @@ validate_config_file() {
           if [[ -z "$exclusion_patterns" || "$exclusion_patterns" =~ (^|,)[[:space:]]*(,|$) \
                 || "$exclusion_patterns" == *'|'* || "$exclusion_patterns" == *$'\n'* \
                 || "$exclusion_patterns" == *$'\r'* ]]; then
-            printf '%bError: %s:%s: malformed CUSTOM_ACTION '\''%s'\'' (unsafe or empty exclusion pattern)%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$NC" >&2
-            exit 1
+            _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: malformed CUSTOM_ACTION '${custom_clean_cmd}' (unsafe or empty exclusion pattern)"
+            return 1
           fi
           ;;
         action:paccache_keep1|action:paccache_keep2|action:paccache_keep3|action:pacman_clean|action:apt_clean|action:dnf_clean|action:zypper_clean|action:apk_clean|action:uv_cache_prune|action:pnpm_store_prune|action:hf_cache_prune|action:nix_store_gc|action:flatpak_unused|filter:cxx_build)
           ;;
         *)
-          printf '%b%s:%s: Error: Unknown action '\''%s'\'' in target '\''%s'\''.%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$name" "$NC" >&2
-          exit 1
+          _cfg_report_error "$config_src" "$config_lineno" true "${config_src}:${config_lineno}: Error: Unknown action '${custom_clean_cmd}' in target '${name}'."
+          return 1
           ;;
       esac
     fi
-    risk_to_int "$risk" "${config_src}:${config_lineno}: " >/dev/null || exit 1
+    if ! risk_err=$(risk_to_int "$risk" "${config_src}:${config_lineno}: " 2>&1 >/dev/null); then
+      risk_err_plain=$(printf '%s' "$risk_err" | sed $'s/\033\\[[0-9;]*m//g')
+      _CFG_LAST_ERROR_FILE="$config_src"
+      _CFG_LAST_ERROR_LINE="$config_lineno"
+      _CFG_LAST_ERROR="${risk_err_plain//$'\n'/ }"
+      [[ "$_CFG_SUPPRESS_STDERR" == true ]] || printf '%s\n' "$risk_err" >&2
+      return 1
+    fi
     if [[ -z "$min_age" ]]; then
       :
     elif [[ ! "$min_age" =~ ^[[:digit:]]+$ ]]; then
-      printf '%bError: %s:%s: invalid MIN_AGE_DAYS '\''%s'\''%b\n' "$RED" "$config_src" "$config_lineno" "$min_age" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: invalid MIN_AGE_DAYS '${min_age}'"
+      return 1
     elif [[ "$custom_clean_cmd" == action:* ]] && has_positive_age "$min_age"; then
       # The action runs its own command over the whole cache; an age would only narrow the plan's estimate.
-      printf '%bError: %s:%s: MIN_AGE_DAYS must be 0 for %s (the action ignores file age)%b\n' "$RED" "$config_src" "$config_lineno" "$custom_clean_cmd" "$NC" >&2
-      exit 1
+      _cfg_report_error "$config_src" "$config_lineno" true "Error: ${config_src}:${config_lineno}: MIN_AGE_DAYS must be 0 for ${custom_clean_cmd} (the action ignores file age)"
+      return 1
     fi
     target_count=$((target_count + 1))
   done
 
+  _CFG_LAST_TARGET_COUNT="$target_count"
+  _CFG_LAST_PROTECT_COUNT="$protect_count"
   printf 'OK: %s targets in %s\n' "$target_count" "$CONFIG_FILE"
 }
 
@@ -4586,13 +4652,99 @@ _json_str_or_null() {
   fi
 }
 
+# Resolve config origin label ("XDG", "/etc", "checkout", or "explicit") for a
+# config path using CONFIG_CANDIDATES ordering without clobbering callers.
+resolve_config_source() {
+  local cfg_path="$1" out_var="$2"
+  local -a saved_candidates=("${CONFIG_CANDIDATES[@]}") cfg_labels=(XDG /etc checkout)
+  local i resolved_src="explicit"
+  set_default_config_candidates || { CONFIG_CANDIDATES=("${saved_candidates[@]}"); return 1; }
+  for i in 0 1 2; do
+    if [[ "$cfg_path" == "${CONFIG_CANDIDATES[i]}" ]]; then
+      resolved_src="${cfg_labels[i]}"
+      break
+    fi
+  done
+  CONFIG_CANDIDATES=("${saved_candidates[@]}")
+  printf -v "$out_var" '%s' "$resolved_src"
+}
+
+run_check_config() {
+  if [[ "$JSON_OUTPUT" != true ]]; then
+    validate_config_file
+    return $?
+  fi
+
+  local cfg_source="explicit" valid_json="false" status_str="ok"
+  local targets_cnt=0 protect_cnt=0 rc=0
+  local has_err=false err_msg="" err_file="" err_line="" has_err_file=false has_err_line=false
+  local -a include_list=() searched_list=("${CHECK_CONFIG_SEARCHED[@]}")
+  local item first=true esc="" err_line_json="null"
+
+  resolve_config_source "$CONFIG_FILE" cfg_source || return 1
+
+  if [[ "$CHECK_CONFIG_PRE_STATUS" == "not_found" || "$CHECK_CONFIG_PRE_STATUS" == "not_readable" ]]; then
+    status_str="$CHECK_CONFIG_PRE_STATUS"
+    has_err=true
+    err_msg="$CHECK_CONFIG_PRE_ERROR"
+    has_err_file=true
+    err_file="$CONFIG_FILE"
+    rc=1
+  else
+    _CFG_SUPPRESS_STDERR=true
+    if validate_config_file >/dev/null; then
+      valid_json="true"
+      status_str="ok"
+      targets_cnt="${_CFG_LAST_TARGET_COUNT:-0}"
+      protect_cnt="${_CFG_LAST_PROTECT_COUNT:-0}"
+    else
+      status_str="invalid"
+      has_err=true
+      err_msg="$_CFG_LAST_ERROR"
+      err_file="${_CFG_LAST_ERROR_FILE:-$CONFIG_FILE}"
+      has_err_file=true
+      if [[ -n "$_CFG_LAST_ERROR_LINE" && "$_CFG_LAST_ERROR_LINE" =~ ^[0-9]+$ ]]; then
+        has_err_line=true
+        err_line="$_CFG_LAST_ERROR_LINE"
+      fi
+      rc=1
+    fi
+    _CFG_SUPPRESS_STDERR=false
+    include_list=("${_CFG_WALKED_FILES[@]}")
+  fi
+
+  [[ "$has_err_line" == true ]] && err_line_json="$err_line"
+  printf '{"valid":%s,"status":"%s","config_file":"%s","source":"%s","targets_count":%d,"protect_count":%d,"include_files":[' \
+    "$valid_json" "$status_str" "$(json_escape "$CONFIG_FILE")" "$(json_escape "$cfg_source")" "$targets_cnt" "$protect_cnt"
+  first=true
+  for item in "${include_list[@]}"; do
+    [[ "$first" == true ]] || printf ','
+    first=false
+    json_escape "$item" esc
+    printf '"%s"' "$esc"
+  done
+  printf '],"searched":['
+  first=true
+  for item in "${searched_list[@]}"; do
+    [[ "$first" == true ]] || printf ','
+    first=false
+    json_escape "$item" esc
+    printf '"%s"' "$esc"
+  done
+  printf '],"error":%s,"error_file":%s,"error_line":%s}\n' \
+    "$(_json_str_or_null "$has_err" "$err_msg")" \
+    "$(_json_str_or_null "$has_err_file" "$err_file")" \
+    "$err_line_json"
+  return "$rc"
+}
+
 # Read-only environment checklist: explain config resolution, GNU userland,
 # optional helper binaries, user timer states, last cleanup, and quarantine count.
 # Exits 0 when cleanup can run, or 1 when the config is missing, unreadable,
 # or invalid, or GNU userland is missing.
 run_doctor() {
   local doctor_rc=0 cfg_path="$CONFIG_FILE" cfg_source="explicit" bin_path i cfg_err="" cfg_rc=0
-  local -a cfg_labels=(XDG /etc checkout) doc_warnings=()
+  local -a doc_warnings=()
   local cfg_status="ok" cfg_has_err=false
   local gnu_ok=true gnu_detail="GNU userland available (du -sb, stat -c, find -print0/-quit, realpath)"
   local pgrep_avail=false pgrep_path="" flock_avail=false flock_path=""
@@ -4603,19 +4755,14 @@ run_doctor() {
   if [[ -z "$cfg_path" ]]; then
     # Same fallback as discovery: the checkout path when no candidate exists.
     cfg_path="${CONFIG_CANDIDATES[2]}"
-    cfg_source="checkout"
     for i in 0 1 2; do
       if [[ -f "${CONFIG_CANDIDATES[i]}" ]]; then
         cfg_path="${CONFIG_CANDIDATES[i]}"
-        cfg_source="${cfg_labels[i]}"
         break
       fi
     done
-  else
-    for i in 0 1 2; do
-      [[ "$cfg_path" == "${CONFIG_CANDIDATES[i]}" ]] && cfg_source="${cfg_labels[i]}" && break
-    done
   fi
+  resolve_config_source "$cfg_path" cfg_source || return 1
   if [[ ! -f "$cfg_path" ]]; then
     cfg_status="not_found"
     cfg_has_err=true
@@ -4974,7 +5121,7 @@ fi
 # Validate physical records before an unmatched wildcard or a filter can remove
 # one from the stream. Session operations intentionally do not require a config.
 if [[ -z "$RESTORE_TARGET" && -z "$PURGE_TARGET" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$CHECK_CONFIG" != true ]]; then
-  validate_config_file >/dev/null
+  validate_config_file >/dev/null || exit 1
 fi
 
 if [[ -n "$ONLY_PATH" ]]; then
@@ -4999,8 +5146,8 @@ if [[ "$LIST_TARGETS" == true ]]; then
 fi
 
 if [[ "$CHECK_CONFIG" == true ]]; then
-  validate_config_file
-  exit 0
+  run_check_config
+  exit $?
 fi
 
 # Load cleanup-only pattern file pre-lock (non-cleanup modes have exited or skip cleanup).

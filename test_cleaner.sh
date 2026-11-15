@@ -6087,16 +6087,159 @@ else
   exit 1
 fi
 
-if run_test_case "JSON With Check Config Rejected" 1 "json_check_config.log" \
-     --config "$TEST_ENV_DIR/test_cleaner.conf" --check-config --json; then
-  if grep -q "json is valid only" "$TEST_ENV_DIR/json_check_config.log"; then
-    echo -e "${GREEN}PASS: --check-config with --json was rejected instead of printing non-JSON output.${NC}"
-  else
-    echo -e "${RED}FAIL: --check-config with --json returned the wrong output.${NC}"
-    cat "$TEST_ENV_DIR/json_check_config.log"
-    exit 1
-  fi
-else
+echo -e "\n${BOLD}Test Case: Check Config JSON Output${NC}"
+if ! python3 - "$CLEANER_SH" "$SCRIPT_DIR/cleaner.conf" "$TEST_ENV_DIR" "$MOCK_HOME" <<'CHECK_CFG_JSON_PY'; then
+import json, os, pathlib, shutil, subprocess, sys
+
+cleaner, shipped_conf, test_env, home = sys.argv[1:]
+te = pathlib.Path(test_env)
+work = te / "check_cfg_json"
+work.mkdir(parents=True, exist_ok=True)
+home_p = pathlib.Path(home)
+
+base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+base_env.update(HOME=home, XDG_CONFIG_HOME=str(work / "empty_xdg"))
+
+def run_cc(args, extra_env=None, cmd=cleaner, cwd=None):
+    env = dict(base_env)
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        ["bash", cmd, "--check-config"] + args,
+        env=env,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+# 1. Shipped cleaner.conf (46 targets, explicit relative path)
+res_ship = run_cc(["--config", "cleaner.conf", "--json"], cwd=str(pathlib.Path(cleaner).parent))
+assert res_ship.returncode == 0 and res_ship.stderr == "", res_ship
+d_ship = json.loads(res_ship.stdout)
+assert d_ship["valid"] is True and d_ship["status"] == "ok", d_ship
+assert d_ship["config_file"] == "cleaner.conf" and d_ship["source"] == "explicit", d_ship
+assert d_ship["targets_count"] == 46 and d_ship["protect_count"] == 0, d_ship
+assert d_ship["include_files"] == ["cleaner.conf"] and d_ship["searched"] == [], d_ship
+assert d_ship["error"] is None and d_ship["error_file"] is None and d_ship["error_line"] is None, d_ship
+
+# 2. XDG discovery + LINUX_CLEANER_JSON=1 + diamond includes + protect lines
+xdg_root = work / "xdg"
+xdg_dir = xdg_root / "linux-cleaner"
+xdg_dir.mkdir(parents=True, exist_ok=True)
+shared_inc = work / "shared.conf"
+inc_a = work / "inc_a.conf"
+inc_b = work / "inc_b.conf"
+xdg_conf = xdg_dir / "cleaner.conf"
+shared_inc.write_text("protect|$HOME/shared_keep\nsafe|Shared Target|$HOME/s|desc|0||\n", encoding="utf-8")
+inc_a.write_text(f"include|{shared_inc}\nsafe|Target A|$HOME/a|desc|0||\n", encoding="utf-8")
+inc_b.write_text(f"include|{shared_inc}\n# comment only\n", encoding="utf-8")
+xdg_conf.write_text(
+    f"include|{inc_a}\ninclude|{inc_b}\nprotect|$HOME/top_keep\nmedium|Top Target|$HOME/t|desc|7||\n",
+    encoding="utf-8",
+)
+
+for args, extra in (
+    (["--json"], {"XDG_CONFIG_HOME": str(xdg_root)}),
+    ([], {"XDG_CONFIG_HOME": str(xdg_root), "LINUX_CLEANER_JSON": "1"}),
+):
+    res_xdg = run_cc(args, extra_env=extra)
+    assert res_xdg.returncode == 0 and res_xdg.stderr == "", res_xdg
+    d_xdg = json.loads(res_xdg.stdout)
+    assert d_xdg["valid"] is True and d_xdg["status"] == "ok", d_xdg
+    assert d_xdg["source"] == "XDG" and d_xdg["config_file"] == str(xdg_conf), d_xdg
+    assert d_xdg["targets_count"] == 4 and d_xdg["protect_count"] == 3, d_xdg
+    assert d_xdg["include_files"] == [str(xdg_conf), str(inc_a), str(shared_inc), str(inc_b)], d_xdg
+    assert d_xdg["searched"] == [str(xdg_conf)], d_xdg
+    assert d_xdg["error"] is None and d_xdg["error_file"] is None and d_xdg["error_line"] is None, d_xdg
+
+# Non-JSON text mode remains unchanged.
+res_txt = run_cc(["--config", str(xdg_conf)])
+assert res_txt.returncode == 0 and res_txt.stdout == f"OK: 4 targets in {xdg_conf}\n", res_txt
+
+# 3. Checkout fallback source when XDG and /etc are absent
+if not pathlib.Path("/etc/linux-cleaner/cleaner.conf").exists():
+    res_chk = run_cc(["--json"])
+    assert res_chk.returncode == 0 and res_chk.stderr == "", res_chk
+    d_chk = json.loads(res_chk.stdout)
+    assert d_chk["valid"] is True and d_chk["source"] == "checkout", d_chk
+    assert d_chk["targets_count"] == 46 and len(d_chk["searched"]) == 3, d_chk
+
+    no_chk_dir = work / "no_checkout"
+    no_chk_dir.mkdir(parents=True, exist_ok=True)
+    isolated_cleaner = no_chk_dir / "cleaner.sh"
+    shutil.copy2(cleaner, isolated_cleaner)
+    res_miss_disc = run_cc(["--json"], cmd=str(isolated_cleaner))
+    assert res_miss_disc.returncode == 1 and res_miss_disc.stderr == "", res_miss_disc
+    d_md = json.loads(res_miss_disc.stdout)
+    assert d_md["valid"] is False and d_md["status"] == "not_found" and d_md["source"] == "checkout", d_md
+    assert len(d_md["searched"]) == 3 and d_md["error_line"] is None and "not found" in d_md["error"], d_md
+
+# 4. Explicit missing config (not_found) & unreadable config (not_readable)
+missing_cfg = work / "does_not_exist.conf"
+res_miss = run_cc(["--config", str(missing_cfg), "--json"])
+assert res_miss.returncode == 1 and res_miss.stderr == "", res_miss
+d_miss = json.loads(res_miss.stdout)
+assert d_miss["valid"] is False and d_miss["status"] == "not_found", d_miss
+assert d_miss["source"] == "explicit" and d_miss["config_file"] == str(missing_cfg), d_miss
+assert d_miss["targets_count"] == 0 and d_miss["protect_count"] == 0, d_miss
+assert d_miss["include_files"] == [] and d_miss["searched"] == [], d_miss
+assert d_miss["error_file"] == str(missing_cfg) and d_miss["error_line"] is None, d_miss
+assert "not found" in d_miss["error"], d_miss
+
+if os.geteuid() != 0:
+    unr_cfg = work / "unreadable.conf"
+    unr_cfg.write_text("safe|U|$HOME/u|desc|0||\n", encoding="utf-8")
+    unr_cfg.chmod(0)
+    try:
+        res_unr = run_cc(["--config", str(unr_cfg), "--json"])
+        assert res_unr.returncode == 1 and res_unr.stderr == "", res_unr
+        d_unr = json.loads(res_unr.stdout)
+        assert d_unr["valid"] is False and d_unr["status"] == "not_readable", d_unr
+        assert d_unr["config_file"] == str(unr_cfg) and d_unr["source"] == "explicit", d_unr
+        assert d_unr["include_files"] == [] and d_unr["error_file"] == str(unr_cfg) and d_unr["error_line"] is None, d_unr
+        assert "not readable" in d_unr["error"], d_unr
+    finally:
+        unr_cfg.chmod(0o644)
+
+# 5. Schema error inside included file & include-walk error
+bad_child = work / "bad_child.conf"
+bad_child.write_text("# header\nsafe|Bad||desc|0||\n", encoding="utf-8")
+bad_top = work / "bad_top.conf"
+bad_top.write_text(f"safe|Good|$HOME/g|desc|0||\ninclude|{bad_child}\n", encoding="utf-8")
+res_inv = run_cc(["--config", str(bad_top), "--json"])
+assert res_inv.returncode == 1 and res_inv.stderr == "", res_inv
+d_inv = json.loads(res_inv.stdout)
+assert d_inv["valid"] is False and d_inv["status"] == "invalid", d_inv
+assert d_inv["targets_count"] == 0 and d_inv["protect_count"] == 0, d_inv
+assert d_inv["include_files"] == [str(bad_top), str(bad_child)], d_inv
+assert d_inv["error_file"] == str(bad_child) and d_inv["error_line"] == 2, d_inv
+assert "PATH (field 3) is empty" in d_inv["error"] and "\x1b" not in d_inv["error"], d_inv
+
+bad_inc = work / "bad_inc.conf"
+bad_inc.write_text("safe|Good|$HOME/g|desc|0||\ninclude|/nonexistent/check_cfg_sub.conf\n", encoding="utf-8")
+res_bi = run_cc(["--config", str(bad_inc), "--json"])
+assert res_bi.returncode == 1 and res_bi.stderr == "", res_bi
+d_bi = json.loads(res_bi.stdout)
+assert d_bi["valid"] is False and d_bi["status"] == "invalid", d_bi
+assert d_bi["include_files"] == [str(bad_inc)], d_bi
+assert d_bi["error_file"] == str(bad_inc) and d_bi["error_line"] == 2, d_bi
+assert "does not exist" in d_bi["error"] and "\x1b" not in d_bi["error"], d_bi
+
+# 6. Unknown risk error attribution preserves file & line without stderr leak
+bad_risk = work / "bad_risk.conf"
+bad_risk.write_text("bogus|BadRisk|$HOME/r|desc|0||\n", encoding="utf-8")
+res_br = run_cc(["--config", str(bad_risk), "--json"])
+assert res_br.returncode == 1 and res_br.stderr == "", res_br
+d_br = json.loads(res_br.stdout)
+assert d_br["valid"] is False and d_br["status"] == "invalid", d_br
+assert d_br["error_file"] == str(bad_risk) and d_br["error_line"] == 1, d_br
+assert "Unknown risk level" in d_br["error"] and "\x1b" not in d_br["error"], d_br
+
+assert not (home_p / ".cache/linux-cleaner/cleaner.lock").exists(), "--check-config --json created a lock"
+print("PASS: Check Config JSON Output covers valid, includes, protect, sources, not_found, not_readable, and invalid errors", flush=True)
+CHECK_CFG_JSON_PY
+  echo -e "${RED}FAIL: Check Config JSON Output failed.${NC}"
   exit 1
 fi
 
