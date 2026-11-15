@@ -60,6 +60,7 @@ Options:
   --check-config             Validate the configuration file (supports --json) and exit (no disk analysis).
   --init-config              Copy the active config to your user config path (never overwrites).
   --overlay                  With --init-config: write a minimal include| overlay layered over the active config.
+  --init-env                 Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
   --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention.
@@ -154,6 +155,7 @@ LIST_TARGETS=false
 CHECK_CONFIG=false
 INIT_CONFIG=false
 INIT_OVERLAY=false
+INIT_ENV=false
 DOCTOR=false
 CONFIG_DISCOVERED=false
 CONFIG_EXPLICIT=false
@@ -301,7 +303,7 @@ notify_failed_exit() {
     journal_error_line "Quarantine purge ${PURGE_TARGET} failed with exit status ${status}."
     return "$status"
   fi
-  if [[ -n "${RESTORE_TARGET:-}" || -n "${HOLD_TARGET:-}" || -n "${RELEASE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${DOCTOR:-false}" == true ]]; then
+  if [[ -n "${RESTORE_TARGET:-}" || -n "${HOLD_TARGET:-}" || -n "${RELEASE_TARGET:-}" || "${LIST_SESSIONS:-false}" == true || "${LIST_TARGETS:-false}" == true || "${CHECK_CONFIG:-false}" == true || "${REPORT:-false}" == true || "${INIT_CONFIG:-false}" == true || "${INIT_ENV:-false}" == true || "${DOCTOR:-false}" == true ]]; then
     return "$status"
   fi
   # Scheduled previews (the monitor unit) and argument errors stop before any cleanup.
@@ -697,6 +699,10 @@ while [[ $# -gt 0 ]]; do
       INIT_OVERLAY=true
       shift
       ;;
+    --init-env)
+      INIT_ENV=true
+      shift
+      ;;
     --doctor)
       DOCTOR=true
       shift
@@ -860,23 +866,23 @@ fi
 if [[ -n "$HOLD_TARGET" || -n "$RELEASE_TARGET" ]]; then
   hold_flag=--hold-session hold_other=--release-session
   [[ -n "$HOLD_TARGET" ]] || { hold_flag=--release-session; hold_other=--hold-session; }
-  if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true \
+  if [[ ( -n "$HOLD_TARGET" && -n "$RELEASE_TARGET" ) || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true \
         || "$EXCLUDE_FROM_CLI" == true || "$SKIP_ACTIONS_CLI" == true || -n "$ONLY_TARGET" || -n "$ONLY_TARGET_EXACT" || -n "$EXCLUDE_TARGET" || -n "$EXCLUDE_TARGET_EXACT" || -n "$ONLY_PATH" || -n "$EXCLUDE_PATH" || -n "$MIN_RECLAIM" || -n "$MIN_FREE" || -n "$MIN_FREE_PATH" || -n "$MIN_AGE_OVERRIDE" || -n "$ACTION_TIMEOUT" || -n "$TRASH_KEEP_DAYS" \
         || "$NOTIFY_CLI" == true || "$FAIL_FAST_CLI" == true || "$SHOW_MATCHES" == true || "$EXIT_CODE" == true || "$DRY_RUN_EXPLICIT" == true || "$CLEAN_EXPLICIT" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true ]]; then
-    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --doctor, --exclude-from, --skip-actions, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
+    echo -e "${RED}Error: ${hold_flag} cannot be combined with ${hold_other}, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, --doctor, --exclude-from, --skip-actions, --only-target, --only-target-exact, --exclude-target, --exclude-target-exact, --only-path, --exclude-path, --min-reclaim, --min-free, --min-free-path, --min-age, --action-timeout, --trash-keep-days, --notify, --fail-fast, --show-matches, --exit-code, --dry-run, --clean, --interactive, or --json.${NC}" >&2
     exit 1
   fi
 fi
 
 # Exit status signaling is only meaningful for a cleanup preview.
-if [[ "$EXIT_CODE" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --exit-code cannot be combined with --clean, --force, --interactive, --restore, --purge-sessions, --list-sessions, --hold-session, --release-session, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor.${NC}" >&2
+if [[ "$EXIT_CODE" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exit-code cannot be combined with --clean, --force, --interactive, --restore, --purge-sessions, --list-sessions, --hold-session, --release-session, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor.${NC}" >&2
   exit 1
 fi
 
 # Match listings are only meaningful for a text cleanup preview.
-if [[ "$SHOW_MATCHES" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --show-matches cannot be combined with --clean, --force, --interactive, --json, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor.${NC}" >&2
+if [[ "$SHOW_MATCHES" == true && ( "$DRY_RUN" != true || "$CLEAN_EXPLICIT" == true || "$FORCE" == true || "$INTERACTIVE" == true || "$JSON_OUTPUT" == true || -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --show-matches cannot be combined with --clean, --force, --interactive, --json, --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor.${NC}" >&2
   exit 1
 fi
 
@@ -902,105 +908,110 @@ if [[ -n "$EXCLUDE_TARGET" && -n "$EXCLUDE_TARGET_EXACT" ]]; then
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$ONLY_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --only-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$ONLY_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --only-target-exact applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$ONLY_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --only-target-exact applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$EXCLUDE_TARGET" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-target-exact applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$EXCLUDE_TARGET_EXACT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-target-exact applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$ONLY_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true || -n "$TRASH_KEEP_DAYS" ) ]]; then
+if [[ -n "$ONLY_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true || -n "$TRASH_KEEP_DAYS" ) ]]; then
   echo "Error: --only-path applies only to cleanup runs or --list-targets and cannot be combined with --trash-keep-days." >&2
   exit 1
 fi
 
-if [[ -n "$EXCLUDE_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo "Error: --exclude-path applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor)." >&2
+if [[ -n "$EXCLUDE_PATH" && ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo "Error: --exclude-path applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor)." >&2
   exit 1
 fi
 
-if [[ "$EXCLUDE_FROM_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --exclude-from applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ "$EXCLUDE_FROM_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --exclude-from applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ "$SKIP_ACTIONS_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --skip-actions applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ "$SKIP_ACTIONS_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --skip-actions applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$MIN_RECLAIM" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --min-reclaim applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ ( -n "$MIN_FREE" || -n "$MIN_FREE_PATH" ) && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+if [[ ( -n "$MIN_FREE" || -n "$MIN_FREE_PATH" ) && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
   min_free_flag=--min-free
   [[ -n "$MIN_FREE_PATH" ]] && min_free_flag=--min-free-path
-  echo -e "${RED}Error: ${min_free_flag} applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+  echo -e "${RED}Error: ${min_free_flag} applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$MIN_AGE_OVERRIDE" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --min-age applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$ACTION_TIMEOUT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --action-timeout applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$ACTION_TIMEOUT" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --action-timeout applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ -n "$TRASH_KEEP_DAYS" && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --trash-keep-days applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ "$NOTIFY_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ "$NOTIFY_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --notify applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ "$FAIL_FAST_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --fail-fast applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor).${NC}" >&2
+if [[ "$FAIL_FAST_CLI" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --fail-fast applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor).${NC}" >&2
   exit 1
 fi
 
-if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, --report, --check-health, --init-config, or --doctor.${NC}" >&2
+if [[ "$LIST_TARGETS" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --list-targets cannot be combined with --restore, --purge-sessions, --list-sessions, --report, --check-health, --init-config, --init-env, or --doctor.${NC}" >&2
   exit 1
 fi
 
-if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --report, --check-health, --init-config, or --doctor.${NC}" >&2
+if [[ "$CHECK_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --check-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --report, --check-health, --init-config, --init-env, or --doctor.${NC}" >&2
   exit 1
 fi
 
-if [[ "$REPORT" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --report cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --init-config, or --doctor.${NC}" >&2
+if [[ "$REPORT" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --report cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --init-config, --init-env, or --doctor.${NC}" >&2
   exit 1
 fi
 
-if [[ "$INIT_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$DOCTOR" == true ) ]]; then
-  echo -e "${RED}Error: --init-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, or --doctor.${NC}" >&2
+if [[ "$INIT_CONFIG" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_ENV" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --init-config cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-env, or --doctor.${NC}" >&2
   exit 1
 fi
 
-if [[ "$DOCTOR" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true ) ]]; then
-  echo -e "${RED}Error: --doctor cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, or --init-config.${NC}" >&2
+if [[ "$INIT_ENV" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$DOCTOR" == true ) ]]; then
+  echo -e "${RED}Error: --init-env cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor.${NC}" >&2
+  exit 1
+fi
+
+if [[ "$DOCTOR" == true && ( -n "${RESTORE_TARGET:-}" || -n "${PURGE_TARGET:-}" || "$LIST_SESSIONS" == true || "$LIST_TARGETS" == true || "$CHECK_CONFIG" == true || "$REPORT" == true || "$INIT_CONFIG" == true || "$INIT_ENV" == true ) ]]; then
+  echo -e "${RED}Error: --doctor cannot be combined with --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --init-env.${NC}" >&2
   exit 1
 fi
 
@@ -1014,7 +1025,7 @@ if [[ "$session_mode_count" -gt 1 ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      ( ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" ) && "$DRY_RUN_EXPLICIT" != true ) || "$INIT_CONFIG" == true || \
+      ( ( -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" ) && "$DRY_RUN_EXPLICIT" != true ) || "$INIT_CONFIG" == true || "$INIT_ENV" == true || \
       ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true && "$CHECK_CONFIG" != true ) \
     ) ]]; then
   echo -e "${RED}Error: --json is valid only with --dry-run (cleanup, --restore, or --purge-sessions preview), --list-targets, --list-sessions, --report, --doctor, or --check-config.${NC}" >&2
@@ -1280,11 +1291,62 @@ if [[ "$INIT_CONFIG" == true ]]; then
   exit $?
 fi
 
+# Copy the shipped systemd timer environment template to ~/.config/linux-cleaner/env without overwriting.
+init_timer_env() {
+  local dest_parent dest_dir dest src="" candidate tmp
+  dest_parent="${HOME%/}/.config"
+  dest_dir="$dest_parent/linux-cleaner"
+  dest="$dest_dir/env"
+
+  _check_user_file_dest "$dest_parent" "$dest_dir" "$dest" "Timer env file" "timer env" || return 1
+
+  for candidate in \
+    "$SCRIPT_DIR/examples/linux-cleaner.env.example" \
+    "$SCRIPT_DIR/../share/linux-cleaner/linux-cleaner.env.example" \
+    "/usr/local/share/linux-cleaner/linux-cleaner.env.example" \
+    "/usr/share/linux-cleaner/linux-cleaner.env.example"; do
+    if [[ -f "$candidate" && ! -L "$candidate" && -r "$candidate" ]]; then
+      src="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$src" ]]; then
+    echo -e "${RED}Error: No timer environment template (linux-cleaner.env.example) found to copy.${NC}" >&2
+    return 1
+  fi
+
+  local src_real
+  if src_real=$(realpath -e -- "$src" 2>/dev/null && printf '.'); then
+    src="${src_real%.}"
+    src="${src%$'\n'}"
+  fi
+
+  _prepare_user_file_dir "$dest_parent" "$dest_dir" "timer env" || return 1
+
+  tmp="$dest.tmp.$$"
+  if ! cp -- "$src" "$tmp"; then
+    rm -f -- "$tmp" || true
+    echo -e "${RED}Error: Failed to copy '$src' to '$tmp'.${NC}" >&2
+    return 1
+  fi
+
+  _publish_staged_user_file "$tmp" "$dest" "Timer env file" || return 1
+
+  echo "Created $dest from $src; edit it (for example set LINUX_CLEANER_TRASH=1 and LINUX_CLEANER_TRASH_KEEP_DAYS=30), then check with: cleaner --doctor"
+  return 0
+}
+
+if [[ "$INIT_ENV" == true ]]; then
+  init_timer_env
+  exit $?
+fi
+
 CHECK_CONFIG_PRE_STATUS=""
 CHECK_CONFIG_PRE_ERROR=""
 CHECK_CONFIG_SEARCHED=()
 # Check if config file exists (only if not restoring, purging, or listing sessions)
-if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true ]]; then
+if [[ -z "${RESTORE_TARGET:-}" && -z "${PURGE_TARGET:-}" && -z "$HOLD_TARGET" && -z "$RELEASE_TARGET" && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true && "$INIT_ENV" != true ]]; then
   # Resolve the default config by search order when -c/--config was not given.
   CONFIG_CANDIDATES=()
   [[ -n "$CONFIG_FILE" ]] && CONFIG_EXPLICIT=true

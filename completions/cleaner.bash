@@ -120,6 +120,7 @@ _cleaner() {
       --check-config
       --init-config
       --overlay
+      --init-env
       --doctor
       --restore
       --hold-session

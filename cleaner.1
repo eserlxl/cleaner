@@ -175,6 +175,7 @@ in non-cleanup modes. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -223,6 +224,7 @@ suppresses the listing. CLI-only (no environment mirror). Cannot be combined wit
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -253,6 +255,7 @@ command. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -276,6 +279,7 @@ command. Notifications and metrics are unchanged. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -308,6 +312,7 @@ notifier never changes the exit status. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -440,6 +445,7 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -465,6 +471,7 @@ Cannot be combined with
 .BR \-\-list\-targets ,
 .BR \-\-check\-config ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 .BR \-\-doctor ,
 .BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
@@ -523,6 +530,7 @@ set to true in JSON (false otherwise). Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -552,6 +560,7 @@ all risk levels. Read-only; requires a configuration file. Cannot be combined wi
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -574,6 +583,7 @@ on missing, unreadable, or invalid configurations. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -593,6 +603,7 @@ combined with
 .BR \-\-check\-config ,
 .BR \-\-report ,
 .BR \-\-check\-health ,
+.BR \-\-init\-env ,
 .BR \-\-doctor ,
 .BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
@@ -629,6 +640,56 @@ than
 or if the resolved source path cannot be represented safely in an
 .B include|
 directive.
+.TP
+.B \-\-init\-env
+Copy the shipped systemd timer environment template
+.RB ( linux\-cleaner.env.example )
+to
+.I $HOME/.config/linux\-cleaner/env
+(mode
+.BR 0644 ,
+ignoring
+.B XDG_CONFIG_HOME
+to match systemd's
+.BR EnvironmentFile=\-%h/.config/linux\-cleaner/env ,
+never overwriting an existing file or following symlinks) and exit without
+requiring a configuration file. Searches
+.IR examples/linux\-cleaner.env.example ,
+.IR ../share/linux\-cleaner/linux\-cleaner.env.example ,
+.IR /usr/local/share/linux\-cleaner/linux\-cleaner.env.example ,
+and
+.IR /usr/share/linux\-cleaner/linux\-cleaner.env.example .
+Cannot be combined with
+.BR \-\-restore ,
+.BR \-\-purge\-sessions ,
+.BR \-\-list\-sessions ,
+.BR \-\-hold\-session ,
+.BR \-\-release\-session ,
+.BR \-\-list\-targets ,
+.BR \-\-check\-config ,
+.BR \-\-report ,
+.BR \-\-check\-health ,
+.BR \-\-init\-config ,
+.BR \-\-overlay ,
+.BR \-\-doctor ,
+.BR \-\-exclude\-from ,
+.BR \-\-only\-target ,
+.BR \-\-only\-target\-exact ,
+.BR \-\-exclude\-target ,
+.BR \-\-exclude\-target\-exact ,
+.BR \-\-only\-path ,
+.BR \-\-exclude\-path ,
+.BR \-\-skip\-actions ,
+.BR \-\-min\-reclaim ,
+.BR \-\-min\-free ,
+.BR \-\-min\-free\-path ,
+.BR \-\-min\-age ,
+.BR \-\-action\-timeout ,
+.BR \-\-trash\-keep\-days ,
+.BR \-\-notify ,
+.BR \-\-fail\-fast ,
+or
+.BR \-\-json .
 .TP
 .B \-\-doctor
 Print a read-only checklist of the runtime environment a cleanup depends on
@@ -705,6 +766,7 @@ emit a machine-readable JSON summary instead of plain text. Cannot be combined w
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 .BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
 .BR \-\-only\-target\-exact ,
@@ -776,6 +838,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -801,6 +864,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -827,6 +891,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -852,6 +917,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -880,6 +946,7 @@ without analysis. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 .BR \-\-doctor ,
 or
 .BR \-\-trash\-keep\-days
@@ -905,6 +972,7 @@ existing path, or removes every remaining target. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -931,6 +999,7 @@ Exits 1 if excluding actions leaves no targets to process. Cannot be combined wi
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -939,7 +1008,7 @@ Wait up to a literal decimal 0..2147483647 seconds for the existing mutation loc
 (default 0; leading zeros normalized). Zero retains immediate contention failure
 and allows missing flock. Positive waits require flock and exit 1 on acquisition
 failure before target, session, report or log effects; lock-file opening may occur.
-Valid values are ignored by dry-run, inventories, report, check-config, init-config and doctor.
+Valid values are ignored by dry-run, inventories, report, check-config, init-config, init-env and doctor.
 Last CLI value overrides inherited input. Missing/empty CLI and invalid effective
 values fail before initialization or state creation. No retry loop is used.
 .TP
@@ -971,6 +1040,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1003,6 +1073,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1033,6 +1104,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1064,6 +1136,7 @@ rows. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1095,6 +1168,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1120,6 +1194,7 @@ or if any session purge fails. Cannot be combined with
 .BR \-\-check\-health ,
 .BR \-\-only\-path ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1166,6 +1241,7 @@ are rejected. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1241,6 +1317,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 or
 .BR \-\-doctor .
 .TP
@@ -1283,6 +1360,7 @@ Holding a held session is a no-op. Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 .BR \-\-doctor ,
 .BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
@@ -1323,6 +1401,7 @@ Cannot be combined with
 .BR \-\-report ,
 .BR \-\-check\-health ,
 .BR \-\-init\-config ,
+.BR \-\-init\-env ,
 .BR \-\-doctor ,
 .BR \-\-exclude\-from ,
 .BR \-\-only\-target ,
@@ -1644,7 +1723,7 @@ directory. Symlinked targets or parent directories are refused. Invalid paths,
 write errors, or a path equal to
 .B LINUX_CLEANER_METRICS_FILE
 warn on stderr without failing the run. Unset or empty writes nothing.
-Mutating cleanup, restore, purge, list, report, check-config, init-config, and
+Mutating cleanup, restore, purge, list, report, check-config, init-config, init-env, and
 doctor modes ignore it.
 .TP
 .B LINUX_CLEANER_ALLOW_OUTSIDE_HOME

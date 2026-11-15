@@ -6971,6 +6971,155 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Init Timer Env File And Guards${NC}"
+if python3 - "$CLEANER_SH" "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$TEST_ENV_DIR" <<'INIT_ENV_PY'
+import os, pathlib, shutil, stat, subprocess, sys
+
+cleaner_sh, template_file, test_dir = sys.argv[1:]
+root = pathlib.Path(test_dir) / "init-env-suite"
+shutil.rmtree(root, ignore_errors=True)
+root.mkdir(parents=True)
+template_bytes = pathlib.Path(template_file).read_bytes()
+
+def run_env(cmd, home, xdg=None, extra_env=None):
+    env = {
+        "PATH": f"{test_dir}/bin:" + os.environ.get("PATH", ""),
+        "HOME": str(home),
+        "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+    }
+    if xdg is not None:
+        env["XDG_CONFIG_HOME"] = str(xdg)
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
+
+try:
+    # 1. Checkout --init-env ignores XDG_CONFIG_HOME, needs no cleaner.conf, creates 0644 env in 0700 dir.
+    home1 = root / "home1"
+    other_xdg = root / "other-xdg"
+    home1.mkdir()
+    other_xdg.mkdir()
+    r1 = run_env([cleaner_sh, "--init-env"], home1, xdg=other_xdg)
+    dest1 = home1 / ".config/linux-cleaner/env"
+    assert r1.returncode == 0, r1
+    assert dest1.is_file() and not dest1.is_symlink(), dest1
+    assert not (other_xdg / "linux-cleaner/env").exists(), "should ignore XDG_CONFIG_HOME"
+    assert dest1.read_bytes() == template_bytes
+    assert stat.S_IMODE(dest1.stat().st_mode) == 0o644, oct(dest1.stat().st_mode)
+    assert stat.S_IMODE(dest1.parent.stat().st_mode) == 0o700, oct(dest1.parent.stat().st_mode)
+    assert str(dest1) in r1.stdout and "cleaner --doctor" in r1.stdout, r1.stdout
+    assert not list(dest1.parent.glob("*.tmp.*")), list(dest1.parent.iterdir())
+
+    # 2. Never overwrites existing env file.
+    sentinel = b"LINUX_CLEANER_TRASH=1\n"
+    dest1.write_bytes(sentinel)
+    r_dup = run_env([cleaner_sh, "--init-env"], home1, xdg=other_xdg)
+    assert r_dup.returncode == 1 and "already exists" in r_dup.stderr and "refusing to overwrite" in r_dup.stderr, r_dup
+    assert dest1.read_bytes() == sentinel
+    assert not list(dest1.parent.glob("*.tmp.*"))
+
+    # 3. Installed layout resolves ../share/linux-cleaner/linux-cleaner.env.example without examples/.
+    prefix = root / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "share/linux-cleaner").mkdir(parents=True)
+    copied_cleaner = prefix / "bin/cleaner"
+    shutil.copy2(cleaner_sh, copied_cleaner)
+    copied_cleaner.chmod(0o755)
+    custom_tpl = prefix / "share/linux-cleaner/linux-cleaner.env.example"
+    custom_bytes = b"# staged share template\nLINUX_CLEANER_RISK=safe\n"
+    custom_tpl.write_bytes(custom_bytes)
+    home2 = root / "home2"
+    home2.mkdir()
+    r2 = run_env([str(copied_cleaner), "--init-env"], home2)
+    dest2 = home2 / ".config/linux-cleaner/env"
+    assert r2.returncode == 0, r2
+    assert dest2.read_bytes() == custom_bytes
+    assert str(custom_tpl) in r2.stdout, r2.stdout
+
+    # 4. Missing or symlink-only template fails when host /usr share locations have no template.
+    sys_tpls = (
+        pathlib.Path("/usr/local/share/linux-cleaner/linux-cleaner.env.example"),
+        pathlib.Path("/usr/share/linux-cleaner/linux-cleaner.env.example"),
+    )
+    if not any(p.exists() for p in sys_tpls):
+        home_notpl = root / "home-notpl"
+        home_notpl.mkdir()
+        notpl_bin = root / "notpl/bin/cleaner"
+        notpl_bin.parent.mkdir(parents=True)
+        shutil.copy2(cleaner_sh, notpl_bin)
+        notpl_bin.chmod(0o755)
+        r_missing = run_env([str(notpl_bin), "--init-env"], home_notpl)
+        assert r_missing.returncode == 1 and "No timer environment template" in r_missing.stderr, r_missing
+        assert not (home_notpl / ".config/linux-cleaner/env").exists()
+
+        sym_prefix = root / "sym-prefix"
+        (sym_prefix / "bin").mkdir(parents=True)
+        (sym_prefix / "share/linux-cleaner").mkdir(parents=True)
+        shutil.copy2(cleaner_sh, sym_prefix / "bin/cleaner")
+        (sym_prefix / "bin/cleaner").chmod(0o755)
+        (sym_prefix / "real.env").write_bytes(b"LINUX_CLEANER_RISK=safe\n")
+        (sym_prefix / "share/linux-cleaner/linux-cleaner.env.example").symlink_to(sym_prefix / "real.env")
+        r_sym_tpl = run_env([str(sym_prefix / "bin/cleaner"), "--init-env"], home_notpl)
+        assert r_sym_tpl.returncode == 1 and "No timer environment template" in r_sym_tpl.stderr, r_sym_tpl
+
+    # 5. Symlinked parent (~/.config), dir (~/.config/linux-cleaner), or destination (~/.config/linux-cleaner/env) refused.
+    sym_parent_home = root / "sym-parent-home"
+    sym_parent_home.mkdir()
+    real_cfg = root / "real-cfg"
+    real_cfg.mkdir()
+    (sym_parent_home / ".config").symlink_to(real_cfg)
+    r_sp = run_env([cleaner_sh, "--init-env"], sym_parent_home)
+    assert r_sp.returncode == 1 and "symlink" in r_sp.stderr, r_sp
+    assert not list(real_cfg.iterdir())
+
+    sym_dir_home = root / "sym-dir-home"
+    (sym_dir_home / ".config").mkdir(parents=True)
+    real_app = root / "real-app"
+    real_app.mkdir()
+    (sym_dir_home / ".config/linux-cleaner").symlink_to(real_app)
+    r_sd = run_env([cleaner_sh, "--init-env"], sym_dir_home)
+    assert r_sd.returncode == 1 and "symlink" in r_sd.stderr, r_sd
+    assert not list(real_app.iterdir())
+
+    sym_file_home = root / "sym-file-home"
+    (sym_file_home / ".config/linux-cleaner").mkdir(parents=True)
+    target_keep = root / "keep.txt"
+    target_keep.write_bytes(b"KEEP\n")
+    (sym_file_home / ".config/linux-cleaner/env").symlink_to(target_keep)
+    r_sf = run_env([cleaner_sh, "--init-env"], sym_file_home)
+    assert r_sf.returncode == 1 and "refusing to overwrite" in r_sf.stderr, r_sf
+    assert target_keep.read_bytes() == b"KEEP\n"
+
+    dangling_home = root / "dangling-home"
+    (dangling_home / ".config/linux-cleaner").mkdir(parents=True)
+    (dangling_home / ".config/linux-cleaner/env").symlink_to(root / "does-not-exist")
+    r_df = run_env([cleaner_sh, "--init-env"], dangling_home)
+    assert r_df.returncode == 1 and "refusing to overwrite" in r_df.stderr, r_df
+    assert not (root / "does-not-exist").exists()
+
+    # 6. Guards: --json, LINUX_CLEANER_JSON=1, --overlay, --init-config, --check-health.
+    guard_home = root / "guard-home"
+    guard_home.mkdir()
+    for label, args, xenv in [
+        ("--json", ["--init-env", "--json"], None),
+        ("LINUX_CLEANER_JSON=1", ["--init-env"], {"LINUX_CLEANER_JSON": "1"}),
+        ("--overlay", ["--init-env", "--overlay"], None),
+        ("--init-config", ["--init-env", "--init-config"], None),
+        ("--check-health", ["--init-env", "--check-health", "60"], None),
+    ]:
+        rg = run_env([cleaner_sh] + args, guard_home, extra_env=xenv)
+        assert rg.returncode == 1, (label, rg)
+        assert not (guard_home / ".config").exists(), (label, "created .config")
+finally:
+    shutil.rmtree(root, ignore_errors=True)
+INIT_ENV_PY
+then
+  echo -e "${GREEN}PASS: --init-env scaffolds 0644 timer env cleanly and enforces template, overwrite, symlink, and mode guards.${NC}"
+else
+  echo -e "${RED}FAIL: --init-env test suite failed.${NC}"
+  exit 1
+fi
+
 echo -e "\n${BOLD}Test Case: List Targets Read-Only${NC}"
 if run_test_case "List Targets" 0 "list_targets.log" \
      --config "$TEST_ENV_DIR/test_cleaner.conf" --list-targets; then
@@ -8422,7 +8571,7 @@ fi
 echo -e "\n${BOLD}Test Case: Mode Flag Exclusion Docs Parity${NC}"
 : > "$TEST_ENV_DIR/mx_empty.excl"
 mx_flags=(--restore --purge-sessions --list-sessions --hold-session --release-session --list-targets --check-config --report --check-health
-  --init-config --doctor --exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
+  --init-config --init-env --doctor --exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --show-matches --exit-code)
 mx_args() {
   case "$1" in
     --restore) echo "--restore 20200101_000000" ;;
@@ -8442,7 +8591,7 @@ mx_args() {
   esac
 }
 mx_subjects=(--exclude-from --skip-actions --only-target --only-target-exact --exclude-target --exclude-target-exact --only-path --exclude-path --min-reclaim --min-free --min-free-path --min-age --action-timeout --trash-keep-days --notify --fail-fast --list-targets
-  --check-config --init-config --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
+  --check-config --init-config --init-env --doctor --report --check-health --restore --purge-sessions --list-sessions --hold-session --release-session --show-matches --exit-code)
 : > "$TEST_ENV_DIR/mx_refused.txt"
 for mx_s in "${mx_subjects[@]}"; do
   mx_refused=""
@@ -8472,7 +8621,7 @@ man_lines = open(man).read().splitlines()
 # A mode flag's own list must name every refused mode; it may also name the cleanup
 # filters (each filter documents its own restriction), but never a partner that works.
 modes = {'--restore', '--purge-sessions', '--list-sessions', '--hold-session', '--release-session', '--list-targets',
-         '--check-config', '--report', '--init-config', '--doctor'}
+         '--check-config', '--report', '--init-config', '--init-env', '--doctor'}
 def ok(subj, got, want):
     if got is None:
         return False
@@ -8527,10 +8676,10 @@ do
   IFS='|' read -r check_name check_log check_flag check_value <<< "$check_spec"
   if run_test_case "$check_name" 1 "$check_log" \
        "$check_flag" "$check_value" --check-config; then
-    if grep -qF "applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
-      echo -e "${GREEN}PASS: $check_flag with --check-config names the seven-mode list.${NC}"
+    if grep -qF "applies only to cleanup runs or --list-targets (not --restore, --purge-sessions, --list-sessions, --check-config, --report, --check-health, --init-config, --init-env, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
+      echo -e "${GREEN}PASS: $check_flag with --check-config names the eight-mode list.${NC}"
     else
-      echo -e "${RED}FAIL: $check_flag with --check-config omitted the seven-mode list.${NC}"
+      echo -e "${RED}FAIL: $check_flag with --check-config omitted the eight-mode list.${NC}"
       cat "$TEST_ENV_DIR/$check_log"
       exit 1
     fi
@@ -8556,10 +8705,10 @@ do
   fi
   [[ "$check_flag" == --min-free-path ]] && check_args+=(--min-free 1G)
   if run_test_case "$check_name" 1 "$check_log" "${check_args[@]}"; then
-    if grep -qF "applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
-      echo -e "${GREEN}PASS: $check_flag with --check-config names the eight-mode list.${NC}"
+    if grep -qF "applies only to cleanup runs (not --restore, --purge-sessions, --list-sessions, --list-targets, --check-config, --report, --check-health, --init-config, --init-env, or --doctor)." "$TEST_ENV_DIR/$check_log"; then
+      echo -e "${GREEN}PASS: $check_flag with --check-config names the nine-mode list.${NC}"
     else
-      echo -e "${RED}FAIL: $check_flag with --check-config omitted the eight-mode list.${NC}"
+      echo -e "${RED}FAIL: $check_flag with --check-config omitted the nine-mode list.${NC}"
       cat "$TEST_ENV_DIR/$check_log"
       exit 1
     fi
@@ -13682,7 +13831,7 @@ if ! run_test_case "Show Matches Lists Only Eligible Files" 0 "show_matches.log"
 fi
 
 for sm_mode in --clean --force -f --interactive -i --json --restore --purge-sessions \
-    --list-sessions --list-targets --check-config --report --init-config --doctor; do
+    --list-sessions --list-targets --check-config --report --init-config --init-env --doctor; do
   sm_args=("$sm_mode")
   case "$sm_mode" in
     --restore) sm_args+=(latest) ;;
@@ -13701,7 +13850,7 @@ for sm_mode in --clean --force -f --interactive -i --json --restore --purge-sess
 done
 
 for ec_mode in --clean --force -f --interactive -i --restore --purge-sessions \
-    --hold-session --release-session --list-sessions --list-targets --check-config --report --init-config --doctor; do
+    --hold-session --release-session --list-sessions --list-targets --check-config --report --init-config --init-env --doctor; do
   ec_args=("$ec_mode")
   case "$ec_mode" in
     --restore|--hold-session|--release-session) ec_args+=(latest) ;;
@@ -15881,7 +16030,8 @@ if ! run_test_case "Doctor With List Targets Rejected" 1 "doctor_mx_list.log" --
    || ! run_test_case "Doctor With Only Target Rejected" 1 "doctor_mx_only.log" --doctor --only-target NPM \
    || ! run_test_case "Doctor JSON With List Targets Rejected" 1 "doctor_mx_json_list.log" --doctor --json --list-targets \
    || ! run_test_case "Doctor JSON With Only Target Rejected" 1 "doctor_mx_json_only.log" --doctor --json --only-target NPM \
-   || ! run_test_case "Init Config With JSON Rejected" 1 "init_mx_json.log" --init-config --json; then
+   || ! run_test_case "Init Config With JSON Rejected" 1 "init_mx_json.log" --init-config --json \
+   || ! run_test_case "Init Env With JSON Rejected" 1 "init_env_mx_json.log" --init-env --json; then
   echo -e "${RED}FAIL: --doctor or --init-config did not reject incompatible mode, filter, or --json flags.${NC}"
   exit 1
 fi
@@ -17765,7 +17915,7 @@ try:
     for mode_args in [["--list-targets"], ["--check-config"], ["--list-sessions"]]:
         r_ok = run_cli(mode_args, extra_env=bad_env)
         assert r_ok.returncode == 0, (mode_args, r_ok.returncode, r_ok.stderr)
-    for bad_mode in ["--list-targets", "--check-config", "--report", "--list-sessions", "--init-config", "--doctor"]:
+    for bad_mode in ["--list-targets", "--check-config", "--report", "--list-sessions", "--init-config", "--init-env", "--doctor"]:
         r_mx = run_cli(["--exclude-from", str(pat_file), bad_mode])
         assert r_mx.returncode == 1, (bad_mode, r_mx.returncode, r_mx.stderr)
 
@@ -17929,7 +18079,7 @@ try:
     assert r_empty_combo.returncode == 1 and "Error: --skip-actions left no config targets to process." in r_empty_combo.stderr, r_empty_combo
 
     # 6. CLI mutexes with non-cleanup/non-inventory modes.
-    for bad_mode in ["--check-config", "--report", "--list-sessions", "--init-config", "--doctor"]:
+    for bad_mode in ["--check-config", "--report", "--list-sessions", "--init-config", "--init-env", "--doctor"]:
         r_mx = run_cli(["--skip-actions", bad_mode])
         assert r_mx.returncode == 1, (bad_mode, r_mx.returncode, r_mx.stderr)
 
