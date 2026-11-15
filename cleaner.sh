@@ -60,7 +60,7 @@ Options:
   --check-config             Validate the configuration file (supports --json) and exit (no disk analysis).
   --init-config              Copy the active config to your user config path (never overwrites).
   --overlay                  With --init-config: write a minimal include| overlay layered over the active config.
-  --init-env                 Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (never overwrites).
+  --init-env                 Copy the shipped systemd timer env template to ~/.config/linux-cleaner/env (add --trash for 30d quarantine; never overwrites).
   --doctor                   Check the runtime environment a cleanup depends on (read-only; supports --json) and exit.
   --restore SESSION          Restore files from quarantine session (latest or timestamp); --dry-run previews.
   --hold-session SESSION     Protect a quarantine session (latest or timestamp) from every purge and --trash-keep-days retention.
@@ -117,6 +117,7 @@ SKIP_ACTIONS=false
 SKIP_ACTIONS_CLI=false
 JSON_OUTPUT=false
 TRASH_MODE=false
+TRASH_CLI=false
 MAX_RISK="safe"
 EXCLUDE_PATTERNS=""
 EXCLUDE_FROM=""
@@ -417,6 +418,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -t|--trash)
       TRASH_MODE=true
+      TRASH_CLI=true
       shift
       ;;
     -r|--risk)
@@ -1331,9 +1333,72 @@ init_timer_env() {
     return 1
   fi
 
+  if [[ "$TRASH_CLI" == true ]]; then
+    local tmp_trash rc=0
+    tmp_trash="$dest.tmp-trash.$$"
+    LC_ALL=C awk '
+      BEGIN { seen_trash = 0; seen_keep = 0; conflict = 0 }
+      {
+        if ($0 ~ /^[[:blank:]]*LINUX_CLEANER_TRASH=(1|true|TRUE|yes|YES)[[:blank:]]*$/) {
+          if (seen_trash) { conflict = 1 }
+          seen_trash = 1
+          print
+          next
+        }
+        if ($0 ~ /^[[:blank:]]*LINUX_CLEANER_TRASH=/) {
+          conflict = 1
+        }
+        if ($0 ~ /^[[:blank:]]*LINUX_CLEANER_TRASH_KEEP_DAYS=[0123456789]+[[:blank:]]*$/) {
+          if (seen_keep) { conflict = 1 }
+          seen_keep = 1
+          print
+          next
+        }
+        if ($0 ~ /^[[:blank:]]*LINUX_CLEANER_TRASH_KEEP_DAYS=/) {
+          conflict = 1
+        }
+        if (!seen_trash && $0 ~ /^#[[:blank:]]*LINUX_CLEANER_TRASH=1[[:blank:]]*$/) {
+          print "LINUX_CLEANER_TRASH=1"
+          seen_trash = 1
+          next
+        }
+        if (!seen_keep && $0 ~ /^#[[:blank:]]*LINUX_CLEANER_TRASH_KEEP_DAYS=30[[:blank:]]*$/) {
+          print "LINUX_CLEANER_TRASH_KEEP_DAYS=30"
+          seen_keep = 1
+          next
+        }
+        print
+      }
+      END {
+        if (conflict) { exit 2 }
+        if (!seen_trash) { print "LINUX_CLEANER_TRASH=1" }
+        if (!seen_keep) { print "LINUX_CLEANER_TRASH_KEEP_DAYS=30" }
+      }
+    ' "$tmp" > "$tmp_trash" || rc=$?
+    if [[ "$rc" -ne 0 ]] || ! mv -f -- "$tmp_trash" "$tmp"; then
+      rm -f -- "$tmp" "$tmp_trash" || true
+      if [[ "$rc" -eq 2 ]]; then
+        echo -e "${RED}Error: Timer environment template '$src' has conflicting LINUX_CLEANER_TRASH or LINUX_CLEANER_TRASH_KEEP_DAYS settings.${NC}" >&2
+      else
+        echo -e "${RED}Error: Failed to enable quarantine settings in '$tmp'.${NC}" >&2
+      fi
+      return 1
+    fi
+    if ! LC_ALL=C grep -qxE '^[[:blank:]]*LINUX_CLEANER_TRASH=(1|true|TRUE|yes|YES)[[:blank:]]*$' "$tmp" \
+       || ! LC_ALL=C grep -qxE '^[[:blank:]]*LINUX_CLEANER_TRASH_KEEP_DAYS=[0123456789]+[[:blank:]]*$' "$tmp"; then
+      rm -f -- "$tmp" || true
+      echo -e "${RED}Error: Staged timer environment file failed quarantine verification.${NC}" >&2
+      return 1
+    fi
+  fi
+
   _publish_staged_user_file "$tmp" "$dest" "Timer env file" || return 1
 
-  echo "Created $dest from $src; edit it (for example set LINUX_CLEANER_TRASH=1 and LINUX_CLEANER_TRASH_KEEP_DAYS=30), then check with: cleaner --doctor"
+  if [[ "$TRASH_CLI" == true ]]; then
+    echo "Created $dest from $src with quarantine enabled (LINUX_CLEANER_TRASH=1, LINUX_CLEANER_TRASH_KEEP_DAYS=30); check with: cleaner --doctor"
+  else
+    echo "Created $dest from $src; edit it (for example set LINUX_CLEANER_TRASH=1 and LINUX_CLEANER_TRASH_KEEP_DAYS=30), then check with: cleaner --doctor"
+  fi
   return 0
 }
 

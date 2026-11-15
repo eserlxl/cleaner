@@ -6975,7 +6975,7 @@ fi
 
 echo -e "\n${BOLD}Test Case: Init Timer Env File And Guards${NC}"
 if python3 - "$CLEANER_SH" "$SCRIPT_DIR/examples/linux-cleaner.env.example" "$TEST_ENV_DIR" <<'INIT_ENV_PY'
-import os, pathlib, shutil, stat, subprocess, sys
+import json, os, pathlib, shutil, stat, subprocess, sys
 
 cleaner_sh, template_file, test_dir = sys.argv[1:]
 root = pathlib.Path(test_dir) / "init-env-suite"
@@ -7114,6 +7114,109 @@ try:
         rg = run_env([cleaner_sh] + args, guard_home, extra_env=xenv)
         assert rg.returncode == 1, (label, rg)
         assert not (guard_home / ".config").exists(), (label, "created .config")
+
+    # 7. --init-env --trash / -t --init-env enables quarantine + 30d retention safely.
+    trash_home = root / "trash-home"
+    trash_home.mkdir()
+    rt = run_env([cleaner_sh, "--init-env", "--trash"], trash_home, xdg=other_xdg)
+    dest_trash = trash_home / ".config/linux-cleaner/env"
+    assert rt.returncode == 0, rt
+    assert dest_trash.is_file() and not dest_trash.is_symlink(), dest_trash
+    assert not (other_xdg / "linux-cleaner/env").exists(), "should ignore XDG_CONFIG_HOME with --trash"
+    trash_text = dest_trash.read_text(encoding="utf-8")
+    trash_lines = trash_text.splitlines()
+    assert "LINUX_CLEANER_TRASH=1" in trash_lines, trash_lines
+    assert "LINUX_CLEANER_TRASH_KEEP_DAYS=30" in trash_lines, trash_lines
+    assert "# LINUX_CLEANER_TRASH=1" not in trash_lines, trash_lines
+    assert "# LINUX_CLEANER_TRASH_KEEP_DAYS=30" not in trash_lines, trash_lines
+    assert stat.S_IMODE(dest_trash.stat().st_mode) == 0o644, oct(dest_trash.stat().st_mode)
+    assert "quarantine enabled" in rt.stdout and "LINUX_CLEANER_TRASH=1" in rt.stdout and "LINUX_CLEANER_TRASH_KEEP_DAYS=30" in rt.stdout and "cleaner --doctor" in rt.stdout, rt.stdout
+    assert not list(dest_trash.parent.glob("*.tmp*")), list(dest_trash.parent.iterdir())
+
+    # 7a. Overwrite & symlink refusal remain enforced when --trash is passed.
+    dest_trash.write_bytes(b"KEEP_CUSTOM=1\n")
+    rt_dup = run_env([cleaner_sh, "--init-env", "--trash"], trash_home)
+    assert rt_dup.returncode == 1 and "refusing to overwrite" in rt_dup.stderr, rt_dup
+    assert dest_trash.read_bytes() == b"KEEP_CUSTOM=1\n"
+    assert not list(dest_trash.parent.glob("*.tmp*"))
+
+    rt_sym = run_env([cleaner_sh, "--init-env", "--trash"], dangling_home)
+    assert rt_sym.returncode == 1 and "refusing to overwrite" in rt_sym.stderr, rt_sym
+    assert not (root / "does-not-exist").exists()
+
+    # 7b. Short flag -t before --init-env + --doctor --json validation (clean timer enabled -> zero retention warning).
+    short_home = root / "short-home"
+    short_home.mkdir()
+    r_short = run_env([cleaner_sh, "-t", "--init-env"], short_home)
+    dest_short = short_home / ".config/linux-cleaner/env"
+    assert r_short.returncode == 0, r_short
+    assert dest_short.read_text(encoding="utf-8") == trash_text
+    assert "LINUX_CLEANER_TRASH=1" in dest_short.read_text(encoding="utf-8").splitlines()
+    assert "LINUX_CLEANER_TRASH_KEEP_DAYS=30" in dest_short.read_text(encoding="utf-8").splitlines()
+
+    doc_bin = root / "doc-bin"
+    doc_bin.mkdir()
+    doc_sys = doc_bin / "systemctl"
+    doc_sys.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"${1:-}\" = \"--user\" ] && [ \"${2:-}\" = \"is-enabled\" ]; then\n"
+        "  case \"${3:-}\" in\n"
+        "    linux-cleaner-clean.timer) echo enabled; exit 0 ;;\n"
+        "    *) echo disabled; exit 1 ;;\n"
+        "  esac\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    doc_sys.chmod(0o755)
+    doc_cfg = root / "doc-cleaner.conf"
+    doc_cfg.write_text(f"safe|Test Cache|{short_home}/.cache/test_clean|Test cache|0||\n", encoding="utf-8")
+    (short_home / ".cache/test_clean").mkdir(parents=True)
+    r_doc = run_env(
+        [cleaner_sh, "--doctor", "--json", "--config", str(doc_cfg)],
+        short_home,
+        extra_env={"PATH": f"{doc_bin}:{test_dir}/bin:" + os.environ.get("PATH", "")},
+    )
+    assert r_doc.returncode == 0, r_doc
+    doc_json = json.loads(r_doc.stdout)
+    assert doc_json["daily_timer_plan"]["status"] == "ok", doc_json["daily_timer_plan"]
+    assert doc_json["daily_timer_plan"]["deletion"] == "quarantine", doc_json["daily_timer_plan"]
+    assert doc_json["daily_timer_plan"]["keep_days"] == "30", doc_json["daily_timer_plan"]
+    assert doc_json["quarantine_retention"] == {"warn": False, "env_file": None}, doc_json["quarantine_retention"]
+
+    # 7c. Ambient LINUX_CLEANER_TRASH=1 without --trash does not alter bare --init-env copy.
+    amb_home = root / "ambient-home"
+    amb_home.mkdir()
+    r_amb = run_env([cleaner_sh, "--init-env"], amb_home, extra_env={"LINUX_CLEANER_TRASH": "1"})
+    assert r_amb.returncode == 0, r_amb
+    assert (amb_home / ".config/linux-cleaner/env").read_bytes() == template_bytes
+
+    # 7d. Custom staged template without TRASH lines gets both defaults appended cleanly.
+    home_min_trash = root / "home-min-trash"
+    home_min_trash.mkdir()
+    r_min = run_env([str(copied_cleaner), "--init-env", "--trash"], home_min_trash)
+    assert r_min.returncode == 0, r_min
+    min_lines = (home_min_trash / ".config/linux-cleaner/env").read_text(encoding="utf-8").splitlines()
+    assert "LINUX_CLEANER_RISK=safe" in min_lines
+    assert "LINUX_CLEANER_TRASH=1" in min_lines
+    assert "LINUX_CLEANER_TRASH_KEEP_DAYS=30" in min_lines
+
+    # 7e. Conflicting active template setting fails closed and leaves destination absent.
+    conflict_prefix = root / "conflict-prefix"
+    (conflict_prefix / "bin").mkdir(parents=True)
+    (conflict_prefix / "share/linux-cleaner").mkdir(parents=True)
+    c_bin = conflict_prefix / "bin/cleaner"
+    shutil.copy2(cleaner_sh, c_bin)
+    c_bin.chmod(0o755)
+    (conflict_prefix / "share/linux-cleaner/linux-cleaner.env.example").write_bytes(
+        b"LINUX_CLEANER_TRASH=0\nLINUX_CLEANER_RISK=safe\n"
+    )
+    home_conflict = root / "home-conflict"
+    home_conflict.mkdir()
+    r_conf = run_env([str(c_bin), "--init-env", "--trash"], home_conflict)
+    assert r_conf.returncode == 1 and "conflicting" in r_conf.stderr, r_conf
+    assert not (home_conflict / ".config/linux-cleaner/env").exists()
+    assert not list((home_conflict / ".config/linux-cleaner").glob("*.tmp*"))
 finally:
     shutil.rmtree(root, ignore_errors=True)
 INIT_ENV_PY

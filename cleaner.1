@@ -133,7 +133,13 @@ does not clear it).
 Bypass the manual confirmation prompt for danger-risk targets.
 .TP
 .BR \-t ", " \-\-trash
-Select quarantine instead of permanent deletion. This flag alone keeps the
+Select quarantine instead of permanent deletion (with
+.BR \-\-init\-env ,
+enable
+.B LINUX_CLEANER_TRASH=1
+and
+.B LINUX_CLEANER_TRASH_KEEP_DAYS=30
+in the created timer env file). This flag alone keeps the
 default preview mode. When a target sits on a different filesystem from the
 quarantine directory,
 .B cleaner
@@ -659,6 +665,17 @@ requiring a configuration file. Searches
 .IR /usr/local/share/linux\-cleaner/linux\-cleaner.env.example ,
 and
 .IR /usr/share/linux\-cleaner/linux\-cleaner.env.example .
+With
+.BR \-t / \-\-trash ,
+enables
+.B LINUX_CLEANER_TRASH=1
+and
+.B LINUX_CLEANER_TRASH_KEEP_DAYS=30
+in the staged file (failing closed if the template sets conflicting values),
+while bare
+.B \-\-init\-env
+ignores caller
+.BR LINUX_CLEANER_TRASH .
 Cannot be combined with
 .BR \-\-restore ,
 .BR \-\-purge\-sessions ,
