@@ -18789,6 +18789,28 @@ try:
     assert (ext / "keep.txt").read_text(encoding="utf-8") == "untouched\n"
     assert not list((h5 / ".cache").glob("*.pre-restore-*"))
     assert not list(asym.glob("*.pre-restore-*"))
+
+    # 6. Intermediate aged dir_backup rolls back atomically when nested file restore fails before populating dir.
+    h6, env6 = make_env("case6")
+    a6 = h6 / ".cache/bc_aged_rb"
+    (a6 / "sub/deep").mkdir(parents=True)
+    f6 = a6 / "sub/deep/item.txt"
+    f6.write_text("aged-rb\n", encoding="utf-8")
+    os.utime(f6, (old_ts, old_ts))
+    cfg6 = tmp / "case6.conf"
+    cfg6.write_text(f"safe|AgedRB|{a6}|ar|7||\n", encoding="utf-8")
+    assert run_cli(env6, ["--config", str(cfg6), "--clean", "--trash", "--force"]).returncode == 0
+    (a6 / "sub").write_text("BLOCK_ORIGINAL\n", encoding="utf-8")
+    q6_deep = next(p for p in (h6 / ".cache/linux-cleaner/quarantine").rglob("deep") if p.is_dir() and p.parent.name == "sub")
+    os.chmod(q6_deep, 0o555)
+    try:
+        r6 = run_cli(env6, ["--restore", "latest", "--backup-conflicts"])
+        assert r6.returncode == 1, (r6.returncode, r6.stdout, r6.stderr)
+        assert (a6 / "sub").is_file()
+        assert (a6 / "sub").read_text(encoding="utf-8") == "BLOCK_ORIGINAL\n"
+        assert not list(a6.glob("sub.pre-restore-*"))
+    finally:
+        os.chmod(q6_deep, 0o755)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 BACKUP_CONF_PY

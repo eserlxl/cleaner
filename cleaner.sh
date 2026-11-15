@@ -3506,6 +3506,34 @@ _backup_restore_conflict() {
   return 0
 }
 
+# Roll back leaf and newly created empty intermediate directory backups on a
+# failed aged file restore, preserving any directory already holding restored files.
+_rollback_aged_backups() {
+  local use_sudo="$1" clean_root="$2" dest_parent="$3" dest_file="$4" leaf_backup="$5" dir_target="$6" dir_backup="$7"
+  if [[ -n "$leaf_backup" ]] && ! path_present "$use_sudo" "$dest_file"; then
+    if with_sudo "$use_sudo" mv -T -- "$leaf_backup" "$dest_file" 2>/dev/null; then
+      echo "Rolled back pre-restore backup '$leaf_backup' to '$dest_file'." >&2
+    else
+      echo -e "${RED}Error: Failed to roll back pre-restore backup '$leaf_backup' to '$dest_file'.${NC}" >&2
+    fi
+  fi
+  if [[ -n "$dir_backup" && -n "$dir_target" ]]; then
+    local trim_dir="$dest_parent"
+    while [[ -n "$trim_dir" && "$trim_dir" != "$clean_root" && "$trim_dir" != "/" ]]; do
+      with_sudo "$use_sudo" rmdir -- "$trim_dir" 2>/dev/null || break
+      [[ "$trim_dir" == "$dir_target" ]] && break
+      trim_dir="${trim_dir%/*}"
+    done
+    if ! path_present "$use_sudo" "$dir_target"; then
+      if with_sudo "$use_sudo" mv -T -- "$dir_backup" "$dir_target" 2>/dev/null; then
+        echo "Rolled back pre-restore backup '$dir_backup' to '$dir_target'." >&2
+      else
+        echo -e "${RED}Error: Failed to roll back pre-restore backup '$dir_backup' to '$dir_target'.${NC}" >&2
+      fi
+    fi
+  fi
+}
+
 # Restore files and folders from a quarantine session
 restore_quarantine() {
   local target="$1" stream_rc=""
@@ -3916,7 +3944,7 @@ restore_quarantine() {
             local file_rel="${file#"$src_path"/}"
             local dest_file="$clean_aged_orig/$file_rel"
             local dest_parent check_dir="$clean_aged_orig" rel_dir part path_conflict=false
-            local leaf_backup="" dir_backup="" dir_backup_rc=0 leaf_backup_rc=0
+            local leaf_backup="" dir_backup="" dir_backup_target="" dir_backup_rc=0 leaf_backup_rc=0
             dest_parent=$(dirname "$dest_file")
             if [[ "$dest_parent" != "$clean_aged_orig" ]]; then
               rel_dir="${file_rel%/*}"
@@ -3936,9 +3964,12 @@ restore_quarantine() {
                       break
                     fi
                     dir_backup="$RESTORE_BACKUP_PATH"
+                    dir_backup_target="$check_dir"
                     # shellcheck disable=SC2016
                     if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$check_dir"; then
                       with_sudo "$use_sudo" mv -T -- "$dir_backup" "$check_dir" 2>/dev/null || true
+                      dir_backup=""
+                      dir_backup_target=""
                       path_conflict=true
                       break
                     fi
@@ -3955,11 +3986,13 @@ restore_quarantine() {
             if [[ "$path_conflict" = true ]]; then
               success=false
               had_conflict=true
+              _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$check_dir" "$dest_file" "" "$dir_backup_target" "$dir_backup"
               continue
             fi
             # shellcheck disable=SC2016
             if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$dest_parent"; then
               success=false
+              _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
               continue
             fi
             if path_present "$use_sudo" "$dest_file"; then
@@ -3967,12 +4000,14 @@ restore_quarantine() {
                 echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
                 success=false
                 had_conflict=true
+                _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
                 continue
               fi
               if with_sudo "$use_sudo" test -L "$dest_file"; then
                 echo -e "${RED}Error: Restore destination file '$dest_file' is a symlink. Conflict detected, skipping.${NC}" >&2
                 success=false
                 had_conflict=true
+                _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
                 continue
               fi
               leaf_backup_rc=0
@@ -3980,6 +4015,7 @@ restore_quarantine() {
               if [[ "$leaf_backup_rc" -ne 0 ]]; then
                 success=false
                 [[ "$leaf_backup_rc" -eq 2 ]] && had_conflict=true
+                _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
                 continue
               fi
               leaf_backup="$RESTORE_BACKUP_PATH"
@@ -3988,13 +4024,7 @@ restore_quarantine() {
               with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
             else
               success=false
-              if [[ -n "$leaf_backup" ]] && ! path_present "$use_sudo" "$dest_file"; then
-                if with_sudo "$use_sudo" mv -T -- "$leaf_backup" "$dest_file" 2>/dev/null; then
-                  echo "Rolled back pre-restore backup '$leaf_backup' to '$dest_file'." >&2
-                else
-                  echo -e "${RED}Error: Failed to roll back pre-restore backup '$leaf_backup' to '$dest_file'.${NC}" >&2
-                fi
-              fi
+              _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "$leaf_backup" "$dir_backup_target" "$dir_backup"
             fi
           done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
           [[ "$stream_rc" == 0 ]] || success=false
