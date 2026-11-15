@@ -10307,6 +10307,90 @@ if ! run_test_case "Restore Sudo Auth Failure" 1 "restore_auth.log" --restore 20
 fi
 echo -e "${GREEN}PASS: a failed sudo authentication fails only its record and keeps metadata aligned.${NC}"
 
+# When a stale-record probe sees a missing full-target staging directory with
+# use_sudo=true, unprivileged-visible paths drop their stale record without sudo;
+# lookup-blocked paths authenticate via ensure_sudo first (caching failure and
+# recording outcome=failed rather than outcome=missing if sudo fails).
+if [[ "$EUID" -ne 0 ]]; then
+  setup_mock_env
+  stale_priv_dir="$MOCK_HOME/.cache/stale_priv_parent"
+  stale_priv_sess="$MOCK_HOME/.cache/linux-cleaner/quarantine/2020-04-05_00-00-00"
+  stale_ops_log="$MOCK_HOME/.cache/linux-cleaner/operations.log"
+  mkdir -p "$stale_priv_dir" "$stale_priv_sess"
+  printf 'restored\n' > "$stale_priv_dir/target_a"
+  printf 'restored\n' > "$stale_priv_dir/target_b"
+  printf 'full|0_priv_a|%s/target_a|true|%s|%s\nfull|1_priv_b|%s/target_b|true|%s|%s\n' \
+    "$stale_priv_dir" "$(id -u)" "$(id -g)" "$stale_priv_dir" "$(id -u)" "$(id -g)" > "$stale_priv_sess/quarantine.meta"
+  rm -f "$TEST_ENV_DIR/stale_sudo.calls" "$stale_ops_log"
+  cat > "$TEST_ENV_DIR/bin/sudo" <<'STALE_SUDO_FAIL'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${TEST_ENV_DIR}/stale_sudo.calls"
+exit 1
+STALE_SUDO_FAIL
+  chmod +x "$TEST_ENV_DIR/bin/sudo"
+  chmod 0000 "$stale_priv_dir"
+  stale_auth_ec=0
+  run_test_case "Restore Stale Privileged Probe Sudo Failure" 1 "restore_stale_priv_fail.log" \
+    --restore 2020-04-05_00-00-00 --log || stale_auth_ec=1
+  chmod 0755 "$stale_priv_dir"
+  if [[ "$stale_auth_ec" -ne 0 ]] \
+     || [[ "$(wc -l < "$TEST_ENV_DIR/stale_sudo.calls")" -ne 1 ]] \
+     || ! grep -qxF -- '-n true' "$TEST_ENV_DIR/stale_sudo.calls" \
+     || ! grep -qF "sudo authentication failed; '$stale_priv_dir/target_a' was not restored." "$TEST_ENV_DIR/restore_stale_priv_fail.log" \
+     || ! grep -qF "sudo authentication failed; '$stale_priv_dir/target_b' was not restored." "$TEST_ENV_DIR/restore_stale_priv_fail.log" \
+     || grep -qF "not found" "$TEST_ENV_DIR/restore_stale_priv_fail.log" \
+     || [[ "$(grep -c "outcome=failed" "$stale_ops_log" || true)" -ne 2 ]] \
+     || grep -q "outcome=missing" "$stale_ops_log" \
+     || [[ ! -f "$stale_priv_sess/quarantine.meta" ]]; then
+    echo -e "${RED}FAIL: stale privileged full-target probe bypassed ensure_sudo or logged outcome=missing on sudo auth failure.${NC}"
+    cat "$TEST_ENV_DIR/restore_stale_priv_fail.log" "$TEST_ENV_DIR/stale_sudo.calls" "$stale_ops_log" 2>/dev/null || true
+    exit 1
+  fi
+  rm -f "$TEST_ENV_DIR/stale_sudo.calls" "$stale_ops_log"
+  if ! run_test_case "Restore Stale Privileged Visible Without Sudo" 0 "restore_stale_priv_pub.log" \
+         --restore 2020-04-05_00-00-00 --log \
+     || [[ -e "$TEST_ENV_DIR/stale_sudo.calls" ]] \
+     || [[ "$(grep -c "already restored; dropping its stale record." "$TEST_ENV_DIR/restore_stale_priv_pub.log" || true)" -ne 2 ]] \
+     || [[ "$(grep -c "outcome=success" "$stale_ops_log" || true)" -ne 2 ]] \
+     || [[ -d "$stale_priv_sess" ]]; then
+    echo -e "${RED}FAIL: visible already-restored full target invoked sudo or did not drop its stale record.${NC}"
+    cat "$TEST_ENV_DIR/restore_stale_priv_pub.log" "$TEST_ENV_DIR/stale_sudo.calls" "$stale_ops_log" 2>/dev/null || true
+    exit 1
+  fi
+  mkdir -p "$stale_priv_sess"
+  printf 'full|0_priv_a|%s/target_a|true|%s|%s\n' \
+    "$stale_priv_dir" "$(id -u)" "$(id -g)" > "$stale_priv_sess/quarantine.meta"
+  rm -f "$TEST_ENV_DIR/stale_sudo.calls" "$stale_ops_log"
+  cat > "$TEST_ENV_DIR/bin/sudo" <<STALE_SUDO_OK
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "${TEST_ENV_DIR}/stale_sudo.calls"
+if [[ "\${1:-}" == "-n" && "\${2:-}" == "true" ]]; then
+  exit 0
+fi
+chmod 0755 "$stale_priv_dir"
+"\$@"
+rc=\$?
+chmod 0000 "$stale_priv_dir"
+exit "\$rc"
+STALE_SUDO_OK
+  chmod +x "$TEST_ENV_DIR/bin/sudo"
+  chmod 0000 "$stale_priv_dir"
+  stale_ok_ec=0
+  run_test_case "Restore Stale Privileged Succeeds After Sudo Auth" 0 "restore_stale_priv_ok.log" \
+    --restore 2020-04-05_00-00-00 --log || stale_ok_ec=1
+  chmod 0755 "$stale_priv_dir"
+  if [[ "$stale_ok_ec" -ne 0 ]] \
+     || ! grep -qxF -- '-n true' "$TEST_ENV_DIR/stale_sudo.calls" \
+     || ! grep -qF "Note: '$stale_priv_dir/target_a' is already restored; dropping its stale record." "$TEST_ENV_DIR/restore_stale_priv_ok.log" \
+     || ! grep -q "outcome=success" "$stale_ops_log" \
+     || [[ -d "$stale_priv_sess" ]]; then
+    echo -e "${RED}FAIL: stale privileged full-target probe failed when sudo authenticated.${NC}"
+    cat "$TEST_ENV_DIR/restore_stale_priv_ok.log" "$TEST_ENV_DIR/stale_sudo.calls" "$stale_ops_log" 2>/dev/null || true
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: stale privileged full-target restore drops unprivileged-visible records without sudo and probes via ensure_sudo when lookup requires root.${NC}"
+fi
+
 # A failing chown after a privileged aged quarantine is recorded for that target,
 # and the run still processes the next target.
 setup_mock_env

@@ -3584,11 +3584,27 @@ restore_quarantine() {
       # A whole-target payload that is gone while its original path is back was
       # restored by an interrupted earlier run. An aged target's directory always
       # survives quarantine, so its presence proves nothing there.
-      if [[ "$type" == "full" ]] && path_present "$use_sudo" "$original_path"; then
-        echo -e "Note: '$original_path' is already restored; dropping its stale record."
-        restored_rels+=("$rel_path")
-        log_restore_outcome "$restore_dir" "$original_path" success
-        continue
+      if [[ "$type" == "full" ]]; then
+        local already_restored=false
+        if path_present false "$original_path"; then
+          already_restored=true
+        elif [[ "$use_sudo" = true ]]; then
+          if ! ensure_sudo; then
+            echo -e "${RED}Error: sudo authentication failed; '$original_path' was not restored.${NC}" >&2
+            overall_success=false
+            log_restore_outcome "$restore_dir" "$original_path" failed
+            continue
+          fi
+          if path_present true "$original_path"; then
+            already_restored=true
+          fi
+        fi
+        if [[ "$already_restored" == true ]]; then
+          echo -e "Note: '$original_path' is already restored; dropping its stale record."
+          restored_rels+=("$rel_path")
+          log_restore_outcome "$restore_dir" "$original_path" success
+          continue
+        fi
       fi
       echo -e "${YELLOW}Warning: Quarantined source path '$src_path' not found. Skipping.${NC}"
       overall_success=false
