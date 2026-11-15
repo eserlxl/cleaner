@@ -280,6 +280,16 @@ journal_error_line() {
   JOURNAL_ERROR_WRITTEN=true
 }
 
+# Invoke notify-send (bounded to 5s when timeout(1) is available) without passing
+# cleaner.lock fd 9 so spawned notification helpers cannot hold the lock after exit.
+_send_desktop_notification() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 5 notify-send "$@" >/dev/null 2>&1 9>&- || true
+  else
+    notify-send "$@" >/dev/null 2>&1 9>&- || true
+  fi
+}
+
 notify_failed_exit() {
   local status=$?
   [[ "$status" -ne 0 ]] || return 0
@@ -307,11 +317,7 @@ notify_failed_exit() {
   fi
   if command -v notify-send >/dev/null 2>&1; then
     local msg="Cleanup stopped with exit status ${status} before finishing; see journalctl --user -t linux-cleaner."
-    if command -v timeout >/dev/null 2>&1; then
-      timeout 5 notify-send --app-name=linux-cleaner --urgency=critical "linux-cleaner" "$msg" >/dev/null 2>&1 || true
-    else
-      notify-send --app-name=linux-cleaner --urgency=critical "linux-cleaner" "$msg" >/dev/null 2>&1 || true
-    fi
+    _send_desktop_notification --app-name=linux-cleaner --urgency=critical "linux-cleaner" "$msg"
   fi
   exit "$status"
 }
@@ -2779,13 +2785,14 @@ apply_trash_keep_days() {
 
 # Run CMD directly, or through sudo when USE_SUDO (arg 1) is true. Every
 # privileged operation goes through here so it is written once, not twice.
+# Close cleaner.lock fd 9 so spawned external/privileged helpers cannot keep the lock held.
 with_sudo() {
   local use_sudo="$1"
   shift
   if [[ "$use_sudo" = true ]]; then
-    sudo "$@"
+    sudo "$@" 9>&-
   else
-    "$@"
+    "$@" 9>&-
   fi
 }
 
@@ -2827,7 +2834,7 @@ quarantine_move_full() {
   if with_sudo "$use_sudo" mv "$src" "$dest"; then
     moved=true
     if [[ "$use_sudo" = true ]]; then
-      sudo chown -R "$(id -u):$(id -g)" "$dest" || ok=false
+      with_sudo true chown -R "$(id -u):$(id -g)" "$dest" || ok=false
     fi
   else
     ok=false
@@ -3405,7 +3412,7 @@ ensure_sudo() {
   if [[ "$SUDO_AUTH_FAILED" == true ]]; then
     return 1
   fi
-  if sudo -n true 2>/dev/null; then
+  if sudo -n true 2>/dev/null 9>&-; then
     return 0
   fi
   if [[ ! -t 0 ]]; then
@@ -3413,7 +3420,7 @@ ensure_sudo() {
     return 1
   fi
   echo -e "${YELLOW}Target(s) require root privileges. Please authenticate for sudo:${NC}"
-  if ! sudo -v; then
+  if ! sudo -v 9>&-; then
     SUDO_AUTH_FAILED=true
     return 1
   fi
@@ -4045,11 +4052,7 @@ notify_cleanup_result() {
     notify_args+=(--urgency=critical)
   fi
   NOTIFY_SENT=true
-  if command -v timeout >/dev/null 2>&1; then
-    timeout 5 notify-send "${notify_args[@]}" "linux-cleaner" "$msg" >/dev/null 2>&1 || true
-  else
-    notify-send "${notify_args[@]}" "linux-cleaner" "$msg" >/dev/null 2>&1 || true
-  fi
+  _send_desktop_notification "${notify_args[@]}" "linux-cleaner" "$msg"
 }
 
 # Print one user unit's is-enabled state (first line, trimmed); empty without systemctl.
@@ -4507,7 +4510,7 @@ now_us() {
 run_action() {
   ACTION_TIMED_OUT=false
   if [[ -z "$ACTION_TIMEOUT" || "$ACTION_TIMEOUT" == 0 ]]; then
-    "$@"
+    "$@" 9>&-
     return
   fi
   local rc=0 started elapsed_us elapsed_s
@@ -4515,7 +4518,7 @@ run_action() {
   local -a timeout_mode=()
   # On a terminal, stay in its process group so Ctrl-C still reaches the action.
   [[ -t 0 ]] && timeout_mode=(--foreground)
-  timeout "${timeout_mode[@]}" --kill-after=10 "$ACTION_TIMEOUT" "$@" || rc=$?
+  timeout "${timeout_mode[@]}" --kill-after=10 "$ACTION_TIMEOUT" "$@" 9>&- || rc=$?
   # 124/137 also come from an action's own status or an unrelated SIGKILL (OOM).
   # Microseconds: whole SECONDS ticks would call a 0.6 s exit a 1 s timeout.
   # Compare whole elapsed seconds as decimal text so large ACTION_TIMEOUT values
@@ -5875,7 +5878,7 @@ for i in "${!parsed_names[@]}"; do
         [[ "$stream_rc" == 0 ]] || success=false
         with_sudo "$use_sudo" find "$q_target" -depth -type d -empty -delete 2>/dev/null || true
         if [[ "$aged_moved" = true && "$use_sudo" = true ]]; then
-          sudo chown -R "$(id -u):$(id -g)" "$q_target" || success=false
+          with_sudo true chown -R "$(id -u):$(id -g)" "$q_target" || success=false
         fi
         with_sudo "$use_sudo" find "$path" -mindepth 1 "${EXCLUDE_FIND_ARGS[@]}" -type d -empty -delete 2>/dev/null || true
       else

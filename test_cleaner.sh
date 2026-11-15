@@ -17050,5 +17050,107 @@ SKIP_ACTIONS_PY
 fi
 echo -e "${GREEN}PASS: --skip-actions excludes action:* rows cleanly across list/dry-run/quarantine/retention without calling external binaries.${NC}"
 
+echo -e "\n${BOLD}Test Case: Child Processes Do Not Inherit Mutation Lock FD 9${NC}"
+if ! python3 - "$CLEANER_SH" <<'LOCK_FD_PY'
+import os, pathlib, signal, subprocess, sys, tempfile, time
+
+cleaner = sys.argv[1]
+tmp = pathlib.Path(tempfile.mkdtemp(prefix="cleaner-lock-fd-"))
+helper_pids = []
+try:
+    home = tmp / "home"
+    ord_dir = home / ".cache/ord"
+    uv_dir = home / ".cache/uv"
+    bindir = tmp / "bin"
+    ord_dir.mkdir(parents=True)
+    uv_dir.mkdir(parents=True)
+    bindir.mkdir()
+    (ord_dir / "item.bin").write_bytes(b"abc")
+    (uv_dir / "uv.bin").write_bytes(b"xyz")
+
+    uv_pid_file = tmp / "uv_helper.pid"
+    notify_pid_file = tmp / "notify_helper.pid"
+    fd_state_file = tmp / "fd9.state"
+
+    uv_stub = bindir / "uv"
+    uv_stub.write_text(
+        f"""#!/usr/bin/env bash
+if [[ -e /proc/self/fd/9 ]]; then echo OPEN > {str(fd_state_file)!r}; else echo CLOSED > {str(fd_state_file)!r}; fi
+sleep 10 </dev/null >/dev/null 2>&1 &
+echo $! > {str(uv_pid_file)!r}
+wait
+""",
+        encoding="utf-8",
+    )
+    uv_stub.chmod(0o755)
+
+    notify_stub = bindir / "notify-send"
+    notify_stub.write_text(
+        f"""#!/usr/bin/env bash
+if [[ -e /proc/self/fd/9 ]]; then echo OPEN >> {str(fd_state_file)!r}; else echo CLOSED >> {str(fd_state_file)!r}; fi
+sleep 10 </dev/null >/dev/null 2>&1 &
+echo $! > {str(notify_pid_file)!r}
+exit 0
+""",
+        encoding="utf-8",
+    )
+    notify_stub.chmod(0o755)
+
+    cfg = tmp / "lock_fd.conf"
+    cfg.write_text(
+        f"safe|Ord|{ord_dir}|ordinary|0||\n"
+        f"safe|UV|{uv_dir}|uv prune|0||action:uv_cache_prune\n",
+        encoding="utf-8",
+    )
+
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+    base_env.update(
+        HOME=str(home),
+        XDG_STATE_HOME=str(tmp / "state"),
+        NO_COLOR="1",
+        PATH=f"{bindir}:{base_env.get('PATH', '')}",
+    )
+
+    # 1. Timed-out action + --notify both spawn longer-lived child helpers; neither may inherit fd 9.
+    r1 = subprocess.run(
+        ["bash", cleaner, "--config", str(cfg), "--only-target", "UV", "--clean", "--force", "--action-timeout", "1", "--notify"],
+        env=base_env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert r1.returncode == 1 and "timed out after 1 seconds" in r1.stderr + r1.stdout, (r1.returncode, r1.stdout, r1.stderr)
+    assert fd_state_file.read_text(encoding="utf-8").splitlines() == ["CLOSED", "CLOSED"], fd_state_file.read_text()
+
+    for pf in (uv_pid_file, notify_pid_file):
+        pid = int(pf.read_text(encoding="utf-8").strip())
+        helper_pids.append(pid)
+        os.kill(pid, 0)  # helper outlived action timeout and cleaner exit
+
+    # 2. Immediate next mutating run acquires cleaner.lock even while both child helpers are still alive.
+    r2 = subprocess.run(
+        ["bash", cleaner, "--config", str(cfg), "--only-target", "Ord", "--clean", "--force"],
+        env=base_env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert r2.returncode == 0 and "cleaned=1" in r2.stdout, (r2.returncode, r2.stdout, r2.stderr)
+    assert not (ord_dir / "item.bin").exists()
+finally:
+    for pid in helper_pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+LOCK_FD_PY
+then
+  echo -e "${RED}FAIL: spawned child helpers inherited cleaner.lock fd 9.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: timed-out actions and notify-send helpers do not inherit cleaner.lock fd 9.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
