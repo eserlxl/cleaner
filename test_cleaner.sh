@@ -6918,13 +6918,15 @@ else
 fi
 # Standalone checkout discovery + unsafe path + --overlay without --init-config + symlink refusals.
 rm -rf "$ov_xdg"
-mkdir -p "$TEST_ENV_DIR/ov_bad_dir" "$TEST_ENV_DIR/ov_sym_target"
+mkdir -p "$TEST_ENV_DIR/ov_bad_dir" "$TEST_ENV_DIR/ov_sym_target" "$TEST_ENV_DIR/ov_checkout"
 printf 'safe|Bad Path|%s/cache|bad|0||\n' "\$HOME" > "$TEST_ENV_DIR/ov_bad_dir/bad|pipe.conf"
 printf 'safe|Bad Glob|%s/cache|bad|0||\n' "\$HOME" > "$TEST_ENV_DIR/ov_bad_dir/bad[glob].conf"
+sed 's|"/etc/linux-cleaner/cleaner.conf"|"'"$TEST_ENV_DIR"'/ov_checkout/etc/cleaner.conf"|' "$CLEANER_SH" > "$TEST_ENV_DIR/ov_checkout/cleaner.sh"
+chmod +x "$TEST_ENV_DIR/ov_checkout/cleaner.sh"
+cp "$SCRIPT_DIR/cleaner.conf" "$TEST_ENV_DIR/ov_checkout/cleaner.conf"
 ov_err_ok=true
-if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Default Discovery" 0 "init_ov_default.log" \
-     --init-config --overlay; then
-  ov_default_src=$(realpath -e -- "$SCRIPT_DIR/cleaner.conf")
+if XDG_CONFIG_HOME="$ov_xdg" "$TEST_ENV_DIR/ov_checkout/cleaner.sh" --init-config --overlay < /dev/null > "$TEST_ENV_DIR/init_ov_default.log" 2>&1; then
+  ov_default_src=$(realpath -e -- "$TEST_ENV_DIR/ov_checkout/cleaner.conf")
   [[ -f "$ov_xdg/linux-cleaner/cleaner.conf" ]] \
     && grep -qxF "include|${ov_default_src}" "$ov_xdg/linux-cleaner/cleaner.conf" \
     && XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Default Check Config" 0 "init_ov_default_cc.log" --check-config \
@@ -6932,7 +6934,7 @@ if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Default Discover
 else
   ov_err_ok=false
 fi
-rm -rf "$ov_xdg"
+rm -rf "$ov_xdg" "$TEST_ENV_DIR/ov_checkout"
 for bad_src in "$TEST_ENV_DIR/ov_bad_dir/bad|pipe.conf" "$TEST_ENV_DIR/ov_bad_dir/bad[glob].conf"; do
   if XDG_CONFIG_HOME="$ov_xdg" run_test_case "Init Config Overlay Rejects Unsafe Source $(basename "$bad_src")" 1 "init_ov_badsrc.log" \
        --init-config --overlay -c "$bad_src"; then
@@ -7036,31 +7038,33 @@ try:
     assert dest2.read_bytes() == custom_bytes
     assert str(custom_tpl) in r2.stdout, r2.stdout
 
-    # 4. Missing or symlink-only template fails when host /usr share locations have no template.
-    sys_tpls = (
-        pathlib.Path("/usr/local/share/linux-cleaner/linux-cleaner.env.example"),
-        pathlib.Path("/usr/share/linux-cleaner/linux-cleaner.env.example"),
+    # 4. Missing or symlink-only template fails (redirect system template paths for hermeticity).
+    home_notpl = root / "home-notpl"
+    home_notpl.mkdir()
+    cleaner_src = pathlib.Path(cleaner_sh).read_text(encoding="utf-8")
+    hermetic_src = (
+        cleaner_src
+        .replace('"/usr/local/share/linux-cleaner/linux-cleaner.env.example"', f'"{root}/no-usr-local.env"')
+        .replace('"/usr/share/linux-cleaner/linux-cleaner.env.example"', f'"{root}/no-usr.env"')
     )
-    if not any(p.exists() for p in sys_tpls):
-        home_notpl = root / "home-notpl"
-        home_notpl.mkdir()
-        notpl_bin = root / "notpl/bin/cleaner"
-        notpl_bin.parent.mkdir(parents=True)
-        shutil.copy2(cleaner_sh, notpl_bin)
-        notpl_bin.chmod(0o755)
-        r_missing = run_env([str(notpl_bin), "--init-env"], home_notpl)
-        assert r_missing.returncode == 1 and "No timer environment template" in r_missing.stderr, r_missing
-        assert not (home_notpl / ".config/linux-cleaner/env").exists()
+    assert f'"{root}/no-usr.env"' in hermetic_src, "system env candidate redirect failed"
+    notpl_bin = root / "notpl/bin/cleaner"
+    notpl_bin.parent.mkdir(parents=True)
+    notpl_bin.write_text(hermetic_src, encoding="utf-8")
+    notpl_bin.chmod(0o755)
+    r_missing = run_env([str(notpl_bin), "--init-env"], home_notpl)
+    assert r_missing.returncode == 1 and "No timer environment template" in r_missing.stderr, r_missing
+    assert not (home_notpl / ".config/linux-cleaner/env").exists()
 
-        sym_prefix = root / "sym-prefix"
-        (sym_prefix / "bin").mkdir(parents=True)
-        (sym_prefix / "share/linux-cleaner").mkdir(parents=True)
-        shutil.copy2(cleaner_sh, sym_prefix / "bin/cleaner")
-        (sym_prefix / "bin/cleaner").chmod(0o755)
-        (sym_prefix / "real.env").write_bytes(b"LINUX_CLEANER_RISK=safe\n")
-        (sym_prefix / "share/linux-cleaner/linux-cleaner.env.example").symlink_to(sym_prefix / "real.env")
-        r_sym_tpl = run_env([str(sym_prefix / "bin/cleaner"), "--init-env"], home_notpl)
-        assert r_sym_tpl.returncode == 1 and "No timer environment template" in r_sym_tpl.stderr, r_sym_tpl
+    sym_prefix = root / "sym-prefix"
+    (sym_prefix / "bin").mkdir(parents=True)
+    (sym_prefix / "share/linux-cleaner").mkdir(parents=True)
+    (sym_prefix / "bin/cleaner").write_text(hermetic_src, encoding="utf-8")
+    (sym_prefix / "bin/cleaner").chmod(0o755)
+    (sym_prefix / "real.env").write_bytes(b"LINUX_CLEANER_RISK=safe\n")
+    (sym_prefix / "share/linux-cleaner/linux-cleaner.env.example").symlink_to(sym_prefix / "real.env")
+    r_sym_tpl = run_env([str(sym_prefix / "bin/cleaner"), "--init-env"], home_notpl)
+    assert r_sym_tpl.returncode == 1 and "No timer environment template" in r_sym_tpl.stderr, r_sym_tpl
 
     # 5. Symlinked parent (~/.config), dir (~/.config/linux-cleaner), or destination (~/.config/linux-cleaner/env) refused.
     sym_parent_home = root / "sym-parent-home"
