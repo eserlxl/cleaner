@@ -16228,5 +16228,94 @@ then
 fi
 echo -e "${GREEN}PASS: standalone pure-bash format_bytes matches exact outputs with PATH='' and runs 200 calls in <0.25s.${NC}"
 
+echo -e "\n${BOLD}Test Case: Config Validation And Target Inventory With Padded Whitespace${NC}"
+setup_mock_env
+if ! python3 - "$CLEANER_SH" "$MOCK_HOME" "$TEST_ENV_DIR" <<'TRIM_TO_PY'
+import json, os, pathlib, re, subprocess, sys, time
+
+cleaner, mock_home, test_dir = sys.argv[1:]
+text = pathlib.Path(cleaner).read_text(encoding="utf-8")
+cnt = sum(len(re.findall(r"\$\(trim\b", ln)) for ln in text.splitlines())
+assert cnt <= 10, f"expected <=10 $(trim ...) subshells, found {cnt}"
+
+home = pathlib.Path(mock_home)
+state_dir = pathlib.Path(test_dir) / "trim_to_state"
+state_dir.mkdir(parents=True, exist_ok=True)
+env = {
+    "PATH": f"{test_dir}/bin:/usr/bin:/bin",
+    "HOME": mock_home,
+    "XDG_STATE_HOME": str(state_dir),
+    "NO_COLOR": "1",
+}
+
+prot_dir = home / ".cache" / "padded_protected"
+prot_dir.mkdir(parents=True, exist_ok=True)
+(prot_dir / "keep.txt").write_text("keep\n", encoding="utf-8")
+target0 = home / ".cache" / "padded_0"
+target0.mkdir(parents=True, exist_ok=True)
+(target0 / "drop.txt").write_text("drop\n", encoding="utf-8")
+(target0 / "excluded.txt").write_text("excl\n", encoding="utf-8")
+
+cfg = pathlib.Path(test_dir) / "padded.conf"
+rows = [f"\t protect \t | \t {prot_dir} \t \n"]
+for i in range(300):
+    tpath = home / ".cache" / ("padded_protected" if i == 1 else f"padded_{i}")
+    rows.append(
+        f"  safe \t | \t T_{i:03d}   |  {tpath}  | \t Desc {i}  | \t 0 \t |  | \t \n"
+    )
+cfg.write_text("".join(rows), encoding="utf-8")
+
+subprocess.run([cleaner, "--config", str(cfg), "--check-config"], env=env, check=True, capture_output=True)
+
+t0 = time.monotonic()
+list_proc = subprocess.run(
+    [cleaner, "--config", str(cfg), "--list-targets", "--json"],
+    env=env,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+dt = time.monotonic() - t0
+assert dt < 2.2, f"300-target --list-targets --json too slow: {dt:.3f}s"
+
+targets = json.loads(list_proc.stdout)["targets"]
+assert len(targets) == 300, len(targets)
+assert targets[0]["name"] == "T_000", targets[0]
+assert targets[0]["risk"] == "safe", targets[0]
+assert targets[0]["path"] == str(target0), targets[0]
+assert targets[0]["description"] == "Desc 0", targets[0]
+
+# Padded --only-target patterns, --exclude, and protect rows trim in-process.
+sel_proc = subprocess.run(
+    [cleaner, "--config", str(cfg), "--only-target", "  T_000 ,  T_001  ", "--exclude", "  excluded.txt ,  *.bak ", "--dry-run", "--json"],
+    env=env,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+sel_data = json.loads(sel_proc.stdout)
+by_name = {t["name"]: t for t in sel_data["targets"]}
+assert sorted(by_name) == ["T_000", "T_001"], by_name
+assert by_name["T_000"]["status"] == "found", by_name["T_000"]
+assert by_name["T_001"]["status"] == "protected", by_name["T_001"]
+
+show_proc = subprocess.run(
+    [cleaner, "--config", str(cfg), "--only-target", "  T_000  ", "--exclude", "  excluded.txt ,  *.bak ", "--dry-run", "--show-matches"],
+    env=env,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert f"{target0}/drop.txt" in show_proc.stdout and f"{target0}/excluded.txt" not in show_proc.stdout, show_proc.stdout
+
+tr_env = dict(env, LC_ALL="tr_TR.UTF-8")
+subprocess.run([cleaner, "--config", str(cfg), "--check-config"], env=tr_env, check=True, capture_output=True)
+TRIM_TO_PY
+then
+  echo -e "${RED}FAIL: config validation or target inventory whitespace trimming regression failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: config validation, target listing, protection, and filtering trim in-process cleanly and quickly.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

@@ -21,6 +21,7 @@
 | U-152 | Shared `/**` config rows under one prefix reuse a single cached `find` directory traversal while preserving `filter:cxx_build`, ancestor deduplication, component matching, depth bounds, and symlink refusal | Shared Globstar Prefix List Targets |
 | U-153 | Associative reference lookup in `quarantine_unrecorded_entry_count` and `restore_quarantine` keeps 300-target `--list-sessions --json` under `0.80s` while preserving unrecorded counts and partial-restore leftover metadata reconciliation | Associative Quarantine Reference Lookup Scale And Partial Restore |
 | U-154 | Standalone pure-bash `format_bytes` matches `B`/`KB`/`MB`/`GB`/`TB` rounding (including `1048575 -> 1 MB`, `1536 -> 1.50 KB`, and `9223372036854775807` without 64-bit overflow) with `PATH=""` and finishes 200 calls in `<0.25s` | Pure Bash format_bytes Compatibility And Performance |
+| U-155 | Replacing `$(trim ...)` subshell forks with `trim_to` keeps `$(trim` call count `<=10`, completes 300-target `--list-targets --json` in `<2.2s`, and preserves whitespace trimming for `protect`, `--only-target`, `--exclude`, and `--check-config` | Config Validation And Target Inventory With Padded Whitespace |
 
 ## 1.6.0 shipped feature inventory
 

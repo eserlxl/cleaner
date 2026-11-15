@@ -1071,7 +1071,7 @@ split_name_patterns() {
   patterns_out=()
   [[ -z "$value" ]] && return 0
   while :; do
-    pat=$(trim "${rest%%,*}")
+    trim_to pat "${rest%%,*}"
     if [[ -z "$pat" ]]; then
       echo -e "${RED}Error: ${flag} contains an empty pattern in '${value}'.${NC}" >&2
       exit 1
@@ -1740,7 +1740,7 @@ build_exclude_find_args() {
   local -a clauses=()
   local pat
   for pat in "${pats[@]}"; do
-    pat=$(trim "$pat")
+    trim_to pat "$pat"
     if [[ -z "$pat" ]]; then
       continue
     fi
@@ -1830,14 +1830,14 @@ list_config_targets() {
     config_line="${config_line#*$'\t'}"
     # validate_config_file already rejected malformed records before this runs.
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-    risk=$(trim "$risk")
+    trim_to risk "$risk"
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
-    name=$(trim "$name")
+    trim_to name "$name"
     select_target_name "$name" || continue
-    raw_path=$(trim "$raw_path")
-    custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+    trim_to raw_path "$raw_path"
+    trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     select_target_path "$raw_path" "$custom_clean_cmd" || continue
-    desc=$(trim "$desc")
+    trim_to desc "$desc"
     printf '%s\t%s\t%s\t%s\n' "$name" "$risk" "$raw_path" "$desc"
   done < <(expand_config_globs)
   check_target_selection
@@ -1865,14 +1865,14 @@ validate_config_file() {
     config_pipes="${config_line//[^|]/}"
     field_count=$(( ${#config_pipes} + 1 ))
     IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-    risk=$(trim "$risk")
+    trim_to risk "$risk"
     [[ -z "$risk" || "$risk" =~ ^# ]] && continue
     if [[ "$risk" == "protect" ]]; then
       if [[ "$field_count" -ne 2 ]]; then
         echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect line requires 2 fields (protect|PATH), found ${field_count}${NC}" >&2
         exit 1
       fi
-      name=$(trim "$name")
+      trim_to name "$name"
       if [[ -z "$name" ]]; then
         echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: protect PATH is empty${NC}" >&2
         exit 1
@@ -1895,12 +1895,12 @@ validate_config_file() {
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: expected 5-7 fields, found ${field_count}${NC}" >&2
       exit 1
     fi
-    name=$(trim "$name")
-    raw_path=$(trim "$raw_path")
-    desc=$(trim "$desc")
-    min_age=$(trim "$min_age")
-    check_procs=$(trim "${check_procs:-}")
-    custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+    trim_to name "$name"
+    trim_to raw_path "$raw_path"
+    trim_to desc "$desc"
+    trim_to min_age "$min_age"
+    trim_to check_procs "${check_procs:-}"
+    trim_to custom_clean_cmd "${custom_clean_cmd:-}"
     if [[ -z "$name" ]]; then
       echo -e "${RED}Error: ${CONFIG_FILE}:${config_lineno}: NAME (field 2) is empty${NC}" >&2
       exit 1
@@ -2026,10 +2026,10 @@ print_session_contents() {
     return 0
   fi
   while IFS='|' read -r mtype _ morig _ || [[ -n "$mtype" ]]; do
-    mtype=$(trim "$mtype")
+    trim_to mtype "$mtype"
     [[ "$mtype" == aged-restored ]] && mtype=aged
     [[ -z "$mtype" || "$mtype" =~ ^# ]] && continue
-    morig=$(trim "${morig:-}")
+    trim_to morig "${morig:-}"
     # printf, not echo -e: a recorded path may hold backslashes such as \c.
     printf '      %s  %s\n' "$mtype" "$morig"
   done < "$meta"
@@ -2723,10 +2723,10 @@ restore_quarantine() {
   # shellcheck disable=SC2094
   while IFS= read -r meta_line || [[ -n "$meta_line" ]]; do
     IFS='|' read -r type rel_path original_path use_sudo uid gid _ <<< "$meta_line"
-    type=$(trim "$type")
+    trim_to type "$type"
     [[ -z "$type" || "$type" =~ ^# ]] && continue
 
-    original_path=$(trim "$original_path")
+    trim_to original_path "$original_path"
     # Leave every non-matching target quarantined, untouched.
     if [[ -n "${RESTORE_ONLY:-}" ]]; then
       if [[ "$RESTORE_ONLY_MODE" == --only-exact ]]; then
@@ -2737,11 +2737,10 @@ restore_quarantine() {
     fi
     matched_any=true
 
-    rel_path=$(trim "$rel_path")
-    original_path=$(trim "$original_path")
-    use_sudo=$(trim "$use_sudo")
-    uid=$(trim "${uid:-}")
-    gid=$(trim "${gid:-}")
+    trim_to rel_path "$rel_path"
+    trim_to use_sudo "$use_sudo"
+    trim_to uid "${uid:-}"
+    trim_to gid "${gid:-}"
 
     if ! validate_restore_record "$rel_path" "$original_path" "$use_sudo" "$uid" "$gid"; then
       if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
@@ -2950,7 +2949,8 @@ restore_quarantine() {
       # Earlier checkpoints replaced the inode still read by the outer loop.
       while IFS= read -r checkpoint_line || [[ -n "$checkpoint_line" ]]; do
         IFS='|' read -r _ checkpoint_rel _ <<< "$checkpoint_line"
-        if [[ "$(trim "$checkpoint_rel")" == "$rel_path" ]]; then
+        trim_to checkpoint_rel "$checkpoint_rel"
+        if [[ "$checkpoint_rel" == "$rel_path" ]]; then
           checkpoint_line="aged-restored|${checkpoint_line#*|}"
         fi
         checkpoint+=("$checkpoint_line")
@@ -4061,11 +4061,11 @@ is_process_running() {
   # Split with read, not an unquoted expansion: word splitting would also
   # pathname-expand each token against the current directory, so a pattern such
   # as "app*" could turn into a stray file name and silently miss the process.
-  local proc pid query_status
+  local proc cmdline_pat pid query_status
   local -a proc_list
   IFS=',' read -r -a proc_list <<< "$procs"
   for proc in "${proc_list[@]}"; do
-    proc=$(trim "$proc")
+    trim_to proc "$proc"
     query_status=0
     if [[ "$proc" == cmdline:* ]]; then
       # A tool launched through a shared runtime (Electron, node) has a comm that is
@@ -4077,7 +4077,8 @@ is_process_running() {
       # Whitespace after the colon is not part of the pattern: "cmdline: /path"
       # and "cmdline:/path" name the same command line. A blank remainder is
       # already rejected by validate_config_file.
-      pid=$(_cmdline_match "$(trim "${proc#cmdline:}")") || query_status=$?
+      trim_to cmdline_pat "${proc#cmdline:}"
+      pid=$(_cmdline_match "$cmdline_pat") || query_status=$?
     else
       # The kernel keeps only the first 15 characters of a process name, and
       # pgrep -x refuses a longer plain name outright, so compare such a name on
@@ -4259,7 +4260,7 @@ run_doctor() {
     if [[ "$cfg_rc" -ne 0 ]]; then
       cfg_err=$(printf '%s' "$cfg_err" | sed $'s/\033\\[[0-9;]*m//g')
       cfg_err="${cfg_err//$'\n'/ }"
-      cfg_err=$(trim "$cfg_err")
+      trim_to cfg_err "$cfg_err"
       printf 'WARN: config: %s (%s, %s)\n' "$cfg_path" "$cfg_source" "$cfg_err"
       doctor_rc=1
     else
@@ -4624,8 +4625,10 @@ collect_protected_paths() {
   PROTECTED_PATHS=()
   while IFS= read -r line || [[ -n "$line" ]]; do
     IFS='|' read -r f1 f2 _ <<< "$line"
-    [[ "$(trim "$f1")" == "protect" ]] || continue
-    if ! expanded=$(expand_path_safe "$(trim "$f2")"); then
+    trim_to f1 "$f1"
+    [[ "$f1" == "protect" ]] || continue
+    trim_to f2 "$f2"
+    if ! expanded=$(expand_path_safe "$f2"); then
       echo "Error: protect PATH has unsafe path expansion" >&2
       return 1
     fi
@@ -4672,15 +4675,15 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
   # validate_config_file already rejected malformed records (field count, empty
   # NAME/PATH, CHECK_PROCESSES, CUSTOM_ACTION, risk, MIN_AGE_DAYS) before this runs.
   IFS='|' read -r risk name raw_path desc min_age check_procs custom_clean_cmd <<< "$config_line"
-  risk=$(trim "$risk")
+  trim_to risk "$risk"
   [[ -z "$risk" || "$risk" =~ ^# ]] && continue
 
-  name=$(trim "$name")
-  raw_path=$(trim "$raw_path")
-  desc=$(trim "$desc")
-  min_age=$(trim "$min_age")
-  check_procs=$(trim "${check_procs:-}")
-  custom_clean_cmd=$(trim "${custom_clean_cmd:-}")
+  trim_to name "$name"
+  trim_to raw_path "$raw_path"
+  trim_to desc "$desc"
+  trim_to min_age "$min_age"
+  trim_to check_procs "${check_procs:-}"
+  trim_to custom_clean_cmd "${custom_clean_cmd:-}"
   set_target_exclusions "$custom_clean_cmd"
 
   select_target_name "$name" || continue

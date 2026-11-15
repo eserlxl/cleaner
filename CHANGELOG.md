@@ -20,6 +20,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `expand_config_globs` now pre-scans and caches shared `/**` directory traversals by prefix root so multiple recursive wildcard rows sharing one base directory (such as the five `/opt/**` rows in the default config) reuse a single `find` walk instead of repeating identical directory scans.
 - `quarantine_unrecorded_entry_count` and `restore_quarantine` now index quarantine metadata references with associative arrays and in-process `trim_to`, replacing `O(N*M)` nested array scans while preserving unrecorded-entry counts and partial-restore metadata reconciliation.
 - `format_bytes` now scales and rounds byte counts in pure bash integer arithmetic without spawning `awk` subshells, matching previous B/KB/MB/GB/TB rounding without 64-bit overflow and speeding up multi-target size formatting.
+- Replaced `$(trim ...)` subshell forks with in-process `trim_to` across config validation, target listing, protected path collection, `--only-target`/`--exclude`/process-pattern trimming, quarantine inspection/restore loops, `--doctor` error formatting, and cleanup target loops, cutting subprocess forks on multi-hundred-target runs.
 
 ### Fixed
 
