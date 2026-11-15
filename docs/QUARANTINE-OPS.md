@@ -142,8 +142,10 @@ purge before confirmation/deletion, including inline retention.
 | `--restore SESSION --only-target PATTERN` | 1 | Only Target With Restore Rejected |
 | `--only PATTERN` without `--restore` | 1 | Only Without Restore Rejected |
 | `--restore SESSION --dry-run` | 0 | Dry Run With Restore Preview |
+| `--restore SESSION --dry-run --json` | 0 | Restore Dry Run JSON Preview |
 | `--purge-sessions SESSION --dry-run` | 0 | Dry Run With Purge Preview |
 | `--restore SESSION --json` | 1 | JSON With Restore Rejected |
+| `--restore SESSION --dry-run --force --json` | 1 | Restore Dry Run JSON Preview |
 | `--restore SESSION` with default `--lock-wait 0` while another cleanup, restore or purge holds `~/.cache/linux-cleaner/cleaner.lock` | 1 | Concurrent Run Lock Restore |
 
 Mutating restore and purge share the cleanup lock. `--lock-wait SECONDS` or
@@ -153,7 +155,7 @@ zero). Zero keeps fail-fast behavior and optional `flock`; a positive wait requi
 `flock` and exits `1` on acquisition failure before session/report/log effects.
 Restore/purge previews and read-only inventory never lock or wait. Lock-file opening can precede timeout.
 
-Restore and purge support an active explicit `--dry-run` preview; `--hold-session` and `--release-session` still reject it. Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore and purge (`Force Overrides Earlier Dry Run for Purge`).
+Restore and purge support an active explicit `--dry-run` preview (`--restore` previews also support `--json` alongside an active explicit `--dry-run`, while mutating `--restore` and `--restore ... --dry-run --force` reject `--json`); `--hold-session` and `--release-session` still reject it. Use `--list-sessions` for read-only inventory. A later `--clean`, `--interactive`, or `--force` overrides an earlier `--dry-run`, including for restore and purge (`Force Overrides Earlier Dry Run for Purge`).
 
 ## Purge reference
 

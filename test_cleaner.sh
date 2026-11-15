@@ -6073,6 +6073,165 @@ else
   exit 1
 fi
 
+echo -e "\n${BOLD}Test Case: Restore Dry Run JSON Preview${NC}"
+if ! python3 - "$CLEANER_SH" "$TEST_ENV_DIR" <<'RESTORE_DRY_JSON_PY'; then
+import fcntl, json, os, pathlib, subprocess, sys
+
+cleaner, test_env = sys.argv[1:]
+te = pathlib.Path(test_env)
+home = te / "restore_json_home"
+q_base = home / ".cache/linux-cleaner/quarantine"
+sess = q_base / "2026-01-01_00-00-00"
+sess.mkdir(parents=True, exist_ok=True)
+
+# 1. would_restore (full)
+(sess / "full_ok").mkdir(parents=True, exist_ok=True)
+(sess / "full_ok/f.txt").write_text("ok\n", encoding="utf-8")
+dest_ok = home / "dest_ok"
+
+# 2. conflict (full target already exists at dest)
+(sess / "full_conf").mkdir(parents=True, exist_ok=True)
+(sess / "full_conf/f.txt").write_text("conf\n", encoding="utf-8")
+dest_conf = home / "dest_conf"
+dest_conf.mkdir(parents=True, exist_ok=True)
+
+# 3. already_restored (full missing in session while dest exists) and aged-restored
+dest_already = home / "dest_already"
+dest_already.mkdir(parents=True, exist_ok=True)
+dest_aged_done = home / "dest_aged_done"
+
+# 4. missing (full payload absent in session and dest)
+dest_missing = home / "dest_missing"
+
+# 5. unknown_type
+(sess / "weird_0").write_text("weird\n", encoding="utf-8")
+dest_unknown = home / "dest_unknown"
+
+# 6. invalid_record (traversal relative path & bogus use_sudo)
+dest_bad = home / "dest_bad"
+
+meta = sess / "quarantine.meta"
+meta.write_text(
+    "\n".join([
+        f"full|full_ok|{dest_ok}|false||",
+        f"full|full_conf|{dest_conf}|false||",
+        f"full|full_done|{dest_already}|false||",
+        f"aged-restored|aged_done|{dest_aged_done}|false||",
+        f"full|full_miss|{dest_missing}|true|0|0",
+        f"alien|weird_0|{dest_unknown}|false||",
+        f"full|../escape|{dest_bad}|maybe||",
+    ]) + "\n",
+    encoding="utf-8",
+)
+fixed_ts = 1767225600
+os.utime(sess, (fixed_ts, fixed_ts))
+
+env = {k: v for k, v in os.environ.items() if not k.startswith(("LINUX_CLEANER_", "XDG_"))}
+env["HOME"] = str(home)
+
+def snap_dir():
+    out = {}
+    for p in sorted(home.rglob("*")):
+        rel = str(p.relative_to(home))
+        out[rel] = ("d", p.stat().st_mtime_ns) if p.is_dir() else ("f", p.read_bytes(), p.stat().st_mtime_ns)
+    return out
+
+before = snap_dir()
+
+# Check --dry-run --json, LINUX_CLEANER_JSON=1, and inherited LINUX_CLEANER_FORCE=1 with --dry-run.
+for args, extra in (
+    (["--restore", "latest", "--dry-run", "--json"], {}),
+    (["--restore", "2026-01-01_00-00-00", "--dry-run"], {"LINUX_CLEANER_JSON": "1"}),
+    (["--restore", "latest", "--dry-run", "--json"], {"LINUX_CLEANER_FORCE": "1"}),
+):
+    res = subprocess.run(["bash", cleaner] + args, env=env | extra, capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0 and res.stderr == "", (args, extra, res)
+    d = json.loads(res.stdout)
+    assert d["session"] == "2026-01-01_00-00-00", d
+    assert d["session_mtime"] == fixed_ts and d["held"] is False, d
+    assert d["selector"] is None and d["selector_mode"] is None, d
+    assert d["counts"] == {
+        "would_restore": 1,
+        "already_restored": 2,
+        "missing": 1,
+        "unknown_type": 1,
+        "conflict": 1,
+        "invalid_record": 1,
+    }, d
+    statuses = [r["status"] for r in d["records"]]
+    assert statuses == [
+        "would_restore",
+        "conflict",
+        "already_restored",
+        "already_restored",
+        "missing",
+        "unknown_type",
+        "invalid_record",
+    ], statuses
+    assert d["records"][4]["use_sudo"] is True, d["records"][4]
+    assert d["records"][6]["use_sudo"] is None, d["records"][6]
+    assert d["records"][0]["relative_path"] == "full_ok", d["records"][0]
+    assert not (home / ".cache/linux-cleaner/cleaner.lock").exists()
+
+assert snap_dir() == before, "restore JSON preview modified home state or session mtime"
+
+# Held session status and selector filtering (--only & --only-exact), plus locklessness under active flock.
+(sess / ".hold").write_text("", encoding="utf-8")
+os.utime(sess, (fixed_ts, fixed_ts))
+lock = home / ".cache/linux-cleaner/cleaner.lock"
+lock.write_text("held externally\n", encoding="utf-8")
+
+def snap_quarantine():
+    out = {}
+    for p in sorted(q_base.rglob("*")):
+        rel = str(p.relative_to(q_base))
+        out[rel] = ("d", p.stat().st_mtime_ns) if p.is_dir() else ("f", p.read_bytes(), p.stat().st_mtime_ns)
+    return out
+
+before_q = snap_quarantine()
+with lock.open("r+") as fh:
+    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    res_only = subprocess.run(
+        ["bash", cleaner, "--restore", "latest", "--only", "dest_ok", "--dry-run", "--json", "--lock-wait", "1"],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    assert res_only.returncode == 0 and res_only.stderr == "", res_only
+    d_only = json.loads(res_only.stdout)
+    assert d_only["held"] is True and d_only["selector"] == "dest_ok" and d_only["selector_mode"] == "--only", d_only
+    assert len(d_only["records"]) == 1 and d_only["records"][0]["status"] == "would_restore", d_only
+
+    res_exact = subprocess.run(
+        ["bash", cleaner, "--restore", "latest", "--only-exact", str(dest_conf), "--dry-run", "--json"],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    assert res_exact.returncode == 0 and res_exact.stderr == "", res_exact
+    d_exact = json.loads(res_exact.stdout)
+    assert d_exact["selector"] == str(dest_conf) and d_exact["selector_mode"] == "--only-exact", d_exact
+    assert d_exact["counts"]["conflict"] == 1 and len(d_exact["records"]) == 1, d_exact
+
+    res_none = subprocess.run(
+        ["bash", cleaner, "--restore", "latest", "--only-exact", str(home / "no_match"), "--dry-run", "--json"],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    assert res_none.returncode == 1 and res_none.stdout == "" and "matches" in res_none.stderr, res_none
+
+    # Mutating --restore combinations still reject --json.
+    for bad_args, extra in (
+        (["--restore", "latest", "--dry-run", "--force", "--json"], {}),
+        (["--restore", "latest", "--dry-run", "--clean", "--json"], {}),
+        (["--restore", "latest", "--json"], {}),
+        (["--restore", "latest"], {"LINUX_CLEANER_JSON": "1"}),
+    ):
+        res_bad = subprocess.run(["bash", cleaner] + bad_args, env=env | extra, capture_output=True, text=True, timeout=20)
+        assert res_bad.returncode == 1 and res_bad.stdout == "" and "json is valid only" in res_bad.stderr, (bad_args, extra, res_bad)
+
+assert snap_quarantine() == before_q, "restore JSON preview under flock modified quarantine state or mtime"
+print("PASS: Restore Dry Run JSON Preview handles all statuses, holds, selectors, and mutating rejections", flush=True)
+RESTORE_DRY_JSON_PY
+  echo -e "${RED}FAIL: Restore Dry Run JSON Preview failed.${NC}"
+  exit 1
+fi
+
 if LINUX_CLEANER_JSON=1 run_test_case "JSON Env With Purge Rejected" 1 "json_purge.log" \
      --purge-sessions 2020-01-01_00-00-00 --force; then
   if grep -q "json is valid only" "$TEST_ENV_DIR/json_purge.log" \

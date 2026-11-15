@@ -401,6 +401,18 @@ With
 emit a machine-readable JSON validation and include-graph summary instead of plain text
 .RB ( valid ", " status ", " config_file ", " source ", " targets_count ", " protect_count ,
 .BR include_files ", " searched ", " error ", " error_file ", and " error_line ).
+With
+.BR \-\-restore
+and an active explicit
+.BR \-\-dry\-run ,
+emit a machine-readable JSON restore preview
+.RB ( session ", " session_mtime ", " held ", " selector ", " selector_mode ", " records ,
+and
+.BR counts )
+instead of plain text; mutating restores (including
+.BR "\-\-restore SESSION \-\-dry\-run \-\-force" )
+still reject
+.BR \-\-json .
 .TP
 .B \-\-report
 Print the saved last cleanup report and exit. Read-only; requires no
@@ -1097,6 +1109,18 @@ and
 .BR \-\-only\-exact ,
 ends with \(lqDry-run: nothing restored.\(rq, and exits 0 even for conflicts or missing payload.
 An unmatched selector still exits 1.
+With both an active explicit
+.B \-\-dry\-run
+and
+.BR \-\-json ,
+emits one JSON preview object
+.RB ( session ", " session_mtime ", " held ", " selector ", " selector_mode ", " records ", and " counts )
+while mutating restores (without an active
+.BR \-\-dry\-run ,
+such as
+.BR \-\-dry\-run\ \-\-force )
+continue to reject
+.BR \-\-json .
 It takes no lock, invokes no sudo, and leaves payload, logs, metadata and session mtime unchanged.
 Probes use the current user's access; a preview does not guarantee permissions or free space for a later restore.
 Each target records one UID/GID pair, applied on a best-effort basis during
@@ -1386,7 +1410,8 @@ When set to
 .BR 1 ", " true ", or " yes ,
 enables
 .BR \-\-json .
-Valid with dry-run,
+Valid with dry-run (including
+.BR \-\-restore\ \fISESSION\fP\ \-\-dry\-run ),
 .BR \-\-list\-targets ,
 .BR \-\-list\-sessions ,
 .BR \-\-report ,

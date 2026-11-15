@@ -88,7 +88,7 @@ Options:
   --exit-code                Dry-run only: exit 2 if cleanup would run, 0 if it would skip (errors: 1).
   --notify                   With cleanup: send a desktop notification summarizing the result (no-op on dry-run; env: LINUX_CLEANER_NOTIFY).
   --fail-fast                With cleanup: stop after the first failed target and skip inline retention (env: LINUX_CLEANER_FAIL_FAST).
-  --json                     Emit machine-readable JSON (--dry-run summary, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary).
+  --json                     Emit machine-readable JSON (--dry-run summary, --restore --dry-run preview, --list-targets inventory, --list-sessions inventory, --report summary, --doctor checklist, or --check-config summary).
   -h, --help                 Display this help message and exit.
   -V, --version              Print the tool version and exit.
 EOF
@@ -1003,10 +1003,10 @@ if [[ "$session_mode_count" -gt 1 ]]; then
 fi
 
 if [[ "$JSON_OUTPUT" == true && ( \
-      -n "$RESTORE_TARGET" || -n "$PURGE_TARGET" || "$INIT_CONFIG" == true || \
+      ( -n "$RESTORE_TARGET" && "$DRY_RUN_EXPLICIT" != true ) || -n "$PURGE_TARGET" || "$INIT_CONFIG" == true || \
       ( "$DRY_RUN" != true && "$LIST_TARGETS" != true && "$LIST_SESSIONS" != true && "$REPORT" != true && "$DOCTOR" != true && "$CHECK_CONFIG" != true ) \
     ) ]]; then
-  echo -e "${RED}Error: --json is valid only with --dry-run (machine-readable preview), --list-targets, --list-sessions, --report, --doctor, or --check-config.${NC}" >&2
+  echo -e "${RED}Error: --json is valid only with --dry-run (cleanup or --restore preview), --list-targets, --list-sessions, --report, --doctor, or --check-config.${NC}" >&2
   exit 1
 fi
 
@@ -3126,13 +3126,20 @@ restore_quarantine() {
     exit 1
   fi
   
-  echo -e "${BOLD}${BLUE}=== Restoring from Quarantine Session: $(basename "$restore_dir") ===${NC}"
+  local session_name
+  session_name=$(basename "$restore_dir")
+  if [[ "$DRY_RUN_EXPLICIT" != true || "$JSON_OUTPUT" != true ]]; then
+    echo -e "${BOLD}${BLUE}=== Restoring from Quarantine Session: ${session_name} ===${NC}"
+  fi
   
   # Read metadata line by line
   # Format: TYPE|RELATIVE_PATH|ORIGINAL_PATH|USE_SUDO|UID|GID
   local type rel_path original_path use_sudo uid gid meta_line RESTORE_RECORD_ERROR=""
   local overall_success=true
   local matched_any=false
+  local cnt_would_restore=0 cnt_already_restored=0 cnt_missing=0
+  local cnt_unknown_type=0 cnt_conflict=0 cnt_invalid_record=0
+  local -a json_rec_types=() json_rec_origs=() json_rec_rels=() json_rec_sudos=() json_rec_statuses=()
   # rel_paths actually moved back out of quarantine. Under --only, the metadata is
   # rewritten from this so every remaining record still points at a file that is
   # present in quarantine -- the same invariant the failed-move fix established.
@@ -3162,7 +3169,18 @@ restore_quarantine() {
 
     if ! validate_restore_record "$rel_path" "$original_path" "$use_sudo" "$uid" "$gid"; then
       if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
-        printf 'invalid record  %s\n' "$original_path"
+        if [[ "$JSON_OUTPUT" == true ]]; then
+          local rec_sudo="null"
+          [[ "$use_sudo" == "true" || "$use_sudo" == "false" ]] && rec_sudo="$use_sudo"
+          cnt_invalid_record=$((cnt_invalid_record + 1))
+          json_rec_types+=("$type")
+          json_rec_origs+=("$original_path")
+          json_rec_rels+=("$rel_path")
+          json_rec_sudos+=("$rec_sudo")
+          json_rec_statuses+=("invalid_record")
+        else
+          printf 'invalid record  %s\n' "$original_path"
+        fi
       else
         echo -e "${RED}Error: Refusing malformed quarantine.meta record for '$original_path' (${RESTORE_RECORD_ERROR}). Skipping.${NC}" >&2
         overall_success=false
@@ -3225,7 +3243,38 @@ restore_quarantine() {
           [[ "$stream_rc" == 0 ]] || preview_status="missing"
         fi
       fi
-      printf '%s  %s\n' "$preview_status" "$original_path"
+      if [[ "$JSON_OUTPUT" == true ]]; then
+        local json_status="would_restore"
+        case "$preview_status" in
+          "would restore")
+            json_status="would_restore"
+            cnt_would_restore=$((cnt_would_restore + 1))
+            ;;
+          "already restored")
+            json_status="already_restored"
+            cnt_already_restored=$((cnt_already_restored + 1))
+            ;;
+          "missing")
+            json_status="missing"
+            cnt_missing=$((cnt_missing + 1))
+            ;;
+          "unknown type")
+            json_status="unknown_type"
+            cnt_unknown_type=$((cnt_unknown_type + 1))
+            ;;
+          "conflict")
+            json_status="conflict"
+            cnt_conflict=$((cnt_conflict + 1))
+            ;;
+        esac
+        json_rec_types+=("$type")
+        json_rec_origs+=("$original_path")
+        json_rec_rels+=("$rel_path")
+        json_rec_sudos+=("$use_sudo")
+        json_rec_statuses+=("$json_status")
+      else
+        printf '%s  %s\n' "$preview_status" "$original_path"
+      fi
       continue
     fi
     if [[ "$type" == aged-restored ]]; then
@@ -3400,7 +3449,34 @@ restore_quarantine() {
   fi
 
   if [[ "$DRY_RUN_EXPLICIT" == true ]]; then
-    echo "Dry-run: nothing restored."
+    if [[ "$JSON_OUTPUT" == true ]]; then
+      local held_json="false" mtime_json="null" has_sel=false sel_mode_val="" rec_idx=0
+      session_is_held "$restore_dir" && held_json="true"
+      [[ "$session_mtime" =~ ^[[:digit:]]+$ ]] && mtime_json="$session_mtime"
+      if [[ -n "${RESTORE_ONLY:-}" ]]; then
+        has_sel=true
+        sel_mode_val="$RESTORE_ONLY_MODE"
+      fi
+      printf '{"session":"%s","session_mtime":%s,"held":%s,"selector":%s,"selector_mode":%s,"records":[' \
+        "$(json_escape "$session_name")" \
+        "$mtime_json" \
+        "$held_json" \
+        "$(_json_str_or_null "$has_sel" "${RESTORE_ONLY:-}")" \
+        "$(_json_str_or_null "$has_sel" "$sel_mode_val")"
+      for rec_idx in "${!json_rec_statuses[@]}"; do
+        [[ "$rec_idx" -eq 0 ]] || printf ','
+        printf '{"type":"%s","original_path":"%s","relative_path":"%s","use_sudo":%s,"status":"%s"}' \
+          "$(json_escape "${json_rec_types[$rec_idx]}")" \
+          "$(json_escape "${json_rec_origs[$rec_idx]}")" \
+          "$(json_escape "${json_rec_rels[$rec_idx]}")" \
+          "${json_rec_sudos[$rec_idx]}" \
+          "${json_rec_statuses[$rec_idx]}"
+      done
+      printf '],"counts":{"would_restore":%d,"already_restored":%d,"missing":%d,"unknown_type":%d,"conflict":%d,"invalid_record":%d}}\n' \
+        "$cnt_would_restore" "$cnt_already_restored" "$cnt_missing" "$cnt_unknown_type" "$cnt_conflict" "$cnt_invalid_record"
+    else
+      echo "Dry-run: nothing restored."
+    fi
     return 0
   fi
 
