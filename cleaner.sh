@@ -4841,20 +4841,31 @@ while IFS= read -r config_line || [[ -n "$config_line" ]]; do
                { [[ -d "$path" && ! -w "$path" ]] && \
                  { has_positive_age "$effective_age" || [[ -n "${TARGET_EXCLUDE_PATTERNS:-}" ]]; }; }; }; }; then
           requires_sudo=true
-          if [[ "$DRY_RUN" = false ]]; then
-            if ensure_sudo; then
+          # A readable filter:cxx_build tree with a recent non-excluded file is active
+          # regardless of root visibility, so skip root elevation and [ROOT] reporting.
+          if has_positive_age "$idle_age" \
+             && [[ "$custom_clean_cmd" != action:* ]] \
+             && ! path_lookup_blocked "$path" \
+             && [[ -e "$path" && -r "$path" && ( ! -d "$path" || -x "$path" ) ]] \
+             && [[ -n $(with_sudo false find "$path" "${EXCLUDE_FIND_ARGS[@]}" -mtime -"$idle_age" -print -quit 2>/dev/null) ]]; then
+            requires_sudo=false
+          fi
+          if [[ "$requires_sudo" == true ]]; then
+            if [[ "$DRY_RUN" = false ]]; then
+              if ensure_sudo; then
+                use_sudo=true
+              else
+                root_unavailable=true
+                use_sudo=false
+                target_status=skipped
+                target_reason="requires root"
+                warn_root_skip "$name" "$path" "$risk"
+              fi
+            elif sudo -n true 2>/dev/null; then
               use_sudo=true
             else
-              root_unavailable=true
               use_sudo=false
-              target_status=skipped
-              target_reason="requires root"
-              warn_root_skip "$name" "$path" "$risk"
             fi
-          elif sudo -n true 2>/dev/null; then
-            use_sudo=true
-          else
-            use_sudo=false
           fi
         fi
 

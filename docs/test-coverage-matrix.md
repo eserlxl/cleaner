@@ -23,6 +23,7 @@
 | U-154 | Standalone pure-bash `format_bytes` matches `B`/`KB`/`MB`/`GB`/`TB` rounding (including `1048575 -> 1 MB`, `1536 -> 1.50 KB`, and `9223372036854775807` without 64-bit overflow) with `PATH=""` and finishes 200 calls in `<0.25s` | Pure Bash format_bytes Compatibility And Performance |
 | U-155 | Replacing `$(trim ...)` subshell forks with `trim_to` keeps `$(trim` call count `<=10`, completes 300-target `--list-targets --json` in `<2.2s`, and preserves whitespace trimming for `protect`, `--only-target`, `--exclude`, and `--check-config` | Config Validation And Target Inventory With Padded Whitespace |
 | U-156 | Shared `/**` prefix walks check newline-preserving `glob_components_match` before emitting unsafe-character wildcard warnings, silencing unrelated `|`/`\n` siblings while still warning once on matching rows | Shared Globstar Prefix Skips Unrelated Unsafe Matches |
+| U-157 | Active readable `filter:cxx_build` directories under unwritable (`0555`) parents report `clean` (`0` reclaimable bytes, `--exit-code` `0`, no `requires root` skip) in `--dry-run` and `--clean`, while idle siblings still require root and git-tracked trees keep `skipped` precedence | Active Filter Cxx Build Under Unwritable Parent |
 
 ## 1.6.0 shipped feature inventory
 

@@ -16365,5 +16365,121 @@ then
 fi
 echo -e "${GREEN}PASS: shared globstar expansion skips unrelated unsafe directories and still warns accurately on matching newline paths.${NC}"
 
+if [[ "$EUID" -ne 0 ]]; then
+  echo -e "\n${BOLD}Test Case: Active Filter Cxx Build Under Unwritable Parent${NC}"
+  setup_mock_env
+  if ! python3 - "$CLEANER_SH" "$MOCK_HOME" "$TEST_ENV_DIR" "$OUTSIDE_DIR" <<'ACTIVE_CXX_RO_PY'
+import json, os, pathlib, subprocess, sys
+
+cleaner, mock_home, test_dir, outside_dir = sys.argv[1:]
+ro_parent = pathlib.Path(outside_dir) / "cxx_ro_parent"
+active_rw = ro_parent / "active_rw"
+active_ro = ro_parent / "active_ro"
+idle_rw = ro_parent / "idle_rw"
+tracked_rw = ro_parent / "tracked_rw"
+for d in (active_rw, active_ro, idle_rw, tracked_rw):
+    (d / "CMakeFiles").mkdir(parents=True, exist_ok=True)
+    (d / "CMakeCache.txt").write_text("CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\n", encoding="utf-8")
+    (d / "CMakeFiles" / "a.o").write_bytes(b"x" * 10240)
+
+old_ts = (1000000000, 1000000000)
+for r, ds, fs in os.walk(idle_rw, topdown=False):
+    for fn in fs:
+        os.utime(os.path.join(r, fn), old_ts)
+    for dn in ds:
+        os.utime(os.path.join(r, dn), old_ts)
+os.utime(idle_rw, old_ts)
+os.utime(active_rw / "CMakeCache.txt", old_ts)
+os.utime(active_ro / "CMakeCache.txt", old_ts)
+
+# Mark tracked_rw as a git-tracked tree so git-tracked precedence still wins.
+if (subprocess.run(["git", "--version"], capture_output=True).returncode == 0):
+    subprocess.run(["git", "init", "-q"], cwd=tracked_rw, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=tracked_rw, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tracked_rw, check=True)
+    subprocess.run(["git", "add", "CMakeCache.txt"], cwd=tracked_rw, check=True)
+else:
+    tracked_rw = None
+
+sudo_stub = pathlib.Path(test_dir) / "bin" / "sudo"
+sudo_stub.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+sudo_stub.chmod(0o755)
+
+state_dir = pathlib.Path(test_dir) / "cxx_ro_state"
+state_dir.mkdir(parents=True, exist_ok=True)
+cfg = pathlib.Path(test_dir) / "cxx_ro.conf"
+rows = [
+    f"safe|Active RW|{active_rw}|active build under 0555 parent|14||filter:cxx_build\n",
+    f"safe|Active RO|{active_ro}|readable 0555 active build|14||filter:cxx_build\n",
+    f"safe|Idle RW|{idle_rw}|idle build under 0555 parent|14||filter:cxx_build\n",
+]
+if tracked_rw is not None:
+    rows.append(f"safe|Tracked RW|{tracked_rw}|git-tracked active build|14||filter:cxx_build\n")
+cfg.write_text("".join(rows), encoding="utf-8")
+
+env = {
+    "PATH": f"{test_dir}/bin:/usr/bin:/bin",
+    "HOME": mock_home,
+    "XDG_STATE_HOME": str(state_dir),
+    "NO_COLOR": "1",
+}
+
+active_ro.chmod(0o555)
+ro_parent.chmod(0o555)
+try:
+    for tgt in ("Active RW", "Active RO"):
+        r_dry = subprocess.run(
+            [cleaner, "--config", str(cfg), "--only-target", tgt, "--dry-run", "--json", "--exit-code"],
+            env=env, capture_output=True, text=True,
+        )
+        j_dry = json.loads(r_dry.stdout)
+        assert r_dry.returncode == 0, (tgt, r_dry.returncode, r_dry.stdout, r_dry.stderr)
+        assert j_dry["total_reclaimable_bytes"] == 0, (tgt, j_dry)
+        assert j_dry["would_skip"] == "nothing_to_clean", (tgt, j_dry)
+        assert j_dry["targets"][0]["status"] == "clean", (tgt, j_dry)
+
+        r_clean = subprocess.run(
+            [cleaner, "--config", str(cfg), "--only-target", tgt, "--clean", "--force"],
+            env=env, capture_output=True, text=True,
+        )
+        assert r_clean.returncode == 0, (tgt, r_clean.returncode, r_clean.stdout, r_clean.stderr)
+        assert "requires root" not in (r_clean.stderr + r_clean.stdout), (tgt, r_clean.stderr, r_clean.stdout)
+
+    assert (active_rw / "CMakeFiles" / "a.o").exists()
+    assert (active_ro / "CMakeFiles" / "a.o").exists()
+
+    r_idle_dry = subprocess.run(
+        [cleaner, "--config", str(cfg), "--only-target", "Idle RW", "--dry-run", "--json", "--exit-code"],
+        env=env, capture_output=True, text=True,
+    )
+    j_idle = json.loads(r_idle_dry.stdout)
+    assert r_idle_dry.returncode == 2, (r_idle_dry.returncode, j_idle)
+    assert j_idle["targets"][0]["status"] == "root", j_idle
+
+    r_idle_clean = subprocess.run(
+        [cleaner, "--config", str(cfg), "--only-target", "Idle RW", "--clean", "--force"],
+        env=env, capture_output=True, text=True,
+    )
+    assert r_idle_clean.returncode == 0 and "Skipped (requires root): Idle RW" in r_idle_clean.stdout, (r_idle_clean.returncode, r_idle_clean.stdout)
+    assert (idle_rw / "CMakeFiles" / "a.o").exists()
+
+    if tracked_rw is not None:
+        r_tr = subprocess.run(
+            [cleaner, "--config", str(cfg), "--only-target", "Tracked RW", "--dry-run", "--json"],
+            env=env, capture_output=True, text=True, check=True,
+        )
+        j_tr = json.loads(r_tr.stdout)
+        assert j_tr["targets"][0]["status"] == "skipped" and "git-tracked file(s)" in j_tr["targets"][0]["reason"], j_tr
+finally:
+    ro_parent.chmod(0o755)
+    active_ro.chmod(0o755)
+ACTIVE_CXX_RO_PY
+  then
+    echo -e "${RED}FAIL: active filter:cxx_build target under 0555 parent was misreported or required sudo.${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: active readable filter:cxx_build trees under 0555 parents report clean without sudo while idle and git-tracked siblings preserve their guards.${NC}"
+fi
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

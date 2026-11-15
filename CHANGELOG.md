@@ -39,6 +39,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 - `--doctor` now preserves trailing newlines in `XDG_STATE_HOME` when resolving `last-report.txt`, preventing saved cleanup summaries under newline-terminated `XDG_STATE_HOME` directories from being missed as `none recorded`.
 - `parse_size_bytes` now strips leading zeros before checking 64-bit digit length and overflow bounds, so zero-padded valid sizes such as `0000000000000000001G`, `000000000000000000000`, and `max-size:0000000000000000001K` parse cleanly while real overflows like `99999999999T` still fail.
 - Shared `/**` prefix walks in `expand_config_globs` now verify full `glob_components_match` (splitting on `/` without truncating on newlines) before checking unsafe transport characters in `_expand_glob_accept_match`, preventing spurious safety warnings on unrelated non-matching directories while still warning accurately on matching newline-containing paths.
+- Active readable `filter:cxx_build` directories with `MIN_AGE_DAYS > 0` under unwritable (`0555`) parents now probe recent non-excluded activity before requiring `sudo`, preventing active build trees from reporting `[ROOT]`, inflating `total_reclaimable_bytes` and `--exit-code` in `--dry-run`, or failing as `requires root` in `--clean`, while preserving `requires root` for idle or unreadable trees and git-tracked precedence.
 
 ## [1.9.1] - 2026-10-27
 
