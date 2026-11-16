@@ -20382,5 +20382,104 @@ PY
 fi
 echo -e "${GREEN}PASS: --restore --backup-conflicts rolls back intermediate dir_backup when nested mkdir -p fails partway.${NC}"
 
+# U-192: Relative wildcard PATH_EXPRESSION rows warn, stay unexpanded, and never traverse $PWD.
+echo -e "\n${BOLD}Test Case: Relative Wildcard Refusal${NC}"
+setup_mock_env
+rel_wd="$TEST_ENV_DIR/rel_glob_wd"
+mkdir -p "$rel_wd/foo/foo_sub" "$rel_wd/foo_sib/bar" "$rel_wd/rel/sub1" "$MOCK_HOME/foo_home"
+printf 'keep_sub\n' > "$rel_wd/foo/foo_sub/sentinel.txt"
+printf 'keep_sib\n' > "$rel_wd/foo_sib/sentinel.txt"
+printf 'keep_bar\n' > "$rel_wd/foo_sib/bar/sentinel.txt"
+printf 'keep_rel\n' > "$rel_wd/rel/sub1/sentinel.txt"
+printf 'clean_home\n' > "$MOCK_HOME/foo_home/clean.txt"
+cat > "$TEST_ENV_DIR/rel_glob.conf" <<'EOF'
+safe|Rel Star Suffix|foo*|Relative wildcard suffix|0||
+safe|Rel Star Mid|foo*/bar|Relative wildcard mid|0||
+safe|Rel Bare Star|*|Bare wildcard|0||
+safe|Rel Sub Star|rel/sub*|Relative subdir wildcard|0||
+safe|Home Wildcard|$HOME/foo*|Absolute HOME wildcard|0||
+EOF
+
+if ! (
+  cd "$rel_wd"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/rel_glob.conf" --list-targets \
+    < /dev/null > "$TEST_ENV_DIR/rel_list.out" 2> "$TEST_ENV_DIR/rel_list.err"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/rel_glob.conf" --list-targets --json \
+    < /dev/null > "$TEST_ENV_DIR/rel_list_json.out" 2> "$TEST_ENV_DIR/rel_list_json.err"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/rel_glob.conf" --dry-run --debug \
+    < /dev/null > "$TEST_ENV_DIR/rel_dry.out" 2> "$TEST_ENV_DIR/rel_dry.err"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/rel_glob.conf" --dry-run --json \
+    < /dev/null > "$TEST_ENV_DIR/rel_dry_json.out" 2> "$TEST_ENV_DIR/rel_dry_json.err"
+  PATH="$TEST_ENV_DIR/bin:$PATH" HOME="$MOCK_HOME" "$CLEANER_SH" \
+    --config "$TEST_ENV_DIR/rel_glob.conf" --clean --force \
+    < /dev/null > "$TEST_ENV_DIR/rel_clean.out" 2> "$TEST_ENV_DIR/rel_clean.err"
+); then
+  echo -e "${RED}FAIL: cleaner invocation failed during relative wildcard test.${NC}"
+  exit 1
+fi
+if ! python3 - "$TEST_ENV_DIR" "$rel_wd" "$MOCK_HOME" <<'PY'; then
+import json
+import pathlib
+import sys
+
+env_dir = pathlib.Path(sys.argv[1])
+rel_wd = sys.argv[2]
+mock_home = sys.argv[3]
+expected_rels = ["foo*", "foo*/bar", "*", "rel/sub*"]
+
+for err_name in ("rel_list.err", "rel_list_json.err", "rel_dry.err", "rel_dry_json.err", "rel_clean.err"):
+    err_text = (env_dir / err_name).read_text(encoding="utf-8")
+    for pat in expected_rels:
+        needle = f"wildcard PATH must be absolute; leaving '{pat}' unexpanded"
+        assert needle in err_text, (err_name, needle, err_text)
+    assert "foo_home" not in err_text, (err_name, err_text)
+
+list_out = (env_dir / "rel_list.out").read_text(encoding="utf-8")
+for pat in expected_rels:
+    assert f"\t{pat}\t" in list_out, (pat, list_out)
+assert f"\t{mock_home}/foo_home\t" in list_out, list_out
+assert "foo_sub" not in list_out and "foo_sib" not in list_out and "sub1" not in list_out, list_out
+
+list_json = json.loads((env_dir / "rel_list_json.out").read_text(encoding="utf-8"))
+by_name_list = {t["name"]: t for t in list_json["targets"]}
+assert by_name_list["Rel Star Suffix"]["path"] == "foo*", by_name_list
+assert by_name_list["Rel Star Mid"]["path"] == "foo*/bar", by_name_list
+assert by_name_list["Rel Bare Star"]["path"] == "*", by_name_list
+assert by_name_list["Rel Sub Star"]["path"] == "rel/sub*", by_name_list
+assert by_name_list["Home Wildcard"]["path"] == f"{mock_home}/foo_home", by_name_list
+
+dry_out = (env_dir / "rel_dry.out").read_text(encoding="utf-8")
+for pat in expected_rels:
+    assert f"Path '{rel_wd}/{pat}' does not exist." in dry_out, (pat, dry_out)
+assert "Targets: found=1 clean/missing=4 " in dry_out, dry_out
+assert "Total potential space savings: 11 B" in dry_out, dry_out
+
+dry_json = json.loads((env_dir / "rel_dry_json.out").read_text(encoding="utf-8"))
+assert dry_json["total_reclaimable_bytes"] == 11, dry_json
+by_name_dry = {t["name"]: t for t in dry_json["targets"]}
+for name in ("Rel Star Suffix", "Rel Star Mid", "Rel Bare Star", "Rel Sub Star"):
+    assert by_name_dry[name]["status"] == "missing", by_name_dry[name]
+    assert by_name_dry[name]["bytes"] == 0, by_name_dry[name]
+assert by_name_dry["Home Wildcard"]["path"] == f"{mock_home}/foo_home", by_name_dry["Home Wildcard"]
+assert by_name_dry["Home Wildcard"]["status"] == "found", by_name_dry["Home Wildcard"]
+assert by_name_dry["Home Wildcard"]["bytes"] == 11, by_name_dry["Home Wildcard"]
+PY
+  echo -e "${RED}FAIL: relative wildcard output assertions failed.${NC}"
+  exit 1
+fi
+if [[ ! -f "$rel_wd/foo/foo_sub/sentinel.txt" ]] \
+   || [[ ! -f "$rel_wd/foo_sib/sentinel.txt" ]] \
+   || [[ ! -f "$rel_wd/foo_sib/bar/sentinel.txt" ]] \
+   || [[ ! -f "$rel_wd/rel/sub1/sentinel.txt" ]] \
+   || [[ -e "$MOCK_HOME/foo_home" ]]; then
+  echo -e "${RED}FAIL: relative wildcard paths modified \$PWD targets or failed to clean \$HOME wildcard.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: relative wildcard paths warn, remain unexpanded, and leave \$PWD untouched while \$HOME wildcards expand.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
