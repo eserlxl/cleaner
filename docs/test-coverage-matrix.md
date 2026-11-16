@@ -241,6 +241,11 @@ Rows below moved here after the 1.5.0 release; add new unreleased rows only whil
 | Version/Tag/Changelog Consistency | on a `v*` tag, the tag, `cleaner.sh --version` and the newest CHANGELOG section agree and nothing is left under `[Unreleased]` | cleaner.sh, CHANGELOG.md |
 | Config Guide Target Count | docs/configuration.md quotes the shipped config's `--check-config` count | docs/configuration.md, cleaner.conf |
 | Mode Flag Exclusion Docs Parity | every "Cannot be combined with" list names the partners cleaner.sh refuses | cleaner.sh, docs/cli-reference.md, cleaner.1 |
+| Value-taking Options Doc Parity | `require_non_option_value`, `cleaner.1`, and `docs/cli-reference.md` name the same value-taking options | cleaner.sh, cleaner.1, docs/cli-reference.md |
+| Dry-Run Next Options And Cleanup Metrics Doc Parity | dry-run `Next:` replay options and `LINUX_CLEANER_METRICS_FILE` Prometheus gauge names match across code, man page, and docs | cleaner.sh, cleaner.1, docs/cli-reference.md, docs/env-automation-contract.md |
+| Man Page Renders Cleanly | shipped man page renders without roff diagnostics | cleaner.1 |
+| Check Config Filter Exclusion Messages | cleanup filter flags rejected with `--check-config` name the exact 8- or 9-mode refusal list | cleaner.sh |
 | Bash Completion Drift and Functional Check | every `--long` option in `--help` appears in the bash, zsh and fish completion files | cleaner.sh, completions/cleaner.bash, completions/_cleaner, completions/cleaner.fish |
+| Zsh and Fish Completion Functional Check | zsh and fish completions offer `--purge-sessions` selectors and quarantine session names without unwanted trailing spaces | completions/_cleaner, completions/cleaner.fish |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.
