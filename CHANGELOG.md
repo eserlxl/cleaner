@@ -49,6 +49,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `install.sh` and `Makefile` now validate `BINNAME` and `PKGNAME` against explicit ASCII basename characters (`[0-9A-Za-z._-]`, rejecting empty, `.`, `..`, leading `-`, spaces, slashes, and non-ASCII letters such as `cleaner_ı`/`cleaner_İ`/`pkg_ı` under `LC_ALL=tr_TR.UTF-8`) on both `install` and `uninstall` before touching `DESTDIR` (`U-193`).
 - `expand_config_globs` and `_expand_glob_parse_pattern` now require wildcard `PATH_EXPRESSION` values to resolve to an absolute path starting with `/`, emitting a warning and leaving relative wildcard patterns unexpanded instead of scanning relative to `$PWD` (`U-192`).
 - `scripts/validate-runbook-examples.sh` now exports `LC_ALL=C` and spells `[ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]+` explicitly so Turkish UTF-8 host locales (`tr_TR.UTF-8`) do not truncate `LINUX_CLEANER_*` names at uppercase `I` (`U-191`).
 - `.github/workflows/release.yml` now uses the GitHub Actions tag glob `'v[0-9]*.[0-9]*.[0-9]*'` (instead of `'v[0-9]+.[0-9]+.[0-9]+'`, where `+` was matched literally) and enforces an early `Validate release tag format` step (`^v[0123456789]+\.[0123456789]+\.[0123456789]+$`) before running release steps (`U-190`).

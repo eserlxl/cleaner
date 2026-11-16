@@ -11,8 +11,8 @@ SYSCONFDIR="${SYSCONFDIR:-/etc}"
 MANDIR="${MANDIR:-$PREFIX/share/man}"
 DATADIR="${DATADIR:-$PREFIX/share}"
 SYSTEMDUSERUNITDIR="${SYSTEMDUSERUNITDIR:-$PREFIX/lib/systemd/user}"
-BINNAME="${BINNAME:-cleaner}"
-PKGNAME="${PKGNAME:-linux-cleaner}"
+BINNAME="${BINNAME-cleaner}"
+PKGNAME="${PKGNAME-linux-cleaner}"
 UNITS="linux-cleaner-clean.service linux-cleaner-clean.timer linux-cleaner-retention.service linux-cleaner-retention.timer linux-cleaner-monitor.service linux-cleaner-monitor.timer"
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -90,16 +90,27 @@ do_uninstall() {
 # so it cannot leave DESTDIR or register extra command names.
 check_binname() {
   case "$BINNAME" in
-    ''|.|..|-*|*[![:alnum:]._-]*)
-      echo "Error: BINNAME '$BINNAME' must be a plain name of letters, digits, '.', '_' or '-'." >&2
+    ''|.|..|-*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*)
+      echo "Error: BINNAME '$BINNAME' must be a plain name of ASCII letters, digits, '.', '_' or '-'." >&2
+      exit 1
+      ;;
+  esac
+}
+
+# PKGNAME becomes directory components under SYSCONFDIR and DATADIR: a plain basename only,
+# so it cannot escape DESTDIR during install or uninstall.
+check_pkgname() {
+  case "$PKGNAME" in
+    ''|.|..|-*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*)
+      echo "Error: PKGNAME '$PKGNAME' must be a plain name of ASCII letters, digits, '.', '_' or '-'." >&2
       exit 1
       ;;
   esac
 }
 
 case "${1:-install}" in
-  install) check_binname; do_install ;;
-  uninstall) check_binname; do_uninstall ;;
+  install) check_binname; check_pkgname; do_install ;;
+  uninstall) check_binname; check_pkgname; do_uninstall ;;
   -h|--help|help) usage ;;
   *) usage; exit 1 ;;
 esac

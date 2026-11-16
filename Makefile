@@ -17,7 +17,7 @@ PKGNAME    ?= linux-cleaner
 SHELLCHECK_FILES = cleaner.sh test_cleaner.sh install.sh release-notes.sh \
 	scripts/validate-runbook-examples.sh completions/cleaner.bash
 
-.PHONY: all help install uninstall install-man check-binname check check-package lint clean pre-release check-runbook-examples
+.PHONY: all help install uninstall install-man check-binname check-pkgname check check-package lint clean pre-release check-runbook-examples
 
 all: help
 
@@ -27,10 +27,15 @@ help:
 
 # BINNAME becomes a file name and a completion registration: a plain basename only.
 check-binname:
-	@case "$(BINNAME)" in ''|.|..|-*|*[![:alnum:]._-]*) \
-	  echo "Error: BINNAME '$(BINNAME)' must be a plain name of letters, digits, '.', '_' or '-'." >&2; exit 1 ;; esac
+	@case "$(BINNAME)" in ''|.|..|-*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) \
+	  echo "Error: BINNAME '$(BINNAME)' must be a plain name of ASCII letters, digits, '.', '_' or '-'." >&2; exit 1 ;; esac
 
-install: check-binname install-man
+# PKGNAME becomes directory components under SYSCONFDIR and DATADIR: a plain basename only.
+check-pkgname:
+	@case "$(PKGNAME)" in ''|.|..|-*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) \
+	  echo "Error: PKGNAME '$(PKGNAME)' must be a plain name of ASCII letters, digits, '.', '_' or '-'." >&2; exit 1 ;; esac
+
+install: check-binname check-pkgname install-man
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 0755 cleaner.sh "$(DESTDIR)$(BINDIR)/$(BINNAME)"
 	install -d "$(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)"
@@ -67,7 +72,7 @@ install-man: check-binname
 	install -d "$(DESTDIR)$(MANDIR)/man1"
 	install -m 0644 cleaner.1 "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
 
-uninstall: check-binname
+uninstall: check-binname check-pkgname
 	rm -f "$(DESTDIR)$(BINDIR)/$(BINNAME)"
 	rm -f "$(DESTDIR)$(MANDIR)/man1/$(BINNAME).1"
 	rm -f "$(DESTDIR)$(SYSCONFDIR)/$(PKGNAME)/cleaner.conf.example"

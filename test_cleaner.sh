@@ -20481,5 +20481,93 @@ if [[ ! -f "$rel_wd/foo/foo_sub/sentinel.txt" ]] \
 fi
 echo -e "${GREEN}PASS: relative wildcard paths warn, remain unexpanded, and leave \$PWD untouched while \$HOME wildcards expand.${NC}"
 
+# U-193: install.sh and Makefile reject unsafe PKGNAME values and non-ASCII BINNAME/PKGNAME under LC_ALL=tr_TR.UTF-8.
+echo -e "\n${BOLD}Test Case: Installer ASCII BINNAME And PKGNAME Validation${NC}"
+setup_mock_env
+pkg_installers=(install.sh)
+command -v make >/dev/null 2>&1 && pkg_installers+=(make)
+for unsafe_pkgname in '' '.' '..' '-bad' '../escape' 'bad name'; do
+  for pkg_installer in "${pkg_installers[@]}"; do
+    unsafe_pkg_root="$TEST_ENV_DIR/unsafe_pkgname_install"
+    rm -rf "$unsafe_pkg_root"
+    pkg_rc=0
+    if [[ "$pkg_installer" == install.sh ]]; then
+      DESTDIR="$unsafe_pkg_root" PREFIX=/usr PKGNAME="$unsafe_pkgname" \
+        sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/unsafe_pkgname.log" 2>&1 || pkg_rc=$?
+    else
+      make -s -C "$SCRIPT_DIR" install DESTDIR="$unsafe_pkg_root" PREFIX=/usr PKGNAME="$unsafe_pkgname" \
+        > "$TEST_ENV_DIR/unsafe_pkgname.log" 2>&1 || pkg_rc=$?
+    fi
+    if [[ "$pkg_rc" -eq 0 ]] || { [[ "$pkg_installer" == install.sh ]] && [[ "$pkg_rc" -ne 1 ]]; } \
+       || [[ -e "$unsafe_pkg_root" ]] || ! grep -qF 'must be a plain name' "$TEST_ENV_DIR/unsafe_pkgname.log"; then
+      echo -e "${RED}FAIL: $pkg_installer install accepted PKGNAME='$unsafe_pkgname' or touched DESTDIR (rc=$pkg_rc).${NC}"
+      cat "$TEST_ENV_DIR/unsafe_pkgname.log"
+      exit 1
+    fi
+
+    unsafe_un_root="$TEST_ENV_DIR/unsafe_pkgname_uninstall"
+    rm -rf "$unsafe_un_root"
+    mkdir -p "$unsafe_un_root/etc"
+    printf 'keep\n' > "$unsafe_un_root/etc/keep.txt"
+    un_rc=0
+    if [[ "$pkg_installer" == install.sh ]]; then
+      DESTDIR="$unsafe_un_root" PREFIX=/usr PKGNAME="$unsafe_pkgname" \
+        sh "$SCRIPT_DIR/install.sh" uninstall > "$TEST_ENV_DIR/unsafe_pkgname_un.log" 2>&1 || un_rc=$?
+    else
+      make -s -C "$SCRIPT_DIR" uninstall DESTDIR="$unsafe_un_root" PREFIX=/usr PKGNAME="$unsafe_pkgname" \
+        > "$TEST_ENV_DIR/unsafe_pkgname_un.log" 2>&1 || un_rc=$?
+    fi
+    if [[ "$un_rc" -eq 0 ]] || { [[ "$pkg_installer" == install.sh ]] && [[ "$un_rc" -ne 1 ]]; } \
+       || [[ ! -f "$unsafe_un_root/etc/keep.txt" ]] || ! grep -qF 'must be a plain name' "$TEST_ENV_DIR/unsafe_pkgname_un.log"; then
+      echo -e "${RED}FAIL: $pkg_installer uninstall accepted PKGNAME='$unsafe_pkgname' or altered DESTDIR (rc=$un_rc).${NC}"
+      cat "$TEST_ENV_DIR/unsafe_pkgname_un.log"
+      exit 1
+    fi
+  done
+done
+if locale -a 2>/dev/null | grep -qiE '^tr_TR\.utf-?8$'; then
+  for tr_pair in "BINNAME|cleaner_ı" "BINNAME|cleaner_İ" "PKGNAME|pkg_ı"; do
+    tr_var="${tr_pair%%|*}"
+    tr_val="${tr_pair#*|}"
+    for pkg_installer in "${pkg_installers[@]}"; do
+      for tr_action in install uninstall; do
+        tr_root="$TEST_ENV_DIR/tr_unsafe_root"
+        rm -rf "$tr_root"
+        if [[ "$tr_action" == uninstall ]]; then
+          mkdir -p "$tr_root/keep"
+          printf 'keep\n' > "$tr_root/keep/sentinel.txt"
+        fi
+        tr_rc=0
+        if [[ "$pkg_installer" == install.sh ]]; then
+          if [[ "$tr_var" == BINNAME ]]; then
+            LC_ALL=tr_TR.UTF-8 DESTDIR="$tr_root" PREFIX=/usr BINNAME="$tr_val" \
+              sh "$SCRIPT_DIR/install.sh" "$tr_action" > "$TEST_ENV_DIR/tr_unsafe.log" 2>&1 || tr_rc=$?
+          else
+            LC_ALL=tr_TR.UTF-8 DESTDIR="$tr_root" PREFIX=/usr PKGNAME="$tr_val" \
+              sh "$SCRIPT_DIR/install.sh" "$tr_action" > "$TEST_ENV_DIR/tr_unsafe.log" 2>&1 || tr_rc=$?
+          fi
+        else
+          if [[ "$tr_var" == BINNAME ]]; then
+            LC_ALL=tr_TR.UTF-8 make -s -C "$SCRIPT_DIR" "$tr_action" DESTDIR="$tr_root" PREFIX=/usr BINNAME="$tr_val" \
+              > "$TEST_ENV_DIR/tr_unsafe.log" 2>&1 || tr_rc=$?
+          else
+            LC_ALL=tr_TR.UTF-8 make -s -C "$SCRIPT_DIR" "$tr_action" DESTDIR="$tr_root" PREFIX=/usr PKGNAME="$tr_val" \
+              > "$TEST_ENV_DIR/tr_unsafe.log" 2>&1 || tr_rc=$?
+          fi
+        fi
+        if [[ "$tr_rc" -eq 0 ]] || { [[ "$pkg_installer" == install.sh ]] && [[ "$tr_rc" -ne 1 ]]; } \
+           || ! grep -qF 'must be a plain name' "$TEST_ENV_DIR/tr_unsafe.log" \
+           || { [[ "$tr_action" == install ]] && [[ -e "$tr_root" ]]; } \
+           || { [[ "$tr_action" == uninstall ]] && [[ ! -f "$tr_root/keep/sentinel.txt" ]]; }; then
+          echo -e "${RED}FAIL: $pkg_installer $tr_action accepted $tr_var='$tr_val' under LC_ALL=tr_TR.UTF-8 (rc=$tr_rc).${NC}"
+          cat "$TEST_ENV_DIR/tr_unsafe.log"
+          exit 1
+        fi
+      done
+    done
+  done
+fi
+echo -e "${GREEN}PASS: both installers enforce ASCII BINNAME and PKGNAME validation on install and uninstall (including LC_ALL=tr_TR.UTF-8).${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
