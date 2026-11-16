@@ -20300,5 +20300,59 @@ PY
 fi
 echo -e "${GREEN}PASS: --doctor detects all remaining startup-fatal scheduler env settings.${NC}"
 
+# U-189: --restore --backup-conflicts rolls back intermediate dir_backup even when nested mkdir -p fails partway.
+echo -e "\n${BOLD}Test Case: Aged Backup Conflicts Nested Mkdir Failure Rolls Back Intermediate Backup${NC}"
+if ! python3 - "$CLEANER_SH" <<'PY'; then
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+cleaner = sys.argv[1]
+root = pathlib.Path(tempfile.mkdtemp(prefix="test_rb_nested_"))
+orig_cwd = os.getcwd()
+try:
+    home = root / ("h" * 200)
+    home.mkdir()
+    sess = home / ".cache" / "linux-cleaner" / "quarantine" / "2026-01-01_00-00-00"
+    tgt = home / ("t" * 200)
+    tgt.mkdir(parents=True)
+    (tgt / "sub").write_text("BLOCK_FILE\n", encoding="utf-8")
+
+    deep = sess / "t1" / "sub"
+    deep.mkdir(parents=True)
+    os.chdir(deep)
+    seg = "d" * 200
+    for _ in range(19):
+        os.mkdir(seg)
+        os.chdir(seg)
+    pathlib.Path("f.txt").write_text("x\n", encoding="utf-8")
+    os.chdir(orig_cwd)
+
+    (sess / "quarantine.meta").write_text(
+        f"aged|t1|{tgt}|false|{os.getuid()}|{os.getgid()}\n",
+        encoding="utf-8",
+    )
+    r = subprocess.run(
+        [cleaner, "--restore", "latest", "--backup-conflicts"],
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home), "NO_COLOR": "1"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 1, r
+    assert (tgt / "sub").is_file() and (tgt / "sub").read_text(encoding="utf-8") == "BLOCK_FILE\n", r
+    assert not (tgt / "sub.pre-restore-2026-01-01_00-00-00").exists(), r
+finally:
+    os.chdir(orig_cwd)
+    shutil.rmtree(root, ignore_errors=True)
+PY
+  echo -e "${RED}FAIL: Aged backup-conflicts nested mkdir rollback failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --restore --backup-conflicts rolls back intermediate dir_backup when nested mkdir -p fails partway.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

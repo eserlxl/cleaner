@@ -3636,7 +3636,7 @@ _backup_restore_conflict() {
 # Roll back leaf and newly created empty intermediate directory backups on a
 # failed aged file restore, preserving any directory already holding restored files.
 _rollback_aged_backups() {
-  local use_sudo="$1" clean_root="$2" dest_parent="$3" dest_file="$4" leaf_backup="$5" dir_target="$6" dir_backup="$7"
+  local use_sudo="$1" dest_file="$2" leaf_backup="$3" dir_target="$4" dir_backup="$5"
   if [[ -n "$leaf_backup" ]] && ! path_present "$use_sudo" "$dest_file"; then
     if with_sudo "$use_sudo" mv -T -- "$leaf_backup" "$dest_file" 2>/dev/null; then
       echo "Rolled back pre-restore backup '$leaf_backup' to '$dest_file'." >&2
@@ -3645,12 +3645,9 @@ _rollback_aged_backups() {
     fi
   fi
   if [[ -n "$dir_backup" && -n "$dir_target" ]]; then
-    local trim_dir="$dest_parent"
-    while [[ -n "$trim_dir" && "$trim_dir" != "$clean_root" && "$trim_dir" != "/" ]]; do
-      with_sudo "$use_sudo" rmdir -- "$trim_dir" 2>/dev/null || break
-      [[ "$trim_dir" == "$dir_target" ]] && break
-      trim_dir="${trim_dir%/*}"
-    done
+    # Remove any empty directories created at or beneath $dir_target (using find so
+    # >PATH_MAX trees created by mkdir -p are pruned cleanly via *at syscalls).
+    with_sudo "$use_sudo" find "$dir_target" -depth -type d -empty -delete 2>/dev/null || true
     if ! path_present "$use_sudo" "$dir_target"; then
       if with_sudo "$use_sudo" mv -T -- "$dir_backup" "$dir_target" 2>/dev/null; then
         echo "Rolled back pre-restore backup '$dir_backup' to '$dir_target'." >&2
@@ -4113,13 +4110,13 @@ restore_quarantine() {
             if [[ "$path_conflict" = true ]]; then
               success=false
               had_conflict=true
-              _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$check_dir" "$dest_file" "" "$dir_backup_target" "$dir_backup"
+              _rollback_aged_backups "$use_sudo" "$dest_file" "" "$dir_backup_target" "$dir_backup"
               continue
             fi
             # shellcheck disable=SC2016
             if ! with_sudo "$use_sudo" bash -c 'umask 077; mkdir -p -- "$1"' _ "$dest_parent"; then
               success=false
-              _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
+              _rollback_aged_backups "$use_sudo" "$dest_file" "" "$dir_backup_target" "$dir_backup"
               continue
             fi
             if path_present "$use_sudo" "$dest_file"; then
@@ -4127,14 +4124,14 @@ restore_quarantine() {
                 echo -e "${RED}Error: Restore destination file '$dest_file' already exists. Conflict detected, skipping.${NC}" >&2
                 success=false
                 had_conflict=true
-                _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
+                _rollback_aged_backups "$use_sudo" "$dest_file" "" "$dir_backup_target" "$dir_backup"
                 continue
               fi
               if with_sudo "$use_sudo" test -L "$dest_file"; then
                 echo -e "${RED}Error: Restore destination file '$dest_file' is a symlink. Conflict detected, skipping.${NC}" >&2
                 success=false
                 had_conflict=true
-                _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
+                _rollback_aged_backups "$use_sudo" "$dest_file" "" "$dir_backup_target" "$dir_backup"
                 continue
               fi
               leaf_backup_rc=0
@@ -4142,7 +4139,7 @@ restore_quarantine() {
               if [[ "$leaf_backup_rc" -ne 0 ]]; then
                 success=false
                 [[ "$leaf_backup_rc" -eq 2 ]] && had_conflict=true
-                _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "" "$dir_backup_target" "$dir_backup"
+                _rollback_aged_backups "$use_sudo" "$dest_file" "" "$dir_backup_target" "$dir_backup"
                 continue
               fi
               leaf_backup="$RESTORE_BACKUP_PATH"
@@ -4151,7 +4148,7 @@ restore_quarantine() {
               with_sudo "$use_sudo" chown -h "$uid:$gid" "$dest_file" 2>/dev/null || true
             else
               success=false
-              _rollback_aged_backups "$use_sudo" "$clean_aged_orig" "$dest_parent" "$dest_file" "$leaf_backup" "$dir_backup_target" "$dir_backup"
+              _rollback_aged_backups "$use_sudo" "$dest_file" "$leaf_backup" "$dir_backup_target" "$dir_backup"
             fi
           done < <(print0_with_status find "$src_path" -mindepth 1 \( -type f -o -type l \) -print0)
           [[ "$stream_rc" == 0 ]] || success=false
