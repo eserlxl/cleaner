@@ -41,6 +41,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Changed
 
+- `make check-package` now also syntax-checks `install.sh`, `release-notes.sh`, and `scripts/validate-runbook-examples.sh` alongside `cleaner.sh` and `completions/cleaner.bash`, and installer tests now cover renamed-`BINNAME` uninstall, custom `SYSTEMDUSERUNITDIR`/`BINDIR`/`MANDIR` overrides, default `PREFIX=/usr/local` staging, and `make install`/`uninstall` `cleaner.conf.example` preservation (`U-195`).
 - Replaced per-row `$(risk_to_int ...)` / `$(risk_lower ...)` and `$(expand_path_safe ...)` subshell forks with pure-bash ASCII in-process `_risk_to_int_to` and two-argument `expand_path_safe`, and cached `load_config_lines` across post-validation passes for the active `CONFIG_FILE`, eliminating redundant subprocess forks and duplicate config reads on large multi-target runs.
 - `expand_config_globs` now pre-scans and caches shared `/**` directory traversals by prefix root so multiple recursive wildcard rows sharing one base directory (such as the five `/opt/**` rows in the default config) reuse a single `find` walk instead of repeating identical directory scans.
 - `quarantine_unrecorded_entry_count` and `restore_quarantine` now index quarantine metadata references with associative arrays and in-process `trim_to`, replacing `O(N*M)` nested array scans while preserving unrecorded-entry counts and partial-restore metadata reconciliation.

@@ -109,6 +109,9 @@ check: check-runbook-examples
 check-package:
 	bash -n cleaner.sh
 	bash -n completions/cleaner.bash
+	sh -n install.sh
+	bash -n release-notes.sh
+	bash -n scripts/validate-runbook-examples.sh
 	@tmp=$$(mktemp -d) && trap 'rm -r "$$tmp"' EXIT && \
 	for args in --version --help '--check-config --config cleaner.conf'; do \
 		env -i PATH="$$PATH" HOME="$$tmp" LC_ALL=C bash cleaner.sh $$args > /dev/null || exit 1; \

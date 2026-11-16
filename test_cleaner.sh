@@ -20620,5 +20620,141 @@ if command -v make >/dev/null 2>&1; then
 fi
 echo -e "${GREEN}PASS: install.sh rejects extra/empty positional args, zero-arg defaults to install, and help lists BINNAME and PKGNAME.${NC}"
 
+# U-195: check-package syntax checks and remaining installer/uninstaller paths.
+echo -e "\n${BOLD}Test Case: Installer Renamed Uninstall Custom Dirs Default Prefix And Make Check Package${NC}"
+setup_mock_env
+u195_installers=(install.sh)
+command -v make >/dev/null 2>&1 && u195_installers+=(make)
+
+if command -v make >/dev/null 2>&1; then
+  pkgcheck_plan=$(make -n --no-print-directory -C "$SCRIPT_DIR" check-package 2>&1) || {
+    echo -e "${RED}FAIL: make -n check-package failed.${NC}"
+    exit 1
+  }
+  for syntax_cmd in 'sh -n install.sh' 'bash -n release-notes.sh' 'bash -n scripts/validate-runbook-examples.sh'; do
+    if ! grep -qxF "$syntax_cmd" <<< "$pkgcheck_plan"; then
+      echo -e "${RED}FAIL: make check-package does not invoke '$syntax_cmd'.${NC}"
+      printf '%s\n' "$pkgcheck_plan"
+      exit 1
+    fi
+  done
+  if ! pkgcheck_out=$(make -s --no-print-directory -C "$SCRIPT_DIR" check-package 2>&1) \
+     || [[ "$pkgcheck_out" != *"check-package: OK"* ]]; then
+    echo -e "${RED}FAIL: expanded make check-package failed.${NC}"
+    printf '%s\n' "$pkgcheck_out"
+    exit 1
+  fi
+fi
+
+for u195_inst in "${u195_installers[@]}"; do
+  # 1. Renamed BINNAME=cache-cleaner uninstall preserves config and sibling custom units.
+  ren_un_root="$TEST_ENV_DIR/u195_ren_un_$u195_inst"
+  rm -rf "$ren_un_root"
+  mkdir -p "$ren_un_root/usr/lib/systemd/user"
+  printf 'ExecStart=/usr/bin/env cleaner --clean --force\n' > "$ren_un_root/usr/lib/systemd/user/linux-cleaner-custom.service"
+  if [[ "$u195_inst" == install.sh ]]; then
+    DESTDIR="$ren_un_root" PREFIX=/usr BINNAME=cache-cleaner sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/u195.log" 2>&1
+    DESTDIR="$ren_un_root" PREFIX=/usr BINNAME=cache-cleaner sh "$SCRIPT_DIR/install.sh" uninstall >> "$TEST_ENV_DIR/u195.log" 2>&1
+  else
+    make -s -C "$SCRIPT_DIR" install DESTDIR="$ren_un_root" PREFIX=/usr BINNAME=cache-cleaner > "$TEST_ENV_DIR/u195.log" 2>&1
+    make -s -C "$SCRIPT_DIR" uninstall DESTDIR="$ren_un_root" PREFIX=/usr BINNAME=cache-cleaner >> "$TEST_ENV_DIR/u195.log" 2>&1
+  fi
+  if [[ -e "$ren_un_root/usr/bin/cache-cleaner" ]] \
+     || [[ -e "$ren_un_root/usr/share/man/man1/cache-cleaner.1" ]] \
+     || [[ -e "$ren_un_root/usr/share/bash-completion/completions/cache-cleaner" ]] \
+     || [[ -e "$ren_un_root/usr/share/zsh/site-functions/_cache-cleaner" ]] \
+     || [[ -e "$ren_un_root/usr/share/fish/vendor_completions.d/cache-cleaner.fish" ]] \
+     || [[ -e "$ren_un_root/usr/lib/systemd/user/linux-cleaner-clean.service" ]] \
+     || [[ -e "$ren_un_root/usr/lib/systemd/user/linux-cleaner-clean.timer" ]] \
+     || [[ -e "$ren_un_root/usr/lib/systemd/user/linux-cleaner-retention.service" ]] \
+     || [[ -e "$ren_un_root/usr/lib/systemd/user/linux-cleaner-retention.timer" ]] \
+     || [[ -e "$ren_un_root/usr/lib/systemd/user/linux-cleaner-monitor.service" ]] \
+     || [[ -e "$ren_un_root/usr/lib/systemd/user/linux-cleaner-monitor.timer" ]] \
+     || [[ ! -f "$ren_un_root/etc/linux-cleaner/cleaner.conf" ]] \
+     || [[ ! -f "$ren_un_root/usr/lib/systemd/user/linux-cleaner-custom.service" ]]; then
+    echo -e "${RED}FAIL: $u195_inst BINNAME=cache-cleaner uninstall left shipped files or removed config/sibling unit.${NC}"
+    cat "$TEST_ENV_DIR/u195.log"
+    exit 1
+  fi
+
+  # 2. Custom SYSTEMDUSERUNITDIR, BINDIR, and MANDIR overrides on install and uninstall.
+  cust_root="$TEST_ENV_DIR/u195_cust_$u195_inst"
+  rm -rf "$cust_root"
+  mkdir -p "$cust_root/custom/systemd/user"
+  printf '[Unit]\nDescription=Keep sibling\n' > "$cust_root/custom/systemd/user/sibling.service"
+  if [[ "$u195_inst" == install.sh ]]; then
+    DESTDIR="$cust_root" PREFIX=/usr BINDIR=/custom/sbin MANDIR=/custom/docs/man SYSTEMDUSERUNITDIR=/custom/systemd/user \
+      sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/u195_cust.log" 2>&1
+  else
+    make -s -C "$SCRIPT_DIR" install DESTDIR="$cust_root" PREFIX=/usr BINDIR=/custom/sbin MANDIR=/custom/docs/man SYSTEMDUSERUNITDIR=/custom/systemd/user \
+      > "$TEST_ENV_DIR/u195_cust.log" 2>&1
+  fi
+  if [[ ! -f "$cust_root/custom/sbin/cleaner" ]] \
+     || [[ ! -f "$cust_root/custom/docs/man/man1/cleaner.1" ]] \
+     || [[ ! -f "$cust_root/custom/systemd/user/linux-cleaner-clean.service" ]] \
+     || [[ -e "$cust_root/usr/bin/cleaner" ]] \
+     || [[ -e "$cust_root/usr/lib/systemd/user" ]]; then
+    echo -e "${RED}FAIL: $u195_inst ignored custom BINDIR/MANDIR/SYSTEMDUSERUNITDIR on install.${NC}"
+    cat "$TEST_ENV_DIR/u195_cust.log"
+    exit 1
+  fi
+  if [[ "$u195_inst" == install.sh ]]; then
+    DESTDIR="$cust_root" PREFIX=/usr BINDIR=/custom/sbin MANDIR=/custom/docs/man SYSTEMDUSERUNITDIR=/custom/systemd/user \
+      sh "$SCRIPT_DIR/install.sh" uninstall >> "$TEST_ENV_DIR/u195_cust.log" 2>&1
+  else
+    make -s -C "$SCRIPT_DIR" uninstall DESTDIR="$cust_root" PREFIX=/usr BINDIR=/custom/sbin MANDIR=/custom/docs/man SYSTEMDUSERUNITDIR=/custom/systemd/user \
+      >> "$TEST_ENV_DIR/u195_cust.log" 2>&1
+  fi
+  if [[ -e "$cust_root/custom/sbin/cleaner" ]] \
+     || [[ -e "$cust_root/custom/docs/man/man1/cleaner.1" ]] \
+     || [[ -e "$cust_root/custom/systemd/user/linux-cleaner-clean.service" ]] \
+     || [[ ! -f "$cust_root/custom/systemd/user/sibling.service" ]]; then
+    echo -e "${RED}FAIL: $u195_inst custom dir uninstall left shipped files or deleted sibling unit.${NC}"
+    cat "$TEST_ENV_DIR/u195_cust.log"
+    exit 1
+  fi
+
+  # 3. Default PREFIX (unset -> /usr/local) DESTDIR staging.
+  def_root="$TEST_ENV_DIR/u195_def_prefix_$u195_inst"
+  rm -rf "$def_root"
+  if [[ "$u195_inst" == install.sh ]]; then
+    env -u PREFIX DESTDIR="$def_root" sh "$SCRIPT_DIR/install.sh" install > "$TEST_ENV_DIR/u195_def.log" 2>&1
+  else
+    env -u PREFIX make -s -C "$SCRIPT_DIR" install DESTDIR="$def_root" > "$TEST_ENV_DIR/u195_def.log" 2>&1
+  fi
+  if [[ ! -f "$def_root/usr/local/bin/cleaner" ]] \
+     || [[ ! -f "$def_root/usr/local/share/man/man1/cleaner.1" ]] \
+     || [[ ! -f "$def_root/usr/local/share/linux-cleaner/linux-cleaner.env.example" ]] \
+     || [[ ! -f "$def_root/usr/local/lib/systemd/user/linux-cleaner-clean.timer" ]] \
+     || [[ ! -f "$def_root/etc/linux-cleaner/cleaner.conf" ]]; then
+    echo -e "${RED}FAIL: $u195_inst unset PREFIX did not default to /usr/local.${NC}"
+    cat "$TEST_ENV_DIR/u195_def.log"
+    exit 1
+  fi
+done
+
+# 4. make install existing-config cleaner.conf.example preservation and make uninstall .example cleanup.
+if command -v make >/dev/null 2>&1; then
+  mk_ex_root="$TEST_ENV_DIR/u195_make_example"
+  rm -rf "$mk_ex_root"
+  mkdir -p "$mk_ex_root/etc/linux-cleaner"
+  printf '# custom user config\n' > "$mk_ex_root/etc/linux-cleaner/cleaner.conf"
+  make -s -C "$SCRIPT_DIR" install DESTDIR="$mk_ex_root" PREFIX=/usr > "$TEST_ENV_DIR/u195_mk_ex.log" 2>&1
+  if ! grep -qxF '# custom user config' "$mk_ex_root/etc/linux-cleaner/cleaner.conf" \
+     || ! cmp -s "$SCRIPT_DIR/cleaner.conf" "$mk_ex_root/etc/linux-cleaner/cleaner.conf.example"; then
+    echo -e "${RED}FAIL: make install overwrote existing cleaner.conf or omitted cleaner.conf.example.${NC}"
+    cat "$TEST_ENV_DIR/u195_mk_ex.log"
+    exit 1
+  fi
+  make -s -C "$SCRIPT_DIR" uninstall DESTDIR="$mk_ex_root" PREFIX=/usr >> "$TEST_ENV_DIR/u195_mk_ex.log" 2>&1
+  if [[ -e "$mk_ex_root/etc/linux-cleaner/cleaner.conf.example" ]] \
+     || ! grep -qxF '# custom user config' "$mk_ex_root/etc/linux-cleaner/cleaner.conf"; then
+    echo -e "${RED}FAIL: make uninstall failed to remove cleaner.conf.example or modified cleaner.conf.${NC}"
+    cat "$TEST_ENV_DIR/u195_mk_ex.log"
+    exit 1
+  fi
+fi
+echo -e "${GREEN}PASS: expanded check-package and remaining installer/uninstaller paths passed cleanly.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0
