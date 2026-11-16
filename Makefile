@@ -23,7 +23,7 @@ all: help
 
 help:
 	@echo "Targets: install, uninstall, install-man, check, check-package, lint, clean, pre-release, check-runbook-examples"
-	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR SYSTEMDUSERUNITDIR (=$(SYSTEMDUSERUNITDIR))"
+	@echo "Vars: PREFIX (=$(PREFIX)) DESTDIR BINDIR SYSCONFDIR (=$(SYSCONFDIR)) MANDIR DATADIR SYSTEMDUSERUNITDIR (=$(SYSTEMDUSERUNITDIR)) BINNAME (=$(BINNAME)) PKGNAME (=$(PKGNAME))"
 
 # BINNAME becomes a file name and a completion registration: a plain basename only.
 check-binname:

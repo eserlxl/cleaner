@@ -20569,5 +20569,56 @@ if locale -a 2>/dev/null | grep -qiE '^tr_TR\.utf-?8$'; then
 fi
 echo -e "${GREEN}PASS: both installers enforce ASCII BINNAME and PKGNAME validation on install and uninstall (including LC_ALL=tr_TR.UTF-8).${NC}"
 
+# U-194: install.sh rejects extra/empty positional arguments and both help targets list BINNAME/PKGNAME.
+echo -e "\n${BOLD}Test Case: Installer Positional Arguments And Help Vars${NC}"
+setup_mock_env
+for pos_case in 'install|extra' 'uninstall|extra' '--help|extra' 'EMPTY'; do
+  pos_root="$TEST_ENV_DIR/pos_guard_root"
+  rm -rf "$pos_root"
+  pos_rc=0
+  if [[ "$pos_case" == EMPTY ]]; then
+    DESTDIR="$pos_root" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" "" > "$TEST_ENV_DIR/pos_guard.log" 2>&1 || pos_rc=$?
+    pos_untouched=$([[ ! -e "$pos_root" ]] && echo ok || echo bad)
+  elif [[ "$pos_case" == 'uninstall|extra' ]]; then
+    mkdir -p "$pos_root/usr/bin"
+    printf 'keep\n' > "$pos_root/usr/bin/cleaner"
+    DESTDIR="$pos_root" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" uninstall extra > "$TEST_ENV_DIR/pos_guard.log" 2>&1 || pos_rc=$?
+    pos_untouched=$([[ -f "$pos_root/usr/bin/cleaner" ]] && echo ok || echo bad)
+  else
+    pos_a="${pos_case%%|*}"
+    pos_b="${pos_case#*|}"
+    DESTDIR="$pos_root" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" "$pos_a" "$pos_b" > "$TEST_ENV_DIR/pos_guard.log" 2>&1 || pos_rc=$?
+    pos_untouched=$([[ ! -e "$pos_root" ]] && echo ok || echo bad)
+  fi
+  if [[ "$pos_rc" -ne 1 ]] || [[ "$pos_untouched" != ok ]] || ! grep -q "Usage:" "$TEST_ENV_DIR/pos_guard.log"; then
+    echo -e "${RED}FAIL: install.sh positional guard failed for '$pos_case' (rc=$pos_rc, untouched=$pos_untouched).${NC}"
+    cat "$TEST_ENV_DIR/pos_guard.log"
+    exit 1
+  fi
+done
+default_pos_root="$TEST_ENV_DIR/default_pos_root"
+rm -rf "$default_pos_root"
+if ! DESTDIR="$default_pos_root" PREFIX=/usr sh "$SCRIPT_DIR/install.sh" > "$TEST_ENV_DIR/default_pos.log" 2>&1 \
+   || [[ ! -f "$default_pos_root/usr/bin/cleaner" ]]; then
+  echo -e "${RED}FAIL: zero-argument install.sh did not default to install.${NC}"
+  cat "$TEST_ENV_DIR/default_pos.log"
+  exit 1
+fi
+if ! sh "$SCRIPT_DIR/install.sh" --help > "$TEST_ENV_DIR/help_vars_sh.log" 2>&1 \
+   || ! grep -qE '^Vars: .*BINNAME \(=.*PKGNAME \(=' "$TEST_ENV_DIR/help_vars_sh.log"; then
+  echo -e "${RED}FAIL: install.sh --help Vars: omits BINNAME or PKGNAME.${NC}"
+  cat "$TEST_ENV_DIR/help_vars_sh.log"
+  exit 1
+fi
+if command -v make >/dev/null 2>&1; then
+  if ! make -s --no-print-directory -C "$SCRIPT_DIR" help > "$TEST_ENV_DIR/help_vars_make.log" 2>&1 \
+     || ! grep -qE '^Vars: .*BINNAME \(=.*PKGNAME \(=' "$TEST_ENV_DIR/help_vars_make.log"; then
+    echo -e "${RED}FAIL: make help Vars: omits BINNAME or PKGNAME.${NC}"
+    cat "$TEST_ENV_DIR/help_vars_make.log"
+    exit 1
+  fi
+fi
+echo -e "${GREEN}PASS: install.sh rejects extra/empty positional args, zero-arg defaults to install, and help lists BINNAME and PKGNAME.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

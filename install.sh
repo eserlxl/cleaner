@@ -19,7 +19,7 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
   echo "Usage: $0 [install|uninstall]"
-  echo "Vars: PREFIX (=$PREFIX) DESTDIR BINDIR SYSCONFDIR MANDIR DATADIR SYSTEMDUSERUNITDIR"
+  echo "Vars: PREFIX (=$PREFIX) DESTDIR BINDIR SYSCONFDIR MANDIR DATADIR SYSTEMDUSERUNITDIR BINNAME (=$BINNAME) PKGNAME (=$PKGNAME)"
 }
 
 do_install() {
@@ -107,6 +107,11 @@ check_pkgname() {
       ;;
   esac
 }
+
+if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ -z "$1" ]; }; then
+  usage
+  exit 1
+fi
 
 case "${1:-install}" in
   install) check_binname; check_pkgname; do_install ;;
