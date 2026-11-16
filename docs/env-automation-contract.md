@@ -1,6 +1,6 @@
 # Environment and automation contract
 
-Cross-walk of environment variables, CLI flags, truthy values, and constraints. Compared against the environment table (now in `docs/cli-reference.md`) and `cleaner.1` on 2026-07-15.
+Cross-walk of environment variables, CLI flags, truthy values, and constraints. Verified against `docs/cli-reference.md`, `cleaner.1`, and `cleaner.sh` (`VERSION="1.9.1"` + `[Unreleased]`) on 2026-11-16.
 
 | Environment variable | CLI flag | Truthy values | Constraints | Docs vs man |
 |---------------------|----------|---------------|-------------|---------------|
