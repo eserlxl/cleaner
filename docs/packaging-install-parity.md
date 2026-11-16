@@ -2,10 +2,10 @@
 
 | installation.md row | Makefile | install.sh | aurgen package() |
 |------------|----------|------------|---------------------|
-| bin/cleaner | BINDIR | install | make install |
-| man | MANDIR | install | make install |
-| config | SYSCONFDIR | install | make install |
-| license | DATADIR | install | make install |
+| bin/cleaner | BINDIR, BINNAME | install | make install |
+| man | MANDIR, BINNAME | install | make install |
+| config | SYSCONFDIR, PKGNAME | install | make install |
+| license | DATADIR, PKGNAME | install | make install |
 | environment template (`$DATADIR/$PKGNAME/linux-cleaner.env.example`, mode 0644; user copies preserved on uninstall) | DATADIR, PKGNAME | install | make install |
 | bash completion (`$DATADIR/bash-completion/completions/$BINNAME`, mode 0644) | DATADIR, BINNAME | install | make install |
 | zsh completion (`$DATADIR/zsh/site-functions/_$BINNAME`, mode 0644) | DATADIR, BINNAME | install | make install |
