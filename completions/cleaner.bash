@@ -193,19 +193,76 @@ _cleaner() {
   fi
 
   if [[ "${COMP_WORDBREAKS:-}" == *:* && "$cur" == *:* ]]; then
-    local colon_prefix="${cur%"${cur##*:}"}"
-    local i full
-    for i in "${!COMPREPLY[@]}"; do
-      full="${COMPREPLY[i]}"
-      if [[ "$is_file_comp" == true && -d "$full" && "$full" != */ ]]; then
-        full="${full}/"
+    local pos=0 len=${#cur} ch next_ch quote="" last_colon=-1 deq="" prefix_deq="" bs="\\" tilde="~"
+    while (( pos < len )); do
+      ch="${cur:pos:1}"
+      if [[ -z "$quote" ]]; then
+        if [[ "$ch" == "$bs" ]]; then
+          if (( pos + 1 < len )); then
+            deq+="${cur:pos+1:1}"
+            pos=$((pos + 2))
+            continue
+          fi
+        elif [[ "$ch" == "'" || "$ch" == '"' ]]; then
+          quote="$ch"
+          pos=$((pos + 1))
+          continue
+        elif [[ "$ch" == ":" ]]; then
+          last_colon=$pos
+          deq+=":"
+          prefix_deq="$deq"
+          pos=$((pos + 1))
+          continue
+        fi
+      elif [[ "$quote" == "'" ]]; then
+        if [[ "$ch" == "'" ]]; then
+          quote=""
+          pos=$((pos + 1))
+          continue
+        fi
+      elif [[ "$quote" == '"' ]]; then
+        if [[ "$ch" == '"' ]]; then
+          quote=""
+          pos=$((pos + 1))
+          continue
+        elif [[ "$ch" == "$bs" && $((pos + 1)) -lt $len ]]; then
+          next_ch="${cur:pos+1:1}"
+          if [[ "$next_ch" == '"' || "$next_ch" == "$bs" || "$next_ch" == '$' || "$next_ch" == '`' ]]; then
+            deq+="$next_ch"
+            pos=$((pos + 2))
+            continue
+          fi
+        fi
       fi
-      COMPREPLY[i]="${full#"$colon_prefix"}"
-      # An empty reply would replace the typed ':' with nothing.
-      [[ -z "${COMPREPLY[i]}" ]] && unset 'COMPREPLY[i]'
+      deq+="$ch"
+      pos=$((pos + 1))
     done
-    if [[ "$is_file_comp" == true && ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[*]}" == */ ]]; then
-      compopt -o nospace 2>/dev/null || true
+
+    if (( last_colon >= 0 )); then
+      local colon_prefix="${cur:0:last_colon+1}"
+      local i full check_path
+      for i in "${!COMPREPLY[@]}"; do
+        full="${COMPREPLY[i]}"
+        if [[ "$is_file_comp" == true && "$full" != */ ]]; then
+          check_path="$full"
+          if [[ -n "${HOME:-}" && "$check_path" == "$tilde/"* ]]; then
+            check_path="$HOME/${check_path#"$tilde/"}"
+          fi
+          if [[ -d "$check_path" ]]; then
+            full="${full}/"
+          fi
+        fi
+        if [[ "$full" == "$prefix_deq"* ]]; then
+          COMPREPLY[i]="${full#"$prefix_deq"}"
+        else
+          COMPREPLY[i]="${full#"$colon_prefix"}"
+        fi
+        # An empty reply would replace the typed ':' with nothing.
+        [[ -z "${COMPREPLY[i]}" ]] && unset 'COMPREPLY[i]'
+      done
+      if [[ "$is_file_comp" == true && ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[*]}" == */ ]]; then
+        compopt -o nospace 2>/dev/null || true
+      fi
     fi
   fi
 }

@@ -14570,6 +14570,113 @@ if ! (
 fi
 echo -e "${GREEN}PASS: completions/cleaner.bash respects whitespace boundaries after colons and isolates caller IFS.${NC}"
 
+echo -e "\n${BOLD}Test Case: Bash Completion Tilde Escaped And Quoted Colon Paths${NC}"
+if ! (
+  comp_tilde_home="$TEST_ENV_DIR/comp_tilde_home"
+  comp_colon_work="$TEST_ENV_DIR/comp_colon_work"
+  rm -rf "$comp_tilde_home" "$comp_colon_work"
+  mkdir -p "$comp_tilde_home/my:dir" "$comp_tilde_home/my dir:sub" "$comp_colon_work/dir with space" "$comp_colon_work/a:dir"
+  : > "$comp_colon_work/dir with space/x:y z.conf"
+  : > "$comp_colon_work/dir with space/x:y 2.conf"
+  : > "$comp_colon_work/a:b1.conf"
+  : > "$comp_colon_work/a:b2.conf"
+  : > "$comp_colon_work/a:b:c1.conf"
+
+  # Direct _cleaner check for tilde-prefixed colon directory trailing slash and nospace.
+  # shellcheck source=/dev/null
+  source "$comp_file"
+  COMP_WORDBREAKS=$' \t\n"\'><=;|&(:'
+  # shellcheck disable=SC2329  # invoked indirectly by _cleaner
+  compopt() { colon_compopt_calls+=("$*"); }
+  colon_compopt_calls=()
+  tilde_tok='~'
+  COMP_WORDS=(cleaner -c "${tilde_tok}/my" : d)
+  COMP_LINE="cleaner -c ${tilde_tok}/my:d"
+  COMP_POINT=${#COMP_LINE}
+  COMP_CWORD=4
+  HOME="$comp_tilde_home" _cleaner
+  [[ "${COMPREPLY[*]}" == "dir/" ]] || exit 1
+  [[ " ${colon_compopt_calls[*]} " == *" -o nospace "* ]] || exit 1
+  unset -f compopt
+
+  # Real interactive bash PTY check covering readline dequoting on escaped/quoted colons and ~/ dirs.
+  python3 - "$comp_file" "$comp_tilde_home" "$comp_colon_work" <<'BASH_COLON_PTY'
+import os, pathlib, pty, select, subprocess, sys, time
+
+comp_file, comp_home, comp_work = sys.argv[1:]
+master, slave = pty.openpty()
+env = os.environ.copy()
+env["TERM"] = "dumb"
+env["PS1"] = "P> "
+env["HOME"] = comp_home
+env["INPUTRC"] = "/dev/null"
+env["COMP_OUT"] = str(pathlib.Path(comp_work) / ".comp_out")
+env["OPT_OUT"] = str(pathlib.Path(comp_work) / ".opt_out")
+p = subprocess.Popen(
+    ["bash", "--norc", "--noprofile", "-i"],
+    cwd=comp_work,
+    stdin=slave, stdout=slave, stderr=slave, env=env, close_fds=True,
+)
+os.close(slave)
+
+def drain(timeout=0.35):
+    end = time.time() + timeout
+    while time.time() < end:
+        r, _, _ = select.select([master], [], [], 0.05)
+        if r:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            end = time.time() + 0.05
+
+try:
+    drain(0.5)
+    os.write(master, f'source "{comp_file}"\n'.encode())
+    os.write(master, b'_wrap() { local _co=(); compopt() { _co+=("$*"); }; _cleaner; printf "%s\\n" "${_co[@]}" > "$OPT_OUT"; printf "%s\\n" "${COMPREPLY[@]}" > "$COMP_OUT"; }\ncomplete -F _wrap cleaner\n')
+    drain(0.3)
+
+    cases = [
+        (b"cleaner -c ~/my:d", ["dir/"], "-o nospace"),
+        (b"cleaner -c ~/my\\ dir:s", ["sub/"], "-o nospace"),
+        (b"cleaner -c dir\\ with\\ space/x:y\\ z", ["y z.conf"], None),
+        (b"cleaner -c dir\\ with\\ space/x:y", ["y 2.conf", "y z.conf"], None),
+        (b'cleaner -c "a":b1', ["b1.conf"], None),
+        (b'cleaner -c "dir with space/x:y', ["dir with space/x:y 2.conf", "dir with space/x:y z.conf"], None),
+        (b"cleaner -c a\\:d", ["a:dir"], None),
+        (b"cleaner -c a\\:b:c", ["c1.conf"], None),
+    ]
+    out_path = pathlib.Path(env["COMP_OUT"])
+    opt_path = pathlib.Path(env["OPT_OUT"])
+    for typed, exp_replies, exp_opt in cases:
+        out_path.unlink(missing_ok=True)
+        opt_path.unlink(missing_ok=True)
+        os.write(master, typed + b"\t")
+        deadline = time.time() + 5.0
+        while not out_path.exists() and time.time() < deadline:
+            drain(0.05)
+        assert out_path.exists(), f"Timed out waiting for completion output on {typed!r}"
+        replies = sorted(line for line in out_path.read_text(encoding="utf-8").splitlines() if line)
+        assert replies == sorted(exp_replies), (typed, replies, exp_replies)
+        if exp_opt:
+            opts = opt_path.read_text(encoding="utf-8") if opt_path.exists() else ""
+            assert exp_opt in opts, (typed, opts, exp_opt)
+        os.write(master, b"\x15")
+        drain(0.1)
+finally:
+    os.write(master, b"exit\n")
+    drain(0.2)
+    os.close(master)
+    p.wait(timeout=5)
+BASH_COLON_PTY
+); then
+  echo -e "${RED}FAIL: completions/cleaner.bash failed tilde, backslash-escaped, or quoted colon path completion.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: completions/cleaner.bash preserves directory slashes on ~/ colon paths and strips dequoted colon prefixes accurately.${NC}"
+
 # Zsh and fish completion functional test: the zsh --purge-sessions selectors must
 # complete (an unescaped ':' in the _arguments spec made zsh report a parse error and
 # offer nothing), the prefix selectors must not gain a trailing space, and fish must

@@ -50,6 +50,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `completions/cleaner.bash` (`_cleaner`) now locates the last unquoted, unescaped `:` and matches shell-dequoted prefixes against `compgen -f` replies (while expanding `~/` before `-d` directory checks), fixing doubled prefixes on backslash-escaped/quoted colon paths (`dir\ with\ space/x:y`, `"a":b`), preserving quoted/escaped colons (`"dir with space/x:y`, `a\:b`), and appending `/` with `nospace` on `~/...` colon directories (`U-197`).
 - `completions/cleaner.bash` (`_cleaner`) now checks `COMP_LINE` whitespace boundaries before rejoining `:`-split `COMP_WORDS` tokens and scopes `local IFS=$' \t\n'`, so trailing-colon values followed by whitespace (`--only foo: --dr`, `--purge-sessions older-than: --dr`) and non-default caller `IFS` values complete options and selectors cleanly (`U-196`).
 - `install.sh` now rejects extra positional arguments and explicit empty arguments (`""`) with usage output and exit `1` before modifying `DESTDIR`, and both `install.sh --help` and `make help` now document `BINNAME` and `PKGNAME` in `Vars:` (`U-194`).
 - `install.sh` and `Makefile` now validate `BINNAME` and `PKGNAME` against explicit ASCII basename characters (`[0-9A-Za-z._-]`, rejecting empty, `.`, `..`, leading `-`, spaces, slashes, and non-ASCII letters such as `cleaner_ı`/`cleaner_İ`/`pkg_ı` under `LC_ALL=tr_TR.UTF-8`) on both `install` and `uninstall` before touching `DESTDIR` (`U-193`).
