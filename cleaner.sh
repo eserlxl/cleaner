@@ -1978,8 +1978,13 @@ _expand_glob_parse_pattern() {
     done
   fi
   head="${raw%%[*?]*}"
-  prefix="${head%/*}"
-  tail_part="${raw#"$prefix"/}"
+  if [[ "$head" == */* ]]; then
+    prefix="${head%/*}"
+    tail_part="${raw#"$prefix"/}"
+  else
+    prefix=""
+    tail_part="$raw"
+  fi
   slashes="${tail_part//[^\/]/}"
   depth=$(( ${#slashes} + 1 ))
   max_depth="$depth"
@@ -2252,6 +2257,7 @@ expand_config_globs() {
     fi
     expand_path_safe "$raw_path" expanded_glob_path || continue
     [[ "$expanded_glob_path" == *'['* || "$expanded_glob_path" == *']'* ]] && continue
+    [[ "$expanded_glob_path" == /* ]] || continue
     _expand_glob_parse_pattern "$expanded_glob_path"
     [[ -n "$prefix" && "$has_globstar" == true ]] || continue
     globstar_prefix_counts["$prefix"]=$(( ${globstar_prefix_counts[$prefix]:-0} + 1 ))
@@ -2308,6 +2314,14 @@ expand_config_globs() {
       continue
     fi
     _expand_glob_parse_pattern "$expanded_glob_path"
+
+    # Refuse relative wildcards so find never scans relative to $PWD; pass the
+    # row through unexpanded so normal checks report missing without scanning.
+    if [[ "$expanded_glob_path" != /* ]]; then
+      printf '%bWarning: %s:%s: wildcard PATH must be absolute; leaving '\''%s'\'' unexpanded%b\n' "$YELLOW" "$src_file" "$lineno" "$norm_raw_path" "$NC" >&2
+      printf '%s\0%s\0%s\0' "$src_file" "$lineno" "$line"
+      continue
+    fi
 
     # Refuse to expand it and pass the line through untouched: the literal pattern
     # then fails the ordinary existence and HOME-boundary checks, so nothing is
