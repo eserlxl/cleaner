@@ -8505,6 +8505,17 @@ else
   exit 1
 fi
 
+# GitHub Actions tag triggers use glob patterns rather than regexes ('+' is literal).
+if grep -qE "^[[:space:]]*-[[:space:]]*'v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*'[[:space:]]*$" "$SCRIPT_DIR/.github/workflows/release.yml" \
+   && ! grep -qE "^[[:space:]]*-[[:space:]]*'.*\[0-9\]\+" "$SCRIPT_DIR/.github/workflows/release.yml" \
+   && grep -qF "Validate release tag format" "$SCRIPT_DIR/.github/workflows/release.yml" \
+   && grep -qF '^v[0123456789]+\.[0123456789]+\.[0123456789]+$' "$SCRIPT_DIR/.github/workflows/release.yml"; then
+  echo -e "${GREEN}PASS: release.yml uses a glob tag filter and validates exact vX.Y.Z tag format.${NC}"
+else
+  echo -e "${RED}FAIL: release.yml tag trigger uses regex '+' or lacks vX.Y.Z tag validation.${NC}"
+  exit 1
+fi
+
 # CHANGELOG env override must read an alternate file, not only the default beside the script.
 rn_alt="$TEST_ENV_DIR/alt-changelog.md"
 cp "$SCRIPT_DIR/CHANGELOG.md" "$rn_alt"
