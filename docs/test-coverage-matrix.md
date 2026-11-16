@@ -247,5 +247,7 @@ Rows below moved here after the 1.5.0 release; add new unreleased rows only whil
 | Check Config Filter Exclusion Messages | cleanup filter flags rejected with `--check-config` name the exact 8- or 9-mode refusal list | cleaner.sh |
 | Bash Completion Drift and Functional Check | every `--long` option in `--help` appears in the bash, zsh and fish completion files | cleaner.sh, completions/cleaner.bash, completions/_cleaner, completions/cleaner.fish |
 | Zsh and Fish Completion Functional Check | zsh and fish completions offer `--purge-sessions` selectors and quarantine session names without unwanted trailing spaces | completions/_cleaner, completions/cleaner.fish |
+| Package Check Target | `aur/aurgen.install.yaml` sets `package.check: make check-package` and `make check-package` passes | aur/aurgen.install.yaml, Makefile |
+| Shipped Config Self-Validates | shipped `cleaner.conf` passes `--dry-run` and field/value validation cleanly | cleaner.conf, cleaner.sh |
 
 Manual smoke: see `docs/manual-smoke-checklist.md`.
