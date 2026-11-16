@@ -8583,6 +8583,62 @@ write_roll_fixture $'- An entry.\n'
 roll_refused "9.9 2026-01-02" "is not X.Y.Z"
 roll_refused "9.9.11 02-01-2026" "is not YYYY-MM-DD"
 roll_refused "9.9.11 2026-02-31" "is not YYYY-MM-DD"
+# Explicit empty date, missing version, and extra positional args must fail cleanly without touching CHANGELOG.
+cp "$rn_roll" "$TEST_ENV_DIR/roll_snapshot.md"
+rn_empty_date_ec=0
+CHANGELOG="$rn_roll" "$rn_sh" roll 9.9.11 "" > "$TEST_ENV_DIR/roll_empty_date.log" 2>&1 || rn_empty_date_ec=$?
+if [[ $rn_empty_date_ec -ne 1 ]] || ! grep -qF "is not YYYY-MM-DD" "$TEST_ENV_DIR/roll_empty_date.log" \
+   || ! cmp -s "$rn_roll" "$TEST_ENV_DIR/roll_snapshot.md"; then
+  echo -e "${RED}FAIL: release-notes.sh roll accepted explicit empty date '' (ec=$rn_empty_date_ec).${NC}"
+  cat "$TEST_ENV_DIR/roll_empty_date.log"
+  exit 1
+fi
+rn_roll_noarg_ec=0
+CHANGELOG="$rn_roll" "$rn_sh" roll > "$TEST_ENV_DIR/roll_noarg.log" 2>&1 || rn_roll_noarg_ec=$?
+if [[ $rn_roll_noarg_ec -ne 1 ]] || ! grep -q "requires a version argument" "$TEST_ENV_DIR/roll_noarg.log"; then
+  echo -e "${RED}FAIL: release-notes.sh roll without version was not rejected cleanly (ec=$rn_roll_noarg_ec).${NC}"
+  cat "$TEST_ENV_DIR/roll_noarg.log"
+  exit 1
+fi
+rn_roll_extra_ec=0
+CHANGELOG="$rn_roll" "$rn_sh" roll 9.9.11 2026-01-02 extra > "$TEST_ENV_DIR/roll_extra.log" 2>&1 || rn_roll_extra_ec=$?
+if [[ $rn_roll_extra_ec -ne 1 ]] || ! grep -q "Usage:" "$TEST_ENV_DIR/roll_extra.log" \
+   || ! cmp -s "$rn_roll" "$TEST_ENV_DIR/roll_snapshot.md"; then
+  echo -e "${RED}FAIL: release-notes.sh roll accepted extra positional argument (ec=$rn_roll_extra_ec).${NC}"
+  cat "$TEST_ENV_DIR/roll_extra.log"
+  exit 1
+fi
+rn_extract_extra_ec=0
+CHANGELOG="$rn_roll" "$rn_sh" extract 1.0.0 extra > "$TEST_ENV_DIR/extract_extra.log" 2>&1 || rn_extract_extra_ec=$?
+if [[ $rn_extract_extra_ec -ne 1 ]] || ! grep -q "Usage:" "$TEST_ENV_DIR/extract_extra.log"; then
+  echo -e "${RED}FAIL: release-notes.sh extract accepted extra positional argument (ec=$rn_extract_extra_ec).${NC}"
+  cat "$TEST_ENV_DIR/extract_extra.log"
+  exit 1
+fi
+rn_help_extra_ec=0
+"$rn_sh" --help extra > "$TEST_ENV_DIR/help_extra.log" 2>&1 || rn_help_extra_ec=$?
+if [[ $rn_help_extra_ec -ne 1 ]] || ! grep -q "Usage:" "$TEST_ENV_DIR/help_extra.log"; then
+  echo -e "${RED}FAIL: release-notes.sh --help accepted extra positional argument (ec=$rn_help_extra_ec).${NC}"
+  cat "$TEST_ENV_DIR/help_extra.log"
+  exit 1
+fi
+if locale -a 2>/dev/null | grep -qiE '^tr_TR\.utf-?8$'; then
+  cp "$rn_roll" "$TEST_ENV_DIR/roll_tr.md"
+  rn_tr_bad_ec=0
+  LC_ALL=tr_TR.UTF-8 CHANGELOG="$TEST_ENV_DIR/roll_tr.md" "$rn_sh" roll $'9.9.\xd9\xa1' 2026-01-02 > "$TEST_ENV_DIR/roll_tr_bad.log" 2>&1 || rn_tr_bad_ec=$?
+  if [[ $rn_tr_bad_ec -ne 1 ]] || ! cmp -s "$TEST_ENV_DIR/roll_tr.md" "$TEST_ENV_DIR/roll_snapshot.md"; then
+    echo -e "${RED}FAIL: release-notes.sh roll accepted non-ASCII digit under LC_ALL=tr_TR.UTF-8 (ec=$rn_tr_bad_ec).${NC}"
+    cat "$TEST_ENV_DIR/roll_tr_bad.log"
+    exit 1
+  fi
+  if ! LC_ALL=tr_TR.UTF-8 CHANGELOG="$TEST_ENV_DIR/roll_tr.md" "$rn_sh" roll 9.9.11 2026-01-02 > "$TEST_ENV_DIR/roll_tr_ok.log" 2>&1 \
+     || ! LC_ALL=tr_TR.UTF-8 CHANGELOG="$TEST_ENV_DIR/roll_tr.md" "$rn_sh" extract 9.9.11 > "$TEST_ENV_DIR/extract_tr_ok.log" 2>&1 \
+     || ! grep -qF -- "- An entry." "$TEST_ENV_DIR/extract_tr_ok.log"; then
+    echo -e "${RED}FAIL: release-notes.sh roll/extract failed under LC_ALL=tr_TR.UTF-8.${NC}"
+    cat "$TEST_ENV_DIR/roll_tr_ok.log" "$TEST_ENV_DIR/extract_tr_ok.log"
+    exit 1
+  fi
+fi
 # A failed duplicate check (unreadable changelog) must stop, never continue to the write.
 if [[ "$EUID" -ne 0 ]]; then
   chmod 000 "$rn_roll"

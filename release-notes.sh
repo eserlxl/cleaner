@@ -57,13 +57,18 @@ extract() {
 # <version> follows it. Every refusal happens before CHANGELOG is touched, and the
 # result replaces it atomically, so a failed roll leaves the file byte-identical.
 roll() {
-  local version="$1" date="${2:-$(date +%F)}" base tmp
+  local version="$1" date base tmp
+  if [[ $# -ge 2 ]]; then
+    date="$2"
+  else
+    date=$(LC_ALL=C date +%F)
+  fi
 
-  if [[ ! "$version" =~ ^[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+$ ]]; then
+  if [[ ! "$version" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]]; then
     echo "Error: version '$version' is not X.Y.Z." >&2
     exit 1
   fi
-  if [[ ! "$date" =~ ^[[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}$ ]] || [[ "$(date -d "$date" +%F 2>/dev/null)" != "$date" ]]; then
+  if [[ ! "$date" =~ ^[0123456789]{4}-[0123456789]{2}-[0123456789]{2}$ ]] || [[ "$(LC_ALL=C date -d "$date" +%F 2>/dev/null)" != "$date" ]]; then
     echo "Error: date '$date' is not YYYY-MM-DD." >&2
     exit 1
   fi
@@ -81,7 +86,7 @@ roll() {
     echo "Error: could not check '$CHANGELOG' for an existing '$version' section." >&2
     exit 1
   fi
-  if ! base=$(sed -n 's|^\[Unreleased\]: \(.*\)/compare/v[0-9][0-9.]*\.\.\.HEAD$|\1|p;T;q' "$CHANGELOG") \
+  if ! base=$(LC_ALL=C sed -n 's|^\[Unreleased\]: \(.*\)/compare/v[0123456789][0123456789.]*\.\.\.HEAD$|\1|p;T;q' "$CHANGELOG") \
      || [[ -z "$base" ]]; then
     echo "Error: no '[Unreleased]: <url>/compare/v<version>...HEAD' link found in '$CHANGELOG'." >&2
     exit 1
@@ -115,22 +120,41 @@ roll() {
 
 case "${1:-}" in
   roll)
-    if [[ -z "${2:-}" ]]; then
+    if [[ $# -lt 2 || -z "$2" ]]; then
       echo "Error: roll requires a version argument." >&2
       usage
       exit 1
     fi
-    roll "$2" "${3:-}"
+    if [[ $# -gt 3 ]]; then
+      echo "Error: unexpected extra argument '$4'." >&2
+      usage
+      exit 1
+    fi
+    if [[ $# -eq 3 ]]; then
+      roll "$2" "$3"
+    else
+      roll "$2"
+    fi
     ;;
   extract)
-    if [[ -z "${2:-}" ]]; then
+    if [[ $# -lt 2 || -z "$2" ]]; then
       echo "Error: extract requires a version argument." >&2
+      usage
+      exit 1
+    fi
+    if [[ $# -gt 2 ]]; then
+      echo "Error: unexpected extra argument '$3'." >&2
       usage
       exit 1
     fi
     extract "$2"
     ;;
   -h|--help|help)
+    if [[ $# -ne 1 ]]; then
+      echo "Error: unexpected extra argument '$2'." >&2
+      usage
+      exit 1
+    fi
     usage
     ;;
   *)
