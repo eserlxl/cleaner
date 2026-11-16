@@ -788,6 +788,22 @@ when that config fails the schema check;
 when the file sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_KEEP_DAYS;
 .B "; only-path with trash-max-size"
 when it sets both LINUX_CLEANER_ONLY_PATH and LINUX_CLEANER_TRASH_MAX_SIZE, which the clean run refuses;
+.B "; invalid only-path"
+when LINUX_CLEANER_ONLY_PATH is not an existing literal absolute path without line feeds;
+.B "; invalid exclude-path"
+when LINUX_CLEANER_EXCLUDE_PATH is not an existing literal absolute path without line feeds;
+.B "; exclude-from not readable"
+when LINUX_CLEANER_EXCLUDE_FROM does not resolve to a readable regular file;
+.B "; exclude-from invalid"
+when that exclusion file contains invalid line endings such as CR;
+.B "; conflicting only-target"
+when the file sets both LINUX_CLEANER_ONLY_TARGET and LINUX_CLEANER_ONLY_TARGET_EXACT;
+.B "; invalid only-target"
+when LINUX_CLEANER_ONLY_TARGET contains an empty comma-separated pattern;
+.B "; conflicting exclude-target"
+when the file sets both LINUX_CLEANER_EXCLUDE_TARGET and LINUX_CLEANER_EXCLUDE_TARGET_EXACT;
+.B "; invalid exclude-target"
+when LINUX_CLEANER_EXCLUDE_TARGET contains an empty comma-separated pattern;
 .B "; invalid min-reclaim"
 when LINUX_CLEANER_MIN_RECLAIM is not a valid size;
 .B "; invalid min-free"
@@ -795,7 +811,7 @@ when LINUX_CLEANER_MIN_FREE is not a valid size;
 .B "; min-free-path without min-free"
 when LINUX_CLEANER_MIN_FREE_PATH is set without LINUX_CLEANER_MIN_FREE;
 .B "; invalid min-free-path"
-when LINUX_CLEANER_MIN_FREE_PATH is not a literal absolute path without line feeds;
+when LINUX_CLEANER_MIN_FREE_PATH is not an existing literal absolute path without line feeds;
 .B "; invalid min-age"
 when LINUX_CLEANER_MIN_AGE is not a non-negative integer;
 .B "; invalid action-timeout"
@@ -806,7 +822,7 @@ when LINUX_CLEANER_LOCK_WAIT is not an integer from 0 to 2147483647;
 when LINUX_CLEANER_LOG_MAX_SIZE is set without LINUX_CLEANER_LOG; and
 .B "; invalid log-max-size"
 when LINUX_CLEANER_LOG_MAX_SIZE is not a valid size.
-A relative LINUX_CLEANER_CONFIG is checked under HOME, where the user service starts.
+Relative LINUX_CLEANER_CONFIG and LINUX_CLEANER_EXCLUDE_FROM paths are checked under HOME, where the user service starts.
 Values are trimmed of surrounding whitespace, as systemd does.
 An env file that exists but cannot be read prints
 .B "WARN: daily timer plan: env file not readable (path)"

@@ -20166,5 +20166,139 @@ with tempfile.TemporaryDirectory() as td:
 PY
 echo -e "${GREEN}PASS: large config validation and target listing run in-process without risk/reload overhead.${NC}"
 
+# U-188: --doctor detects remaining startup-fatal scheduler env settings across daily_timer_plan and monitor_env.
+echo -e "\n${BOLD}Test Case: Doctor Validates All Remaining Startup-Fatal Scheduler Env Settings${NC}"
+if ! python3 - "$CLEANER_SH" <<'PY'; then
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+cleaner = sys.argv[1]
+root = Path(tempfile.mkdtemp(prefix="test_doc_sched_all_"))
+try:
+    home = root / "home"
+    cfg_dir = home / ".config" / "linux-cleaner"
+    bin_dir = root / "bin"
+    ok_dir = home / ".cache" / "ok"
+    scope_dir = home / ".cache"
+    cfg_dir.mkdir(parents=True)
+    bin_dir.mkdir()
+    ok_dir.mkdir(parents=True)
+
+    cfg = root / "test.conf"
+    cfg.write_text(f"safe|OK|{ok_dir}|ok|0||\n", encoding="utf-8")
+
+    sc = bin_dir / "systemctl"
+    sc.write_text("#!/usr/bin/env bash\necho enabled\nexit 0\n", encoding="utf-8")
+    os.chmod(sc, 0o755)
+    for helper in ("pgrep", "flock", "git"):
+        hb = bin_dir / helper
+        hb.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        os.chmod(hb, 0o755)
+
+    valid_excl = home / "valid.excl"
+    valid_excl.write_text("# comment\n*.tmp\n", encoding="utf-8")
+    cr_excl = root / "cr.excl"
+    cr_excl.write_bytes(b"*.tmp\r\n")
+    dangling = root / "dangling"
+    os.symlink(root / "no_such_target", dangling)
+
+    base_env = {
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "XDG_STATE_HOME": str(root / "state"),
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "NO_COLOR": "1",
+    }
+
+    def run_doc(*args):
+        return subprocess.run(
+            [cleaner, "--config", str(cfg), "--doctor", *args],
+            env=base_env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    # 1. Valid existing path, relative-under-HOME exclude-from, and non-conflicting target selectors succeed cleanly.
+    valid_text = (
+        f"LINUX_CLEANER_MIN_FREE=1G\n"
+        f"LINUX_CLEANER_MIN_FREE_PATH={scope_dir}\n"
+        f"LINUX_CLEANER_ONLY_PATH={scope_dir}\n"
+        f"LINUX_CLEANER_EXCLUDE_PATH={ok_dir}\n"
+        f"LINUX_CLEANER_EXCLUDE_FROM=valid.excl\n"
+        f"LINUX_CLEANER_ONLY_TARGET=OK\n"
+        f"LINUX_CLEANER_EXCLUDE_TARGET=Other,Skip\n"
+    )
+    (cfg_dir / "env").write_text(valid_text, encoding="utf-8")
+    (cfg_dir / "monitor.env").write_text(valid_text, encoding="utf-8")
+    r_ok = run_doc("--strict", "--json")
+    assert r_ok.returncode == 0, (r_ok.returncode, r_ok.stdout, r_ok.stderr)
+    d_ok = json.loads(r_ok.stdout)
+    assert d_ok["ready"] is True and d_ok["daily_timer_plan"]["status"] == "ok" and d_ok["daily_timer_plan"]["problems"] == [], d_ok
+    assert d_ok["monitor_env"]["status"] == "ok" and d_ok["monitor_env"]["problems"] == [], d_ok
+
+    # 2. Startup-fatal path/exclude/target errors trigger WARN in both text and JSON --strict.
+    fatal_text = (
+        f"LINUX_CLEANER_MIN_FREE=1G\n"
+        f"LINUX_CLEANER_MIN_FREE_PATH={root}/missing_min_free\n"
+        f"LINUX_CLEANER_ONLY_PATH={dangling}\n"
+        f"LINUX_CLEANER_EXCLUDE_PATH=rel/exclude\n"
+        f"LINUX_CLEANER_EXCLUDE_FROM=missing.excl\n"
+        f"LINUX_CLEANER_ONLY_TARGET=a,\n"
+        f"LINUX_CLEANER_ONLY_TARGET_EXACT=OK\n"
+        f"LINUX_CLEANER_EXCLUDE_TARGET=,b\n"
+        f"LINUX_CLEANER_EXCLUDE_TARGET_EXACT=Other\n"
+    )
+    (cfg_dir / "env").write_text(fatal_text, encoding="utf-8")
+    (cfg_dir / "monitor.env").write_text(fatal_text, encoding="utf-8")
+    expected = {
+        "invalid min-free-path",
+        "invalid only-path",
+        "invalid exclude-path",
+        "exclude-from not readable",
+        "conflicting only-target",
+        "invalid only-target",
+        "conflicting exclude-target",
+        "invalid exclude-target",
+    }
+    r_bad_txt = run_doc()
+    assert r_bad_txt.returncode == 0, r_bad_txt
+    for prob in expected:
+        assert f"; {prob}" in r_bad_txt.stdout or f"({prob}" in r_bad_txt.stdout, (prob, r_bad_txt.stdout)
+    r_bad_json = run_doc("--strict", "--json")
+    assert r_bad_json.returncode == 1, r_bad_json
+    d_bad = json.loads(r_bad_json.stdout)
+    assert d_bad["ready"] is False and d_bad["exit_code"] == 1, d_bad
+    assert set(d_bad["daily_timer_plan"]["problems"]) == expected, d_bad
+    assert set(d_bad["monitor_env"]["problems"]) == expected, d_bad
+    assert d_bad["monitor_env"]["status"] == "warn", d_bad
+
+    # 3. CR-containing LINUX_CLEANER_EXCLUDE_FROM fails with exclude-from invalid and preserves monitor conflict status.
+    cr_text = (
+        f"LINUX_CLEANER_ONLY_PATH={scope_dir}\n"
+        f"LINUX_CLEANER_TRASH_KEEP_DAYS=7\n"
+        f"LINUX_CLEANER_EXCLUDE_FROM={cr_excl}\n"
+    )
+    (cfg_dir / "env").write_text(cr_text, encoding="utf-8")
+    (cfg_dir / "monitor.env").write_text(cr_text, encoding="utf-8")
+    r_cr = run_doc("--strict", "--json")
+    assert r_cr.returncode == 1, r_cr
+    d_cr = json.loads(r_cr.stdout)
+    assert set(d_cr["daily_timer_plan"]["problems"]) == {"only-path with keep-days", "exclude-from invalid"}, d_cr
+    assert d_cr["monitor_env"]["status"] == "conflict", d_cr
+    assert set(d_cr["monitor_env"]["problems"]) == {"only-path with keep-days", "exclude-from invalid"}, d_cr
+finally:
+    shutil.rmtree(root, ignore_errors=True)
+PY
+  echo -e "${RED}FAIL: Doctor startup-fatal remaining scheduler env checks failed.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: --doctor detects all remaining startup-fatal scheduler env settings.${NC}"
+
 echo -e "\n${BOLD}${GREEN}All refactored tests passed successfully!${NC}"
 exit 0

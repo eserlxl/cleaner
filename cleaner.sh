@@ -1574,22 +1574,28 @@ name_matches_any() {
 }
 
 # Split a comma-separated --only-target / --exclude-target value into trimmed
-# substrings. An empty entry would match every NAME, so it is refused.
-split_name_patterns() {
-  local flag="$1" value="$2" pat rest="$2"
-  local -n patterns_out="$3"
-  patterns_out=()
-  [[ -z "$value" ]] && return 0
+# substrings. Returns 1 when any entry is empty (an empty entry would match every NAME).
+_split_name_patterns_status() {
+  local _snps_val="$1" _snps_pat _snps_rest="$1"
+  local -n _snps_out="$2"
+  _snps_out=()
+  [[ -z "$_snps_val" ]] && return 0
   while :; do
-    trim_to pat "${rest%%,*}"
-    if [[ -z "$pat" ]]; then
-      echo -e "${RED}Error: ${flag} contains an empty pattern in '${value}'.${NC}" >&2
-      exit 1
-    fi
-    patterns_out+=("$pat")
-    [[ "$rest" == *,* ]] || break
-    rest="${rest#*,}"
+    trim_to _snps_pat "${_snps_rest%%,*}"
+    [[ -n "$_snps_pat" ]] || return 1
+    _snps_out+=("$_snps_pat")
+    [[ "$_snps_rest" == *,* ]] || break
+    _snps_rest="${_snps_rest#*,}"
   done
+  return 0
+}
+
+split_name_patterns() {
+  local flag="$1" value="$2"
+  if ! _split_name_patterns_status "$value" "$3"; then
+    echo -e "${RED}Error: ${flag} contains an empty pattern in '${value}'.${NC}" >&2
+    exit 1
+  fi
 }
 
 ONLY_TARGET_PATTERNS=()
@@ -5642,6 +5648,12 @@ _collect_scheduler_env_problems() {
   local _risk="${_sched_vars[LINUX_CLEANER_RISK]:-}"
   local _cfg="${_sched_vars[LINUX_CLEANER_CONFIG]:-}"
   local _only="${_sched_vars[LINUX_CLEANER_ONLY_PATH]:-}"
+  local _exclude_path="${_sched_vars[LINUX_CLEANER_EXCLUDE_PATH]:-}"
+  local _exclude_from="${_sched_vars[LINUX_CLEANER_EXCLUDE_FROM]:-}"
+  local _only_tgt="${_sched_vars[LINUX_CLEANER_ONLY_TARGET]:-}"
+  local _only_tgt_exact="${_sched_vars[LINUX_CLEANER_ONLY_TARGET_EXACT]:-}"
+  local _excl_tgt="${_sched_vars[LINUX_CLEANER_EXCLUDE_TARGET]:-}"
+  local _excl_tgt_exact="${_sched_vars[LINUX_CLEANER_EXCLUDE_TARGET_EXACT]:-}"
   local _keep="${_sched_vars[LINUX_CLEANER_TRASH_KEEP_DAYS]:-}"
   local _max_size="${_sched_vars[LINUX_CLEANER_TRASH_MAX_SIZE]:-}"
   local _log="${_sched_vars[LINUX_CLEANER_LOG]:-}"
@@ -5652,6 +5664,7 @@ _collect_scheduler_env_problems() {
   local _min_age="${_sched_vars[LINUX_CLEANER_MIN_AGE]:-}"
   local _action_timeout="${_sched_vars[LINUX_CLEANER_ACTION_TIMEOUT]:-}"
   local _lock_wait="${_sched_vars[LINUX_CLEANER_LOCK_WAIT]:-}"
+  local -a _sched_pats=()
 
   if [[ -n "$_risk" ]] && ! _risk_to_int_to "" "$_risk"; then
     _out_problems+=("invalid risk")
@@ -5670,6 +5683,33 @@ _collect_scheduler_env_problems() {
     if ! parse_size_bytes "$_max_size" >/dev/null 2>&1; then
       _out_problems+=("invalid trash-max-size")
     fi
+  fi
+  if [[ -n "$_only" ]] && { [[ "$_only" != /* || "$_only" == *$'\n'* ]] || ! resolve_existing_path "$_only"; }; then
+    _out_problems+=("invalid only-path")
+  fi
+  if [[ -n "$_exclude_path" ]] && { [[ "$_exclude_path" != /* || "$_exclude_path" == *$'\n'* ]] || ! resolve_existing_path "$_exclude_path"; }; then
+    _out_problems+=("invalid exclude-path")
+  fi
+  if [[ -n "$_exclude_from" ]]; then
+    local _excl_path="$_exclude_from"
+    [[ "$_excl_path" == /* ]] || _excl_path="$_cfg_base/$_excl_path"
+    if [[ "$_excl_path" == *$'\n'* || ! -f "$_excl_path" || ! -r "$_excl_path" ]]; then
+      _out_problems+=("exclude-from not readable")
+    elif ! (EXCLUDE_FROM="$_excl_path" load_exclude_from_file >/dev/null 2>&1); then
+      _out_problems+=("exclude-from invalid")
+    fi
+  fi
+  if [[ -n "$_only_tgt" && -n "$_only_tgt_exact" ]]; then
+    _out_problems+=("conflicting only-target")
+  fi
+  if [[ -n "$_only_tgt" ]] && ! _split_name_patterns_status "$_only_tgt" _sched_pats; then
+    _out_problems+=("invalid only-target")
+  fi
+  if [[ -n "$_excl_tgt" && -n "$_excl_tgt_exact" ]]; then
+    _out_problems+=("conflicting exclude-target")
+  fi
+  if [[ -n "$_excl_tgt" ]] && ! _split_name_patterns_status "$_excl_tgt" _sched_pats; then
+    _out_problems+=("invalid exclude-target")
   fi
   if [[ -n "$_cfg" ]]; then
     # The user service starts in HOME, so a relative path resolves there.
@@ -5691,7 +5731,7 @@ _collect_scheduler_env_problems() {
     if [[ -z "$_min_free" ]]; then
       _out_problems+=("min-free-path without min-free")
     fi
-    if [[ "$_min_free_path" != /* || "$_min_free_path" == *$'\n'* ]]; then
+    if [[ "$_min_free_path" != /* || "$_min_free_path" == *$'\n'* || ! -e "$_min_free_path" ]]; then
       _out_problems+=("invalid min-free-path")
     fi
   fi
@@ -5887,6 +5927,12 @@ run_doctor() {
     [LINUX_CLEANER_RISK]=""
     [LINUX_CLEANER_CONFIG]=""
     [LINUX_CLEANER_ONLY_PATH]=""
+    [LINUX_CLEANER_EXCLUDE_PATH]=""
+    [LINUX_CLEANER_EXCLUDE_FROM]=""
+    [LINUX_CLEANER_ONLY_TARGET]=""
+    [LINUX_CLEANER_ONLY_TARGET_EXACT]=""
+    [LINUX_CLEANER_EXCLUDE_TARGET]=""
+    [LINUX_CLEANER_EXCLUDE_TARGET_EXACT]=""
     [LINUX_CLEANER_TRASH]=""
     [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
     [LINUX_CLEANER_TRASH_MAX_SIZE]=""
@@ -5905,6 +5951,12 @@ run_doctor() {
     [LINUX_CLEANER_RISK]=""
     [LINUX_CLEANER_CONFIG]=""
     [LINUX_CLEANER_ONLY_PATH]=""
+    [LINUX_CLEANER_EXCLUDE_PATH]=""
+    [LINUX_CLEANER_EXCLUDE_FROM]=""
+    [LINUX_CLEANER_ONLY_TARGET]=""
+    [LINUX_CLEANER_ONLY_TARGET_EXACT]=""
+    [LINUX_CLEANER_EXCLUDE_TARGET]=""
+    [LINUX_CLEANER_EXCLUDE_TARGET_EXACT]=""
     [LINUX_CLEANER_TRASH]=""
     [LINUX_CLEANER_TRASH_KEEP_DAYS]=""
     [LINUX_CLEANER_TRASH_MAX_SIZE]=""
