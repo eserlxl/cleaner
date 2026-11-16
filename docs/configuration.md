@@ -12,6 +12,7 @@ See [`cleaner.conf`](../cleaner.conf) for the authoritative list of targets, age
 - **AI assistant & editor caches, logs, and transcripts (`safe` for caches/logs, `medium` for transcripts/media/VM image)**: Gemini Temp, Cursor, Antigravity, Claude Desktop, Codex CLI/Desktop, Grok CLI, and Hermes caches/logs/sessions, plus per-project AI debug/log directories under `/opt` (`.gemini/model_debug_logs`, `.codex/logs`, `.remember/logs`). Durable configuration, rules, memory stores, SQLite state databases, and `$HOME/.claude/projects` are deliberately excluded.
 - **Idle C/C++ build directories (`safe`)**: `/opt/**/build*` and `/opt/**/cmake-build*` verified by `filter:cxx_build` and idle for more than 14 days.
 - **System package-manager caches (`medium`)**: `/var/cache/pacman/pkg` (`action:paccache_keep1`), plus optional commented rows for `pacman_clean`, `apt_clean`, `dnf_clean`, `zypper_clean`, and `apk_clean`. Because an action whose package manager is not installed is skipped cleanly without failing the run, the same `cleaner.conf` is portable across distributions.
+- **User-level runtime & store prunes (`safe`)**: Flatpak unused runtimes and extensions (`$XDG_DATA_HOME/flatpak`, `action:flatpak_unused`), plus an optional commented `Nix Store` (`/nix/store`, `action:nix_store_gc`) row. Both run as the invoking user without `sudo` and skip cleanly when the binary is absent.
 
 ## Row format
 
@@ -68,7 +69,7 @@ A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target 
 - **Fixed depth by default**: Matches must sit at the exact depth after the literal prefix (e.g. `$HOME/src/*/build*` matches `~/src/app/build` but not `~/src/a/b/build`).
 - **`**` spans nesting levels**: A `**` component matches one or more directory levels, searched at least **10 levels** (`GLOB_RECURSION_MAX_DEPTH=10`) below the literal prefix, or as deep as the pattern itself when it has more components.
 - **Directories only**: Wildcard expansion matches directories (`-type d`), never individual files.
-- **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing newlines, `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` tokens are skipped with a warning; a pattern with no matches is not an error.
+- **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing control characters (including newlines), backslashes (`\`), `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` tokens are skipped with a warning; a pattern with no matches is not an error.
 
 > [!WARNING]
 > One wildcard line can expand to many targets. Always preview with `cleaner --dry-run` and `cleaner --list-targets` before cleaning.
