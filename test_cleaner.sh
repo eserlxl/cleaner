@@ -10129,6 +10129,23 @@ if [[ "$validator_rc" -ne 0 || "$validator_bad_rc" -eq 0 || "$validator_trunc_rc
   exit 1
 fi
 echo -e "${GREEN}PASS: runbook validator runs without ripgrep and rejects an undocumented flag.${NC}"
+if locale -a 2>/dev/null | grep -qiE '^tr_TR\.utf-?8$'; then
+  validator_tr_ok_rc=0
+  env -i HOME="$MOCK_HOME" PATH="$validator_bin" LC_ALL=tr_TR.UTF-8 \
+    bash "$SCRIPT_DIR/scripts/validate-runbook-examples.sh" \
+    > "$TEST_ENV_DIR/validator_tr_ok.log" 2>&1 || validator_tr_ok_rc=$?
+  validator_tr_env_rc=0
+  env -i HOME="$MOCK_HOME" PATH="$validator_bin" LC_ALL=tr_TR.UTF-8 \
+    bash "$validator_copy/scripts/validate-runbook-examples.sh" \
+    > "$TEST_ENV_DIR/validator_tr_env.log" 2>&1 || validator_tr_env_rc=$?
+  if [[ "$validator_tr_ok_rc" -ne 0 || "$validator_tr_env_rc" -eq 0 ]] \
+     || ! grep -qxF 'missing in cleaner.1: LINUX_CLEANER_ACTION_TIME' "$TEST_ENV_DIR/validator_tr_env.log"; then
+    echo -e "${RED}FAIL: runbook validator truncated env var name under LC_ALL=tr_TR.UTF-8.${NC}"
+    cat "$TEST_ENV_DIR/validator_tr_ok.log" "$TEST_ENV_DIR/validator_tr_env.log" 2>/dev/null
+    exit 1
+  fi
+  echo -e "${GREEN}PASS: runbook validator preserves LINUX_CLEANER_ACTION_TIME under LC_ALL=tr_TR.UTF-8.${NC}"
+fi
 
 # Top-level system directories outside the original list stay UNSAFE even with
 # --allow-outside-home. Dry-run only: a regression here must never delete a real

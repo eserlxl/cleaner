@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
+export LC_ALL=C
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HELP="$("$ROOT/cleaner.sh" --help)"
 MAN="$ROOT/cleaner.1"
@@ -20,8 +21,8 @@ while read -r f; do
 done <<< "$flags"
 
 # Env mirrors named in operator examples must appear in the man ENVIRONMENT section.
-env_names="$(grep -rhoE 'LINUX_CLEANER_[A-Z0-9_]+' "$ROOT/RUNBOOK.md" "$ROOT/examples" | sort -u)"
-man_env_names="$(grep -oE 'LINUX_CLEANER_[A-Z0-9_]+' "$MAN" | sort -u)"
+env_names="$(grep -rhoE 'LINUX_CLEANER_[ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]+' "$ROOT/RUNBOOK.md" "$ROOT/examples" | sort -u)"
+man_env_names="$(grep -oE 'LINUX_CLEANER_[ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]+' "$MAN" | sort -u)"
 while read -r env_name; do
   [[ -z "$env_name" ]] && continue
   grep -qxF -- "$env_name" <<< "$man_env_names" || { echo "missing in cleaner.1: $env_name"; exit 1; }
