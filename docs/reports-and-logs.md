@@ -103,7 +103,7 @@ The file contains HELP/TYPE lines and three gauges:
 - `linux_cleaner_preview_reclaimable_bytes`: the planned total, matching JSON `total_reclaimable_bytes`, even when a threshold would skip cleanup.
 - `linux_cleaner_preview_would_skip`: `1` when `--min-reclaim`, `--min-free`, or nothing to clean would skip cleanup; `0` otherwise, matching whether JSON `would_skip` is non-null.
 
-The path must be literal and absolute without line feeds, with an existing writable directory. The same path checks and atomic replacement as cleanup metrics apply; symlinked targets or parent directories are refused. Invalid paths and write errors warn on stderr without failing the dry run. A path equal to `LINUX_CLEANER_METRICS_FILE` warns and skips preview export, preserving cleanup metrics. Unset/empty writes nothing. Mutating cleanup, restore, purge, list, report, check-config, init-config, and doctor modes ignore the variable. Dry runs still leave cleanup reports and cleanup metrics untouched.
+The path must be literal and absolute without line feeds, with an existing writable directory. The same path checks and atomic replacement as cleanup metrics apply; symlinked targets or parent directories are refused. Invalid paths and write errors warn on stderr without failing the dry run. A path equal to `LINUX_CLEANER_METRICS_FILE` warns and skips preview export, preserving cleanup metrics. Unset/empty writes nothing. Mutating cleanup, restore, purge, hold-session, release-session, list, report, check-config, init-config, init-env, and doctor modes ignore the variable. Dry runs still leave cleanup reports and cleanup metrics untouched.
 
 ## Operation log (`--log` / `LINUX_CLEANER_LOG`)
 
@@ -116,7 +116,7 @@ LINUX_CLEANER_LOG=$HOME/.cache/linux-cleaner/ops.log cleaner --clean
 
 - The log path supports `$HOME`, `~`, `$USER`, `$XDG_CACHE_HOME`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_STATE_HOME` placeholders (relative XDG values fall back to the spec default) and **must resolve inside `$HOME`** (paths outside `$HOME` are refused and logging is disabled).
 - Single-generation size rotation (`--log-max-size SIZE` / `LINUX_CLEANER_LOG_MAX_SIZE`): when set to a positive byte limit, `log_operation` atomically moves the active regular non-symlink log file to `<log>.1` before appending once its byte size reaches `SIZE` (`0` disables rotation). Symlinked active or `.1` paths, directories at `<log>.1`, and `.1` paths outside `$HOME` warn on stderr and skip rotation rather than replacing symlinks or clobbering unrelated files.
-- Records one line per real cleanup target (`mode=delete|quarantine|action`), per interrupted cleanup run (`mode=run outcome=interrupted signal=SIGINT|SIGTERM`), per restored target (`mode=restore`, outcome `success`/`failed`/`conflict`/`missing`), or per purged session (`mode=purge`), and never logs file contents or secrets:
+- Records one line per real or root-skipped cleanup target (`mode=delete|quarantine|action`, including `outcome=skipped reason=requires-root`), per interrupted cleanup run (`mode=run outcome=interrupted signal=SIGINT|SIGTERM`), per restored target (`mode=restore`, outcome `success`/`failed`/`conflict`/`missing`), or per purged session (`mode=purge`, outcome `success`/`failed`), and never logs file contents or secrets:
 
 ```text
 2026-01-01T12:00:00 mode=delete risk=safe target='NPM Cache' path='/home/you/.npm/_cacache' outcome=success
