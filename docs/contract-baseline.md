@@ -2,9 +2,9 @@
 
 Documentation contract work for linux-cleaner (`VERSION="1.9.1"` in `cleaner.sh:19` plus `## [Unreleased]` in `CHANGELOG.md`) starts from a green hermetic gate on `main`.
 
-## Baseline gate (F1.1-01)
+## Active baseline gate
 
-Recorded: 2026-11-16 on branch `main` (reconciled against `HEAD`; original `v1.3.0` record preserved below).
+Recorded: 2026-11-16 on branch `main` (`1.9.1` + `[Unreleased]`).
 
 | Gate | Command | Result |
 |------|---------|--------|
@@ -13,7 +13,7 @@ Recorded: 2026-11-16 on branch `main` (reconciled against `HEAD`; original `v1.3
 
 Both gates must stay green before and after every documentation edit.
 
-## Manual review findings (F1.1-02)
+## Current CLI cross-walk
 
 Cross-walk of `README.md`, `docs/cli-reference.md`, `cleaner.sh --help` (`cleaner.sh:46-100`), and `cleaner.1` on 2026-11-16 (`1.9.1` + `[Unreleased]`):
 
@@ -27,10 +27,11 @@ Cross-walk of `README.md`, `docs/cli-reference.md`, `cleaner.sh --help` (`cleane
 
 **Mismatches (prose contradicts help/man):** none. Short flags, surface ownership (`README.md` vs `docs/cli-reference.md` vs `cleaner.sh --help` vs `cleaner.1`), `--only-target` exclusions, all eight `--json` modes and refusals, warning formats, and exit statuses `0`, `1`, `2`, `130`, `143` align across surfaces on `HEAD`.
 
-## F1.1-03 conditional fix (skipped)
+## Historical provenance (v1.3.0)
 
-No prose contradictions were listed in the findings above; no README, `cleaner.1`, or `cleaner.sh` edits were required.
+Initial contract baseline audit markers recorded on 2026-07-15 for `v1.3.0` on `main` (superseded as active status by the `1.9.1` + `[Unreleased]` sections above; retained for historical audit traceability):
 
-## F2.2-02
-
-`Quarantine for Purge` passes on HEAD; no test repair required.
+- **`F1.1-01` (2026-07-15 `v1.3.0` baseline gate):** `make lint` (`PASS`) and `make check` (`PASS`) established the pre-edit baseline on `main`.
+- **`F1.1-02` (2026-07-15 `v1.3.0` manual review):** initial cross-walk of `README.md`, `cleaner.sh --help`, and `cleaner.1` verified short-option alignment, `--only-target` mutual exclusion resolution, four `--json` modes, admonition/man warnings, and skip-vs-failure exit semantics at `v1.3.0`.
+- **`F1.1-03` (2026-07-15 `v1.3.0` conditional fix — skipped):** no prose contradictions remained after `F1.1-02`, so no conditional doc/help fixes were required.
+- **`F2.2-02` (2026-07-15 `v1.3.0` purge check):** `Quarantine for Purge` passed on the `v1.3.0` baseline without test repair.
