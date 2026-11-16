@@ -49,6 +49,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `expand_config_globs` and `_expand_glob_parse_pattern` now require wildcard `PATH_EXPRESSION` values to resolve to an absolute path starting with `/`, emitting a warning and leaving relative wildcard patterns unexpanded instead of scanning relative to `$PWD` (`U-192`).
 - `scripts/validate-runbook-examples.sh` now exports `LC_ALL=C` and spells `[ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]+` explicitly so Turkish UTF-8 host locales (`tr_TR.UTF-8`) do not truncate `LINUX_CLEANER_*` names at uppercase `I` (`U-191`).
 - `.github/workflows/release.yml` now uses the GitHub Actions tag glob `'v[0-9]*.[0-9]*.[0-9]*'` (instead of `'v[0-9]+.[0-9]+.[0-9]+'`, where `+` was matched literally) and enforces an early `Validate release tag format` step (`^v[0123456789]+\.[0123456789]+\.[0123456789]+$`) before running release steps (`U-190`).
 - `--restore --backup-conflicts` (`_rollback_aged_backups`) now prunes empty intermediate directories beneath `dir_target` with `find -depth -type d -empty -delete` instead of aborting on `rmdir` `ENOENT`/`ENAMETOOLONG` when nested directory creation or long-path moves fail, ensuring backed-up intermediate `aged` collisions (`dir_backup`) roll back atomically while populated directories remain preserved (`U-189`).

@@ -2090,8 +2090,14 @@ A path component written as
 matches one or more intervening directories, so one line covers a directory
 class that occurs at several depths; that recursion is bounded at 10 levels
 below the literal prefix. A pattern matching nothing contributes no target and
-is not an error; a wildcard in the first path component is left unexpanded with
-a warning rather than scanning the whole filesystem. Use
+is not an error; a relative wildcard
+.B PATH_EXPRESSION
+(not resolving to an absolute path starting with
+.BR / )
+or a wildcard in the first path component is left unexpanded with
+a warning rather than traversing
+.B $PWD
+or scanning the whole filesystem. Use
 .B \-\-dry\-run
 or
 .B \-\-list\-targets

@@ -69,7 +69,7 @@ A `PATH_EXPRESSION` containing `*` or `?` expands into **one independent target 
 - **Fixed depth by default**: Matches must sit at the exact depth after the literal prefix (e.g. `$HOME/src/*/build*` matches `~/src/app/build` but not `~/src/a/b/build`).
 - **`**` spans nesting levels**: A `**` component matches one or more directory levels, searched at least **10 levels** (`GLOB_RECURSION_MAX_DEPTH=10`) below the literal prefix, or as deep as the pattern itself when it has more components.
 - **Directories only**: Wildcard expansion matches directories (`-type d`), never individual files.
-- **Safe path identity**: A wildcard in the first path component (`/*/build`) is refused with a warning; matches containing control characters (including newlines), backslashes (`\`), `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` tokens are skipped with a warning; a pattern with no matches is not an error.
+- **Safe path identity**: A relative wildcard `PATH_EXPRESSION` (not resolving to an absolute path starting with `/`) or a wildcard in the first path component (`/*/build`) is refused with a warning and left unexpanded rather than traversing `$PWD` or the filesystem root; matches containing control characters (including newlines), backslashes (`\`), `|`, leading/trailing whitespace, or literal `$HOME`/`~`/`$USER`/`$XDG_CACHE_HOME`/`$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` tokens are skipped with a warning; a pattern with no matches is not an error.
 
 > [!WARNING]
 > One wildcard line can expand to many targets. Always preview with `cleaner --dry-run` and `cleaner --list-targets` before cleaning.

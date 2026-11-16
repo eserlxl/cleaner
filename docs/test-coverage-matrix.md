@@ -58,6 +58,7 @@
 | U-189 | `--restore --backup-conflicts` (`_rollback_aged_backups`) prunes empty intermediate directories beneath `dir_target` via `find -depth -type d -empty -delete` so backed-up intermediate `aged` collisions (`dir_backup`) roll back atomically even when nested `mkdir -p` or long-path moves fail (`PATH_MAX` / `ENAMETOOLONG`) before any file populates `$dir_target` | Aged Backup Conflicts Nested Mkdir Failure Rolls Back Intermediate Backup |
 | U-190 | `.github/workflows/release.yml` `on.push.tags` uses the glob `'v[0-9]*.[0-9]*.[0-9]*'` without regex `+` quantifiers and enforces an early `Validate release tag format` check (`^v[0123456789]+\.[0123456789]+\.[0123456789]+$`) | Release Notes Extraction |
 | U-191 | `scripts/validate-runbook-examples.sh` exports `LC_ALL=C` and spells explicit ASCII `[ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]+` so `LC_ALL=tr_TR.UTF-8` validates clean repos and rejects `LINUX_CLEANER_ACTION_TIME` instead of silently truncating at `I` | Runbook Validator Runs Without Ripgrep / Preserves LINUX_CLEANER_ACTION_TIME Under LC_ALL=tr_TR.UTF-8 |
+| U-192 | Relative wildcard `PATH_EXPRESSION` values (such as `foo*`, `foo*/bar`, `*`, and `rel/sub*`) emit absolute-path warnings, stay unexpanded in `--list-targets` (human/JSON), report `missing`/`0` bytes in `--dry-run` (human/JSON), and leave `$PWD` directories untouched under `--clean --force` with `MIN_AGE_DAYS=0` while `$HOME` wildcards expand normally | Relative Wildcard Refusal |
 
 ## 1.6.0 shipped feature inventory
 
