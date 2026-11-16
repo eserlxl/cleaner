@@ -3,6 +3,7 @@
 # Bash tab completion for cleaner / cleaner.sh.
 
 _cleaner() {
+  local IFS=$' \t\n'
   local cur prev idx
   COMPREPLY=()
   idx=$COMP_CWORD
@@ -14,31 +15,59 @@ _cleaner() {
 
   # Rejoin "prefix:val" when COMP_WORDBREAKS splits on ':' (e.g. older-than:7 or /dir:1/file).
   if [[ "${COMP_WORDBREAKS:-}" == *:* ]]; then
-    if [[ "$cur" =~ ^:+$ && $idx -ge 2 ]]; then
-      case "${COMP_WORDS[idx - 1]}" in
-        -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--trash-max-size|--log|--log-max-size)
-          if (( idx > 2 )) && [[ "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
-            cur="${COMP_WORDS[idx - 1]}${cur}"
-            idx=$((idx - 1))
-          fi
-          ;;
-        *)
-          cur="${COMP_WORDS[idx - 1]}${cur}"
-          idx=$((idx - 1))
-          ;;
-      esac
+    local -a had_ws=()
+    if [[ -n "${COMP_LINE+x}" ]]; then
+      local rest="$COMP_LINE" k w trimmed
+      for (( k = 0; k <= idx; k++ )); do
+        w="${COMP_WORDS[k]:-}"
+        trimmed="${rest#"${rest%%[![:space:]]*}"}"
+        if [[ "$trimmed" != "$rest" ]]; then
+          had_ws[k]=true
+          rest="$trimmed"
+        fi
+        if [[ -z "$w" ]]; then
+          continue
+        elif [[ "$rest" == "$w"* ]]; then
+          rest="${rest#"$w"}"
+        else
+          had_ws=()
+          break
+        fi
+      done
     fi
-    while (( idx >= 2 )) && [[ "${COMP_WORDS[idx - 1]}" =~ ^:+$ ]]; do
-      cur="${COMP_WORDS[idx - 1]}${cur}"
-      idx=$((idx - 1))
-      if (( idx >= 2 )); then
+
+    if [[ "$cur" =~ ^:+$ && $idx -ge 2 && "${had_ws[idx]:-false}" != true ]]; then
+      if [[ -n "${COMP_LINE+x}" && ${#had_ws[@]} -gt 0 ]]; then
+        cur="${COMP_WORDS[idx - 1]}${cur}"
+        idx=$((idx - 1))
+      else
         case "${COMP_WORDS[idx - 1]}" in
           -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--trash-max-size|--log|--log-max-size)
-            if (( idx == 2 )) || [[ ! "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
-              break
+            if (( idx > 2 )) && [[ "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
+              cur="${COMP_WORDS[idx - 1]}${cur}"
+              idx=$((idx - 1))
             fi
             ;;
+          *)
+            cur="${COMP_WORDS[idx - 1]}${cur}"
+            idx=$((idx - 1))
+            ;;
         esac
+      fi
+    fi
+    while (( idx >= 2 )) && [[ "${had_ws[idx]:-false}" != true && "${COMP_WORDS[idx - 1]}" =~ ^:+$ ]]; do
+      cur="${COMP_WORDS[idx - 1]}${cur}"
+      idx=$((idx - 1))
+      if (( idx >= 2 )) && [[ "${had_ws[idx]:-false}" != true ]]; then
+        if [[ -z "${COMP_LINE+x}" || ${#had_ws[@]} -eq 0 ]]; then
+          case "${COMP_WORDS[idx - 1]}" in
+            -c|--config|-r|--risk|-e|--exclude|--exclude-from|--restore|--hold-session|--release-session|--purge-sessions|--only|--only-exact|--only-target|--only-target-exact|--exclude-target|--exclude-target-exact|--only-path|--exclude-path|--lock-wait|--check-health|--min-reclaim|--min-free|--min-free-path|--min-age|--action-timeout|--trash-keep-days|--trash-max-size|--log|--log-max-size)
+              if (( idx == 2 )) || [[ ! "${COMP_WORDS[idx - 2]}" =~ ^:+$ ]]; then
+                break
+              fi
+              ;;
+          esac
+        fi
         cur="${COMP_WORDS[idx - 1]}${cur}"
         idx=$((idx - 1))
       fi

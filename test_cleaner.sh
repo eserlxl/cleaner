@@ -14505,6 +14505,71 @@ if ! (
 fi
 echo -e "${GREEN}PASS: completions/cleaner.bash passes bash -n, covers all --help options, and completes flags and values.${NC}"
 
+echo -e "\n${BOLD}Test Case: Bash Completion Whitespace After Colon And IFS${NC}"
+if ! (
+  # shellcheck source=/dev/null
+  source "$comp_file"
+  COMP_WORDBREAKS=$' \t\n"\'><=;|&(:'
+
+  COMP_LINE="cleaner --only foo: --dr"
+  COMP_POINT=${#COMP_LINE}
+  COMP_WORDS=(cleaner --only foo : --dr)
+  COMP_CWORD=4
+  HOME="$MOCK_HOME" _cleaner
+  [[ "${COMPREPLY[*]}" == "--dry-run" ]] || exit 1
+
+  COMP_LINE="cleaner --purge-sessions older-than: --dr"
+  COMP_POINT=${#COMP_LINE}
+  COMP_WORDS=(cleaner --purge-sessions older-than : --dr)
+  COMP_CWORD=4
+  HOME="$MOCK_HOME" _cleaner
+  [[ "${COMPREPLY[*]}" == "--dry-run" ]] || exit 1
+
+  COMP_LINE="cleaner --only foo: "
+  COMP_POINT=${#COMP_LINE}
+  COMP_WORDS=(cleaner --only foo : "")
+  COMP_CWORD=4
+  HOME="$MOCK_HOME" _cleaner
+  [[ " ${COMPREPLY[*]} " == *" --dry-run "* ]] || exit 1
+
+  COMP_LINE="cleaner --only foo :"
+  COMP_POINT=${#COMP_LINE}
+  COMP_WORDS=(cleaner --only foo :)
+  COMP_CWORD=3
+  HOME="$MOCK_HOME" _cleaner
+  [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+
+  COMP_LINE="cleaner --only -c:val"
+  COMP_POINT=${#COMP_LINE}
+  COMP_WORDS=(cleaner --only -c : val)
+  COMP_CWORD=4
+  HOME="$MOCK_HOME" _cleaner
+  [[ ${#COMPREPLY[@]} -eq 0 ]] || exit 1
+
+  unset COMP_LINE COMP_POINT
+  for bad_ifs in ':' $'\n'; do
+    IFS="$bad_ifs"
+    COMP_WORDS=(cleaner --ri)
+    COMP_CWORD=1
+    HOME="$MOCK_HOME" _cleaner
+    [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == "--risk" ]] || exit 1
+
+    COMP_WORDS=(cleaner -r "")
+    COMP_CWORD=2
+    HOME="$MOCK_HOME" _cleaner
+    [[ ${#COMPREPLY[@]} -eq 3 && "${COMPREPLY[0]}" == "safe" && "${COMPREPLY[1]}" == "medium" && "${COMPREPLY[2]}" == "danger" ]] || exit 1
+
+    COMP_WORDS=(cleaner --purge-sessions ol)
+    COMP_CWORD=2
+    HOME="$MOCK_HOME" _cleaner
+    [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == "older-than:" ]] || exit 1
+  done
+); then
+  echo -e "${RED}FAIL: completions/cleaner.bash merged across whitespace after colon or failed under non-default IFS.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}PASS: completions/cleaner.bash respects whitespace boundaries after colons and isolates caller IFS.${NC}"
+
 # Zsh and fish completion functional test: the zsh --purge-sessions selectors must
 # complete (an unescaped ':' in the _arguments spec made zsh report a parse error and
 # offer nothing), the prefix selectors must not gain a trailing space, and fish must

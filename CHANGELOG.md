@@ -50,6 +50,7 @@ This project follows [Semantic Versioning (SemVer)](https://semver.org/). Bump p
 
 ### Fixed
 
+- `completions/cleaner.bash` (`_cleaner`) now checks `COMP_LINE` whitespace boundaries before rejoining `:`-split `COMP_WORDS` tokens and scopes `local IFS=$' \t\n'`, so trailing-colon values followed by whitespace (`--only foo: --dr`, `--purge-sessions older-than: --dr`) and non-default caller `IFS` values complete options and selectors cleanly (`U-196`).
 - `install.sh` now rejects extra positional arguments and explicit empty arguments (`""`) with usage output and exit `1` before modifying `DESTDIR`, and both `install.sh --help` and `make help` now document `BINNAME` and `PKGNAME` in `Vars:` (`U-194`).
 - `install.sh` and `Makefile` now validate `BINNAME` and `PKGNAME` against explicit ASCII basename characters (`[0-9A-Za-z._-]`, rejecting empty, `.`, `..`, leading `-`, spaces, slashes, and non-ASCII letters such as `cleaner_ı`/`cleaner_İ`/`pkg_ı` under `LC_ALL=tr_TR.UTF-8`) on both `install` and `uninstall` before touching `DESTDIR` (`U-193`).
 - `expand_config_globs` and `_expand_glob_parse_pattern` now require wildcard `PATH_EXPRESSION` values to resolve to an absolute path starting with `/`, emitting a warning and leaving relative wildcard patterns unexpanded instead of scanning relative to `$PWD` (`U-192`).
